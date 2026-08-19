@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스캔 — SBOMSight</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><a href="/">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
+  <div class="spacer"></div>
+  <nav>
+    <a href="/">개요</a>
+    <a href="/scan.html" aria-current="page">스캔</a>
+    <a href="/about.html">설계</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <h1>SBOM 스캔</h1>
+  <p class="lede">
+    폐쇄망에서 <code>syft</code>로 생성해 반출한 SBOM JSON(CycloneDX · SPDX · Syft)을 올리면
+    탐지부터 보고서까지 한 흐름으로 처리합니다.
+  </p>
+
+  <div id="banner"></div>
+
+  <!-- 업로드 -->
+  <section class="card" id="upload-card">
+    <div class="dropzone" id="dropzone">
+      <div class="big">SBOM JSON 파일을 여기에 놓거나 클릭해 선택하세요</div>
+      <div class="sub">CycloneDX JSON · SPDX JSON · Syft JSON</div>
+      <input type="file" id="file" accept=".json,application/json" hidden>
+    </div>
+    <div class="toolbar">
+      <label class="check"><input type="checkbox" id="enrich" checked> 위협정보 보강 (EPSS · CISA KEV · 공개 Exploit)</label>
+      <div class="spacer"></div>
+      <span id="file-info" class="faint"></span>
+      <button class="primary" id="run" disabled>스캔 시작</button>
+    </div>
+  </section>
+
+  <!-- 진행 -->
+  <section class="card hidden" id="progress-card">
+    <h3 style="margin-top:0">진행 상황</h3>
+    <div class="stepper" id="stepper"></div>
+    <div id="job-error"></div>
+  </section>
+
+  <!-- 결과 -->
+  <section class="hidden" id="result">
+    <h2>결과</h2>
+    <div class="grid cols-4" id="stats" style="margin-bottom:.75rem"></div>
+    <div class="flow" id="summary-line" style="margin-bottom:1rem"></div>
+
+    <div class="card">
+      <div class="toolbar">
+        <select id="filter-priority">
+          <option value="">전체 우선순위</option>
+          <option value="P0">P0 즉시 대응 검토</option>
+          <option value="P1">P1 우선 대응 검토</option>
+          <option value="P2">P2 계획 대응 검토</option>
+          <option value="P3">P3 모니터링</option>
+        </select>
+        <select id="filter-ecosystem"><option value="">전체 생태계</option></select>
+        <select id="filter-fix">
+          <option value="">전체</option>
+          <option value="update">업데이트 가능</option>
+          <option value="nofix">수정 버전 없음</option>
+          <option value="unknown">취약 여부 판단 불가</option>
+          <option value="kev">CISA KEV 등재</option>
+          <option value="exploit">공개 Exploit 확인</option>
+        </select>
+        <input type="search" id="filter-text" placeholder="CVE 또는 패키지 검색">
+        <div class="spacer"></div>
+        <span class="faint" id="count"></span>
+        <a class="btn" id="dl-md" target="_blank" rel="noopener">보고서 (Markdown)</a>
+        <a class="btn primary" id="dl-html" target="_blank" rel="noopener">보고서 (HTML)</a>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>우선순위</th><th>CVE</th><th>패키지</th><th>설치 버전</th>
+            <th>Fixed</th><th class="num">CVSS</th><th class="num">EPSS</th><th>상태</th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="drawer-backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <header>
+    <h2 id="drawer-title"></h2>
+    <button class="close" id="drawer-close">닫기</button>
+  </header>
+  <div class="body" id="drawer-body"></div>
+</aside>
+
+<footer class="site">
+  대응 검토 우선순위는 정책 룰의 산출물이며, 내부 위험도와 최종 패치 여부는 보안담당자가 판단합니다.
+</footer>
+
+<script type="module">
+import { getProvider } from '/js/providers/index.js';
+import { sortFindings, summarize } from '/js/core/model.js';
+import {
+  $, esc, renderDetail, renderStats, renderStepper, renderSummaryLine, renderTable,
+} from '/js/core/ui.js';
+
+const provider = await getProvider();
+
+const state = {
+  upload: null,
+  scanId: null,
+  findings: [],
+  reportIndex: new Map(),   // "CVE|패키지|버전" → 보고서 항목 (서술 + 권고사항)
+};
+
+// --- 환경 안내 -------------------------------------------------------------
+try {
+  const health = await provider.health();
+  if (!health.ok) {
+    $('#banner').innerHTML = `<div class="banner warn">
+      <b>Grype를 찾을 수 없습니다.</b> 설치 후 <code>grype db update</code>로 DB를 준비하세요.
+      설치 전에는 스캔이 실패합니다.</div>`;
+  }
+} catch { /* 데모 모드에서는 health가 없을 수 있다 */ }
+
+// --- 업로드 ----------------------------------------------------------------
+const dropzone = $('#dropzone');
+const fileInput = $('#file');
+const runButton = $('#run');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropzone.classList.remove('over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+async function handleFile(file) {
+  $('#file-info').textContent = `${file.name} 업로드 중…`;
+  runButton.disabled = true;
+  try {
+    state.upload = await provider.upload(file);
+    const fmt = state.upload.format === 'unknown' ? '형식 미상' : state.upload.format;
+    $('#file-info').innerHTML =
+      `<b>${esc(state.upload.filename)}</b> · ${esc(fmt)} · 컴포넌트 ${state.upload.component_count}개`;
+    runButton.disabled = false;
+  } catch (error) {
+    $('#file-info').innerHTML = `<span style="color:var(--danger)">업로드 실패: ${esc(error.message)}</span>`;
+  }
+}
+
+// --- 스캔 ------------------------------------------------------------------
+runButton.addEventListener('click', async () => {
+  if (!state.upload) return;
+  runButton.disabled = true;
+  $('#progress-card').classList.remove('hidden');
+  $('#job-error').innerHTML = '';
+  $('#result').classList.add('hidden');
+
+  try {
+    const { job_id: jobId, steps } = await provider.startScan({
+      uploadId: state.upload.upload_id,
+      filename: state.upload.filename,
+      enrich: $('#enrich').checked,
+    });
+    renderStepper($('#stepper'), steps);
+    await pollUntilDone(jobId);
+  } catch (error) {
+    $('#job-error').innerHTML = `<div class="banner danger">스캔을 시작하지 못했습니다: ${esc(error.message)}</div>`;
+    runButton.disabled = false;
+  }
+});
+
+async function pollUntilDone(jobId) {
+  for (;;) {
+    const job = await provider.pollScan(jobId);
+    renderStepper($('#stepper'), job.steps);
+
+    if (job.state === 'failed') {
+      $('#job-error').innerHTML = `<div class="banner danger">${esc(job.error)}</div>`;
+      runButton.disabled = false;
+      return;
+    }
+    if (job.state === 'done') {
+      await loadResults(job.scan_id);
+      runButton.disabled = false;
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 600));
+  }
+}
+
+// --- 결과 ------------------------------------------------------------------
+function findingKey(item) {
+  return [
+    item.cve ?? item.intel?.cve,
+    item.local_analysis?.installed_package ?? item.installed?.name,
+    item.local_analysis?.installed_version ?? item.installed?.version,
+  ].join('|');
+}
+
+async function loadResults(scanId) {
+  state.scanId = scanId;
+  const scan = await provider.getScan(scanId);
+  state.findings = sortFindings(scan.findings || []);
+
+  // 보고서 JSON에서 서술과 권고사항을 가져와 상세 패널에 쓴다.
+  state.reportIndex = new Map();
+  try {
+    const report = await provider.getReport(scanId, 'json');
+    for (const item of report.findings || []) state.reportIndex.set(findingKey(item), item);
+  } catch (error) {
+    console.warn('보고서를 불러오지 못했습니다:', error);
+  }
+
+  renderStats($('#stats'), summarize(state.findings));
+  renderSummaryLine($('#summary-line'), summarize(state.findings));
+
+  const ecosystems = [...new Set(state.findings.map((f) => f.installed?.type).filter(Boolean))].sort();
+  $('#filter-ecosystem').innerHTML =
+    '<option value="">전체 생태계</option>' +
+    ecosystems.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
+
+  if (provider.reportUrl) {
+    $('#dl-md').href = provider.reportUrl(scanId, 'markdown');
+    $('#dl-html').href = provider.reportUrl(scanId, 'html');
+  } else {
+    $('#dl-md').classList.add('hidden');
+    $('#dl-html').classList.add('hidden');
+  }
+
+  $('#result').classList.remove('hidden');
+  applyFilters();
+}
+
+// --- 필터 ------------------------------------------------------------------
+function applyFilters() {
+  const priority = $('#filter-priority').value;
+  const ecosystem = $('#filter-ecosystem').value;
+  const status = $('#filter-fix').value;
+  const text = $('#filter-text').value.trim().toLowerCase();
+
+  const filtered = state.findings.filter((f) => {
+    if (priority && f.verdict?.priority !== priority) return false;
+    if (ecosystem && f.installed?.type !== ecosystem) return false;
+    if (status === 'update' && f.fix?.update_available !== 'true') return false;
+    if (status === 'nofix' && !f.verdict?.flags?.includes('no_fix_available')) return false;
+    if (status === 'unknown' && f.fix?.is_vulnerable !== 'unknown') return false;
+    if (status === 'kev' && f.intel?.kev !== 'true') return false;
+    if (status === 'exploit' && f.intel?.exploit_available !== 'true') return false;
+    if (text) {
+      const haystack = `${f.intel?.cve} ${f.installed?.name} ${(f.intel?.aliases || []).join(' ')}`.toLowerCase();
+      if (!haystack.includes(text)) return false;
+    }
+    return true;
+  });
+
+  $('#count').textContent = `${filtered.length} / ${state.findings.length}건`;
+  renderTable($('#rows'), filtered, openDrawer);
+}
+
+['#filter-priority', '#filter-ecosystem', '#filter-fix'].forEach((sel) =>
+  $(sel).addEventListener('change', applyFilters));
+$('#filter-text').addEventListener('input', applyFilters);
+
+// --- 상세 패널 -------------------------------------------------------------
+function openDrawer(finding) {
+  const item = state.reportIndex.get(findingKey(finding));
+  const narrative = item
+    ? {
+        source: item.narrative_source,
+        technical_risk: item.technical_risk.narrative,
+        preconditions: item.technical_risk.preconditions,
+        impact_types: item.technical_risk.impact_types,
+        exploitability_note: item.exploitability.narrative,
+        response_rationale: item.response_rationale.narrative,
+      }
+    : null;
+
+  $('#drawer-title').textContent = `${finding.intel?.cve} · ${finding.installed?.name}`;
+  renderDetail($('#drawer-body'), finding, item?.recommendation, narrative);
+  $('#drawer').classList.add('open');
+  $('#drawer').setAttribute('aria-hidden', 'false');
+  $('#backdrop').classList.add('open');
+}
+
+function closeDrawer() {
+  $('#drawer').classList.remove('open');
+  $('#drawer').setAttribute('aria-hidden', 'true');
+  $('#backdrop').classList.remove('open');
+}
+$('#drawer-close').addEventListener('click', closeDrawer);
+$('#backdrop').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+
+// --- 링크로 들어온 경우 -----------------------------------------------------
+const requested = new URLSearchParams(location.search).get('scan');
+if (requested) {
+  try {
+    await loadResults(requested);
+  } catch (error) {
+    $('#banner').innerHTML = `<div class="banner danger">스캔 ${esc(requested)}을(를) 불러오지 못했습니다: ${esc(error.message)}</div>`;
+  }
+}
+</script>
+</body>
+</html>

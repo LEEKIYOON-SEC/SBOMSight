@@ -23,7 +23,12 @@ CREATE TABLE IF NOT EXISTS scans (
     scan_id      TEXT PRIMARY KEY,
     created_at   TEXT NOT NULL,
     metadata     TEXT NOT NULL,
-    finding_count INTEGER NOT NULL DEFAULT 0
+    finding_count INTEGER NOT NULL DEFAULT 0,
+    -- 보고서가 "어떤 데이터로, 어떤 기준으로 판정했는지"를 스스로 증명하려면
+    -- 스냅샷 기준일과 정책 해시가 결과와 함께 남아 있어야 한다. 없으면
+    -- 나중에 그 보고서를 재현할 수 없다.
+    enrichment   TEXT NOT NULL DEFAULT '{}',
+    policy       TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS findings (
@@ -60,6 +65,19 @@ class Store:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """앞선 버전에서 만들어진 DB에 새 컬럼을 채워 넣는다.
+
+        스캔 결과에는 내부 자산 정보가 담겨 있어 지우고 다시 만들라고 할 수
+        없다. 그래서 파괴적 마이그레이션은 하지 않는다.
+        """
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(scans)")}
+        for column in ("enrichment", "policy"):
+            if column not in existing:
+                conn.execute(f"ALTER TABLE scans ADD COLUMN {column} TEXT NOT NULL DEFAULT '{{}}'")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -77,12 +95,15 @@ class Store:
         meta = to_jsonable(result.metadata)
         with self._connect() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO scans (scan_id, created_at, metadata, finding_count) VALUES (?,?,?,?)",
+                "INSERT OR REPLACE INTO scans "
+                "(scan_id, created_at, metadata, finding_count, enrichment, policy) VALUES (?,?,?,?,?,?)",
                 (
                     result.metadata.scan_id,
                     result.metadata.created_at,
                     json.dumps(meta, ensure_ascii=False),
                     len(result.findings),
+                    json.dumps(result.enrichment or {}, ensure_ascii=False),
+                    json.dumps(result.policy or {}, ensure_ascii=False),
                 ),
             )
             conn.execute("DELETE FROM findings WHERE scan_id = ?", (result.metadata.scan_id,))
@@ -104,7 +125,8 @@ class Store:
     def list_scans(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT scan_id, created_at, metadata, finding_count FROM scans ORDER BY created_at DESC LIMIT ?",
+                "SELECT scan_id, created_at, metadata, finding_count, policy "
+                "FROM scans ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [
@@ -113,6 +135,7 @@ class Store:
                 "created_at": r["created_at"],
                 "finding_count": r["finding_count"],
                 "metadata": json.loads(r["metadata"]),
+                "policy": json.loads(r["policy"] or "{}"),
             }
             for r in rows
         ]
@@ -129,6 +152,8 @@ class Store:
             "scan_id": row["scan_id"],
             "created_at": row["created_at"],
             "metadata": json.loads(row["metadata"]),
+            "enrichment": json.loads(row["enrichment"] or "{}"),
+            "policy": json.loads(row["policy"] or "{}"),
             "findings": [json.loads(f["payload"]) for f in findings],
         }
 

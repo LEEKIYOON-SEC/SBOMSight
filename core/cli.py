@@ -192,8 +192,8 @@ def _load_scan_result(source: str) -> ScanResult:
         payload = {
             "metadata": stored["metadata"],
             "findings": stored["findings"],
-            "enrichment": {},
-            "policy": {},
+            "enrichment": stored.get("enrichment") or {},
+            "policy": stored.get("policy") or {},
         }
 
     def revive(f: dict) -> Finding:

@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보고서 — SBOMSight</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+<style>
+  .report-meta { display: grid; gap: .35rem .9rem; grid-template-columns: auto 1fr;
+    font-size: .87rem; align-items: baseline; }
+  .report-meta dt { color: var(--fg-muted); white-space: nowrap; }
+  .report-meta dd { margin: 0; }
+  .toc { position: sticky; top: 3.4rem; max-height: calc(100vh - 5rem); overflow-y: auto; }
+  .toc ol { list-style: none; margin: 0; padding: 0; font-size: .84rem; }
+  .toc li { margin: .15rem 0; display: flex; gap: .4rem; align-items: baseline; }
+  .toc a { color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toc a:hover { color: var(--fg); }
+  .layout { display: grid; grid-template-columns: 15rem 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 62rem) { .layout { grid-template-columns: 1fr; } .toc { position: static; max-height: none; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><a href="/">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
+  <div class="spacer"></div>
+  <nav>
+    <a href="/">개요</a>
+    <a href="/scan.html">스캔</a>
+    <a href="/about.html">설계</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <h1>취약점 대응 검토 보고서</h1>
+  <div id="banner"></div>
+
+  <section class="card" id="meta-card">
+    <dl class="report-meta" id="meta"></dl>
+    <div class="toolbar" style="margin-bottom:0">
+      <select id="pick-scan"></select>
+      <div class="spacer"></div>
+      <button id="print">인쇄 · PDF로 저장</button>
+      <a class="btn" id="dl-md" download>Markdown 내려받기</a>
+      <a class="btn primary" id="dl-html" download>HTML 내려받기</a>
+    </div>
+  </section>
+
+  <div id="disclaimer"></div>
+
+  <section id="summary" class="hidden">
+    <h2>요약</h2>
+    <div class="grid cols-4" id="stats" style="margin-bottom:.75rem"></div>
+    <div class="flow" id="summary-line" style="margin-bottom:1rem"></div>
+    <div class="card" id="snapshot-card"></div>
+  </section>
+
+  <div class="layout">
+    <nav class="toc card hidden" id="toc-card">
+      <h3 style="margin-top:0">항목</h3>
+      <ol id="toc"></ol>
+    </nav>
+    <div id="findings"></div>
+  </div>
+</main>
+
+<footer class="site">
+  대응 검토 우선순위는 정책 룰의 산출물이며, 내부 위험도와 최종 패치 여부는 보안담당자가 판단합니다.
+</footer>
+
+<script type="module">
+import { getProvider } from '/js/providers/index.js';
+import { $, esc, priorityPill, renderStats, renderSummaryLine } from '/js/core/ui.js';
+import { EXPLOIT_SOURCE_LABEL, FIX_STATE_LABEL, TERNARY_LABEL } from '/js/core/model.js';
+
+const provider = await getProvider();
+const params = new URLSearchParams(location.search);
+
+function stepList(items, ordered = false) {
+  if (!items?.length) return '';
+  const tag = ordered ? 'ol' : 'ul';
+  const body = items.map((raw) => {
+    const [head, ...rest] = String(raw).split('\n');
+    const cmd = rest.join('\n').trim();
+    return `<li>${esc(head)}${cmd ? `<pre class="step-cmd">${esc(cmd)}</pre>` : ''}</li>`;
+  }).join('');
+  return `<${tag} class="steps">${body}</${tag}>`;
+}
+
+function renderFinding(item, index) {
+  const o = item.overview;
+  const t = item.technical_risk;
+  const e = item.exploitability;
+  const r = item.response_rationale;
+  const rec = item.recommendation;
+  const local = item.local_analysis;
+  const fa = local.fix_analysis;
+  const src = item.narrative_source === 'ai' ? 'AI 생성 서술' : '룰 기반 서술';
+
+  return `
+  <section class="card" id="f-${index}" style="margin-bottom:1rem">
+    <h2 style="margin-top:0">${priorityPill(item.priority)} ${index}. ${esc(item.cve)}
+      ${item.aliases?.length ? `<small class="faint">별칭 ${esc(item.aliases.join(', '))}</small>` : ''}</h2>
+
+    <table class="kv">
+      <tr><th>CVSS</th><td>${esc(item.badge.cvss)}</td></tr>
+      <tr><th>EPSS</th><td>${esc(item.badge.epss)}</td></tr>
+      <tr><th>CISA KEV</th><td>${esc(item.badge.kev)}</td></tr>
+      <tr><th>공개 Exploit</th><td>${esc(item.badge.exploit)}</td></tr>
+      <tr><th>Fixed Version</th><td class="mono">${esc(item.badge.fixed_version)}</td></tr>
+      <tr><th>판정</th><td>${esc(item.badge.verdict)}</td></tr>
+      <tr><th>적용 정책</th><td class="mono faint">${esc(item.badge.policy)}</td></tr>
+    </table>
+
+    ${item.flags?.length ? `<div class="callout"><ul>${item.flags
+      .map((f) => `<li><b>${esc(f.label)}</b> — ${esc(f.note)}</li>`).join('')}</ul></div>` : ''}
+
+    <div class="section">
+      <h3>① 취약점 개요</h3>
+      <table class="kv">
+        <tr><th>취약 제품</th><td>${esc(o.advisory_package)} (${esc(o.advisory_ecosystem || '생태계 미상')})</td></tr>
+        <tr><th>취약 버전 (advisory)</th><td class="mono">${esc(o.affected_version_range)}</td></tr>
+        <tr><th>Fixed Version</th><td class="mono">${esc(o.fixed_version)}</td></tr>
+        <tr><th>취약점 유형 (CWE)</th><td>${esc(o.cwe?.join(', ') || '미확인')}</td></tr>
+        <tr><th>CVSS 벡터</th><td class="mono">${esc(o.cvss_vector || '미확인')}</td></tr>
+        <tr><th>공개일</th><td>${esc(o.published || '미확인')}</td></tr>
+      </table>
+      ${o.description ? `<p class="muted">${esc(o.description)}</p>` : ''}
+    </div>
+
+    <div class="section">
+      <h3>② 기술적 위험성 <span class="src-badge">${esc(src)}</span></h3>
+      <p>${esc(t.narrative)}</p>
+      ${t.preconditions?.length ? `<p class="faint">공격 조건</p>${stepList(t.preconditions)}` : ''}
+      ${t.impact_types?.length ? `<p class="faint">공격 성공 시 영향 유형</p>${stepList(t.impact_types)}` : ''}
+    </div>
+
+    <div class="section">
+      <h3>③ 악용 가능성</h3>
+      <p>${esc(e.narrative)}</p>
+      ${e.exploit_sources?.length
+        ? `<p class="faint">Exploit 출처</p><ul class="steps">${e.exploit_sources
+            .map((s) => `<li>${esc(EXPLOIT_SOURCE_LABEL[s.source] || s.label || s.source)}: <code>${esc(s.ref)}</code>${
+              s.note ? ` — ${esc(s.note)}` : ''}</li>`).join('')}</ul>`
+        : ''}
+    </div>
+
+    <div class="section">
+      <h3>④ 대응 필요성 분석 <span class="src-badge">${esc(src)}</span></h3>
+      <p>${esc(r.narrative)}</p>
+      ${r.fired_rules?.length
+        ? `<p class="faint">판정 근거 (발화 룰)</p><ul class="steps">${r.fired_rules
+            .map((fr) => `<li><code>${esc(fr.name)}</code> — ${esc(fr.explain)}</li>`).join('')}</ul>`
+        : ''}
+      <p class="callout">권고 대응 우선순위: <b>${esc(r.priority)} ${esc(r.priority_label)}</b>
+        ${r.priority_description ? `— ${esc(r.priority_description)}` : ''}</p>
+    </div>
+
+    <div class="section">
+      <h3>⑤ 권고사항</h3>
+      <p><b>${esc(rec.action)}</b></p>
+      ${rec.precheck?.length ? `<p class="faint">패치 전 확인사항</p>${stepList(rec.precheck)}` : ''}
+      ${rec.online_steps?.length ? `<p class="faint">${esc(rec.online_title)}</p>${stepList(rec.online_steps, true)}` : ''}
+      ${rec.airgapped_steps?.length ? `<p class="faint">${esc(rec.airgapped_title)}</p>${
+        rec.airgapped_note ? `<p class="muted">${esc(rec.airgapped_note)}</p>` : ''
+      }${stepList(rec.airgapped_steps, true)}` : ''}
+      ${rec.verification?.length ? `<p class="faint">적용 후 검증</p>${stepList(rec.verification)}` : ''}
+      ${rec.mitigations?.length ? `<p class="faint">임시 완화 방안 (수정 버전 부재)</p>${stepList(rec.mitigations)}` : ''}
+    </div>
+
+    <div class="section">
+      <h3>⑥ 근거 및 Reference</h3>
+      <ul class="steps">${(item.references || []).map((ref) => ref.url
+        ? `<li>${esc(ref.source)}: <a href="${esc(ref.url)}" target="_blank" rel="noopener">${esc(ref.title)}</a></li>`
+        : `<li>${esc(ref.source)}: ${esc(ref.title)}</li>`).join('')}</ul>
+    </div>
+
+    <div class="section local-box">
+      <h3>[로컬 분석 정보] <span class="nosend">AI 미전달</span></h3>
+      <p class="muted">아래 정보는 우리 자산에 대한 사실이며 외부(AI)로 전달되지 않았습니다.</p>
+      <table class="kv">
+        <tr><th>설치 패키지</th><td>${esc(local.installed_package)} (${esc(local.package_type)})</td></tr>
+        <tr><th>현재 설치 버전</th><td class="mono">${esc(local.installed_version)}</td></tr>
+        <tr><th>취약 여부</th><td>${esc(TERNARY_LABEL[fa.is_vulnerable] || '미확인')}</td></tr>
+        <tr><th>업데이트 가능</th><td>${esc(TERNARY_LABEL[fa.update_available] || '미확인')}</td></tr>
+        <tr><th>수정 상태 · 버전 격차</th><td>${esc(FIX_STATE_LABEL[fa.fix_state] || '미확인')} ·
+          ${esc(fa.version_gap)} <span class="faint">(비교자: ${esc(fa.comparator)})</span></td></tr>
+        ${local.locations?.length ? `<tr><th>발견 위치</th><td class="mono">${esc(local.locations.join(', '))}</td></tr>` : ''}
+        <tr><th>Grype 탐지</th><td class="mono">${esc(local.detection.matcher)} /
+          ${esc(local.detection.match_type)} / ${esc(local.detection.namespace)}</td></tr>
+        ${fa.reason ? `<tr><th>판정 사유</th><td>${esc(fa.reason)}</td></tr>` : ''}
+      </table>
+    </div>
+  </section>`;
+}
+
+async function load(scanId) {
+  const report = await provider.getReport(scanId, 'json');
+  const scan = report.scan || {};
+
+  $('#meta').innerHTML = `
+    <dt>생성 시각</dt><dd>${esc(report.generated_at)}</dd>
+    <dt>스캔 ID</dt><dd class="mono">${esc(scan.scan_id || '')}</dd>
+    <dt>대상 SBOM</dt><dd>${esc(scan.sbom_filename || '(미상)')}
+      <span class="faint">${esc(scan.sbom_format || '')}</span></dd>
+    <dt>컴포넌트</dt><dd>${scan.component_count ?? 0}개</dd>
+    <dt>적용 정책</dt><dd class="mono">${esc(report.policy?.label || '')}</dd>
+    <dt>서술 생성</dt><dd>${report.ai_used ? 'AI 사용' : 'AI 미사용 (룰 기반)'}</dd>`;
+
+  $('#disclaimer').innerHTML = `<div class="banner info">${esc(report.disclaimer)}</div>`;
+
+  renderStats($('#stats'), report.summary);
+  renderSummaryLine($('#summary-line'), report.summary);
+
+  const enrichment = report.enrichment || {};
+  $('#snapshot-card').innerHTML = Object.keys(enrichment).length
+    ? `<h3 style="margin-top:0">사용한 위협정보 스냅샷</h3>
+       <table><thead><tr><th>소스</th><th>상태</th><th class="num">수록</th>
+         <th class="num">해당</th><th>기준일</th></tr></thead><tbody>${
+        Object.entries(enrichment).map(([name, s]) => `<tr>
+          <td>${esc(name)}</td><td>${esc(s.state)}</td>
+          <td class="num">${s.entries ?? 0}</td><td class="num">${s.matched ?? 0}</td>
+          <td>${esc(s.snapshot_date || '-')}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="muted">위협정보 보강 없이 생성된 보고서입니다. EPSS·KEV·Exploit이 미확인으로 남아 있습니다.</p>';
+  $('#summary').classList.remove('hidden');
+
+  $('#findings').innerHTML = report.findings.map(renderFinding).join('');
+  $('#toc').innerHTML = report.findings.map((item, i) =>
+    `<li>${priorityPill(item.priority)}<a href="#f-${i + 1}">${esc(item.cve)}</a></li>`).join('');
+  $('#toc-card').classList.toggle('hidden', !report.findings.length);
+
+  if (provider.reportUrl) {
+    $('#dl-md').href = provider.reportUrl(scanId, 'markdown');
+    $('#dl-md').download = `sbomsight-${scanId}.md`;
+    $('#dl-html').href = provider.reportUrl(scanId, 'html');
+    $('#dl-html').download = `sbomsight-${scanId}.html`;
+  } else {
+    // 데모 모드에서는 서버 URL이 없으므로 브라우저에서 만들어 내려받게 한다.
+    for (const [sel, format, ext, type] of [
+      ['#dl-md', 'markdown', 'md', 'text/markdown'],
+      ['#dl-html', 'html', 'html', 'text/html'],
+    ]) {
+      const node = $(sel);
+      node.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const text = await provider.getReport(scanId, format);
+        const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
+        const anchor = Object.assign(document.createElement('a'),
+          { href: url, download: `sbomsight-${scanId}.${ext}` });
+        anchor.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+  }
+}
+
+$('#print').addEventListener('click', () => window.print());
+
+// --- 스캔 선택 --------------------------------------------------------------
+const picker = $('#pick-scan');
+let scans = [];
+try {
+  scans = (await provider.listScans()).scans || [];
+} catch (error) {
+  $('#banner').innerHTML = `<div class="banner danger">스캔 목록을 불러오지 못했습니다: ${esc(error.message)}</div>`;
+}
+
+if (!scans.length) {
+  $('#banner').innerHTML = `<div class="banner warn">
+    아직 스캔 기록이 없습니다. <a href="/scan.html">스캔 페이지</a>에서 SBOM을 올려 주세요.</div>`;
+  $('#meta-card').classList.add('hidden');
+} else {
+  picker.innerHTML = scans.map((s) =>
+    `<option value="${esc(s.scan_id)}">${esc(s.created_at)} · ${esc(s.metadata.sbom_filename || s.scan_id)}
+      (${s.finding_count}건)</option>`).join('');
+  const requested = params.get('scan');
+  picker.value = requested && scans.some((s) => s.scan_id === requested) ? requested : scans[0].scan_id;
+  picker.addEventListener('change', () => {
+    history.replaceState(null, '', `?scan=${encodeURIComponent(picker.value)}`);
+    load(picker.value).catch((error) => {
+      $('#banner').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+    });
+  });
+  try {
+    await load(picker.value);
+  } catch (error) {
+    $('#banner').innerHTML = `<div class="banner danger">보고서를 불러오지 못했습니다: ${esc(error.message)}</div>`;
+  }
+}
+</script>
+</body>
+</html>
