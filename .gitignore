@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# 로컬 설정 · 비밀값
+.env
+config/priority.local.json
+config/*.local.json
+
+# 로컬 데이터 (내부 자산 정보가 담길 수 있음 — 절대 커밋 금지)
+data/
+uploads/
+*.db
+*.sqlite3
+audit/
+
+# CI 생성물
+demo-data/vuln-index/
+demo-data/intel-snapshot.json
+dist/
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
