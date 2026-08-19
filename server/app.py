@@ -25,10 +25,14 @@ from core.cli import _load_scan_result
 from core.config import get_config
 from core.models import to_jsonable
 from core.policy import load as load_policy
+from core.audit import AuditLog
+from core.prompt import build_full_text
 from core.render import to_html, to_markdown
 from core.report import ReportBuilder
 from core.ruleengine import RuleEngine
+from core.sanitizer import EgressGuard
 from core.store import Store
+from core.vulnfact import build_batch
 
 from .jobs import JobRegistry
 from .pipeline import run_scan
@@ -214,8 +218,94 @@ def get_report(
 
 
 # ---------------------------------------------------------------------------
+# 이그레스 — AI로 나갈 내용을 사람이 먼저 본다
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/egress/policy")
+def egress_policy() -> dict[str, Any]:
+    """적용 중인 외부 전송 허용 정책 전문."""
+    guard = EgressGuard.from_config(config)
+    return {
+        "version": guard.policy.version,
+        "sha256": guard.policy.sha256,
+        "label": guard.policy.label,
+        "policy": guard.policy.data,
+    }
+
+
+@app.get("/api/scans/{scan_id}/egress/preview")
+def egress_preview(scan_id: str, limit: int = Query(0, ge=0, le=500)) -> dict[str, Any]:
+    """AI에게 전송될 내용 전체를 그대로 돌려준다.
+
+    "공개 데이터만 보냅니다"라는 주장은 검증할 수 있어야 의미가 있다.
+    실제 전송에 쓰이는 것과 **같은 조립기·같은 가드**를 통과시킨 결과와,
+    프롬프트 원문을 함께 낸다. 사람이 눈으로 확인한 뒤 보낼 수 있게 하기
+    위한 것이며, 이 호출 자체는 외부로 아무것도 보내지 않는다.
+    """
+    if _store().get_scan(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    result = _load_scan_result(scan_id)
+    guard = EgressGuard.from_config(config)
+    facts = build_batch(result.findings)
+    if limit:
+        facts = facts[:limit]
+
+    checked = guard.check(facts)
+
+    # 미리보기도 감사 로그에 남긴다 — 언제 무엇을 확인했는지가 기록되어야 한다.
+    AuditLog(config.audit_dir).record(
+        action="preview",
+        outcome="allowed" if checked.ok else "blocked",
+        facts=facts,
+        policy_version=guard.policy.version,
+        policy_sha256=guard.policy.sha256,
+        scan_id=scan_id,
+        violations=[v.to_dict() for v in checked.violations],
+    )
+
+    return {
+        "scan_id": scan_id,
+        "finding_count": len(result.findings),
+        "fact_count": len(facts),
+        "deduplicated": len(result.findings) - len(facts),
+        "ok": checked.ok,
+        "violations": [v.to_dict() for v in checked.violations],
+        "policy": {
+            "version": guard.policy.version,
+            "sha256": guard.policy.sha256,
+            "label": guard.policy.label,
+        },
+        "facts": facts,
+        "prompt": build_full_text(facts),
+        "would_send": config.ai_ready(),
+        "note": (
+            "이 내용이 AI에게 전달되는 전부입니다. 자산명·호스트명·IP·파일 경로·"
+            "설치 버전·취약 여부 판정·대응 우선순위는 포함되지 않습니다."
+        ),
+    }
+
+
+@app.get("/api/egress/audit")
+def egress_audit(limit: int = Query(50, ge=1, le=500)) -> dict[str, Any]:
+    """이그레스 감사 로그. 무엇이 언제 나갔는지(또는 차단됐는지)."""
+    return {"records": AuditLog(config.audit_dir).tail(limit=limit)}
+
+
+# ---------------------------------------------------------------------------
 # 정적 프론트엔드 — GitHub Pages 데모와 동일한 코드
 # ---------------------------------------------------------------------------
+
+POLICY_DIR = config.policy_dir
+RULES_DIR = config.rules_dir
+
+# 브라우저 가드(web/js/core/sanitizer.js)가 Python 가드와 **같은 정책 파일**을
+# 읽어야 한다. 사본을 두면 두 벌이 갈라지므로 원본을 그대로 노출한다.
+if POLICY_DIR.is_dir():
+    app.mount("/policy", StaticFiles(directory=POLICY_DIR), name="policy")
+if RULES_DIR.is_dir():
+    app.mount("/rules", StaticFiles(directory=RULES_DIR), name="rules")
 
 if WEB_DIR.is_dir():
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")

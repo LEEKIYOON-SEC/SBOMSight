@@ -204,6 +204,59 @@ class TestReportEndpoint:
         assert client.get(f"/api/scans/{seeded_scan}/report?format=pdf").status_code == 422
 
 
+class TestEgressEndpoints:
+    """'공개 데이터만 보냅니다'라는 주장은 검증할 수 있어야 의미가 있다."""
+
+    def test_policy_is_exposed(self, client):
+        body = client.get("/api/egress/policy").json()
+        assert body["version"]
+        assert len(body["sha256"]) == 64
+        assert "allowed_fields" in body["policy"]
+        assert "forbidden_patterns" in body["policy"]
+
+    def test_preview_returns_exactly_what_would_be_sent(self, client, seeded_scan):
+        body = client.get(f"/api/scans/{seeded_scan}/egress/preview").json()
+        assert body["ok"] is True
+        assert body["violations"] == []
+        assert body["fact_count"] > 0
+        assert body["prompt"]
+
+        allowed = set(client.get("/api/egress/policy").json()["policy"]["allowed_fields"])
+        for fact in body["facts"]:
+            assert set(fact) <= allowed
+
+    def test_preview_contains_no_internal_strings(self, client, seeded_scan):
+        body = client.get(f"/api/scans/{seeded_scan}/egress/preview").json()
+        payload = json.dumps(body["facts"], ensure_ascii=False)
+        # 요청 본문만 검사한다 — 시스템 지시문에는 "P0~P3 등급을 말하지 마십시오"
+        # 같은 가드 문구가 들어 있고 그것은 유출이 아니다.
+        request_body = body["prompt"].split("=== 요청 ===", 1)[-1]
+
+        for internal in ("5.6.0-2.el9", "/var/lib/rpm", "rocky:distro:rocky:9",
+                         "rpm-matcher", "1.2.11-40.el9", "cvss_critical"):
+            assert internal not in payload, f"facts에 {internal} 유출"
+            assert internal not in request_body, f"프롬프트에 {internal} 유출"
+
+    def test_preview_deduplicates(self, client, seeded_scan):
+        body = client.get(f"/api/scans/{seeded_scan}/egress/preview").json()
+        assert body["fact_count"] + body["deduplicated"] == body["finding_count"]
+
+    def test_preview_is_audited(self, client, seeded_scan):
+        client.get(f"/api/scans/{seeded_scan}/egress/preview")
+        records = client.get("/api/egress/audit").json()["records"]
+        assert records
+        assert records[0]["action"] == "preview"
+        assert records[0]["outcome"] == "allowed"
+        assert len(records[0]["payload_sha256"]) == 64
+
+    def test_preview_of_missing_scan_is_404(self, client):
+        assert client.get("/api/scans/nope/egress/preview").status_code == 404
+
+    def test_ai_is_off_so_nothing_would_be_sent(self, client, seeded_scan):
+        body = client.get(f"/api/scans/{seeded_scan}/egress/preview").json()
+        assert body["would_send"] is False
+
+
 class TestStaticFrontend:
     @pytest.mark.parametrize("path", ["/", "/scan.html", "/report.html", "/about.html"])
     def test_pages_are_served(self, client, path):
@@ -213,8 +266,9 @@ class TestStaticFrontend:
 
     @pytest.mark.parametrize(
         "path",
-        ["/js/core/model.js", "/js/core/ui.js", "/js/providers/live-api.js",
-         "/js/providers/index.js", "/css/app.css"],
+        ["/js/core/model.js", "/js/core/ui.js", "/js/core/sanitizer.js",
+         "/js/core/vulnfact.js", "/js/providers/live-api.js",
+         "/js/providers/index.js", "/css/app.css", "/favicon.svg"],
     )
     def test_assets_are_served(self, client, path):
         assert client.get(path).status_code == 200

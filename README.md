@@ -71,6 +71,54 @@ KEV 등재인데 공개 exploit이 없을 수 있고, 공개 PoC가 있는데 KE
 리포트에 적는다. 같은 이유로 EPSS를 못 받아왔을 때 0.0으로 채우지 않고,
 KEV 조회에 실패했을 때 "등재 안 됨"으로 처리하지 않는다.
 
+### 내부 정보는 나갈 자리가 없다
+
+AI로 나가는 것은 `VulnFact` 하나뿐이며, 조립 함수의 **시그니처**가 1차 방어다:
+
+```python
+def build_vuln_fact(advisory: AdvisoryPackage, intel: VulnIntel) -> dict
+```
+
+`InstalledPackage`(설치 버전·파일 경로), `FixAnalysis`(취약 여부 판정),
+`RuleVerdict`(대응 우선순위), `Detection`(탐지 근거)은 인자로 들어오지도 않는다.
+실수로 넣으려면 시그니처를 고쳐야 하고, 그러면 리뷰에서 보인다.
+
+2차 방어는 `policy/egress-policy.json`에 대고 하는 3중 검증이다:
+
+1. **스키마** — 모든 키가 허용 목록에 있는가, 금칙 필드명이 아닌가
+2. **값** — 타입·범위·enum·정규식·길이를 통과하는가
+3. **금칙 패턴** — IP · 파일 경로 · 이메일 · MAC · UUID · 내부 도메인 · 컨테이너 다이제스트 ·
+   한글 · 자격증명 흔적이 없는가
+
+하나라도 걸리면 **전송을 중단한다**(fail-closed). "문제 있는 항목만 빼고 나머지를
+보낸다"를 하지 않는 이유는, 무엇이 어떻게 새려 했는지 모르는 상태에서 나머지가
+안전하다고 볼 근거가 없기 때문이다.
+
+같은 정책 파일을 브라우저 가드(`web/js/core/sanitizer.js`)도 읽으며, 두 구현은
+`policy/egress-test-vectors.json`의 **같은 벡터 74건**으로 채점받는다.
+정책 해시가 양쪽에서 일치하는지도 확인한다.
+
+전송 전에 사람이 전문을 볼 수 있다 — 스캔 화면의 **"AI에게 전송될 내용 보기"** 는
+실제 전송에 쓰이는 것과 같은 조립기·같은 가드를 통과시킨 결과와 프롬프트 원문을
+그대로 보여 준다. 모든 전송 시도(성공·차단 모두)는 payload 원문·SHA-256·정책
+해시와 함께 감사 로그에 남는다.
+
+### AI는 설명만 한다
+
+AI 응답을 담는 `Narrative`에는 우선순위를 담을 자리가 **타입 수준에서** 없다.
+모델이 등급을 우겨넣어도 병합 단계에서 버려진다. 패치 명령도 AI가 만들지 않는다.
+
+프롬프트 제약만으로는 부족하므로 생성 후 `rules/tone-policy.json`으로 다시 점검한다:
+
+| 걸리는 표현 | 이유 |
+|---|---|
+| "귀사의 WEB 서버는 매우 위험합니다" | AI는 조직·자산 정보를 받지 않았다 |
+| "해당 서버는 반드시 패치해야 합니다" | 최종 조치 여부는 담당자가 판단한다 |
+| "이 취약점은 P0 등급에 해당합니다" | 등급은 로컬 룰 엔진의 산출물이다 |
+| "`dnf upgrade openssl`을 실행하십시오" | 실행 절차는 플레이북이 결정론적으로 생성한다 |
+
+위반한 서술은 리포트에 싣지 않고 룰 문장으로 되돌린다.
+
 ### 대응 검토 우선순위는 조직이 정한다
 
 `rules/priority.json`은 **기본 정책**이다. `config/priority.local.json`으로
@@ -93,7 +141,7 @@ P0  ←  발화 룰: CISA KEV 등재, EPSS 높음 (0.9134 ≥ 0.5), CVSS High �
 | M2 | 위협정보 보강 (EPSS · KEV · Exploit) + Rule Engine | ✅ |
 | M3 | 리포트 생성 (AI 없이 완결) | ✅ |
 | M4 | 웹 서버 + 공용 UI | ✅ |
-| M5 | 이그레스 가드 + AI 산문 계층 | 진행 예정 |
+| M5 | 이그레스 가드 + AI 산문 계층 | ✅ |
 | M6 | 브라우저 매칭 엔진 + GitHub Pages 데모 | 진행 예정 |
 | M7 | 마감 (문서 · 패키징) | 진행 예정 |
 
@@ -126,7 +174,11 @@ python3 -m core.cli report findings.json --format html -o report.html
 # 6. 저장된 스캔 목록
 python3 -m core.cli scans
 
-# 7. 웹 UI
+# 7. AI 서술 사용 (선택). 기본값은 미사용이며, AI 없이도 보고서는 완결된다.
+export SBOMSIGHT_AI_ENABLED=1 GEMINI_API_KEY=...
+python3 -m core.cli report findings.json --ai -o report.md
+
+# 8. 웹 UI
 scripts/run-server.sh          # Linux / macOS  → http://127.0.0.1:8000
 scripts/run-server.ps1         # Windows 11
 ```
@@ -210,8 +262,11 @@ AI가 없거나 꺼져 있어도 실행 가능한 권고가 항상 나와야 하
 
 ```bash
 python3 -m pip install -r requirements-dev.txt
-python3 -m pytest
+scripts/test.sh          # Python + JavaScript 양쪽
 ```
+
+이그레스 가드는 두 언어로 구현되어 있고 같은 정책·같은 벡터로 채점받는다.
+한쪽만 돌리면 두 구현이 갈라진 것을 잡지 못한다.
 
 rpm 버전 비교는 rpm 프로젝트의 `rpmvercmp` 테스트 스위트 벡터로 검증한다
 (`tests/test_versioning.py`). 이 비교가 틀리면 FixAnalysis가 틀리고, 그것은 곧

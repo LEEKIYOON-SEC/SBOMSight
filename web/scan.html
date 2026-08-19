@@ -76,6 +76,7 @@
         <input type="search" id="filter-text" placeholder="CVE 또는 패키지 검색">
         <div class="spacer"></div>
         <span class="faint" id="count"></span>
+        <button id="egress-btn">AI에게 전송될 내용 보기</button>
         <a class="btn" id="dl-md" target="_blank" rel="noopener">보고서 (Markdown)</a>
         <a class="btn primary" id="dl-html" target="_blank" rel="noopener">보고서 (HTML)</a>
       </div>
@@ -91,6 +92,16 @@
     </div>
   </section>
 </main>
+
+<!-- 이그레스 미리보기 -->
+<div class="drawer-backdrop" id="egress-backdrop"></div>
+<aside class="drawer" id="egress-drawer" aria-hidden="true">
+  <header>
+    <h2>AI에게 전송될 내용 전체</h2>
+    <button class="close" id="egress-close">닫기</button>
+  </header>
+  <div class="body" id="egress-body"></div>
+</aside>
 
 <div class="drawer-backdrop" id="backdrop"></div>
 <aside class="drawer" id="drawer" aria-hidden="true">
@@ -241,6 +252,7 @@ async function loadResults(scanId) {
     $('#dl-md').classList.add('hidden');
     $('#dl-html').classList.add('hidden');
   }
+  $('#egress-btn').classList.toggle('hidden', !provider.egressPreview);
 
   $('#result').classList.remove('hidden');
   applyFilters();
@@ -305,6 +317,72 @@ function closeDrawer() {
 $('#drawer-close').addEventListener('click', closeDrawer);
 $('#backdrop').addEventListener('click', closeDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+
+// --- 이그레스 미리보기 -------------------------------------------------------
+// "공개 데이터만 보냅니다"라는 주장은 검증할 수 있어야 의미가 있다.
+// 실제 전송에 쓰이는 것과 같은 조립기·같은 가드를 통과시킨 결과를 그대로 보여 준다.
+$('#egress-btn').addEventListener('click', async () => {
+  if (!state.scanId || !provider.egressPreview) return;
+  const body = $('#egress-body');
+  body.innerHTML = '<p class="muted">조립하고 검증하는 중…</p>';
+  openEgress();
+
+  try {
+    const preview = await provider.egressPreview(state.scanId);
+    const verdict = preview.ok
+      ? `<div class="banner info"><b>검증 통과</b> — 아래 내용이 전송 대상입니다.
+           적용 정책 <span class="mono">${esc(preview.policy.label)}</span></div>`
+      : `<div class="banner danger"><b>전송 차단</b> — 이그레스 정책 위반이 발견되어
+           이 상태로는 전송되지 않습니다.</div>`;
+
+    const violations = preview.violations.length
+      ? `<div class="callout"><ul>${preview.violations
+          .map((v) => `<li><code>${esc(v.rule)}</code> @ <span class="mono">${esc(v.path)}</span>
+             — ${esc(v.reason)}${v.sample ? ` <span class="mono">(${esc(v.sample)})</span>` : ''}</li>`)
+          .join('')}</ul></div>`
+      : '';
+
+    body.innerHTML = `
+      ${verdict}
+      ${violations}
+      <table class="kv">
+        <tr><th>탐지 건수</th><td>${preview.finding_count}건</td></tr>
+        <tr><th>전송 대상</th><td>${preview.fact_count}건
+          ${preview.deduplicated > 0
+            ? `<span class="faint">(중복 ${preview.deduplicated}건 제외 — 중복 수는 곧 자산 규모라 내보내지 않습니다)</span>`
+            : ''}</td></tr>
+        <tr><th>AI 사용 설정</th><td>${preview.would_send ? '사용 가능' : '미사용 (기본값)'}</td></tr>
+      </table>
+      <div class="callout">${esc(preview.note)}</div>
+
+      <div class="section">
+        <h3>전송될 데이터 (VulnFact)</h3>
+        <pre class="step-cmd" style="max-height:22rem;overflow:auto">${esc(JSON.stringify(preview.facts, null, 2))}</pre>
+      </div>
+
+      <div class="section">
+        <h3>프롬프트 원문</h3>
+        <p class="muted">시스템 지시와 요청 본문 전체입니다. 여기 없는 것은 전송되지 않습니다.</p>
+        <pre class="step-cmd" style="max-height:26rem;overflow:auto">${esc(preview.prompt)}</pre>
+      </div>`;
+  } catch (error) {
+    body.innerHTML = `<div class="banner danger">미리보기를 불러오지 못했습니다: ${esc(error.message)}</div>`;
+  }
+});
+
+function openEgress() {
+  $('#egress-drawer').classList.add('open');
+  $('#egress-drawer').setAttribute('aria-hidden', 'false');
+  $('#egress-backdrop').classList.add('open');
+}
+function closeEgress() {
+  $('#egress-drawer').classList.remove('open');
+  $('#egress-drawer').setAttribute('aria-hidden', 'true');
+  $('#egress-backdrop').classList.remove('open');
+}
+$('#egress-close').addEventListener('click', closeEgress);
+$('#egress-backdrop').addEventListener('click', closeEgress);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEgress(); });
 
 // --- 링크로 들어온 경우 -----------------------------------------------------
 const requested = new URLSearchParams(location.search).get('scan');

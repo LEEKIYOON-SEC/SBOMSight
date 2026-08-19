@@ -71,4 +71,17 @@ export const liveApiProvider = {
   reportUrl(scanId, format) {
     return `/api/scans/${encodeURIComponent(scanId)}/report?format=${format}`;
   },
+
+  /**
+   * AI에게 전송될 내용 전체. 실제 전송에 쓰이는 것과 같은 조립기·같은 가드를
+   * 통과시킨 결과를 돌려주며, 이 호출 자체는 외부로 아무것도 보내지 않는다.
+   */
+  async egressPreview(scanId, { limit = 0 } = {}) {
+    const query = limit ? `?limit=${limit}` : '';
+    return (await request(`/api/scans/${encodeURIComponent(scanId)}/egress/preview${query}`)).json();
+  },
+
+  async egressPolicy() {
+    return (await request('/api/egress/policy')).json();
+  },
 };

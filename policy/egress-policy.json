@@ -1,0 +1,158 @@
+{
+  "version": "1",
+  "updated": "2026-08-19",
+  "title": "외부 전송 허용 정책 (Egress Policy)",
+
+  "notice": [
+    "이 파일은 AI로 나갈 수 있는 것의 유일한 정의다. Python 가드(core/sanitizer.py)와",
+    "JS 가드(web/js/core/sanitizer.js)가 같은 파일을 읽으며, policy/egress-test-vectors.json",
+    "으로 두 구현의 동치성을 검증한다.",
+    "",
+    "핵심은 '거르기'가 아니라 '조립'이다. core/vulnfact.py 는 공개 계층",
+    "(AdvisoryPackage · VulnIntel)에서 허용 필드만 명시적으로 새 객체에 옮겨 담으며,",
+    "로컬 계층(InstalledPackage · FixAnalysis · RuleVerdict · Detection)은 함수",
+    "시그니처에 들어오지도 않는다. 아래 검증은 그 조립이 어긋났을 때를 대비한 2차 방어다.",
+    "",
+    "검증에 하나라도 걸리면 전송을 중단한다(fail-closed). 의심스러우면 보내지 않는다.",
+    "",
+    "정규식 주의: Python과 JavaScript가 같은 패턴을 컴파일해야 하므로 (?i) 같은",
+    "인라인 플래그를 쓰지 않는다. 대소문자 무시는 flags: \"i\" 로 표기한다."
+  ],
+
+  "allowed_fields": {
+    "cve": {
+      "type": "string", "required": true,
+      "pattern": "^(CVE-\\d{4}-\\d{4,}|GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}|[A-Z]{2,10}-\\d{4}[:-]\\d+)$",
+      "max_length": 64,
+      "note": "CVE ID. advisory ID(GHSA/RHSA/ELSA 등)도 공개 식별자이므로 허용한다."
+    },
+    "cvss_score": { "type": "number", "nullable": true, "min": 0, "max": 10 },
+    "cvss_vector": {
+      "type": "string", "nullable": true, "max_length": 160,
+      "pattern": "^(CVSS:[2-4]\\.[0-9]/[A-Z]{1,3}:[A-Z](/[A-Z]{1,3}:[A-Z])*)?$"
+    },
+    "cvss_version": { "type": "string", "nullable": true, "enum": ["", "2.0", "3.0", "3.1", "4.0"] },
+    "severity": {
+      "type": "string", "nullable": true,
+      "enum": ["critical", "high", "medium", "low", "negligible", "unknown"]
+    },
+    "cwe": {
+      "type": "array", "max_items": 20,
+      "items": { "type": "string", "pattern": "^CWE-\\d{1,5}$", "max_length": 16 }
+    },
+    "epss": { "type": "number", "nullable": true, "min": 0, "max": 1 },
+    "epss_percentile": { "type": "number", "nullable": true, "min": 0, "max": 1 },
+    "epss_snapshot_date": { "type": "string", "nullable": true, "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$" },
+    "kev": { "type": "string", "enum": ["true", "false", "unknown"] },
+    "kev_date_added": { "type": "string", "nullable": true, "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$" },
+    "kev_ransomware_use": { "type": "string", "nullable": true, "enum": ["", "Known", "Unknown"] },
+    "exploit_available": { "type": "string", "enum": ["true", "false", "unknown"] },
+    "exploit_maturity": { "type": "string", "enum": ["none", "public_poc", "weaponized", "unknown"] },
+    "exploit_sources": {
+      "type": "array", "max_items": 20,
+      "items": {
+        "type": "object",
+        "fields": {
+          "source": { "type": "string", "enum": ["exploit_db", "metasploit", "github_poc", "nuclei"] },
+          "ref": { "type": "string", "max_length": 200, "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._/@:-]*$" }
+        },
+        "note": "note 필드는 외부 저장소가 채운 자유 텍스트라 전달하지 않는다. 출처 식별자만 보낸다."
+      }
+    },
+    "advisory_package": {
+      "type": "string", "required": true, "max_length": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+@/-]*$",
+      "note": "공개 advisory가 지목한 패키지/제품 식별자. 우리 자산에 설치된 패키지가 아니다."
+    },
+    "advisory_ecosystem": { "type": "string", "nullable": true, "max_length": 32, "pattern": "^[a-z0-9-]*$" },
+    "affected_version_range": {
+      "type": "string", "nullable": true, "max_length": 300,
+      "pattern": "^[A-Za-z0-9 .,:*<>=!|~^+_()\\[\\]-]*$",
+      "note": "advisory가 공표한 영향 버전범위. 자산의 설치 버전이 아니다."
+    },
+    "fixed_version": {
+      "type": "string", "nullable": true, "max_length": 120,
+      "pattern": "^[A-Za-z0-9 .:~^+_-]*$",
+      "note": "advisory가 공표한 수정 버전. 자산의 설치 버전이 아니다."
+    },
+    "os_family": { "type": "string", "nullable": true, "max_length": 32, "pattern": "^[a-z0-9-]*$" },
+    "published": { "type": "string", "nullable": true, "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$" }
+  },
+
+  "forbidden_field_names": [
+    "installed_version", "installed_package", "installed", "version",
+    "locations", "location", "path", "paths", "filepath", "purl", "cpe", "cpes",
+    "hostname", "host", "fqdn", "ip", "ip_address", "address", "mac",
+    "asset", "asset_id", "asset_name", "department", "owner", "user", "username",
+    "registry", "image", "image_tag", "repository", "namespace",
+    "priority", "priority_reasons", "fired_rules", "flags", "verdict",
+    "is_vulnerable", "update_available", "fix_state", "version_gap", "comparator",
+    "sbom", "sbom_ref", "components", "packages", "finding_count", "affected_assets",
+    "detection", "matcher", "search_criteria", "scan_id", "description", "references", "note"
+  ],
+
+  "forbidden_patterns": [
+    {
+      "name": "ipv4",
+      "pattern": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b",
+      "reason": "IP 주소는 내부 네트워크 구조를 드러낸다"
+    },
+    {
+      "name": "ipv6",
+      "pattern": "(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}",
+      "reason": "IPv6 주소는 내부 네트워크 구조를 드러낸다"
+    },
+    {
+      "name": "posix_path",
+      "pattern": "(^|[\\s\"'=(])/(?:usr|etc|var|opt|home|root|srv|mnt|media|proc|tmp|app|data|bin|lib|sbin|boot)(/|\\b)",
+      "reason": "파일 시스템 경로는 자산 구성을 드러낸다"
+    },
+    {
+      "name": "windows_path",
+      "pattern": "(?:[A-Za-z]:\\\\|\\\\\\\\[A-Za-z0-9_.-]+\\\\)",
+      "reason": "Windows 경로·UNC 공유는 자산 구성을 드러낸다"
+    },
+    {
+      "name": "email",
+      "pattern": "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
+      "reason": "이메일 주소는 담당자를 식별한다"
+    },
+    {
+      "name": "mac_address",
+      "pattern": "\\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\\b",
+      "reason": "MAC 주소는 장비를 식별한다"
+    },
+    {
+      "name": "uuid",
+      "pattern": "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b",
+      "reason": "UUID는 내부 자산·이미지 식별자일 수 있다"
+    },
+    {
+      "name": "internal_hostname",
+      "pattern": "[A-Za-z0-9-]+\\.(?:local|internal|intra|corp|lan|home|priv|test|example)\\b",
+      "reason": "내부 도메인은 조직 네트워크를 드러낸다"
+    },
+    {
+      "name": "container_digest",
+      "pattern": "\\bsha256:[0-9a-f]{32,64}\\b",
+      "reason": "이미지 다이제스트는 내부 빌드 산출물을 식별한다"
+    },
+    {
+      "name": "hangul",
+      "pattern": "[\\uAC00-\\uD7A3\\u1100-\\u11FF\\u3130-\\u318F]",
+      "reason": "공개 취약점 데이터는 영문이다. 한글은 내부에서 기입된 값일 가능성이 높다"
+    },
+    {
+      "name": "credential_like",
+      "pattern": "\\b(?:password|passwd|secret|api[_-]?key|token|bearer|authorization)\\b\\s*[:=]",
+      "flags": "i",
+      "reason": "자격증명으로 보이는 값은 어떤 경우에도 전송하지 않는다"
+    }
+  ],
+
+  "limits": {
+    "max_facts_per_request": 25,
+    "max_payload_bytes": 262144,
+    "note": "한 요청에 담기는 VulnFact 수와 전체 크기를 제한한다. 대량 전송은 그 자체로 내부 규모를 드러낸다."
+  }
+}
