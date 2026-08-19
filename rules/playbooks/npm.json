@@ -1,0 +1,46 @@
+{
+  "ecosystem": "npm",
+  "label": "Node.js (npm)",
+  "recommended_action": "{package}를 {fixed_version} 이상으로 올리고 lockfile을 갱신",
+  "recommended_action_no_fix": "{package}에 대해 공개된 수정 버전이 없다. 대체 패키지 또는 아래 완화 방안 검토가 필요하다.",
+
+  "precheck": [
+    "직접 의존성인지 전이 의존성인지 확인: npm ls {package}",
+    "수정 버전이 major 변경을 포함하는지 확인 (호환성 영향 파악)",
+    "lockfile(package-lock.json / yarn.lock)이 형상관리에 포함되어 있는지 확인"
+  ],
+
+  "online": {
+    "title": "인터넷 연결 환경",
+    "steps": [
+      "직접 의존성이면:  npm install {package}@{fixed_version}",
+      "전이 의존성이면:  npm audit fix   또는 package.json의 overrides로 버전 고정",
+      "lockfile 갱신 후 빌드·테스트 수행"
+    ]
+  },
+
+  "airgapped": {
+    "title": "폐쇄망 환경",
+    "note": "사내 레지스트리 미러가 있으면 그쪽에 먼저 반영하고, 없으면 tarball을 반입한다.",
+    "steps": [
+      "인터넷 가능 구간에서 패키지 tarball을 확보한다:\n    npm pack {package}@{fixed_version}",
+      "매체로 반입한다.",
+      "무결성을 확인한다 (integrity 해시를 레지스트리 메타데이터와 대조).",
+      "사내 레지스트리에 게시하거나, 로컬 tarball로 설치한다:\n    npm install ./{package}-{fixed_version}.tgz",
+      "lockfile을 갱신하고 빌드·테스트를 수행한다."
+    ]
+  },
+
+  "verification": [
+    "설치 버전 확인: npm ls {package}   (기대값: {fixed_version} 이상)",
+    "lockfile에 이전 버전이 남아 있지 않은지 확인",
+    "SBOM 재생성 후 재스캔해 해당 CVE가 사라졌는지 확인"
+  ],
+
+  "mitigation_when_no_fix": [
+    "해당 패키지를 사용하는 코드 경로가 실제로 실행되는지 확인하고, 아니라면 의존성 제거를 검토한다.",
+    "대체 패키지로의 전환을 검토한다.",
+    "취약한 입력이 도달하지 못하도록 상위 계층에서 입력 검증·정규화를 적용한다.",
+    "업스트림 이슈 트래커를 구독해 수정 공개 시점을 파악한다."
+  ]
+}

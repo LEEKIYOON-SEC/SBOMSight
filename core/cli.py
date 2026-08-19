@@ -21,8 +21,10 @@ from . import grype_runner, sbom as sbom_mod, syft_runner
 from .enrich import Enricher
 from .ruleengine import RuleEngine, sort_key
 from .config import get_config
-from .models import Priority, ScanResult, to_jsonable
+from .models import Finding, Priority, ScanResult, to_jsonable
 from .normalize import normalize_grype_report
+from .render import to_html, to_markdown
+from .report import ReportBuilder
 from .store import Store
 
 
@@ -172,6 +174,143 @@ def _print_summary(result, engine, component_count: int) -> None:
     print(f"  적용 정책: {result.policy.get('label', '')}", file=sys.stderr)
 
 
+def _load_scan_result(source: str) -> ScanResult:
+    """findings.json(스캔 산출물) 또는 저장된 scan_id에서 ScanResult를 복원한다."""
+    from .models import (
+        AdvisoryPackage, Detection, ExploitMaturity, ExploitSource, FiredRule,
+        FixAnalysis, FixState, InstalledPackage, Priority, RuleVerdict,
+        ScanMetadata, Severity, Ternary, VersionGap, VulnIntel,
+    )
+
+    path = Path(source)
+    if path.is_file():
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    else:
+        stored = Store(get_config().db_path).get_scan(source)
+        if stored is None:
+            raise FileNotFoundError(f"파일도 스캔 ID도 아닙니다: {source}")
+        payload = {
+            "metadata": stored["metadata"],
+            "findings": stored["findings"],
+            "enrichment": {},
+            "policy": {},
+        }
+
+    def revive(f: dict) -> Finding:
+        inst, adv, intel = f["installed"], f["advisory"], f["intel"]
+        det = f.get("detection") or {}
+        fix = f.get("fix")
+        verdict = f.get("verdict")
+        return Finding(
+            installed=InstalledPackage(
+                name=inst["name"], version=inst["version"], type=inst.get("type", ""),
+                purl=inst.get("purl", ""), cpes=tuple(inst.get("cpes", ())),
+                locations=tuple(inst.get("locations", ())), language=inst.get("language", ""),
+                sbom_ref=inst.get("sbom_ref", ""),
+            ),
+            advisory=AdvisoryPackage(
+                advisory_package=adv["advisory_package"],
+                advisory_ecosystem=adv.get("advisory_ecosystem", ""),
+                affected_version_range=adv.get("affected_version_range", ""),
+                fixed_version=adv.get("fixed_version", ""),
+                fix_state=FixState(adv.get("fix_state", "unknown")),
+                os_family=adv.get("os_family", ""),
+            ),
+            intel=VulnIntel(
+                cve=intel["cve"], aliases=tuple(intel.get("aliases", ())),
+                severity=Severity(intel.get("severity", "unknown")),
+                cvss_score=intel.get("cvss_score"), cvss_vector=intel.get("cvss_vector", ""),
+                cvss_version=intel.get("cvss_version", ""), cwe=tuple(intel.get("cwe", ())),
+                description=intel.get("description", ""), published=intel.get("published", ""),
+                references=tuple(intel.get("references", ())),
+                epss=intel.get("epss"), epss_percentile=intel.get("epss_percentile"),
+                epss_snapshot_date=intel.get("epss_snapshot_date", ""),
+                kev=Ternary(intel.get("kev", "unknown")),
+                kev_date_added=intel.get("kev_date_added", ""),
+                kev_ransomware_use=intel.get("kev_ransomware_use", ""),
+                kev_snapshot_date=intel.get("kev_snapshot_date", ""),
+                exploit_available=Ternary(intel.get("exploit_available", "unknown")),
+                exploit_maturity=ExploitMaturity(intel.get("exploit_maturity", "unknown")),
+                exploit_sources=tuple(
+                    ExploitSource(source=s["source"], ref=s.get("ref", ""), note=s.get("note", ""))
+                    for s in intel.get("exploit_sources", ())
+                ),
+            ),
+            detection=Detection(
+                matcher=det.get("matcher", ""), match_type=det.get("match_type", ""),
+                namespace=det.get("namespace", ""), search_criteria=det.get("search_criteria", {}),
+            ),
+            fix=FixAnalysis(
+                installed_version=fix["installed_version"], fixed_version=fix.get("fixed_version", ""),
+                comparator=fix.get("comparator", "generic"),
+                is_vulnerable=Ternary(fix.get("is_vulnerable", "unknown")),
+                update_available=Ternary(fix.get("update_available", "unknown")),
+                fix_state=FixState(fix.get("fix_state", "unknown")),
+                version_gap=VersionGap(fix.get("version_gap", "unknown")),
+                reason=fix.get("reason", ""),
+            ) if fix else None,
+            verdict=RuleVerdict(
+                priority=Priority(verdict["priority"]),
+                fired_rules=tuple(
+                    FiredRule(name=r["name"], explain=r.get("explain", ""))
+                    for r in verdict.get("fired_rules", ())
+                ),
+                flags=tuple(verdict.get("flags", ())),
+                policy_version=verdict.get("policy_version", ""),
+                policy_sha256=verdict.get("policy_sha256", ""),
+            ) if verdict else None,
+        )
+
+    meta = payload["metadata"]
+    return ScanResult(
+        metadata=ScanMetadata(**{k: v for k, v in meta.items() if k in ScanMetadata.__dataclass_fields__}),
+        findings=tuple(revive(f) for f in payload.get("findings", ())),
+        enrichment=payload.get("enrichment") or {},
+        policy=payload.get("policy") or {},
+    )
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    """스캔 결과를 대응 검토 보고서로 옮긴다.
+
+    --no-ai(기본값)로도 보고서는 완결된다. AI는 ②④의 서술을 더 읽기 좋게
+    바꿀 뿐이며, 없으면 룰 기반 문장이 그 자리를 채운다.
+    """
+    config = get_config()
+    result = _load_scan_result(args.source)
+
+    narratives = None
+    if args.ai:
+        if not config.ai_ready():
+            print(
+                "경고: --ai를 지정했으나 SBOMSIGHT_AI_ENABLED/GEMINI_API_KEY가 없어 "
+                "룰 기반 서술로 진행합니다.",
+                file=sys.stderr,
+            )
+        else:
+            from .ai_narrative import generate_narratives   # M5에서 추가된다
+            narratives = generate_narratives(result.findings, config=config)
+
+    report = ReportBuilder(config).build(result, narratives=narratives)
+    text = to_html(report) if args.format == "html" else to_markdown(report)
+
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+        print(f"저장: {args.output}", file=sys.stderr)
+    else:
+        sys.stdout.write(text)
+
+    summary = report.summary
+    print(
+        f"\n보고서 생성 완료 — {summary['total']}건 "
+        f"(P0 {summary['by_priority']['P0']} · P1 {summary['by_priority']['P1']} · "
+        f"P2 {summary['by_priority']['P2']} · P3 {summary['by_priority']['P3']}), "
+        f"서술: {'AI' if report.ai_used else '룰 기반'}",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def _cmd_scans(args: argparse.Namespace) -> int:
     store = Store(get_config().db_path)
     for row in store.list_scans(limit=args.limit):
@@ -209,6 +348,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_analyze.add_argument("--offline", action="store_true")
     p_analyze.add_argument("--nvd-budget", type=int, default=40)
     p_analyze.set_defaults(func=_cmd_analyze)
+
+    p_report = sub.add_parser("report", help="스캔 결과를 대응 검토 보고서로 생성")
+    p_report.add_argument("source", help="findings.json 경로 또는 저장된 스캔 ID")
+    p_report.add_argument("-o", "--output")
+    p_report.add_argument("--format", choices=("markdown", "html"), default="markdown")
+    p_report.add_argument(
+        "--ai", action="store_true",
+        help="AI 서술 사용 (기본은 미사용). 공개 취약점 데이터만 전달되며 "
+             "자산 정보·설치 버전·판정 결과는 전달되지 않는다",
+    )
+    p_report.add_argument("--no-ai", dest="ai", action="store_false", help="AI 미사용 (기본값)")
+    p_report.set_defaults(func=_cmd_report, ai=False)
 
     p_scans = sub.add_parser("scans", help="저장된 스캔 목록")
     p_scans.add_argument("--limit", type=int, default=20)

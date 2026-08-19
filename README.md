@@ -91,7 +91,7 @@ P0  ←  발화 룰: CISA KEV 등재, EPSS 높음 (0.9134 ≥ 0.5), CVSS High �
 |---|---|---|
 | M1 | 코어 파이프라인 + 데이터 모델 3층 분리 | ✅ |
 | M2 | 위협정보 보강 (EPSS · KEV · Exploit) + Rule Engine | ✅ |
-| M3 | 리포트 생성 (AI 없이 완결) | 진행 예정 |
+| M3 | 리포트 생성 (AI 없이 완결) | ✅ |
 | M4 | 웹 서버 + 공용 UI | 진행 예정 |
 | M5 | 이그레스 가드 + AI 산문 계층 | 진행 예정 |
 | M6 | 브라우저 매칭 엔진 + GitHub Pages 데모 | 진행 예정 |
@@ -119,9 +119,50 @@ python3 -m core.cli analyze grype-report.json -o findings.json
 # 네트워크 없이 캐시된 스냅샷만 사용
 python3 -m core.cli scan sbom.cdx.json --offline
 
-# 5. 저장된 스캔 목록
+# 5. 보고서 생성 — AI 없이도 완결된다
+python3 -m core.cli report findings.json -o report.md
+python3 -m core.cli report findings.json --format html -o report.html
+
+# 6. 저장된 스캔 목록
 python3 -m core.cli scans
 ```
+
+### 보고서 구성
+
+CVE 단위로 6개 절 + 로컬 전용 영역:
+
+| 절 | 내용 | 출처 |
+|---|---|---|
+| ① 취약점 개요 | CVE · 취약 제품 · 취약 버전 · Fixed Version · CWE · CVSS | 공개 |
+| ② 기술적 위험성 | 공격 조건 · 영향 유형 (CVSS 벡터·CWE 해석) | 룰 + (선택) AI |
+| ③ 악용 가능성 | EPSS · KEV · 공개 Exploit **(출처 포함)** | 공개 |
+| ④ 대응 필요성 분석 | 종합 근거 · 권고 우선순위 **+ 발화 룰** | 우선순위=룰, 서술=AI |
+| ⑤ 권고사항 | Fixed Version · 온라인/폐쇄망 패치 절차 · 임시 완화 | Playbook(룰) |
+| ⑥ 근거 및 Reference | NVD · CISA KEV · Vendor Advisory · FIRST EPSS · exploit 출처 | 공개 |
+| **[로컬 분석 정보]** | 설치 버전 · FixAnalysis · Grype 탐지 근거 | **AI 미전달** |
+
+모든 CVE 항목에 근거 배지가 고정 노출된다:
+
+```
+CVSS         : 10 / Critical (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+EPSS         : 0.9134 · 백분위 0.9991 · 기준일 2026-08-18
+CISA KEV     : YES (등재 2024-03-29)
+공개 Exploit : YES (무기화 · Exploit-DB EDB-52128, Metasploit exploit/linux/local/xz)
+Fixed Version: 5.6.2
+판정          : P0 즉시 대응 검토 ← kev_listed
+적용 정책     : priority.json v1 (sha256:4e70371ff604)
+```
+
+### 패치 절차는 AI가 아니라 룰이 만든다
+
+`rules/playbooks/*.json`이 생태계별 절차를 결정론적으로 생성한다. 이유는 두 가지다:
+AI가 없거나 꺼져 있어도 실행 가능한 권고가 항상 나와야 하고, 운영 서버에 입력될
+명령어를 생성 모델에 맡기면 환각의 대가가 너무 크다. AI는 절차를 만들지 않고
+**왜 이 조치가 필요한지를 설명**할 뿐이다.
+
+폐쇄망 절차(RPM 예시)는 실제 운영 방식을 그대로 담았다 —
+`dnf download --resolve --alldeps` → 매체 반입 → `rpm -K` 서명 검증 →
+`dnf localinstall` 또는 `createrepo_c` 로컬 저장소 구성 → `rpm -q` 및 Grype 재스캔.
 
 ### 위협정보 소스
 
