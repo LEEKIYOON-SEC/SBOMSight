@@ -52,18 +52,45 @@ AI는 우선순위를 산출하지도, 입력으로 받지도 않는다.
 
 외부로 나가는 것은 `VulnFact` 하나뿐이며, 이는 공개 계층에서만 조립된다.
 
+### KEV와 Exploit은 별개 신호
+
+| 신호 | 의미 | 출처 |
+|---|---|---|
+| `kev` | CISA가 **실제 악용을 확인**해 등재 | CISA KEV 카탈로그 |
+| `exploit_available` | **공개된 exploit/PoC 코드가 존재** | Exploit-DB, Metasploit |
+
+KEV 등재인데 공개 exploit이 없을 수 있고, 공개 PoC가 있는데 KEV에는 없을 수도
+있다. 두 신호는 Rule Engine에서 독립 조건으로 평가한다. 모든 exploit 판정에는
+`exploit_sources`로 출처가 따라붙으며, 출처를 댈 수 없으면 `false`가 아니라
+`unknown`이다.
+
 ### 판단할 수 없으면 `unknown`
 
 비표준 버전 문자열을 만났을 때 "취약하지 않음"이라고 답하는 것은 거짓말이고,
 그 거짓말은 패치 누락으로 이어진다. 비교 불가는 `unknown`으로 남기고 사유를
-리포트에 적는다.
+리포트에 적는다. 같은 이유로 EPSS를 못 받아왔을 때 0.0으로 채우지 않고,
+KEV 조회에 실패했을 때 "등재 안 됨"으로 처리하지 않는다.
+
+### 대응 검토 우선순위는 조직이 정한다
+
+`rules/priority.json`은 **기본 정책**이다. `config/priority.local.json`으로
+임계값을 덮어쓸 수 있고(gitignore 대상), 리포트에는 적용된 정책의 버전과
+sha256이 기록되어 "어떤 기준으로 판정했는지"를 사후에 추적할 수 있다.
+
+```
+P0  ←  발화 룰: CISA KEV 등재, EPSS 높음 (0.9134 ≥ 0.5), CVSS High 이상 (10 ≥ 7)
+       적용 정책: priority.json v1 (sha256:4e70371ff604)
+```
+
+명칭은 "위험도"가 아니라 **"대응 검토 우선순위"** 다. 최종적인 내부 위험도와
+패치 여부는 보안담당자가 판단한다.
 
 ## 현재 상태
 
 | 마일스톤 | 내용 | 상태 |
 |---|---|---|
 | M1 | 코어 파이프라인 + 데이터 모델 3층 분리 | ✅ |
-| M2 | 위협정보 보강 (EPSS · KEV · Exploit) + Rule Engine | 진행 예정 |
+| M2 | 위협정보 보강 (EPSS · KEV · Exploit) + Rule Engine | ✅ |
 | M3 | 리포트 생성 (AI 없이 완결) | 진행 예정 |
 | M4 | 웹 서버 + 공용 UI | 진행 예정 |
 | M5 | 이그레스 가드 + AI 산문 계층 | 진행 예정 |
@@ -83,12 +110,32 @@ python3 -m pip install -r requirements.txt
 # 3. SBOM 생성 (폐쇄망에서는 담당자가 직접 syft를 돌려 JSON을 반출)
 python3 -m core.cli sbom rockylinux:9.3 -o sbom.cdx.json
 
-# 4. 스캔
+# 4. 스캔 (Grype 탐지 → 위협정보 보강 → 우선순위 판정)
 python3 -m core.cli scan sbom.cdx.json -o findings.json
+
+# 이미 Grype 산출물이 있다면
+python3 -m core.cli analyze grype-report.json -o findings.json
+
+# 네트워크 없이 캐시된 스냅샷만 사용
+python3 -m core.cli scan sbom.cdx.json --offline
 
 # 5. 저장된 스캔 목록
 python3 -m core.cli scans
 ```
+
+### 위협정보 소스
+
+| 소스 | 용도 | 오프라인 |
+|---|---|---|
+| Grype 출력 내장 | CVSS · severity · fix state · 참조 URL | 가능 |
+| FIRST EPSS | 악용 시도 확률 · 백분위 | 캐시 |
+| CISA KEV | 실제 악용 확인 여부 · 등재일 | 캐시 |
+| Exploit-DB | 공개 exploit/PoC 존재 (`public_poc`) | 캐시 |
+| Metasploit | 무기화된 모듈 존재 (`weaponized`) | 캐시 |
+| NVD (선택) | CWE · 공개일 | 캐시 |
+
+모든 소스는 스냅샷 기준일과 함께 캐시된다. 기준일이 오래되면 판정에
+`stale_snapshot` 플래그가 붙는다.
 
 ## 개발
 

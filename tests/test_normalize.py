@@ -114,6 +114,15 @@ def test_references_are_merged_from_both_sources(result):
     assert "https://nvd.nist.gov/vuln/detail/CVE-2024-2511" in finding.intel.references
 
 
+def test_detection_records_matcher_and_namespace(result):
+    """[로컬 분석 정보]에 "왜 이 패키지가 걸렸는가"를 남긴다."""
+    finding = by_package(result, "xz")
+    assert finding.detection.matcher == "rpm-matcher"
+    assert finding.detection.match_type == "exact-direct-match"
+    assert finding.detection.namespace == "rocky:distro:rocky:9"
+    assert finding.detection.search_criteria["package"]["name"] == "xz"
+
+
 def test_empty_report_is_handled():
     result = normalize_grype_report({"matches": []}, scan_id="empty")
     assert result.findings == ()

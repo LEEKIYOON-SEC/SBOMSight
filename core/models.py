@@ -138,10 +138,16 @@ class InstalledPackage:
 
 @dataclass(frozen=True)
 class Detection:
-    """[로컬 전용] Grype가 이 매치를 만들어낸 경위."""
+    """[로컬 전용] Grype가 이 매치를 만들어낸 경위.
 
-    matcher: str = ""
-    matched_on_namespace: str = ""
+    리포트의 [로컬 분석 정보]에 실려 "왜 이 패키지가 걸렸는가"를 사람이
+    되짚을 수 있게 한다. search_criteria에는 설치 패키지명·버전이 들어가므로
+    이 객체 전체가 내부 정보다.
+    """
+
+    matcher: str = ""            # rpm-matcher, javascript-matcher ...
+    match_type: str = ""         # exact-direct-match, exact-indirect-match ...
+    namespace: str = ""          # rocky:distro:rocky:9, github:language:javascript ...
     search_criteria: dict[str, Any] = field(default_factory=dict)
 
 
@@ -312,11 +318,18 @@ class ScanMetadata:
 
 @dataclass(frozen=True)
 class ScanResult:
-    """[로컬] 스캔 1회의 결과 전체."""
+    """[로컬] 스캔 1회의 결과 전체.
+
+    `enrichment`와 `policy`를 함께 싣는 이유는 리포트가 "어떤 데이터로,
+    어떤 기준으로 판정했는지"를 스스로 증명할 수 있어야 하기 때문이다.
+    스냅샷 기준일과 정책 해시가 없으면 나중에 그 리포트를 재현할 수 없다.
+    """
 
     metadata: ScanMetadata
     findings: tuple[Finding, ...] = ()
     unindexed_packages: tuple[str, ...] = ()   # 브라우저 엔진에서 인덱스 미수록
+    enrichment: dict[str, Any] = field(default_factory=dict)
+    policy: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,48 @@
+{
+  "_comment": [
+    "조직별 우선순위 정책 오버라이드 예시입니다.",
+    "이 파일을 config/priority.local.json 으로 복사하면 rules/priority.json 위에 병합됩니다.",
+    "(.gitignore가 config/priority.local.json 을 막고 있으므로 조직 내부 기준이 리포에 올라가지 않습니다.)",
+    "",
+    "병합은 얕은 키 단위로 이뤄집니다. signals/levels/flags 중 지정한 항목만 덮어쓰고",
+    "나머지는 기본 정책을 그대로 씁니다. 리포트에는 적용된 정책의 버전과 sha256이 기록되어",
+    "'어떤 기준으로 판정했는지'를 사후에 추적할 수 있습니다."
+  ],
+
+  "version": "1-org",
+
+  "signals": {
+    "_comment": "예: 인터넷 노출 자산이 많아 EPSS 임계값을 더 보수적으로 낮추는 경우",
+    "epss_high": {
+      "field": "epss",
+      "op": ">=",
+      "value": 0.3,
+      "label": "EPSS 높음 (사내 기준)",
+      "rationale": "사내 기준으로 0.3 이상을 높음으로 본다"
+    }
+  },
+
+  "levels": [
+    {
+      "priority": "P0",
+      "label": "즉시 대응 검토",
+      "description": "사내 기준: KEV 등재는 CVSS와 무관하게 즉시 검토",
+      "when": [["kev_listed"], ["epss_high", "cvss_high"]]
+    },
+    {
+      "priority": "P1",
+      "label": "우선 대응 검토",
+      "when": [["cvss_critical"], ["epss_moderate", "cvss_high"], ["exploit_public_poc", "cvss_high"]]
+    },
+    {
+      "priority": "P2",
+      "label": "계획 대응 검토",
+      "when": [["cvss_high"]]
+    },
+    {
+      "priority": "P3",
+      "label": "모니터링",
+      "when": [[]]
+    }
+  ]
+}

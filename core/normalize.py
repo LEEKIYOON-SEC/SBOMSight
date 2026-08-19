@@ -135,24 +135,37 @@ def _installed_from_artifact(artifact: dict[str, Any]) -> InstalledPackage:
 
 
 def _detection_from_match(match: dict[str, Any]) -> tuple[Detection, str]:
-    """matchDetails에서 탐지 경위와 영향 버전범위를 뽑는다."""
-    details = match.get("matchDetails") or ()
+    """matchDetails에서 탐지 경위와 영향 버전범위를 뽑는다.
+
+    matchDetails는 여러 개일 수 있다(직접 매치 + 상위 패키지 경유 매치 등).
+    첫 항목을 대표로 삼되, 버전 제약은 먼저 나오는 유효한 것을 쓴다.
+    """
     matcher = ""
+    match_type = ""
     namespace = ""
     searched: dict[str, Any] = {}
     constraint = ""
-    for detail in details:
+
+    for detail in match.get("matchDetails") or ():
         if not isinstance(detail, dict):
             continue
         matcher = matcher or str(detail.get("matcher") or "")
-        searched = searched or (detail.get("searchedBy") or {})
-        found = detail.get("found") or {}
-        if isinstance(found, dict):
-            namespace = namespace or str(found.get("vulnerabilityID") and detail.get("type") or "")
-            constraint = constraint or _clean_constraint(str(found.get("versionConstraint") or ""))
-    if isinstance(searched, dict):
-        namespace = namespace or str(searched.get("namespace") or "")
-    return Detection(matcher=matcher, matched_on_namespace=namespace, search_criteria=searched or {}), constraint
+        match_type = match_type or str(detail.get("type") or "")
+
+        searched_by = detail.get("searchedBy")
+        if isinstance(searched_by, dict):
+            if not searched:
+                searched = searched_by
+            namespace = namespace or str(searched_by.get("namespace") or "")
+
+        found = detail.get("found")
+        if isinstance(found, dict) and not constraint:
+            constraint = _clean_constraint(str(found.get("versionConstraint") or ""))
+
+    return (
+        Detection(matcher=matcher, match_type=match_type, namespace=namespace, search_criteria=searched),
+        constraint,
+    )
 
 
 def _merge_vuln_sources(match: dict[str, Any]) -> tuple[str, tuple[str, ...], dict[str, Any]]:

@@ -1,0 +1,140 @@
+{
+  "version": "1",
+  "updated": "2026-08-19",
+  "title": "대응 검토 우선순위 기본 정책",
+  "notice": "이것은 '위험도'가 아니라 '대응 검토 우선순위'다. 공개 데이터에 아래 룰을 적용한 결과이며, 최종적인 내부 위험도와 패치 여부는 보안담당자가 판단한다. 조직 사정에 맞게 config/priority.local.json 으로 임계값을 덮어쓸 수 있다.",
+
+  "signals": {
+    "kev_listed": {
+      "field": "kev",
+      "op": "is_true",
+      "label": "CISA KEV 등재",
+      "rationale": "CISA가 실제 악용을 확인해 카탈로그에 등재한 취약점"
+    },
+    "exploit_weaponized": {
+      "field": "exploit_maturity",
+      "op": "==",
+      "value": "weaponized",
+      "label": "무기화된 exploit 존재",
+      "rationale": "Metasploit 모듈 등 즉시 사용 가능한 공격 도구가 공개됨"
+    },
+    "exploit_public_poc": {
+      "field": "exploit_maturity",
+      "op": "in",
+      "value": ["public_poc", "weaponized"],
+      "label": "공개 exploit/PoC 존재",
+      "rationale": "공개된 exploit 또는 PoC 코드가 확인됨"
+    },
+    "epss_high": {
+      "field": "epss",
+      "op": ">=",
+      "value": 0.5,
+      "label": "EPSS 높음",
+      "rationale": "향후 30일 내 악용 시도 확률이 통계적으로 높음"
+    },
+    "epss_moderate": {
+      "field": "epss",
+      "op": ">=",
+      "value": 0.1,
+      "label": "EPSS 중간",
+      "rationale": "향후 30일 내 악용 시도 확률이 무시하기 어려운 수준"
+    },
+    "cvss_critical": {
+      "field": "cvss_score",
+      "op": ">=",
+      "value": 9.0,
+      "label": "CVSS Critical",
+      "rationale": "기술적 심각도가 최상위 구간"
+    },
+    "cvss_high": {
+      "field": "cvss_score",
+      "op": ">=",
+      "value": 7.0,
+      "label": "CVSS High 이상",
+      "rationale": "기술적 심각도가 높음 구간 이상"
+    }
+  },
+
+  "levels": [
+    {
+      "priority": "P0",
+      "label": "즉시 대응 검토",
+      "description": "실제 악용이 확인되었거나 악용 가능성이 통계적으로 높고 기술적 심각도도 높은 경우",
+      "when": [
+        ["kev_listed"],
+        ["epss_high", "cvss_high"],
+        ["exploit_weaponized", "cvss_high"]
+      ]
+    },
+    {
+      "priority": "P1",
+      "label": "우선 대응 검토",
+      "description": "기술적 심각도가 최상위이거나, 악용 가능성 신호와 높은 심각도가 함께 관측되는 경우",
+      "when": [
+        ["cvss_critical"],
+        ["epss_moderate", "cvss_high"],
+        ["exploit_public_poc", "cvss_high"]
+      ]
+    },
+    {
+      "priority": "P2",
+      "label": "계획 대응 검토",
+      "description": "기술적 심각도가 높음 구간이나 악용 가능성 신호는 관측되지 않은 경우",
+      "when": [
+        ["cvss_high"]
+      ]
+    },
+    {
+      "priority": "P3",
+      "label": "모니터링",
+      "description": "위 조건에 해당하지 않는 경우",
+      "when": [[]]
+    }
+  ],
+
+  "flags": {
+    "no_fix_available": {
+      "field": "fix_state",
+      "op": "in",
+      "value": ["not_fixed", "wont_fix"],
+      "label": "수정 버전 없음",
+      "note": "패치로 해소할 수 없으므로 완화 방안 검토가 필요하다"
+    },
+    "update_available": {
+      "field": "update_available",
+      "op": "is_true",
+      "label": "업데이트 가능",
+      "note": "상위 버전으로 갱신할 수 있다"
+    },
+    "vulnerability_unconfirmed": {
+      "field": "is_vulnerable",
+      "op": "is_unknown",
+      "label": "취약 여부 판단 불가",
+      "note": "버전 문자열을 비교할 수 없어 영향 여부를 확정하지 못했다. 수동 확인이 필요하다"
+    },
+    "unknown_epss": {
+      "field": "epss",
+      "op": "is_missing",
+      "label": "EPSS 미확인",
+      "note": "EPSS 데이터를 확보하지 못했다. 악용 가능성이 낮다는 뜻이 아니다"
+    },
+    "unknown_exploit": {
+      "field": "exploit_available",
+      "op": "is_unknown",
+      "label": "Exploit 존재 여부 미확인",
+      "note": "공개 exploit 존재 여부를 확인하지 못했다. 없다는 뜻이 아니다"
+    },
+    "unknown_kev": {
+      "field": "kev",
+      "op": "is_unknown",
+      "label": "KEV 조회 실패",
+      "note": "CISA KEV 카탈로그를 조회하지 못했다"
+    },
+    "no_cvss": {
+      "field": "cvss_score",
+      "op": "is_missing",
+      "label": "CVSS 미확인",
+      "note": "CVSS 점수를 확보하지 못해 심각도 기반 판정이 적용되지 않았다"
+    }
+  }
+}

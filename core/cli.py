@@ -18,8 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import grype_runner, sbom as sbom_mod, syft_runner
+from .enrich import Enricher
+from .ruleengine import RuleEngine, sort_key
 from .config import get_config
-from .models import to_jsonable
+from .models import Priority, ScanResult, to_jsonable
 from .normalize import normalize_grype_report
 from .store import Store
 
@@ -55,6 +57,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    if args.offline:
+        config.offline = True
+
     raw = grype_runner.scan_sbom(sbom_path, config=config)
     result = normalize_grype_report(
         raw,
@@ -65,8 +70,51 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         component_count=len(packages),
     )
 
+    return _finish(result, args, config, component_count=len(packages))
+
+
+def _finish(result: ScanResult, args, config, *, component_count: int) -> int:
+    """정규화된 결과에 보강 → 판정 → 저장 → 출력을 적용한다.
+
+    scan(SBOM에서 시작)과 analyze(Grype 출력에서 시작)가 공유한다.
+    """
+    store = Store(config.db_path)
+
+    # --- 위협정보 보강 ------------------------------------------------------
+    enrichment: dict = {}
+    findings = result.findings
+    if not args.no_enrich:
+        findings, report = Enricher(config, store).enrich(findings, nvd_budget=args.nvd_budget)
+        enrichment = report.to_dict()
+        for name, status in report.sources.items():
+            mark = "ok" if status.usable else "--"
+            print(
+                f"  [{mark}] {name:<11} {status.state:<8} "
+                f"수록 {status.entries:>7}건 / 해당 {status.matched:>4}건 "
+                f"{('스냅샷 ' + status.snapshot_date) if status.snapshot_date else ''}"
+                f"{('  ' + status.detail) if status.detail else ''}",
+                file=sys.stderr,
+            )
+
+    # --- 대응 검토 우선순위 판정 --------------------------------------------
+    engine = RuleEngine.from_config(config)
+    findings = engine.apply(findings, stale_days=config.snapshot_stale_days)
+
+    result = ScanResult(
+        metadata=result.metadata,
+        findings=tuple(sorted(findings, key=sort_key)),
+        unindexed_packages=result.unindexed_packages,
+        enrichment=enrichment,
+        policy={
+            "version": engine.policy.version,
+            "sha256": engine.policy.sha256,
+            "sources": list(engine.policy.sources),
+            "label": engine.policy.label,
+        },
+    )
+
     if not args.no_store:
-        Store(config.db_path).save_scan(result)
+        store.save_scan(result)
 
     payload = to_jsonable(result)
     if args.output:
@@ -75,14 +123,53 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     else:
         json.dump(payload, sys.stdout, indent=2, ensure_ascii=False)
 
+    _print_summary(result, engine, component_count)
+    return 0
+
+
+def _cmd_analyze(args: argparse.Namespace) -> int:
+    """이미 확보한 Grype JSON 리포트를 분석한다.
+
+    CI에서 grype를 돌리고 산출물만 넘겨받는 경우, 또는 grype를 설치할 수
+    없는 환경에서 쓴다.
+    """
+    config = get_config()
+    config.ensure_dirs()
+    if args.offline:
+        config.offline = True
+
+    raw = json.loads(Path(args.grype_json).read_text(encoding="utf-8"))
+    result = normalize_grype_report(
+        raw,
+        scan_id=args.scan_id or _new_scan_id(),
+        sbom_filename=Path(args.grype_json).name,
+        sbom_format="grype-json",
+    )
+    return _finish(result, args, config, component_count=result.metadata.component_count)
+
+
+def _print_summary(result, engine, component_count: int) -> None:
+    """사람이 읽는 요약. 판단 불가 건수를 반드시 함께 보여 준다 —
+    '취약 0건'과 '판단 불가 30건'은 전혀 다른 상황이다."""
+    from collections import Counter
+
+    counts = Counter(f.verdict.priority.value for f in result.findings if f.verdict)
     vulnerable = sum(1 for f in result.findings if f.fix and f.fix.is_vulnerable.is_true())
     unknown = sum(1 for f in result.findings if f.fix and f.fix.is_vulnerable.value == "unknown")
+    no_fix = sum(1 for f in result.findings if f.verdict and "no_fix_available" in f.verdict.flags)
+
+    print(f"\n스캔 {result.metadata.scan_id}", file=sys.stderr)
+    print(f"  컴포넌트 {component_count}개 → 탐지 {len(result.findings)}건", file=sys.stderr)
+    levels = "  ".join(
+        f"{p.value} {counts.get(p.value, 0)}건({engine.describe_level(p).get('label', '')})"
+        for p in (Priority.P0, Priority.P1, Priority.P2, Priority.P3)
+    )
+    print(f"  대응 검토 우선순위: {levels}", file=sys.stderr)
     print(
-        f"\n스캔 {result.metadata.scan_id}: 컴포넌트 {len(packages)}개 → "
-        f"탐지 {len(result.findings)}건 (취약 확인 {vulnerable}, 판단 불가 {unknown})",
+        f"  취약 확인 {vulnerable}건 · 판단 불가 {unknown}건 · 수정 버전 없음 {no_fix}건",
         file=sys.stderr,
     )
-    return 0
+    print(f"  적용 정책: {result.policy.get('label', '')}", file=sys.stderr)
 
 
 def _cmd_scans(args: argparse.Namespace) -> int:
@@ -108,7 +195,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan.add_argument("-o", "--output")
     p_scan.add_argument("--scan-id")
     p_scan.add_argument("--no-store", action="store_true", help="SQLite에 저장하지 않음")
+    p_scan.add_argument("--no-enrich", action="store_true", help="위협정보 보강 건너뜀 (EPSS/KEV/Exploit 미확인 상태로 남음)")
+    p_scan.add_argument("--offline", action="store_true", help="네트워크를 쓰지 않고 캐시된 스냅샷만 사용")
+    p_scan.add_argument("--nvd-budget", type=int, default=40, help="NVD에서 CWE를 조회할 최대 CVE 건수")
     p_scan.set_defaults(func=_cmd_scan)
+
+    p_analyze = sub.add_parser("analyze", help="이미 확보한 Grype JSON 리포트를 분석")
+    p_analyze.add_argument("grype_json", help="grype -o json 산출물")
+    p_analyze.add_argument("-o", "--output")
+    p_analyze.add_argument("--scan-id")
+    p_analyze.add_argument("--no-store", action="store_true")
+    p_analyze.add_argument("--no-enrich", action="store_true")
+    p_analyze.add_argument("--offline", action="store_true")
+    p_analyze.add_argument("--nvd-budget", type=int, default=40)
+    p_analyze.set_defaults(func=_cmd_analyze)
 
     p_scans = sub.add_parser("scans", help="저장된 스캔 목록")
     p_scans.add_argument("--limit", type=int, default=20)
