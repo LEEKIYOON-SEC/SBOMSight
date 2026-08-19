@@ -11,7 +11,7 @@
 
 let cachedPolicy = null;
 
-export async function loadEgressPolicy(url = '/policy/egress-policy.json') {
+export async function loadEgressPolicy(url = 'policy/egress-policy.json') {
   if (cachedPolicy) return cachedPolicy;
   const response = await fetch(url);
   if (!response.ok) throw new Error(`이그레스 정책을 읽지 못했습니다 (${response.status})`);

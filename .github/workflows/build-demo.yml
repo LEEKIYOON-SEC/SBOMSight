@@ -1,0 +1,73 @@
+name: 데모 인덱스 생성
+
+# 데모의 신뢰성은 이 워크플로가 떠받친다 — 브라우저 매칭 엔진이 쓰는 인덱스는
+# 손으로 지어낸 것이 아니라 **진짜 Syft와 Grype**의 산출물에서 파생된다.
+on:
+  schedule:
+    - cron: '0 3 * * 1'      # 매주 월요일 03:00 UTC — 위협정보 스냅샷 갱신
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build_demo_index.py'
+      - 'core/**'
+      - 'rules/**'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 인덱스 생성 + Pages 배포
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: 의존성 설치
+        run: python -m pip install -r requirements.txt
+
+      # 버전을 고정한다. 인덱스 형식이 조용히 바뀌면 브라우저 엔진과 갈라진다.
+      - name: Syft · Grype 설치
+        env:
+          SYFT_VERSION: v1.29.0
+          GRYPE_VERSION: v0.98.0
+        run: |
+          curl -sSfL https://get.anchore.io/syft  | sh -s -- -b "$HOME/.local/bin" "$SYFT_VERSION"
+          curl -sSfL https://get.anchore.io/grype | sh -s -- -b "$HOME/.local/bin" "$GRYPE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: 취약점 DB 준비
+        run: grype db update
+
+      - name: 인덱스 생성 (진짜 Syft + Grype)
+        run: python scripts/build_demo_index.py --out demo-data
+
+      # 브라우저 엔진이 실제 Grype 결과와 같은 판정을 내는지 확인한다.
+      # 여기서 어긋나면 데모가 실제 동작을 보여 주지 못하는 것이므로 배포하지 않는다.
+      - name: 실제 Grype 대비 파리티 검증
+        run: python scripts/verify_demo_parity.py --demo-data demo-data
+
+      - name: Pages 배포물 조립
+        run: python scripts/build_pages.py --out dist
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}

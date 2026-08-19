@@ -4,17 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SBOMSight — SBOM 기반 취약점 대응 검토</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><a href="/">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
+  <div class="brand"><a href="index.html">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
   <div class="spacer"></div>
   <nav>
-    <a href="/" aria-current="page">개요</a>
-    <a href="/scan.html">스캔</a>
-    <a href="/about.html">설계</a>
+    <a href="index.html" aria-current="page">개요</a>
+    <a href="scan.html">스캔</a>
+    <a href="about.html">설계</a>
   </nav>
 </header>
 
@@ -38,7 +38,7 @@
       <b>보고서</b>
     </div>
     <p style="margin-top:1rem">
-      <a class="btn primary" href="/scan.html">SBOM 올리고 시작하기</a>
+      <a class="btn primary" href="scan.html">SBOM 올리고 시작하기</a>
     </p>
   </div>
 
@@ -94,8 +94,8 @@
 </footer>
 
 <script type="module">
-import { getProvider } from '/js/providers/index.js';
-import { $, esc, priorityPill } from '/js/core/ui.js';
+import { getProvider } from './js/providers/index.js';
+import { $, esc, priorityPill } from './js/core/ui.js';
 
 const provider = await getProvider();
 
@@ -136,7 +136,7 @@ try {
           <td>${esc(s.metadata.sbom_filename || '—')}</td>
           <td class="num">${s.metadata.component_count ?? '—'}</td>
           <td class="num">${s.finding_count}</td>
-          <td><a href="/scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
+          <td><a href="scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
         </tr>`).join('')}</tbody></table></div>`;
   }
 } catch (error) {

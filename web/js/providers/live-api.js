@@ -6,6 +6,9 @@
  * 쪽인지 알지 못한다.
  */
 
+// 페이지가 사이트 루트에 있으므로 상대 경로가 로컬 서버와 정적 배포 양쪽에서
+// 올바르게 풀린다. 절대 경로(/api/...)를 쓰면 GitHub Pages의 프로젝트 하위
+// 경로(/SBOMSight/)에서 도메인 루트를 가리켜 깨진다.
 const BASE = '';
 
 async function request(path, options = {}) {
@@ -27,17 +30,17 @@ export const liveApiProvider = {
   capabilities: { upload: true, enrich: true, persist: true, editor: false },
 
   async health() {
-    return (await request('/api/health')).json();
+    return (await request('api/health')).json();
   },
 
   async policy() {
-    return (await request('/api/policy')).json();
+    return (await request('api/policy')).json();
   },
 
   async upload(file) {
     const form = new FormData();
     form.append('file', file);
-    return (await request('/api/upload', { method: 'POST', body: form })).json();
+    return (await request('api/upload', { method: 'POST', body: form })).json();
   },
 
   async startScan({ uploadId, filename, enrich = true }) {
@@ -46,19 +49,19 @@ export const liveApiProvider = {
       filename: filename || '',
       enrich: String(enrich),
     });
-    return (await request(`/api/scan?${params}`, { method: 'POST' })).json();
+    return (await request(`api/scan?${params}`, { method: 'POST' })).json();
   },
 
   async pollScan(jobId) {
-    return (await request(`/api/scan/${encodeURIComponent(jobId)}`)).json();
+    return (await request(`api/scan/${encodeURIComponent(jobId)}`)).json();
   },
 
   async getScan(scanId) {
-    return (await request(`/api/scans/${encodeURIComponent(scanId)}`)).json();
+    return (await request(`api/scans/${encodeURIComponent(scanId)}`)).json();
   },
 
   async listScans() {
-    return (await request('/api/scans')).json();
+    return (await request('api/scans')).json();
   },
 
   async getReport(scanId, format = 'json') {
@@ -69,7 +72,7 @@ export const liveApiProvider = {
   },
 
   reportUrl(scanId, format) {
-    return `/api/scans/${encodeURIComponent(scanId)}/report?format=${format}`;
+    return `api/scans/${encodeURIComponent(scanId)}/report?format=${format}`;
   },
 
   /**
@@ -78,10 +81,10 @@ export const liveApiProvider = {
    */
   async egressPreview(scanId, { limit = 0 } = {}) {
     const query = limit ? `?limit=${limit}` : '';
-    return (await request(`/api/scans/${encodeURIComponent(scanId)}/egress/preview${query}`)).json();
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/egress/preview${query}`)).json();
   },
 
   async egressPolicy() {
-    return (await request('/api/egress/policy')).json();
+    return (await request('api/egress/policy')).json();
   },
 };

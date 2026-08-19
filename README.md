@@ -119,6 +119,31 @@ AI 응답을 담는 `Narrative`에는 우선순위를 담을 자리가 **타입 
 
 위반한 서술은 리포트에 싣지 않고 룰 문장으로 되돌린다.
 
+### 데모는 시늉이 아니다
+
+GitHub Pages에는 서버가 없다. 그래서 프론트엔드를 **스캔 제공자로부터 분리**했다
+(`web/js/providers/`). 실 운영에서는 로컬 FastAPI가 진짜 Grype 서브프로세스를 돌리고,
+데모에서는 브라우저 매칭 엔진이 돈다. 나머지 코드는 어느 쪽인지 알지 못한다.
+
+데모용 취약점 인덱스는 CI에서 **진짜 Syft와 진짜 Grype**로 만든다
+(`.github/workflows/build-demo.yml`, 주 1회). 브라우저가 하는 일은 Grype가 하는 것과
+같다 — 설치 버전이 advisory의 영향 버전범위에 드는지 생태계 규칙으로 평가한다.
+
+그래서 방문자가 **샘플 SBOM에서 패키지를 지우거나 버전을 바꾸면 결과가 실제로 달라진다.**
+취약한 패키지를 지우면 그 항목이 사라지고, 버전을 Fixed Version으로 올리면 영향 범위를
+벗어나 탐지되지 않는다.
+
+세 겹의 검증이 이를 뒷받침한다:
+
+| 검증 | 대조 대상 | 건수 |
+|---|---|---|
+| 버전 비교자 | `tests/fixtures/version-vectors.json` (rpm 공식 스위트 포함) | 152 |
+| 파리티 | JavaScript 구현 ↔ Python 구현 (FixAnalysis · 룰엔진 · 프롬프트 · 보고서 6절) | 221 |
+| 실제 Grype 대비 | 브라우저 엔진 ↔ 진짜 Grype 스캔 결과 (CI, 불일치 시 배포 중단) | 매 빌드 |
+
+인덱스에 없는 패키지는 **"인덱스 미수록"으로 정직하게 표기**한다. 조용히 "취약점 없음"으로
+처리하지 않는다.
+
 ### 대응 검토 우선순위는 조직이 정한다
 
 `rules/priority.json`은 **기본 정책**이다. `config/priority.local.json`으로
@@ -142,7 +167,7 @@ P0  ←  발화 룰: CISA KEV 등재, EPSS 높음 (0.9134 ≥ 0.5), CVSS High �
 | M3 | 리포트 생성 (AI 없이 완결) | ✅ |
 | M4 | 웹 서버 + 공용 UI | ✅ |
 | M5 | 이그레스 가드 + AI 산문 계층 | ✅ |
-| M6 | 브라우저 매칭 엔진 + GitHub Pages 데모 | 진행 예정 |
+| M6 | 브라우저 매칭 엔진 + GitHub Pages 데모 | ✅ |
 | M7 | 마감 (문서 · 패키징) | 진행 예정 |
 
 ## 사용법
@@ -262,11 +287,31 @@ AI가 없거나 꺼져 있어도 실행 가능한 권고가 항상 나와야 하
 
 ```bash
 python3 -m pip install -r requirements-dev.txt
-scripts/test.sh          # Python + JavaScript 양쪽
+scripts/test.sh          # Python + JavaScript + 파리티
 ```
 
-이그레스 가드는 두 언어로 구현되어 있고 같은 정책·같은 벡터로 채점받는다.
-한쪽만 돌리면 두 구현이 갈라진 것을 잡지 못한다.
+이그레스 가드와 매칭 엔진은 두 언어로 구현되어 있고 같은 정책·같은 벡터로
+채점받는다. 한쪽만 돌리면 두 구현이 갈라진 것을 잡지 못한다.
+
+파리티 기대값은 **실제 Python 구현을 돌려** 생성한다 — 손으로 적은 기대값이라면
+두 구현이 함께 틀린 것을 잡지 못한다.
+
+```bash
+python3 scripts/gen_parity_fixture.py   # 구현을 바꿨다면 다시 생성
+```
+
+### 데모 로컬 실행
+
+```bash
+scripts/install-tools.sh
+grype db update
+python3 scripts/build_demo_index.py --out demo-data   # 진짜 Syft + Grype
+python3 scripts/build_pages.py --out dist
+python3 -m http.server -d dist 8080
+```
+
+`demo-data/` 는 커밋하지 않는다. 수 MB가 주 단위로 바뀌어 리포가 부풀고,
+커밋본과 배포본이 갈라지면 어느 쪽이 진짜인지 알 수 없게 되기 때문이다.
 
 rpm 버전 비교는 rpm 프로젝트의 `rpmvercmp` 테스트 스위트 벡터로 검증한다
 (`tests/test_versioning.py`). 이 비교가 틀리면 FixAnalysis가 틀리고, 그것은 곧

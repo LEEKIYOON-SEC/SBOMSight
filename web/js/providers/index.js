@@ -16,7 +16,7 @@ let cached = null;
 async function detectMode() {
   if (window.SBOMSIGHT_MODE) return window.SBOMSIGHT_MODE;
   try {
-    const response = await fetch('/api/health', { method: 'GET' });
+    const response = await fetch('api/health', { method: 'GET' });
     if (response.ok) return 'live';
   } catch { /* 정적 호스팅이면 여기로 온다 */ }
   return 'demo';

@@ -467,16 +467,24 @@ def compare(a: str, b: str, comparator: str = "generic") -> int | None:
 # 제약식 평가
 # ---------------------------------------------------------------------------
 
-_OP_RE = re.compile(r"^\s*(>=|<=|==|!=|=|>|<)?\s*(.+?)\s*$")
+# `<<` 와 `>>` 는 dpkg의 엄격 비교 연산자다. 긴 것을 먼저 매칭해야 `<<`가
+# `<` 로 잘려 나머지가 피연산자에 섞이는 사고가 나지 않는다.
+_OP_RE = re.compile(r"^\s*(<<|>>|>=|<=|==|!=|=|>|<)?\s*(.+?)\s*$")
 _OPS = {
     "<": lambda rc: rc < 0,
+    "<<": lambda rc: rc < 0,
     "<=": lambda rc: rc <= 0,
     ">": lambda rc: rc > 0,
+    ">>": lambda rc: rc > 0,
     ">=": lambda rc: rc >= 0,
     "=": lambda rc: rc == 0,
     "==": lambda rc: rc == 0,
     "!=": lambda rc: rc != 0,
 }
+
+# 피연산자로 버전이 아닌 것이 들어오면 비교자에 따라 조용히 통과해 버릴 수
+# 있다. 버전 문자열에 나올 수 없는 문자가 섞이면 '판단 불가'로 돌린다.
+_OPERAND_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.:~^+_*-]*$")
 
 
 def _eval_clause(version: str, clause: str, comparator: str) -> bool | None:
@@ -485,6 +493,10 @@ def _eval_clause(version: str, clause: str, comparator: str) -> bool | None:
         return None
     op = m.group(1) or "="
     operand = m.group(2)
+    if not _OPERAND_RE.match(operand):
+        # 연산자를 못 알아봤거나 제약식이 우리가 아는 문법이 아니다.
+        # 억지로 비교해 참/거짓을 만들어 내는 것보다 판단 불가가 정직하다.
+        return None
     # Grype는 rpm 제약에 "0:4.18.0-513.el8" 처럼 epoch를 붙여 준다. 그대로 넘긴다.
     rc = compare(version, operand, comparator)
     if rc is None:

@@ -4,17 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>스캔 — SBOMSight</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><a href="/">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
+  <div class="brand"><a href="index.html">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
   <div class="spacer"></div>
   <nav>
-    <a href="/">개요</a>
-    <a href="/scan.html" aria-current="page">스캔</a>
-    <a href="/about.html">설계</a>
+    <a href="index.html">개요</a>
+    <a href="scan.html" aria-current="page">스캔</a>
+    <a href="about.html">설계</a>
   </nav>
 </header>
 
@@ -26,6 +26,45 @@
   </p>
 
   <div id="banner"></div>
+
+  <!-- 데모 전용: 샘플 SBOM + 패키지 편집기 -->
+  <section class="card hidden" id="demo-card">
+    <h3 style="margin-top:0">데모용 샘플 SBOM</h3>
+    <p class="muted" style="margin-top:0">
+      이 페이지는 서버 없이 브라우저 안에서 스캔합니다. 인덱스는 CI에서
+      <b>진짜 Syft와 Grype</b>로 만든 것이며, 여기서 하는 매칭은 Grype가 하는 것과 같은
+      판정입니다 — 설치 버전이 advisory의 영향 버전범위에 드는지 생태계 규칙으로 평가합니다.
+      올린 파일은 어디로도 전송되지 않습니다.
+    </p>
+    <div class="toolbar">
+      <select id="sample-pick"></select>
+      <button id="sample-load">이 샘플로 스캔</button>
+      <button id="sample-edit">패키지 편집기 열기</button>
+      <a class="btn" id="sample-download" download>SBOM 내려받기</a>
+      <div class="spacer"></div>
+      <span class="faint" id="index-info"></span>
+    </div>
+
+    <div class="hidden" id="editor">
+      <p class="faint" style="margin-bottom:.4rem">
+        패키지를 빼거나 버전을 바꾼 뒤 다시 스캔해 보세요. 결과가 실제로 달라집니다 —
+        취약한 패키지를 지우면 그 항목이 사라지고, 버전을 Fixed Version으로 올리면
+        영향 범위를 벗어나 탐지되지 않습니다.
+      </p>
+      <div class="table-scroll" style="max-height:20rem">
+        <table>
+          <thead><tr><th style="width:3rem">포함</th><th>패키지</th><th>타입</th><th>버전</th></tr></thead>
+          <tbody id="editor-rows"></tbody>
+        </table>
+      </div>
+      <div class="toolbar">
+        <span class="faint" id="editor-count"></span>
+        <div class="spacer"></div>
+        <button id="editor-reset">되돌리기</button>
+        <button class="primary" id="editor-scan">편집한 SBOM으로 스캔</button>
+      </div>
+    </div>
+  </section>
 
   <!-- 업로드 -->
   <section class="card" id="upload-card">
@@ -117,11 +156,11 @@
 </footer>
 
 <script type="module">
-import { getProvider } from '/js/providers/index.js';
-import { sortFindings, summarize } from '/js/core/model.js';
+import { getProvider } from './js/providers/index.js';
+import { sortFindings, summarize } from './js/core/model.js';
 import {
   $, esc, renderDetail, renderStats, renderStepper, renderSummaryLine, renderTable,
-} from '/js/core/ui.js';
+} from './js/core/ui.js';
 
 const provider = await getProvider();
 
@@ -317,6 +356,142 @@ function closeDrawer() {
 $('#drawer-close').addEventListener('click', closeDrawer);
 $('#backdrop').addEventListener('click', closeDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+
+// --- 데모 전용: 샘플 SBOM과 패키지 편집기 ---------------------------------------
+// "실제 Grype처럼 동작하는가"를 방문자가 직접 확인할 수 있어야 한다.
+// 패키지를 지우거나 버전을 바꾸면 결과가 실제로 달라진다.
+const demo = { samples: [], document: null, packages: [], included: new Set() };
+
+async function setupDemo() {
+  if (!provider.sampleSboms) return;
+  $('#demo-card').classList.remove('hidden');
+
+  const health = await provider.health();
+  const index = health.index || {};
+  $('#index-info').textContent =
+    `인덱스: 패키지 ${index.package_count ?? 0}개 · 취약점 ${index.vuln_count ?? 0}건`
+    + (index.generated_at ? ` · 생성 ${index.generated_at.slice(0, 10)}` : '');
+
+  demo.samples = await provider.sampleSboms();
+  $('#sample-pick').innerHTML = demo.samples
+    .map((s, i) => `<option value="${i}">${esc(s.name)} (${s.components}개 컴포넌트)</option>`).join('');
+  syncSampleLink();
+  $('#sample-pick').addEventListener('change', syncSampleLink);
+}
+
+function currentSample() {
+  return demo.samples[Number($('#sample-pick').value) || 0];
+}
+
+function syncSampleLink() {
+  const sample = currentSample();
+  if (!sample) return;
+  $('#sample-download').href = sample.path;
+  $('#sample-download').download = `${sample.name}.cdx.json`;
+}
+
+async function loadSampleDocument() {
+  const sample = currentSample();
+  const response = await fetch(sample.path);
+  if (!response.ok) throw new Error(`샘플을 불러오지 못했습니다 (${response.status})`);
+  demo.document = await response.json();
+  demo.packages = (demo.document.components || []).map((c, i) => ({
+    index: i,
+    name: c.name,
+    version: c.version,
+    type: (c.properties || []).find((p) => p.name === 'syft:package:type')?.value || '',
+  }));
+  demo.included = new Set(demo.packages.map((p) => p.index));
+  return demo.document;
+}
+
+/** 편집한 컴포넌트 목록으로 SBOM 문서를 다시 만든다.
+ *
+ * 원본 인덱스를 기준으로 판단해야 한다 — filter 이후의 순번을 쓰면 항목이
+ * 밀려 엉뚱한 패키지의 버전이 바뀐다. */
+function editedDocument() {
+  const components = [];
+  (demo.document.components || []).forEach((component, index) => {
+    if (!demo.included.has(index)) return;
+    const edited = demo.packages.find((p) => p.index === index);
+    components.push(edited && edited.version !== component.version
+      ? { ...component, version: edited.version }
+      : component);
+  });
+  return { ...demo.document, components };
+}
+
+async function scanDocument(document, filename) {
+  const blob = new Blob([JSON.stringify(document)], { type: 'application/json' });
+  const file = new File([blob], filename, { type: 'application/json' });
+  await handleFile(file);
+  runButton.click();
+}
+
+$('#sample-load')?.addEventListener('click', async () => {
+  try {
+    await loadSampleDocument();
+    await scanDocument(demo.document, `${currentSample().name}.cdx.json`);
+  } catch (error) {
+    $('#banner').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+  }
+});
+
+$('#sample-edit')?.addEventListener('click', async () => {
+  const editor = $('#editor');
+  if (!editor.classList.contains('hidden')) { editor.classList.add('hidden'); return; }
+  if (!demo.document) await loadSampleDocument();
+  renderEditor();
+  editor.classList.remove('hidden');
+});
+
+function renderEditor() {
+  $('#editor-rows').innerHTML = demo.packages.map((p) => `
+    <tr>
+      <td><input type="checkbox" data-index="${p.index}" ${demo.included.has(p.index) ? 'checked' : ''}></td>
+      <td><b>${esc(p.name)}</b></td>
+      <td class="faint mono">${esc(p.type)}</td>
+      <td><input type="text" class="mono" style="width:12rem" data-version="${p.index}"
+                 value="${esc(p.version)}"></td>
+    </tr>`).join('');
+
+  $('#editor-rows').querySelectorAll('input[type=checkbox]').forEach((box) => {
+    box.addEventListener('change', () => {
+      const i = Number(box.dataset.index);
+      if (box.checked) demo.included.add(i); else demo.included.delete(i);
+      updateEditorCount();
+    });
+  });
+  $('#editor-rows').querySelectorAll('input[data-version]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const pkg = demo.packages.find((p) => p.index === Number(input.dataset.version));
+      if (pkg) pkg.version = input.value;
+    });
+  });
+  updateEditorCount();
+}
+
+function updateEditorCount() {
+  $('#editor-count').textContent = `${demo.included.size} / ${demo.packages.length}개 포함`;
+}
+
+$('#editor-reset')?.addEventListener('click', async () => {
+  await loadSampleDocument();
+  renderEditor();
+});
+
+$('#editor-scan')?.addEventListener('click', async () => {
+  try {
+    await scanDocument(editedDocument(), `${currentSample().name}-edited.cdx.json`);
+  } catch (error) {
+    $('#banner').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+  }
+});
+
+await setupDemo().catch((error) => {
+  console.warn('데모 설정 실패:', error);
+  $('#demo-card').classList.add('hidden');
+});
 
 // --- 이그레스 미리보기 -------------------------------------------------------
 // "공개 데이터만 보냅니다"라는 주장은 검증할 수 있어야 의미가 있다.

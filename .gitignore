@@ -20,8 +20,12 @@ uploads/
 audit/
 
 # CI 생성물
-demo-data/vuln-index/
-demo-data/intel-snapshot.json
+#
+# demo-data 는 .github/workflows/build-demo.yml 이 진짜 Syft/Grype 로 매주
+# 생성한다. 커밋하지 않는 이유는 두 가지다: 수 MB가 주 단위로 바뀌어 리포가
+# 부풀고, 커밋본과 배포본이 갈라지면 어느 쪽이 진짜인지 알 수 없게 된다.
+# 로컬에서 데모를 보려면 scripts/build_demo_index.py 를 직접 돌린다.
+demo-data/
 dist/
 node_modules/
 

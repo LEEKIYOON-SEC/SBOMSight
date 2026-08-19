@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>설계 — SBOMSight</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
 <style>
   .layer { border: 1px solid var(--line); border-radius: var(--radius); padding: .8rem 1rem; margin: .5rem 0; }
   .layer.local { border: 2px dashed var(--danger); background: var(--danger-bg); }
@@ -23,12 +23,12 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><a href="/">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
+  <div class="brand"><a href="index.html">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
   <div class="spacer"></div>
   <nav>
-    <a href="/">개요</a>
-    <a href="/scan.html">스캔</a>
-    <a href="/about.html" aria-current="page">설계</a>
+    <a href="index.html">개요</a>
+    <a href="scan.html">스캔</a>
+    <a href="about.html" aria-current="page">설계</a>
   </nav>
 </header>
 
@@ -194,8 +194,8 @@
 </footer>
 
 <script type="module">
-import { getProvider } from '/js/providers/index.js';
-import { $, esc } from '/js/core/ui.js';
+import { getProvider } from './js/providers/index.js';
+import { $, esc } from './js/core/ui.js';
 
 const provider = await getProvider();
 try {
