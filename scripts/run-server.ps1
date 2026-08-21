@@ -1,4 +1,11 @@
-# SBOMSight 웹 서버 기동 (Windows 11 / PowerShell)
+﻿# SBOMSight 웹 서버 기동 (Windows 11 / PowerShell)
+#
+# ⚠ 이 파일은 반드시 **UTF-8 BOM**으로 저장한다. Windows PowerShell 5.1은
+#   BOM이 없는 .ps1을 시스템 ANSI 코드페이지(한국어 Windows에서는 CP949)로
+#   읽는다. 그러면 한글 주석과 문자열의 UTF-8 바이트가 오독되고, CP949에서
+#   유효하지 않은 trail 바이트를 만난 자리에서 **뒤따르는 ASCII 문자가 통째로
+#   먹힌다** — 닫는 따옴표가 사라져 파서가 죽는다.
+#   tests/test_scripts.py 가 BOM 유무를 검사한다.
 #
 # 업로드된 SBOM과 스캔 결과에는 내부 자산 정보가 담긴다. 그래서 기본
 # 바인딩은 127.0.0.1이며, 외부에 노출하려면 SBOMSIGHT_HOST를 명시적으로
@@ -10,7 +17,8 @@ Set-Location (Join-Path $PSScriptRoot "..")
 $EnvFile = ".env"
 if (Test-Path $EnvFile) {
     Write-Host "[i] .env 로드"
-    Get-Content $EnvFile | ForEach-Object {
+    # -Encoding UTF8 이 없으면 PowerShell 5.1이 .env 도 ANSI로 읽는다.
+    Get-Content $EnvFile -Encoding UTF8 | ForEach-Object {
         if ($_ -match '^\s*([^#=]+)\s*=\s*(.*)$') {
             [Environment]::SetEnvironmentVariable($Matches[1].Trim(), $Matches[2].Trim(), "Process")
         }

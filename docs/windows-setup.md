@@ -402,6 +402,29 @@ git push
 ### `이 시스템에서 스크립트를 실행할 수 없으므로`
 4단계를 건너뛴 것이다. `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
 
+### `식에 닫는 ')'가 없습니다` + 한글이 깨져 보인다
+
+`.ps1` 파일에 UTF-8 BOM이 없을 때 난다. Windows PowerShell 5.1은 BOM이 없는
+`.ps1` 을 시스템 ANSI 코드페이지(한국어 Windows에서는 CP949)로 읽는데, 한글의
+UTF-8 바이트가 CP949 lead 바이트로 해석되면서 **뒤따르는 ASCII 문자가 먹힌다.**
+닫는 따옴표가 사라져 파서가 죽는 것이다.
+
+저장소의 `.ps1` 은 BOM으로 저장되어 있고 `tests/test_scripts.py` 가 이를
+검사하므로 정상적으로 클론했다면 이 오류를 볼 일이 없다. 그래도 났다면
+파일을 직접 편집하다 BOM이 날아간 것이니 최신 상태로 되돌리라:
+
+```powershell
+git checkout -- scripts/
+```
+
+직접 확인하려면:
+
+```powershell
+Format-Hex -Path .\scripts\run-server.ps1 -Count 3
+```
+
+첫 3바이트가 `EF BB BF` 여야 한다.
+
 ### `grype를 찾을 수 없습니다`
 PATH 변경 후 **터미널을 새로 열지 않았을** 가능성이 가장 크다. 새 창에서
 `grype version` 을 확인하라. 그래도 안 되면 `.env` 에 `GRYPE_BIN` 경로를 직접 적으라.

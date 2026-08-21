@@ -1,4 +1,8 @@
-# Syft·Grype 설치 (Windows 11 / PowerShell)
+﻿# Syft·Grype 설치 (Windows 11 / PowerShell)
+#
+# ⚠ 이 파일은 반드시 **UTF-8 BOM**으로 저장한다. 이유는 run-server.ps1 머리말 참고.
+#   BOM이 없으면 PowerShell 5.1이 CP949로 읽어 한글 뒤의 ASCII 문자를 먹고,
+#   닫는 따옴표가 사라져 파서가 죽는다.
 #
 # 앞선 버전은 https://get.anchore.io/syft 를 받아 `powershell -File` 로 실행했는데,
 # 그 URL이 내려주는 것은 `#!/bin/sh` POSIX 스크립트다. PowerShell은 그것을 실행할 수

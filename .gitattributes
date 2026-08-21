@@ -1,0 +1,14 @@
+# 저장소 안에서는 LF로 정규화한다.
+* text=auto eol=lf
+
+# PowerShell 스크립트는 Windows에서만 돌고, 체크아웃 시 CRLF로 받는다.
+#
+# 이 파일들은 **UTF-8 BOM**으로 저장되어 있으며 그 3바이트는 내용의 일부다.
+# Windows PowerShell 5.1은 BOM이 없는 .ps1 을 시스템 ANSI 코드페이지
+# (한국어 Windows에서는 CP949)로 읽기 때문에, BOM을 빼면 한글 뒤의 ASCII
+# 문자가 먹혀 닫는 따옴표가 사라지고 파서가 죽는다.
+*.ps1 text eol=crlf
+
+# 셸 스크립트에 CRLF가 섞이면 셔뱅(#!)이 깨져 실행되지 않는다.
+# Windows에서 체크아웃해 WSL·Git Bash로 돌리는 경우를 위해 LF를 강제한다.
+*.sh text eol=lf
