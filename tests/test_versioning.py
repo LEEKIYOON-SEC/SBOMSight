@@ -1,8 +1,6 @@
 """버전 비교자 테스트.
 
-벡터는 tests/fixtures/version-vectors.json 에 있고, **JavaScript 구현도 같은
-파일로 채점받는다**(tests/js/parity.test.mjs). 한쪽에만 벡터를 두면 두 구현이
-갈라진 것을 잡지 못한다.
+벡터는 tests/fixtures/version-vectors.json 에 있다.
 
 rpm 케이스는 rpm 프로젝트의 rpmvercmp 테스트 스위트에서 가져왔다. 우리 구현이
 rpm과 다르게 동작하면 FixAnalysis가 틀리고, 그것은 곧 패치 누락이나 헛된 패치

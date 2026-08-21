@@ -1,8 +1,7 @@
 {
   "version": "1",
   "notice": [
-    "Python 가드(core/sanitizer.py)와 JS 가드(web/js/core/sanitizer.js)가 같은",
-    "판정을 내는지 확인하는 공용 벡터다. 두 언어의 테스트가 이 파일을 읽는다.",
+    "이그레스 가드(core/sanitizer.py)를 채점하는 벡터다.",
     "",
     "expect: 'pass' 는 통과해야 하고, 'block' 은 반드시 차단되어야 한다.",
     "rule 이 지정된 벡터는 그 규칙으로 걸려야 한다."

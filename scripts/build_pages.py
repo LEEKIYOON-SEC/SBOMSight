@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """GitHub Pages 배포물 조립.
 
-실 운영과 **같은 프론트엔드 코드**를 그대로 쓴다. 복사하는 것은 다음뿐이다:
+Pages는 **전시장**이다. 스캔하지 않고, AI를 호출하지 않으며, 키를 담지
+않는다. 실제 판정은 담당자 PC에서 진짜 Syft/Grype로 이루어지고, 그 결과를
+`python -m core.cli export` 로 내보낸 것이 `results/` 에 들어 있다.
 
-    web/         프론트엔드 (실 운영과 동일)
+복사하는 것은 다음뿐이다:
+
+    web/         프론트엔드 (실 운영과 같은 코드)
     policy/      이그레스 정책 (Python 가드가 읽는 것과 같은 파일)
     rules/       우선순위 정책 · 표현 정책 · 패치 플레이북 (같은 파일)
-    demo-data/   진짜 Syft/Grype로 만든 인덱스와 샘플 SBOM
+    results/     실 PC에서 내보낸 스캔·보고서·전송 기록
 
-정책·룰 파일을 복사가 아니라 원본에서 가져오는 것이 중요하다. 사본을 따로
-두면 두 벌이 갈라지고, 그러면 데모가 보여 주는 판정이 실 운영과 달라진다.
+정책·룰 파일을 사본이 아니라 원본에서 가져오는 것이 중요하다. 사본을 따로
+두면 두 벌이 갈라지고, 그러면 전시된 정책이 실제로 적용된 정책과 달라진다.
 
-각 HTML에 `window.SBOMSIGHT_MODE = 'demo'` 를 심어 프론트엔드가 로컬 서버를
+각 HTML에 `window.SBOMSIGHT_MODE = 'static'` 을 심어 프론트엔드가 로컬 서버를
 찾는 요청(api/health)을 아예 보내지 않게 한다. 정적 호스팅에서 그 요청은
 언제나 404이고, 콘솔에 오류로 남는다.
 
@@ -31,12 +35,12 @@ ROOT = Path(__file__).resolve().parent.parent
 MODE_MARKER = (
     "<script>\n"
     "  // 정적 배포이므로 로컬 서버를 찾지 않는다. scripts/build_pages.py 가 심는다.\n"
-    "  window.SBOMSIGHT_MODE = 'demo';\n"
+    "  window.SBOMSIGHT_MODE = 'static';\n"
     "</script>\n"
 )
 
 
-def build(out: Path, *, require_index: bool = True) -> int:
+def build(out: Path, *, require_results: bool = True) -> int:
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -45,27 +49,33 @@ def build(out: Path, *, require_index: bool = True) -> int:
     for name in ("policy", "rules"):
         shutil.copytree(ROOT / name, out / name, dirs_exist_ok=True)
 
-    demo = ROOT / "demo-data"
-    index = demo / "vuln-index" / "index.json"
+    results = ROOT / "results"
+    index = results / "index.json"
     if index.is_file():
-        shutil.copytree(demo, out / "demo-data", dirs_exist_ok=True)
+        shutil.copytree(results, out / "results", dirs_exist_ok=True)
         manifest = json.loads(index.read_text(encoding="utf-8"))
+        scans = manifest.get("scans", [])
         print(
-            f"인덱스: 패키지 {manifest.get('package_count', 0)}개 · "
-            f"취약점 {manifest.get('vuln_count', 0)}건 · "
-            f"grype {manifest.get('grype_version', '?')} "
-            f"DB {manifest.get('grype_db_built', '?')}",
+            f"전시 결과: 스캔 {len(scans)}건 · 내보낸 시각 {manifest.get('generated_at', '?')}",
             file=sys.stderr,
         )
-    elif require_index:
+        for scan in scans:
+            print(
+                f"  - {scan.get('scan_id', '?')} · 탐지 {scan.get('finding_count', 0)}건"
+                f" · 선택 {scan.get('selected_count', 0)}건"
+                f" · AI {'사용' if scan.get('ai_used') else '미사용'}",
+                file=sys.stderr,
+            )
+    elif require_results:
         print(
-            "오류: demo-data/vuln-index/index.json 이 없습니다.\n"
-            "      먼저 scripts/build_demo_index.py 를 실행하세요.",
+            "오류: results/index.json 이 없습니다.\n"
+            "      실제 PC에서 스캔한 뒤 다음으로 결과를 내보내세요:\n"
+            "        python -m core.cli export --out results",
             file=sys.stderr,
         )
         return 2
     else:
-        print("경고: 데모 인덱스 없이 조립합니다 (스캔이 동작하지 않습니다).", file=sys.stderr)
+        print("경고: 전시할 결과 없이 조립합니다 (빈 화면이 나옵니다).", file=sys.stderr)
 
     for html in out.glob("*.html"):
         text = html.read_text(encoding="utf-8")
@@ -86,10 +96,10 @@ def build(out: Path, *, require_index: bool = True) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="GitHub Pages 배포물 조립")
     parser.add_argument("--out", default="dist")
-    parser.add_argument("--allow-missing-index", action="store_true",
-                        help="데모 인덱스 없이도 조립 (레이아웃 확인용)")
+    parser.add_argument("--allow-missing-results", action="store_true",
+                        help="전시할 결과 없이도 조립 (레이아웃 확인용)")
     args = parser.parse_args(argv)
-    return build(Path(args.out), require_index=not args.allow_missing_index)
+    return build(Path(args.out), require_results=not args.allow_missing_results)
 
 
 if __name__ == "__main__":

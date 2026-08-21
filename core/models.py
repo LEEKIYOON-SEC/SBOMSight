@@ -312,7 +312,7 @@ class ScanMetadata:
     component_count: int = 0
     grype_version: str = ""
     grype_db_built: str = ""
-    provider: str = "grype"          # grype / browser-engine
+    provider: str = "grype"
     source: str = ""                 # SBOM이 기술한 대상 — 내부 정보일 수 있다
 
 

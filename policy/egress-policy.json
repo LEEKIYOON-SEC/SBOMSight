@@ -4,9 +4,8 @@
   "title": "외부 전송 허용 정책 (Egress Policy)",
 
   "notice": [
-    "이 파일은 AI로 나갈 수 있는 것의 유일한 정의다. Python 가드(core/sanitizer.py)와",
-    "JS 가드(web/js/core/sanitizer.js)가 같은 파일을 읽으며, policy/egress-test-vectors.json",
-    "으로 두 구현의 동치성을 검증한다.",
+    "이 파일은 AI로 나갈 수 있는 것의 유일한 정의다. 가드(core/sanitizer.py)가 이 파일을",
+    "읽고, policy/egress-test-vectors.json 으로 채점받는다.",
     "",
     "핵심은 '거르기'가 아니라 '조립'이다. core/vulnfact.py 는 공개 계층",
     "(AdvisoryPackage · VulnIntel)에서 허용 필드만 명시적으로 새 객체에 옮겨 담으며,",
@@ -15,8 +14,8 @@
     "",
     "검증에 하나라도 걸리면 전송을 중단한다(fail-closed). 의심스러우면 보내지 않는다.",
     "",
-    "정규식 주의: Python과 JavaScript가 같은 패턴을 컴파일해야 하므로 (?i) 같은",
-    "인라인 플래그를 쓰지 않는다. 대소문자 무시는 flags: \"i\" 로 표기한다."
+    "정규식 주의: 인라인 플래그((?i) 등)를 쓰지 않는다. 대소문자 무시는 flags: \"i\" 로",
+    "표기한다. 정책은 언어에 중립적이어야 하며, 인라인 플래그는 그 전제를 깬다."
   ],
 
   "allowed_fields": {

@@ -300,8 +300,8 @@ def egress_audit(limit: int = Query(50, ge=1, le=500)) -> dict[str, Any]:
 POLICY_DIR = config.policy_dir
 RULES_DIR = config.rules_dir
 
-# 브라우저 가드(web/js/core/sanitizer.js)가 Python 가드와 **같은 정책 파일**을
-# 읽어야 한다. 사본을 두면 두 벌이 갈라지므로 원본을 그대로 노출한다.
+# 적용 중인 정책·룰 파일을 그대로 노출한다. UI가 "어떤 기준으로 판정했는가"를
+# 보여 줄 때 사본이 아니라 실제로 적용된 파일을 가리켜야 하기 때문이다.
 if POLICY_DIR.is_dir():
     app.mount("/policy", StaticFiles(directory=POLICY_DIR), name="policy")
 if RULES_DIR.is_dir():

@@ -1,9 +1,9 @@
 /**
  * 실 운영 스캔 제공자 — 로컬 FastAPI 서버를 호출한다.
  *
- * 진짜 Grype 서브프로세스가 돌아간다. GitHub Pages 데모는 같은 인터페이스를
- * 구현한 browser-engine.js를 대신 쓰며, 프론트엔드의 나머지 코드는 어느
- * 쪽인지 알지 못한다.
+ * 진짜 Syft/Grype 서브프로세스가 돌아간다. 취약점 판정도, 이그레스 가드도,
+ * AI 호출도 전부 서버에서 일어난다. 브라우저는 결과를 그리고 사람이 무엇을
+ * 보낼지 고르게 할 뿐이며, API 키는 브라우저로 내려오지 않는다.
  */
 
 // 페이지가 사이트 루트에 있으므로 상대 경로가 로컬 서버와 정적 배포 양쪽에서
@@ -24,10 +24,17 @@ async function request(path, options = {}) {
   return response;
 }
 
+/** 선택한 finding 키들을 쿼리스트링으로 옮긴다. 빈 배열이면 전체를 뜻한다. */
+function selectionParams(selection) {
+  const params = new URLSearchParams();
+  for (const key of selection || []) params.append('select', key);
+  return params;
+}
+
 export const liveApiProvider = {
   name: 'live',
   label: '로컬 서버 (실제 Grype)',
-  capabilities: { upload: true, enrich: true, persist: true, editor: false },
+  capabilities: { upload: true, enrich: true, persist: true, ai: true },
 
   async health() {
     return (await request('api/health')).json();
@@ -64,27 +71,48 @@ export const liveApiProvider = {
     return (await request('api/scans')).json();
   },
 
-  async getReport(scanId, format = 'json') {
-    const response = await request(
-      `/api/scans/${encodeURIComponent(scanId)}/report?format=${format}`,
-    );
+  async getReport(scanId, format = 'json', { selection = [] } = {}) {
+    const params = selectionParams(selection);
+    params.set('format', format);
+    const response = await request(`api/scans/${encodeURIComponent(scanId)}/report?${params}`);
     return format === 'json' ? response.json() : response.text();
   },
 
-  reportUrl(scanId, format) {
-    return `api/scans/${encodeURIComponent(scanId)}/report?format=${format}`;
+  reportUrl(scanId, format, { selection = [] } = {}) {
+    const params = selectionParams(selection);
+    params.set('format', format);
+    return `api/scans/${encodeURIComponent(scanId)}/report?${params}`;
   },
 
   /**
    * AI에게 전송될 내용 전체. 실제 전송에 쓰이는 것과 같은 조립기·같은 가드를
    * 통과시킨 결과를 돌려주며, 이 호출 자체는 외부로 아무것도 보내지 않는다.
+   * 선택한 항목만 넘기면 그 항목분만 조립된다.
    */
-  async egressPreview(scanId, { limit = 0 } = {}) {
-    const query = limit ? `?limit=${limit}` : '';
-    return (await request(`api/scans/${encodeURIComponent(scanId)}/egress/preview${query}`)).json();
+  async egressPreview(scanId, { selection = [] } = {}) {
+    const params = selectionParams(selection);
+    const query = params.toString();
+    return (await request(
+      `api/scans/${encodeURIComponent(scanId)}/egress/preview${query ? `?${query}` : ''}`,
+    )).json();
   },
 
   async egressPolicy() {
     return (await request('api/egress/policy')).json();
+  },
+
+  /**
+   * 선택한 항목에 대해서만 AI 서술을 생성한다.
+   *
+   * 키는 서버 환경변수에 있고 브라우저로 내려오지 않는다. 전송되는 내용은
+   * egressPreview가 보여 준 것과 **같은 조립기·같은 가드**를 통과한 결과이며,
+   * 가드가 막으면 호출 자체가 일어나지 않는다.
+   */
+  async generateNarratives(scanId, { selection = [] } = {}) {
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/narratives`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selection }),
+    })).json();
   },
 };

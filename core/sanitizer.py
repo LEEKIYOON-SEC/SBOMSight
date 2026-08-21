@@ -6,8 +6,8 @@
   2. 값 검증   — 타입·범위·enum·정규식·길이를 통과하는가
   3. 금칙 패턴 — IP·경로·이메일·MAC·UUID·내부 도메인·한글·자격증명 흔적이 없는가
 
-같은 정책 파일을 web/js/core/sanitizer.js 도 읽으며,
-policy/egress-test-vectors.json 으로 두 구현의 동치성을 검증한다.
+정책은 policy/egress-policy.json 한 벌이고, 채점 벡터는
+policy/egress-test-vectors.json 에 있다.
 
 이 가드는 2차 방어다. 1차 방어는 core/vulnfact.py 의 함수 시그니처가
 로컬 계층을 아예 받지 않는다는 사실이다.

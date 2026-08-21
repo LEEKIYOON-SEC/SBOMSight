@@ -11,8 +11,8 @@ FixAnalysis("우리가 취약한가")의 정확도가 통째로 이 모듈에 �
 옮긴다. 비표준 버전 문자열을 만났을 때 "취약하지 않음"이라고 답하는 것은
 거짓말이고, 그 거짓말은 패치 누락으로 이어진다.
 
-같은 알고리즘의 JS 구현이 web/js/core/versioning.js 에 있으며 파리티
-테스트(tests/js/parity.test.mjs)로 두 구현을 대조한다.
+벡터 파일(tests/fixtures/version-vectors.json)로 채점한다. rpm 케이스는
+rpm 프로젝트의 rpmvercmp 테스트 스위트에서 그대로 가져왔다.
 """
 
 from __future__ import annotations

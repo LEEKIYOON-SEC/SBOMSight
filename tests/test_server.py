@@ -266,9 +266,9 @@ class TestStaticFrontend:
 
     @pytest.mark.parametrize(
         "path",
-        ["/js/core/model.js", "/js/core/ui.js", "/js/core/sanitizer.js",
-         "/js/core/vulnfact.js", "/js/providers/live-api.js",
-         "/js/providers/index.js", "/css/app.css", "/favicon.svg"],
+        ["/js/core/model.js", "/js/core/ui.js", "/js/providers/live-api.js",
+         "/js/providers/static-results.js", "/js/providers/index.js",
+         "/css/app.css", "/favicon.svg"],
     )
     def test_assets_are_served(self, client, path):
         assert client.get(path).status_code == 200
