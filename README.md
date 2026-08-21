@@ -12,6 +12,14 @@
 
 SBOM Viewer도, Grype Web UI도, 패치 작업 자동화 도구도 아니다.
 
+```
+sbom.json 업로드  →  진짜 Grype 스캔  →  결과 표에서 취약점 체크
+                 →  AI에 보낼 내용 확인  →  전송  →  대응 검토 보고서
+```
+
+담당자 PC(Windows 11 / Rocky Linux 10)에서 돌고, 그 결과를
+[GitHub Pages](https://leekiyoon-sec.github.io/SBOMSight/)에 **전시**한다.
+
 ## SBOMSight가 답하는 질문
 
 1. 우리 SBOM에서 어떤 취약점이 발견되었는가
@@ -94,14 +102,26 @@ def build_vuln_fact(advisory: AdvisoryPackage, intel: VulnIntel) -> dict
 보낸다"를 하지 않는 이유는, 무엇이 어떻게 새려 했는지 모르는 상태에서 나머지가
 안전하다고 볼 근거가 없기 때문이다.
 
-같은 정책 파일을 브라우저 가드(`web/js/core/sanitizer.js`)도 읽으며, 두 구현은
-`policy/egress-test-vectors.json`의 **같은 벡터 74건**으로 채점받는다.
-정책 해시가 양쪽에서 일치하는지도 확인한다.
+정책은 `policy/egress-policy.json` 한 벌이고, `policy/egress-test-vectors.json`의
+**벡터 35건**으로 채점받는다.
 
-전송 전에 사람이 전문을 볼 수 있다 — 스캔 화면의 **"AI에게 전송될 내용 보기"** 는
-실제 전송에 쓰이는 것과 같은 조립기·같은 가드를 통과시킨 결과와 프롬프트 원문을
-그대로 보여 준다. 모든 전송 시도(성공·차단 모두)는 payload 원문·SHA-256·정책
-해시와 함께 감사 로그에 남는다.
+### 무엇을 보낼지 사람이 고른다
+
+전송 대상은 **결과 표에서 체크한 항목뿐**이다. 체크하지 않은 취약점은 조립
+단계에 들어가지도 않는다.
+
+```
+결과 표에서 체크  →  "AI에 전송될 내용 보기"  →  사람이 확인  →  전송  →  보고서
+                     선택분만 조립·검증된
+                     VulnFact + 프롬프트 원문
+```
+
+미리보기와 실제 전송은 **같은 함수를 거친다**(`server/app.py`의 `_scoped()`).
+확인한 범위와 나가는 범위가 갈라질 수 없다. 모든 전송 시도(성공·차단 모두)는
+payload 원문·SHA-256·정책 해시와 함께 감사 로그에 남는다.
+
+API 키는 **서버 프로세스의 환경변수에만** 있다. 브라우저로 내려가지 않고,
+방문자에게 입력받지도 않으며, 호출은 전부 서버에서 나간다.
 
 ### AI는 설명만 한다
 
@@ -119,30 +139,42 @@ AI 응답을 담는 `Narrative`에는 우선순위를 담을 자리가 **타입 
 
 위반한 서술은 리포트에 싣지 않고 룰 문장으로 되돌린다.
 
-### 데모는 시늉이 아니다
+### 판정 구현은 한 벌뿐이다
 
-GitHub Pages에는 서버가 없다. 그래서 프론트엔드를 **스캔 제공자로부터 분리**했다
-(`web/js/providers/`). 실 운영에서는 로컬 FastAPI가 진짜 Grype 서브프로세스를 돌리고,
-데모에서는 브라우저 매칭 엔진이 돈다. 나머지 코드는 어느 쪽인지 알지 못한다.
+한때 GitHub Pages에서도 "실제로 스캔되는" 데모를 만들려고 Grype의 매칭을
+JavaScript로 다시 구현했었다. CI 파리티 게이트가 **92건의 불일치**를 잡아냈고,
+원인은 근본적이었다 — 데모 인덱스의 샤드 키에 배포판 성분이 없어 Debian 13
+advisory와 Debian 11 advisory가 같은 샤드에 섞였고, 브라우저 매처는 네임스페이스를
+보지 않고 버전 제약만 평가했다. 그 결과 `node:18-bullseye`의 `libblkid1@2.36.1-8+deb11u2`에
+Debian 13용 CVE가 붙었다.
 
-데모용 취약점 인덱스는 CI에서 **진짜 Syft와 진짜 Grype**로 만든다
-(`.github/workflows/build-demo.yml`, 주 1회). 브라우저가 하는 일은 Grype가 하는 것과
-같다 — 설치 버전이 advisory의 영향 버전범위에 드는지 생태계 규칙으로 평가한다.
+배포판 네임스페이스·CPE 매칭·상위 소스패키지 해석까지 Grype를 브라우저에서
+재현하는 것은 이길 수 없는 싸움이고, 두 번째 구현은 반드시 갈라진다. 갈라진 쪽은
+**조용히 틀린 판정을 낸다** — 취약점 도구에서 가장 나쁜 실패다.
 
-그래서 방문자가 **샘플 SBOM에서 패키지를 지우거나 버전을 바꾸면 결과가 실제로 달라진다.**
-취약한 패키지를 지우면 그 항목이 사라지고, 버전을 Fixed Version으로 올리면 영향 범위를
-벗어나 탐지되지 않는다.
+그래서 브라우저 매칭 엔진을 걷어냈다. 지금 `web/js/` 에 남은 것은 표시 라벨
+(`model.js`)과 DOM 렌더(`ui.js`)뿐이며, **프론트엔드는 아무것도 판정하지 않는다.**
 
-세 겹의 검증이 이를 뒷받침한다:
+### GitHub Pages는 전시장이다
 
-| 검증 | 대조 대상 | 건수 |
-|---|---|---|
-| 버전 비교자 | `tests/fixtures/version-vectors.json` (rpm 공식 스위트 포함) | 152 |
-| 파리티 | JavaScript 구현 ↔ Python 구현 (FixAnalysis · 룰엔진 · 프롬프트 · 보고서 6절) | 221 |
-| 실제 Grype 대비 | 브라우저 엔진 ↔ 진짜 Grype 스캔 결과 (CI, 불일치 시 배포 중단) | 매 빌드 |
+Pages는 정적 호스팅이라 Grype(Go 바이너리 + 취약점 DB)를 돌릴 수 없고, 시크릿을
+읽을 수도 없다. 그래서 **판정은 담당자 PC에서 일어나고**, Pages는 그 결과를 전시한다.
 
-인덱스에 없는 패키지는 **"인덱스 미수록"으로 정직하게 표기**한다. 조용히 "취약점 없음"으로
-처리하지 않는다.
+```bash
+# 담당자 PC (Windows 11 / Rocky Linux 10)
+python -m core.cli export --out results   # 실제 스캔·선택·전송 기록·보고서를 내보냄
+git add results && git commit && git push # pages.yml 이 프론트엔드와 묶어 배포
+```
+
+전시되는 것은 그때 실제로 일어난 일의 기록이다 — 탐지 결과, 담당자가 고른 항목,
+AI에 전송된 내용, 그 결과로 나온 보고서. 전시 모드에서는 업로드 카드가 사라지고,
+체크박스는 기록된 선택을 보여 주되 비활성이며, 전송 버튼 대신 "이미 전송된 기록"이
+표시된다.
+
+> `export`는 기본으로 파일 경로·SBOM 파일명·스캔 대상 문자열·Grype `search_criteria`를
+> 지운다. 설치 패키지명과 설치 버전은 "설치 버전 대 Fixed Version 비교"라는 전시의
+> 요점이라 남긴다. 무엇이 담겼는지는 실행 시 화면에 알린다 — **공개 리포에 커밋할
+> 파일이므로 그 판단은 사람이 해야 한다.**
 
 ### 대응 검토 우선순위는 조직이 정한다
 
@@ -158,87 +190,92 @@ P0  ←  발화 룰: CISA KEV 등재, EPSS 높음 (0.9134 ≥ 0.5), CVSS High �
 명칭은 "위험도"가 아니라 **"대응 검토 우선순위"** 다. 최종적인 내부 위험도와
 패치 여부는 보안담당자가 판단한다.
 
-## 데모
+## 설치와 사용
 
-**https://leekiyoon-sec.github.io/SBOMSight/**
+### 1. 도구와 의존성
 
-샘플 SBOM으로 바로 스캔해 볼 수 있다. 서버 없이 브라우저 안에서 돌지만
-**시늉이 아니다** — 인덱스는 CI에서 진짜 Syft/Grype로 만들고, 매칭은 Grype가 하는
-것과 같은 판정이다. 패키지를 지우거나 버전을 바꾸면 결과가 실제로 달라진다.
-
-## 현재 상태
-
-| 마일스톤 | 내용 | 상태 |
-|---|---|---|
-| M1 | 코어 파이프라인 + 데이터 모델 3층 분리 | ✅ |
-| M2 | 위협정보 보강 (EPSS · KEV · Exploit) + Rule Engine | ✅ |
-| M3 | 리포트 생성 (AI 없이 완결) | ✅ |
-| M4 | 웹 서버 + 공용 UI | ✅ |
-| M5 | 이그레스 가드 + AI 산문 계층 | ✅ |
-| M6 | 브라우저 매칭 엔진 + GitHub Pages 데모 | ✅ |
-| M7 | 마감 (문서 · 패키징) | ✅ |
-
-## 사용법
+```powershell
+# Windows 11
+scripts\install-tools.ps1
+python -m pip install -r requirements.txt
+grype db update
+```
 
 ```bash
-# 1. 외부 도구 설치
-scripts/install-tools.sh          # Linux / macOS
-scripts/install-tools.ps1         # Windows 11
-
-# 2. 의존성
+# Rocky Linux 10 / macOS
+scripts/install-tools.sh
 python3 -m pip install -r requirements.txt
-
-# 3. SBOM 생성 (폐쇄망에서는 담당자가 직접 syft를 돌려 JSON을 반출)
-python3 -m core.cli sbom rockylinux:9.3 -o sbom.cdx.json
-
-# 4. 스캔 (Grype 탐지 → 위협정보 보강 → 우선순위 판정)
-python3 -m core.cli scan sbom.cdx.json -o findings.json
-
-# 이미 Grype 산출물이 있다면
-python3 -m core.cli analyze grype-report.json -o findings.json
-
-# 네트워크 없이 캐시된 스냅샷만 사용
-python3 -m core.cli scan sbom.cdx.json --offline
-
-# 5. 보고서 생성 — AI 없이도 완결된다
-python3 -m core.cli report findings.json -o report.md
-python3 -m core.cli report findings.json --format html -o report.html
-
-# 6. 저장된 스캔 목록
-python3 -m core.cli scans
-
-# 7. AI 서술 사용 (선택). 기본값은 미사용이며, AI 없이도 보고서는 완결된다.
-export SBOMSIGHT_AI_ENABLED=1 GEMINI_API_KEY=...
-python3 -m core.cli report findings.json --ai -o report.md
-
-# 8. 웹 UI
-scripts/run-server.sh          # Linux / macOS  → http://127.0.0.1:8000
-scripts/run-server.ps1         # Windows 11
+grype db update
 ```
 
-### 웹 UI
+### 2. 웹 UI로 쓰기 (기본 사용법)
 
-업로드부터 보고서까지의 파이프라인을 7단계 스테퍼로 그대로 보여준다.
-"취약점 몇 개 발견"이 아니라 **근거가 쌓여가는 과정**이 보이는 것이 목적이다.
+```powershell
+scripts\run-server.ps1      # Windows 11  → http://127.0.0.1:8000
+```
+```bash
+scripts/run-server.sh       # Linux / macOS
+```
 
 ```
-SBOM 업로드 → 취약점 탐지 → 위협정보 보강 → 대응 우선순위 → 대응 검토 근거 → 권고사항 → 보고서
- 컴포넌트 1,204개   87건 탐지    4/5개 소스     P0 3 · P1 12    12건에 발화 룰   패치 가능 71건   87개 항목
+SBOM 업로드 → 진짜 Grype 스캔 → 결과 표에서 취약점 체크
+           → "AI에 전송될 내용 보기" → 확인 → 전송 → 보고서
 ```
 
 | 페이지 | 내용 |
 |---|---|
 | `/` | 개요 · 설계 원칙 · 최근 스캔 |
-| `/scan.html` | 업로드 · 7단계 진행 · 결과 표(우선순위/생태계/상태 필터) · CVE 상세 드로어 |
+| `/scan.html` | 업로드 · 진행 스테퍼 · 결과 표(체크박스 · 우선순위/생태계/상태 필터) · CVE 상세 · 이그레스 미리보기 |
 | `/report.html` | 보고서 뷰어 · 목차 · 인쇄(PDF) · Markdown/HTML 내려받기 |
 | `/about.html` | 데이터 흐름 · 3층 모델 · AI 전송 범위 · 적용 정책 전문 · 폐쇄망 운영 |
 
-프론트엔드는 **스캔 제공자로부터 분리**되어 있다(`web/js/providers/`). 실 운영에서는
-로컬 FastAPI를 호출해 진짜 Grype를 돌리고, GitHub Pages 데모에서는 브라우저 매칭
-엔진을 쓴다(M6). 나머지 코드는 어느 쪽인지 알지 못한다.
-
 기본 바인딩은 `127.0.0.1`이다. 업로드된 SBOM과 스캔 결과에는 내부 자산 정보가
-담기므로, 외부 노출은 `SBOMSIGHT_HOST`를 명시적으로 바꿔야만 일어난다.
+담기므로, 외부 노출은 `SBOMSIGHT_HOST`를 명시적으로 바꿔야만 일어나고 그때 경고가 뜬다.
+
+AI를 쓰려면 `.env` 에 두 줄을 넣고 서버를 다시 시작한다. **키는 서버에만 있고
+브라우저로 내려가지 않는다.**
+
+```
+SBOMSIGHT_AI_ENABLED=1
+GEMINI_API_KEY=...            # https://aistudio.google.com/apikey
+```
+
+### 3. CLI로 쓰기
+
+웹 서버 없이도 전체 파이프라인이 돈다.
+
+```bash
+# SBOM 생성 (폐쇄망에서는 담당자가 직접 syft를 돌려 JSON을 반출)
+python3 -m core.cli sbom rockylinux:9.3 -o sbom.cdx.json
+
+# 스캔 (Grype 탐지 → 위협정보 보강 → 우선순위 판정)
+python3 -m core.cli scan sbom.cdx.json -o findings.json
+python3 -m core.cli analyze grype-report.json -o findings.json   # 이미 Grype 산출물이 있다면
+python3 -m core.cli scan sbom.cdx.json --offline                 # 캐시된 스냅샷만 사용
+
+# 보고서 — AI 없이도 완결된다
+python3 -m core.cli report findings.json -o report.md
+python3 -m core.cli report findings.json --format html -o report.html
+python3 -m core.cli report findings.json --ai -o report.md       # AI 서술 사용 (선택)
+
+python3 -m core.cli scans                                        # 저장된 스캔 목록
+```
+
+### 4. 결과를 GitHub Pages에 전시하기
+
+```bash
+python3 -m core.cli export --out results        # 최근 5건
+python3 -m core.cli export --out results --scan <scan_id>
+python3 -m core.cli export --out results --no-redact   # 경로까지 그대로 (권장하지 않음)
+```
+
+`results/` 를 커밋해 `main` 에 밀면 `.github/workflows/pages.yml` 이 프론트엔드와
+묶어 배포한다. 로컬에서 먼저 확인하려면:
+
+```bash
+python3 scripts/build_pages.py --out dist
+python3 -m http.server -d dist 8080
+```
 
 ### 보고서 구성
 
@@ -295,69 +332,59 @@ AI가 없거나 꺼져 있어도 실행 가능한 권고가 항상 나와야 하
 
 ```bash
 python3 -m pip install -r requirements-dev.txt
-scripts/test.sh          # Python + JavaScript + 파리티
+scripts/test.sh
 ```
 
-이그레스 가드와 매칭 엔진은 두 언어로 구현되어 있고 같은 정책·같은 벡터로
-채점받는다. 한쪽만 돌리면 두 구현이 갈라진 것을 잡지 못한다.
-
-파리티 기대값은 **실제 Python 구현을 돌려** 생성한다 — 손으로 적은 기대값이라면
-두 구현이 함께 틀린 것을 잡지 못한다.
-
-```bash
-python3 scripts/gen_parity_fixture.py   # 구현을 바꿨다면 다시 생성
-```
-
-### 데모 로컬 실행
-
-```bash
-scripts/install-tools.sh
-grype db update
-python3 scripts/build_demo_index.py --out demo-data   # 진짜 Syft + Grype
-python3 scripts/build_pages.py --out dist
-python3 -m http.server -d dist 8080
-```
-
-`demo-data/` 는 커밋하지 않는다. 수 MB가 주 단위로 바뀌어 리포가 부풀고,
-커밋본과 배포본이 갈라지면 어느 쪽이 진짜인지 알 수 없게 되기 때문이다.
+판정 로직은 Python 한 벌뿐이다. 브라우저에는 매칭 엔진도, 룰 엔진도, 이그레스
+가드도 두지 않는다 — 두 벌을 두면 반드시 갈라지고, 갈라진 쪽이 틀린 판정을 낸다.
 
 rpm 버전 비교는 rpm 프로젝트의 `rpmvercmp` 테스트 스위트 벡터로 검증한다
 (`tests/test_versioning.py`). 이 비교가 틀리면 FixAnalysis가 틀리고, 그것은 곧
 패치 누락이나 헛된 패치 작업이 된다.
+
+| 테스트 | 무엇을 지키는가 |
+|---|---|
+| `test_versioning.py` | rpm EVR · dpkg · semver · PEP 440 비교가 상류와 같은 답을 내는가 |
+| `test_egress.py` | 정책 벡터 35건 — 무엇이 나갈 수 있고 무엇이 차단되는가 |
+| `test_selection.py` | 고른 것만 조립되는가, 선택 키가 VulnFact로 새지 않는가 |
+| `test_export.py` | 전시물에 무엇이 담기고 무엇이 지워지는가 |
+| `test_server.py` | API 계약 · 선택 범위 · AI 경로(키 없으면 호출 없음) |
 
 ## 문서
 
 | 문서 | 내용 |
 |---|---|
 | [`docs/offline-operations.md`](docs/offline-operations.md) | 폐쇄망 패치 절차 · 오프라인 DB/스냅샷 반입 · 환경변수 |
-| `/about.html` (웹 UI) | 데이터 흐름 · 3층 모델 · AI 전송 범위 · 적용 정책 전문 · 데모 동작 원리 |
+| `/about.html` (웹 UI) | 데이터 흐름 · 3층 모델 · AI 전송 범위 · 적용 정책 전문 |
 | [`.env.example`](.env.example) | 설정 전체와 각 값의 의미 |
 
 ## 프로젝트 구조
 
 ```
 core/          파이프라인 — 모델 · 러너 · 정규화 · 비교자 · 보강 · 룰엔진 · 보고서
-               이그레스(vulnfact · sanitizer · audit) · AI(prompt · gemini · tone)
-server/        FastAPI — 업로드 · 비동기 스캔 job · 결과 · 보고서 · 이그레스 미리보기
-web/           프론트엔드 (빌드 없음). 실 운영과 Pages 데모가 같은 코드를 쓴다
-  js/core/     JS 동형 구현 — 비교자 · 매처 · 룰엔진 · 이그레스 가드 · 보고서 · 렌더
-  js/providers/ live-api(진짜 Grype) ↔ browser-engine(브라우저 매칭)
-policy/        이그레스 정책과 공용 테스트 벡터 — Python·JS가 같은 파일을 읽는다
+               선택(selection) · 이그레스(vulnfact · sanitizer · audit)
+               AI(prompt · gemini · tone · ai_narrative) · 전시물 내보내기(export)
+server/        FastAPI — 업로드 · 비동기 스캔 job · 결과 · 선택 · 보고서
+               이그레스 미리보기 · AI 서술 생성
+web/           프론트엔드 (빌드 없음). 판정하지 않고 그리기만 한다
+  js/core/     model.js(표시 라벨) · ui.js(DOM 렌더)
+  js/providers/ live-api(로컬 서버) ↔ static-results(Pages 전시)
+policy/        이그레스 정책과 테스트 벡터
 rules/         우선순위 정책 · 표현 정책 · 패치 플레이북 6종
-scripts/       도구 설치 · 서버 기동 · 데모 인덱스 생성 · Pages 조립 · 테스트
-tests/         pytest + tests/js/*.mjs (이그레스 적합성 · 파리티 · AI 가드)
+results/       실 PC에서 내보낸 전시물 (커밋 대상 — 내용 확인 후 커밋할 것)
+scripts/       도구 설치 · 서버 기동 · Pages 조립 · 테스트
+tests/         pytest
 ```
 
 ### 정책 파일이 단일 진실인 이유
 
 `policy/egress-policy.json`, `rules/priority.json`, `rules/tone-policy.json`,
-`rules/playbooks/*.json` 은 Python 구현과 브라우저 구현이 **같은 파일**을 읽는다.
-사본을 두면 두 벌이 갈라지고, 그러면 데모가 보여 주는 판정이 실 운영과 달라진다.
-그래서 서버는 `policy/`·`rules/` 원본을 그대로 노출하고, Pages 빌드는 복사만 한다.
+`rules/playbooks/*.json` 은 리포에 커밋된 한 벌이고, 서버는 이 원본을 그대로
+노출한다. 사본을 두면 두 벌이 갈라지고, 그러면 UI가 "이 기준으로 판정했습니다"라고
+보여 주는 문서가 실제로 적용된 문서와 달라진다. Pages 빌드도 복사만 한다.
 
-이 대조가 실제로 버그를 잡았다 — 이그레스 정책의 `(?i)` 인라인 플래그는 Python은
-컴파일하지만 JavaScript는 못 한다. 공용 벡터를 두 언어로 돌리지 않았다면
-데모에서만 조용히 통과했을 것이다.
+리포트에는 적용된 정책의 버전과 sha256이 함께 기록되어, **어떤 기준으로
+판정했는지를 사후에 추적**할 수 있다.
 
 ## 라이선스
 

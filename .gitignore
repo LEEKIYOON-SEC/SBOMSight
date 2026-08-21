@@ -19,15 +19,17 @@ uploads/
 *.sqlite3
 audit/
 
-# CI 생성물
-#
-# demo-data 는 .github/workflows/build-demo.yml 이 진짜 Syft/Grype 로 매주
-# 생성한다. 커밋하지 않는 이유는 두 가지다: 수 MB가 주 단위로 바뀌어 리포가
-# 부풀고, 커밋본과 배포본이 갈라지면 어느 쪽이 진짜인지 알 수 없게 된다.
-# 로컬에서 데모를 보려면 scripts/build_demo_index.py 를 직접 돌린다.
-demo-data/
+# 빌드 산출물
 dist/
 node_modules/
+
+# results/ 는 일부러 무시하지 않는다.
+#
+# `python -m core.cli export --out results` 가 실제 PC의 스캔 결과를 여기에
+# 내보내고, GitHub Pages 가 그것을 전시한다. 즉 이 디렉터리는 **의도적으로
+# 공개되는 산출물**이다. 커밋하기 전에 무엇이 담겼는지 직접 확인할 것 —
+# 설치 패키지명과 설치 버전은 전시의 요점이라 남고, 파일 경로·SBOM 파일명·
+# 스캔 대상 문자열은 기본으로 지워진다(--no-redact 로 해제된다).
 
 # OS
 .DS_Store

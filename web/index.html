@@ -103,7 +103,12 @@ const provider = await getProvider();
 const banner = $('#banner');
 try {
   const health = await provider.health();
-  if (!health.ok) {
+  if (health.mode === 'static') {
+    banner.innerHTML = `<div class="banner info">
+      <b>전시 모드</b> — ${esc(health.note || '')}
+      ${health.tools?.grype ? `<span class="faint">grype ${esc(health.tools.grype)}</span>` : ''}
+      ${health.exported_at ? `<span class="faint">· 내보낸 시각 ${esc(health.exported_at)}</span>` : ''}</div>`;
+  } else if (!health.ok) {
     banner.innerHTML = `<div class="banner warn">
       <b>Grype를 찾을 수 없습니다.</b> <code>scripts/install-tools.sh</code>
       (Linux) 또는 <code>scripts/install-tools.ps1</code> (Windows)로 설치한 뒤
@@ -125,17 +130,21 @@ const recent = $('#recent');
 try {
   const { scans } = await provider.listScans();
   if (!scans.length) {
-    recent.innerHTML = '<span class="muted">아직 스캔 기록이 없습니다.</span>';
+    recent.innerHTML = provider.readonly
+      ? '<span class="muted">전시할 결과가 아직 없습니다.</span>'
+      : '<span class="muted">아직 스캔 기록이 없습니다.</span>';
   } else {
     recent.innerHTML = `<div class="table-scroll"><table>
-      <thead><tr><th>스캔</th><th>시각</th><th>SBOM</th><th class="num">컴포넌트</th><th class="num">탐지</th><th></th></tr></thead>
+      <thead><tr><th>스캔</th><th>시각</th><th>SBOM</th><th class="num">컴포넌트</th>
+        <th class="num">탐지</th><th class="num">선택</th><th></th></tr></thead>
       <tbody>${scans.slice(0, 10).map((s) => `
         <tr>
           <td class="mono">${esc(s.scan_id)}</td>
           <td class="faint">${esc(s.created_at)}</td>
-          <td>${esc(s.metadata.sbom_filename || '—')}</td>
-          <td class="num">${s.metadata.component_count ?? '—'}</td>
+          <td>${esc(s.metadata?.sbom_filename || '—')}</td>
+          <td class="num">${s.metadata?.component_count ?? '—'}</td>
           <td class="num">${s.finding_count}</td>
+          <td class="num">${s.selected_count || '—'}</td>
           <td><a href="scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
         </tr>`).join('')}</tbody></table></div>`;
   }

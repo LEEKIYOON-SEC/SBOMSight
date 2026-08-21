@@ -147,6 +147,24 @@ python3 -m core.cli scan asset01.cdx.json
 오프라인 장비에서는 AI를 쓸 수 없다. 기본값이 미사용이므로 별도 설정이 필요 없고,
 보고서는 룰 기반 서술로 완결된다.
 
+AI를 쓰는 장비라면 키는 **서버 프로세스의 환경변수(`.env`)에만** 둔다. 브라우저로
+내려가지 않고, 방문자에게 입력받지도 않으며, 호출은 전부 서버에서 나간다.
+`.env` 는 `.gitignore` 대상이다.
+
+---
+
+## 결과를 반출할 때
+
+`python -m core.cli export --out results` 는 GitHub Pages 전시용 파일을 만든다.
+**이 파일은 공개되는 산출물이므로 반출 승인 대상으로 다뤄야 한다.**
+
+| 담긴다 | 지운다 (기본값) |
+|---|---|
+| 설치 패키지명 · 설치 버전 · 취약 여부 판정 · 대응 검토 우선순위 · 발화 룰 | 파일 경로 · SBOM 파일명과 해시 · 스캔 대상 문자열 · Grype `search_criteria` |
+
+설치 버전을 지우면 "설치 버전 대 Fixed Version 비교"라는 전시의 요점이 사라지므로
+남긴다. `--no-redact` 는 경로까지 그대로 내보내므로 공개 리포에는 쓰지 않는다.
+
 ---
 
 ## 환경변수 요약
@@ -161,6 +179,9 @@ python3 -m core.cli scan asset01.cdx.json
 | `GRYPE_DB_CACHE_DIR` | — | 반입한 DB 위치 |
 | `GRYPE_DB_MAX_ALLOWED_BUILT_AGE` | `120h` | DB 허용 경과 시간 |
 | `SYFT_BIN` · `GRYPE_BIN` | `syft` · `grype` | PATH에 없을 때 경로 지정 |
+| `SBOMSIGHT_AI_ENABLED` | `0` | 1이어야 AI 서술 생성이 가능하다 |
+| `GEMINI_API_KEY` | — | 서버 환경변수에만 둔다. 브라우저로 내려가지 않는다 |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | 사용할 모델 |
 
 `SBOMSIGHT_OFFLINE=1` 로 두면 SBOMSight가 Grype를 부를 때
 `GRYPE_DB_AUTO_UPDATE=false` 와 `GRYPE_CHECK_FOR_APP_UPDATE=false` 를 자동으로

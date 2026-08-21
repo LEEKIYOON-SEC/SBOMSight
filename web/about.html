@@ -169,63 +169,74 @@
     </p>
   </div>
 
-  <h2>데모는 어떻게 동작하는가</h2>
+  <h2>취약점을 골라서 보고서를 만든다</h2>
   <div class="card">
     <p class="muted" style="margin-top:0">
-      GitHub Pages에는 서버가 없습니다. 그래서 프론트엔드를 <b>스캔 제공자로부터 분리</b>했습니다.
-      실 운영에서는 로컬 FastAPI가 진짜 Grype 서브프로세스를 돌리고, 데모에서는 브라우저
-      매칭 엔진이 돕니다. 나머지 코드는 어느 쪽인지 알지 못합니다.
+      전송 대상은 <b>담당자가 결과 표에서 체크한 항목뿐</b>입니다. 체크하지 않은 취약점은
+      조립 단계에 들어가지도 않습니다.
     </p>
     <div class="pipe">
-      <div class="row"><b>인덱스 생성</b><span>CI에서 <b>진짜 Syft + 진짜 Grype</b>로 구버전 고정 이미지를 스캔해
-        취약점·영향 버전범위를 뽑고, EPSS·KEV·Exploit 스냅샷을 결합합니다 (주 1회)</span></div>
-      <div class="row"><b>브라우저 매칭</b><span>Grype가 하는 것과 같은 판정 — 설치 버전이 advisory의 영향
-        버전범위에 드는지 생태계 규칙(rpm EVR · semver · PEP 440 · deb)으로 평가합니다</span></div>
-      <div class="row"><b>이후 전 과정</b><span>FixAnalysis · 룰엔진 · 보고서 조립 · 이그레스 가드가 전부
-        브라우저에서 돕니다. 업로드한 SBOM은 어디로도 전송되지 않습니다</span></div>
+      <div class="row"><b>선택</b><span>결과 표의 체크박스로 보고서·전송 범위를 고릅니다.
+        P0·P1만 고르거나, 필터로 좁힌 뒤 보이는 항목을 한 번에 고를 수 있습니다</span></div>
+      <div class="row"><b>확인</b><span>「AI에 전송될 내용 보기」가 <b>선택분만</b> 조립·검증한 VulnFact와
+        프롬프트 원문 전체를 보여 줍니다. 이 호출 자체는 외부로 아무것도 보내지 않습니다</span></div>
+      <div class="row"><b>전송</b><span>같은 화면에서 전송을 시작합니다. 미리보기와 실제 전송이
+        <b>같은 함수를 거치므로</b>(<code>server/app.py</code>의 <code>_scoped()</code>)
+        확인한 범위와 나가는 범위가 갈라질 수 없습니다</span></div>
+      <div class="row"><b>보고서</b><span>선택한 항목만 담긴 보고서가 나옵니다. 부분 보고서라는 사실이
+        문서 앞머리에 명시되어 결재 문서로 나갈 때 전체 결과로 오독되지 않습니다</span></div>
     </div>
+    <div class="callout">
+      API 키는 <b>서버 프로세스의 환경변수에만</b> 있습니다. 브라우저로 내려가지 않고,
+      방문자에게 입력받지도 않으며, 호출은 전부 서버에서 나갑니다.
+      AI를 켜지 않아도 보고서는 룰 기반으로 완결됩니다 — 그것이 기본값입니다.
+    </div>
+    <p class="muted">
+      표현 정책(<code>rules/tone-policy.json</code>)에 걸린 서술은 반영하지 않고 룰 기반 문장을
+      그대로 씁니다. 대응 검토 우선순위는 로컬 룰 엔진의 산출물이며 <b>AI 응답이 바꾸지 못합니다</b> —
+      서술을 담는 자료구조에 등급을 담을 자리가 타입 수준에서 없습니다.
+    </p>
+  </div>
 
-    <h3>시늉이 아니라는 근거</h3>
+  <h2>GitHub Pages는 전시장이다</h2>
+  <div class="card">
+    <p class="muted" style="margin-top:0">
+      Pages는 정적 호스팅이라 Grype(Go 바이너리 + 취약점 DB)를 돌릴 수 없고, 시크릿을 읽을 수도
+      없습니다. 그래서 <b>판정은 담당자 PC에서 일어나고</b>, Pages는 그 결과를 전시합니다.
+      전시되는 것은 그때 실제로 일어난 일의 기록입니다 — 탐지 결과, 담당자가 고른 항목,
+      AI에 전송된 내용, 그 결과로 나온 보고서.
+    </p>
+    <h3>브라우저 매칭 엔진을 걷어낸 이유</h3>
+    <p class="muted">
+      한때 Pages에서도 "실제로 스캔되는" 데모를 만들려고 Grype의 매칭을 JavaScript로 다시
+      구현했습니다. CI 파리티 게이트가 <b>92건의 불일치</b>를 잡아냈고, 원인은 근본적이었습니다 —
+      데모 인덱스의 샤드 키에 배포판 성분이 없어 Debian 13 advisory와 Debian 11 advisory가
+      같은 샤드에 섞였고, 브라우저 매처는 네임스페이스를 보지 않고 버전 제약만 평가했습니다.
+      그 결과 <code>node:18-bullseye</code>의 <code>libblkid1@2.36.1-8+deb11u2</code>에
+      Debian 13용 CVE가 붙었습니다.
+    </p>
+    <div class="callout">
+      배포판 네임스페이스 · CPE 매칭 · 상위 소스패키지 해석까지 Grype를 브라우저에서 재현하는 것은
+      이길 수 없는 싸움이고, <b>두 번째 구현은 반드시 갈라집니다.</b> 갈라진 쪽은 조용히 틀린 판정을
+      냅니다 — 취약점 도구에서 가장 나쁜 실패입니다. 그래서 판정 구현을 한 벌로 줄였습니다.
+      지금 브라우저에 남은 것은 표시 라벨과 DOM 렌더뿐이며, <b>프론트엔드는 아무것도 판정하지
+      않습니다.</b>
+    </div>
+    <h3>전시물에 담기는 것</h3>
     <table>
-      <thead><tr><th>검증</th><th>대조 대상</th><th class="num">건수</th></tr></thead>
+      <thead><tr><th>담긴다</th><th>지운다 (기본값)</th></tr></thead>
       <tbody>
-        <tr><td>버전 비교자</td><td>공용 벡터 (rpm 프로젝트 공식 <code>rpmvercmp</code> 스위트 포함)</td><td class="num">152</td></tr>
-        <tr><td>파리티</td><td>JavaScript 구현 ↔ Python 구현<br>
-          <span class="faint">FixAnalysis · 룰엔진 판정과 발화 룰 · VulnFact 조립 · 프롬프트(바이트 단위) · 보고서 6절</span></td><td class="num">221</td></tr>
-        <tr><td>실제 Grype 대비</td><td>브라우저 엔진 ↔ 진짜 Grype 스캔 결과<br>
-          <span class="faint">CI에서 매 빌드마다. 불일치가 있으면 배포하지 않습니다</span></td><td class="num">매 빌드</td></tr>
+        <tr>
+          <td>설치 패키지명 · 설치 버전 · 취약 여부 판정 · 대응 검토 우선순위 · 발화 룰</td>
+          <td>파일 경로 · SBOM 파일명과 해시 · 스캔 대상 문자열 · Grype <code>search_criteria</code></td>
+        </tr>
       </tbody>
     </table>
     <p class="muted">
-      그래서 샘플 SBOM에서 <b>패키지를 지우거나 버전을 바꾸면 결과가 실제로 달라집니다.</b>
-      취약한 패키지를 지우면 그 항목이 사라지고, 버전을 Fixed Version으로 올리면 영향 범위를
-      벗어나 탐지되지 않습니다.
+      설치 버전을 지우면 "설치 버전 대 Fixed Version 비교"라는 전시의 요점이 사라지므로 남깁니다.
+      무엇이 담겼는지는 <code>core.cli export</code> 실행 시 화면에 알립니다 —
+      공개 리포에 커밋할 파일이므로 그 판단은 사람이 해야 합니다.
     </p>
-    <div class="callout">
-      인덱스에 없는 패키지는 <b>"인덱스 미수록"으로 정직하게 표기</b>합니다. 조용히
-      "취약점 없음"으로 처리하지 않습니다. 인덱스가 아는 패키지(<code>covered</code>)와
-      취약점이 있는 패키지(<code>vulns</code>)를 구분해 담기 때문에 가능합니다.
-    </div>
-  </div>
-
-  <h2>데모의 AI 서술 (선택)</h2>
-  <div class="card">
-    <p class="muted" style="margin-top:0">
-      데모 보고서는 <b>AI 없이 이미 완결되어 있습니다.</b> 원하는 방문자는 자기 Google AI Studio
-      키로 ②기술적 위험성과 ④대응 필요성 분석의 서술을 생성해 볼 수 있습니다.
-    </p>
-    <ul class="steps">
-      <li><b>우리 키는 배포물에 없습니다.</b> 방문자의 키는 그 탭의 <code>sessionStorage</code>에만
-        저장되고(탭을 닫으면 사라집니다) 저희 쪽 어디로도 전송되지 않습니다.</li>
-      <li>호출은 브라우저에서 Google로 직접 갑니다. 서버가 없는 경로이므로
-        <b>브라우저 이그레스 가드가 유일한 방어</b>이며, 통과하지 못하면 네트워크 호출이
-        일어나지 않습니다.</li>
-      <li>전송 대상은 「AI에게 전송될 내용 보기」가 보여 주는 것과 <b>정확히 같습니다</b>.</li>
-      <li>표현 정책(<code>rules/tone-policy.json</code>)에 걸린 서술은 반영하지 않고
-        룰 기반 문장을 그대로 씁니다.</li>
-      <li>대응 검토 우선순위는 로컬 룰 엔진의 산출물이며 <b>AI 응답이 바꾸지 못합니다</b> —
-        서술을 담는 자료구조에 등급을 담을 자리가 타입 수준에서 없습니다.</li>
-    </ul>
   </div>
 
   <h2>폐쇄망 운영</h2>

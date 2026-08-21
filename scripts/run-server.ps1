@@ -38,5 +38,18 @@ if ($BindHost -ne "127.0.0.1" -and $BindHost -ne "localhost") {
     Write-Host "    신뢰할 수 없는 네트워크에 노출하지 마세요."
 }
 
+# AI 상태를 미리 알려 준다 — 결과 화면에서 전송 버튼이 안 보이는 이유를
+# 그때 가서 찾게 하지 않기 위한 것이다. 키 값 자체는 출력하지 않는다.
+if ($env:SBOMSIGHT_AI_ENABLED -in @("1", "true", "yes", "on")) {
+    if ($env:GEMINI_API_KEY) {
+        $Model = if ($env:GEMINI_MODEL) { $env:GEMINI_MODEL } else { "gemini-3.5-flash-lite" }
+        Write-Host "[i] AI 사용 가능 · 모델 $Model"
+    } else {
+        Write-Host "[!] SBOMSIGHT_AI_ENABLED=1 이지만 GEMINI_API_KEY 가 없습니다. 룰 기반으로만 동작합니다."
+    }
+} else {
+    Write-Host "[i] AI 미사용 (기본값). 보고서는 룰 기반으로 완결됩니다."
+}
+
 Write-Host "[i] http://${BindHost}:${Port}"
 python -m uvicorn server.app:app --host $BindHost --port $Port @args
