@@ -196,9 +196,21 @@ P0  ←  발화 룰: CISA KEV 등재, EPSS 높음 (0.9134 ≥ 0.5), CVSS High �
 
 ```powershell
 # Windows 11
-scripts\install-tools.ps1
+.\scripts\install-tools.ps1
 python -m pip install -r requirements.txt
 grype db update
+```
+
+Anchore는 Windows용 설치 스크립트를 제공하지 않으므로 이 스크립트는 릴리스 ZIP을
+직접 받고 **릴리스의 `checksums.txt` 와 SHA-256을 대조한다.** 취약점 스캐너를
+검증 없이 설치하는 것은 앞뒤가 맞지 않는다. 버전을 고정하려면
+`-SyftVersion 1.50.0 -GrypeVersion 0.115.0` 처럼 지정한다.
+
+PATH에 넣기 싫으면 `.env` 에 경로만 적어도 된다:
+
+```
+SYFT_BIN=C:\Users\<you>\AppData\Local\SBOMSight\bin\syft.exe
+GRYPE_BIN=C:\Users\<you>\AppData\Local\SBOMSight\bin\grype.exe
 ```
 
 ```bash
