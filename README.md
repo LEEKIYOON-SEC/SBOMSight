@@ -158,6 +158,14 @@ P0  ←  발화 룰: CISA KEV 등재, EPSS 높음 (0.9134 ≥ 0.5), CVSS High �
 명칭은 "위험도"가 아니라 **"대응 검토 우선순위"** 다. 최종적인 내부 위험도와
 패치 여부는 보안담당자가 판단한다.
 
+## 데모
+
+**https://leekiyoon-sec.github.io/SBOMSight/**
+
+샘플 SBOM으로 바로 스캔해 볼 수 있다. 서버 없이 브라우저 안에서 돌지만
+**시늉이 아니다** — 인덱스는 CI에서 진짜 Syft/Grype로 만들고, 매칭은 Grype가 하는
+것과 같은 판정이다. 패키지를 지우거나 버전을 바꾸면 결과가 실제로 달라진다.
+
 ## 현재 상태
 
 | 마일스톤 | 내용 | 상태 |
@@ -168,7 +176,7 @@ P0  ←  발화 룰: CISA KEV 등재, EPSS 높음 (0.9134 ≥ 0.5), CVSS High �
 | M4 | 웹 서버 + 공용 UI | ✅ |
 | M5 | 이그레스 가드 + AI 산문 계층 | ✅ |
 | M6 | 브라우저 매칭 엔진 + GitHub Pages 데모 | ✅ |
-| M7 | 마감 (문서 · 패키징) | 진행 예정 |
+| M7 | 마감 (문서 · 패키징) | ✅ |
 
 ## 사용법
 
@@ -316,6 +324,40 @@ python3 -m http.server -d dist 8080
 rpm 버전 비교는 rpm 프로젝트의 `rpmvercmp` 테스트 스위트 벡터로 검증한다
 (`tests/test_versioning.py`). 이 비교가 틀리면 FixAnalysis가 틀리고, 그것은 곧
 패치 누락이나 헛된 패치 작업이 된다.
+
+## 문서
+
+| 문서 | 내용 |
+|---|---|
+| [`docs/offline-operations.md`](docs/offline-operations.md) | 폐쇄망 패치 절차 · 오프라인 DB/스냅샷 반입 · 환경변수 |
+| `/about.html` (웹 UI) | 데이터 흐름 · 3층 모델 · AI 전송 범위 · 적용 정책 전문 · 데모 동작 원리 |
+| [`.env.example`](.env.example) | 설정 전체와 각 값의 의미 |
+
+## 프로젝트 구조
+
+```
+core/          파이프라인 — 모델 · 러너 · 정규화 · 비교자 · 보강 · 룰엔진 · 보고서
+               이그레스(vulnfact · sanitizer · audit) · AI(prompt · gemini · tone)
+server/        FastAPI — 업로드 · 비동기 스캔 job · 결과 · 보고서 · 이그레스 미리보기
+web/           프론트엔드 (빌드 없음). 실 운영과 Pages 데모가 같은 코드를 쓴다
+  js/core/     JS 동형 구현 — 비교자 · 매처 · 룰엔진 · 이그레스 가드 · 보고서 · 렌더
+  js/providers/ live-api(진짜 Grype) ↔ browser-engine(브라우저 매칭)
+policy/        이그레스 정책과 공용 테스트 벡터 — Python·JS가 같은 파일을 읽는다
+rules/         우선순위 정책 · 표현 정책 · 패치 플레이북 6종
+scripts/       도구 설치 · 서버 기동 · 데모 인덱스 생성 · Pages 조립 · 테스트
+tests/         pytest + tests/js/*.mjs (이그레스 적합성 · 파리티 · AI 가드)
+```
+
+### 정책 파일이 단일 진실인 이유
+
+`policy/egress-policy.json`, `rules/priority.json`, `rules/tone-policy.json`,
+`rules/playbooks/*.json` 은 Python 구현과 브라우저 구현이 **같은 파일**을 읽는다.
+사본을 두면 두 벌이 갈라지고, 그러면 데모가 보여 주는 판정이 실 운영과 달라진다.
+그래서 서버는 `policy/`·`rules/` 원본을 그대로 노출하고, Pages 빌드는 복사만 한다.
+
+이 대조가 실제로 버그를 잡았다 — 이그레스 정책의 `(?i)` 인라인 플래그는 Python은
+컴파일하지만 JavaScript는 못 한다. 공용 벡터를 두 언어로 돌리지 않았다면
+데모에서만 조용히 통과했을 것이다.
 
 ## 라이선스
 

@@ -169,6 +169,65 @@
     </p>
   </div>
 
+  <h2>데모는 어떻게 동작하는가</h2>
+  <div class="card">
+    <p class="muted" style="margin-top:0">
+      GitHub Pages에는 서버가 없습니다. 그래서 프론트엔드를 <b>스캔 제공자로부터 분리</b>했습니다.
+      실 운영에서는 로컬 FastAPI가 진짜 Grype 서브프로세스를 돌리고, 데모에서는 브라우저
+      매칭 엔진이 돕니다. 나머지 코드는 어느 쪽인지 알지 못합니다.
+    </p>
+    <div class="pipe">
+      <div class="row"><b>인덱스 생성</b><span>CI에서 <b>진짜 Syft + 진짜 Grype</b>로 구버전 고정 이미지를 스캔해
+        취약점·영향 버전범위를 뽑고, EPSS·KEV·Exploit 스냅샷을 결합합니다 (주 1회)</span></div>
+      <div class="row"><b>브라우저 매칭</b><span>Grype가 하는 것과 같은 판정 — 설치 버전이 advisory의 영향
+        버전범위에 드는지 생태계 규칙(rpm EVR · semver · PEP 440 · deb)으로 평가합니다</span></div>
+      <div class="row"><b>이후 전 과정</b><span>FixAnalysis · 룰엔진 · 보고서 조립 · 이그레스 가드가 전부
+        브라우저에서 돕니다. 업로드한 SBOM은 어디로도 전송되지 않습니다</span></div>
+    </div>
+
+    <h3>시늉이 아니라는 근거</h3>
+    <table>
+      <thead><tr><th>검증</th><th>대조 대상</th><th class="num">건수</th></tr></thead>
+      <tbody>
+        <tr><td>버전 비교자</td><td>공용 벡터 (rpm 프로젝트 공식 <code>rpmvercmp</code> 스위트 포함)</td><td class="num">152</td></tr>
+        <tr><td>파리티</td><td>JavaScript 구현 ↔ Python 구현<br>
+          <span class="faint">FixAnalysis · 룰엔진 판정과 발화 룰 · VulnFact 조립 · 프롬프트(바이트 단위) · 보고서 6절</span></td><td class="num">221</td></tr>
+        <tr><td>실제 Grype 대비</td><td>브라우저 엔진 ↔ 진짜 Grype 스캔 결과<br>
+          <span class="faint">CI에서 매 빌드마다. 불일치가 있으면 배포하지 않습니다</span></td><td class="num">매 빌드</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">
+      그래서 샘플 SBOM에서 <b>패키지를 지우거나 버전을 바꾸면 결과가 실제로 달라집니다.</b>
+      취약한 패키지를 지우면 그 항목이 사라지고, 버전을 Fixed Version으로 올리면 영향 범위를
+      벗어나 탐지되지 않습니다.
+    </p>
+    <div class="callout">
+      인덱스에 없는 패키지는 <b>"인덱스 미수록"으로 정직하게 표기</b>합니다. 조용히
+      "취약점 없음"으로 처리하지 않습니다. 인덱스가 아는 패키지(<code>covered</code>)와
+      취약점이 있는 패키지(<code>vulns</code>)를 구분해 담기 때문에 가능합니다.
+    </div>
+  </div>
+
+  <h2>데모의 AI 서술 (선택)</h2>
+  <div class="card">
+    <p class="muted" style="margin-top:0">
+      데모 보고서는 <b>AI 없이 이미 완결되어 있습니다.</b> 원하는 방문자는 자기 Google AI Studio
+      키로 ②기술적 위험성과 ④대응 필요성 분석의 서술을 생성해 볼 수 있습니다.
+    </p>
+    <ul class="steps">
+      <li><b>우리 키는 배포물에 없습니다.</b> 방문자의 키는 그 탭의 <code>sessionStorage</code>에만
+        저장되고(탭을 닫으면 사라집니다) 저희 쪽 어디로도 전송되지 않습니다.</li>
+      <li>호출은 브라우저에서 Google로 직접 갑니다. 서버가 없는 경로이므로
+        <b>브라우저 이그레스 가드가 유일한 방어</b>이며, 통과하지 못하면 네트워크 호출이
+        일어나지 않습니다.</li>
+      <li>전송 대상은 「AI에게 전송될 내용 보기」가 보여 주는 것과 <b>정확히 같습니다</b>.</li>
+      <li>표현 정책(<code>rules/tone-policy.json</code>)에 걸린 서술은 반영하지 않고
+        룰 기반 문장을 그대로 씁니다.</li>
+      <li>대응 검토 우선순위는 로컬 룰 엔진의 산출물이며 <b>AI 응답이 바꾸지 못합니다</b> —
+        서술을 담는 자료구조에 등급을 담을 자리가 타입 수준에서 없습니다.</li>
+    </ul>
+  </div>
+
   <h2>폐쇄망 운영</h2>
   <div class="card">
     <p class="muted">SBOMSight 자체는 인터넷이 되는 PC에서 돈다. "폐쇄망"은 <b>패치 대상 서버</b> 이야기다.</p>
@@ -182,9 +241,16 @@
       <li><code>rpm -q</code>와 SBOM 재생성·재스캔으로 검증한다.</li>
     </ol>
     <p class="muted">
-      SBOMSight PC 자체를 오프라인으로 운영할 수도 있다. <code>SBOMSIGHT_OFFLINE=1</code>로 두면
-      Grype DB 자동 갱신을 시도하지 않고 마지막 스냅샷으로만 동작한다
-      (<code>grype db import</code>로 DB를 미리 넣어 둔다).
+      SBOMSight PC 자체를 오프라인으로 운영할 수도 있습니다. <code>SBOMSIGHT_OFFLINE=1</code>로
+      두면 Grype DB 자동 갱신을 시도하지 않고 반입한 스냅샷으로만 동작합니다.
+      위협정보(EPSS · KEV · Exploit)도 캐시된 스냅샷을 쓰며, 확보하지 못한 소스는
+      <code>unknown</code>으로 남아 보고서에 그렇게 표기됩니다 — 0으로 채우거나
+      "없음"으로 처리하지 않습니다.
+    </p>
+    <p class="muted">
+      DB·스냅샷 반입 절차와 환경변수는
+      <a href="https://github.com/LEEKIYOON-SEC/SBOMSight/blob/main/docs/offline-operations.md"
+         target="_blank" rel="noopener">docs/offline-operations.md</a>에 정리되어 있습니다.
     </p>
   </div>
 </main>

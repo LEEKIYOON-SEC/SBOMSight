@@ -11,6 +11,66 @@
 
 export const SYSTEM_INSTRUCTION = "당신은 공개된 취약점 데이터를 근거로 보안 담당자가 읽을 설명을 작성합니다.\n\n[당신이 받는 것]\n공개 취약점 데이터만 받습니다: CVE ID, CVSS 점수와 벡터, CWE, EPSS,\nCISA KEV 등재 여부, 공개 exploit 존재 여부와 출처, 공개 advisory가 지목한\n패키지명과 영향 버전범위, 수정 버전, OS 계열.\n\n[당신이 받지 못하는 것]\n요청자의 자산 정보는 일절 포함되어 있지 않습니다. 어떤 서버에 무엇이 설치되어\n있는지, 실제 설치 버전이 무엇인지, 몇 대나 영향을 받는지, 내부적으로 어떤\n대응 우선순위가 매겨졌는지 알 수 없습니다.\n\n[따라서 지켜야 할 것]\n1. 요청자의 조직이나 자산을 지칭하지 마십시오. \"귀사\", \"우리 조직\", \"해당 서버\",\n   \"사내\" 같은 표현을 쓰지 마십시오.\n2. 특정 환경의 위험도를 단정하지 마십시오. \"매우 위험합니다\", \"치명적입니다\"가\n   아니라 \"공개 데이터를 기준으로 ~한 특성이 관측됩니다\"라고 쓰십시오.\n3. 최종 조치 여부를 명령하지 마십시오. \"반드시 패치해야 합니다\"가 아니라\n   \"우선적인 대응을 검토할 필요가 있습니다\", \"높은 우선순위로 조치하는 것을\n   권고합니다\"라고 쓰십시오.\n4. 대응 우선순위 등급(P0~P3)을 말하지 마십시오. 등급은 요청자 측 정책 룰이\n   결정하며 당신은 그 결과를 알지 못합니다.\n5. 패치 명령어(dnf, apt, npm, pip 등)를 작성하지 마십시오. 실행 절차는 요청자\n   측에서 결정론적으로 생성합니다.\n6. 주어진 데이터에 없는 사실을 지어내지 마십시오. 모르는 것은 \"공개된 정보만으로는\n   확인되지 않습니다\"라고 쓰십시오. 특히 CVSS 벡터나 CWE가 비어 있으면 그것을\n   근거로 한 서술을 하지 마십시오.\n\n[작성 언어]\n한국어. 보안 담당자가 결재 문서에 그대로 옮길 수 있는 문어체로 씁니다.\n";
 
+/**
+ * 응답 스키마. **priority 를 담을 자리가 없다는 것이 핵심이다** —
+ * 모델이 등급을 산출할 수 없게 구조로 막는다. core/prompt.py 와 동일.
+ */
+export const RESPONSE_SCHEMA = {
+  "type": "object",
+  "properties": {
+    "analyses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cve": {
+            "type": "string"
+          },
+          "technical_risk": {
+            "type": "string",
+            "description": "이 취약점이 어떤 공격을 가능하게 하는지, 어떤 조건에서 성립하는지. 3~5문장."
+          },
+          "attack_preconditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "공격이 성립하기 위한 조건. CVSS 벡터에서 읽히는 것만."
+          },
+          "impact_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "공격 성공 시 나타날 수 있는 영향 유형 (RCE, 권한 상승, DoS, 정보 노출 등)."
+          },
+          "exploitability_note": {
+            "type": "string",
+            "description": "EPSS·KEV·공개 exploit을 종합한 악용 가능성 서술. 2~4문장."
+          },
+          "response_rationale": {
+            "type": "string",
+            "description": "왜 대응을 검토해야 하는지의 근거. 등급을 말하지 말고 근거만 제시. 3~5문장."
+          },
+          "recommendation_note": {
+            "type": "string",
+            "description": "패치 시 유의할 점이나 임시 완화 방향. 명령어는 쓰지 않는다. 2~3문장."
+          }
+        },
+        "required": [
+          "cve",
+          "technical_risk",
+          "exploitability_note",
+          "response_rationale"
+        ]
+      }
+    }
+  },
+  "required": [
+    "analyses"
+  ]
+};
+
 export const NARRATIVE_FIELDS = [
   'technical_risk',
   'exploitability_note',

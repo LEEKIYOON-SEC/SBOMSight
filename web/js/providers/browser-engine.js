@@ -21,6 +21,8 @@ import { VulnIndex, matchPackages, shardKey } from '../core/matcher.js';
 import { buildReport } from '../core/report.js';
 import { buildBatch } from '../core/vulnfact.js';
 import { buildPrompt } from '../core/prompt.js';
+import { ToneGuard } from '../core/tone.js';
+import { analyze as geminiAnalyze, apiKey, narrativeTexts, toNarrative } from '../core/gemini.js';
 import { parseSbom, sha256Hex } from '../core/sbom.js';
 import { renderMarkdown } from '../core/render.js';
 
@@ -360,6 +362,59 @@ export const browserEngineProvider = {
       note: '이 내용이 AI에게 전달되는 전부입니다. 자산명·호스트명·IP·파일 경로·'
         + '설치 버전·취약 여부 판정·대응 우선순위는 포함되지 않습니다.',
     };
+  },
+
+  /**
+   * 방문자의 API 키로 AI 서술을 생성한다 (선택 기능).
+   *
+   * 우리 키는 배포물에 없다. 방문자의 키는 sessionStorage 에만 남고 우리 쪽
+   * 어디로도 전송되지 않는다. 전송 대상은 egressPreview 가 보여 주는 것과
+   * 정확히 같으며, 같은 가드를 통과해야만 호출이 일어난다.
+   *
+   * 실패하거나 표현 정책에 걸리면 해당 서술을 버리고 룰 문장을 그대로 쓴다 —
+   * AI 없이도 보고서가 완결된다는 전제는 데모에서도 지켜진다.
+   */
+  async generateNarratives(scanId, { key = apiKey.get(), model, onProgress = null } = {}) {
+    const entry = engine.scans.get(scanId);
+    if (!entry) throw new Error('스캔을 찾을 수 없습니다.');
+    if (!key) throw new Error('API 키가 필요합니다.');
+
+    const { guard, engine: rules, playbooks } = await engine.ready();
+    const tone = await ToneGuard.load('rules/tone-policy.json');
+
+    const facts = buildBatch(entry.findings);
+    const limit = guard.limits.max_facts_per_request || facts.length;
+    const narratives = {};
+    const rejected = [];
+
+    for (let start = 0; start < facts.length; start += limit) {
+      const chunk = facts.slice(start, start + limit);
+      if (onProgress) onProgress({ done: start, total: facts.length });
+
+      // guard 를 넘기면 전송 직전에 다시 검증한다. 통과 못 하면 호출하지 않는다.
+      const result = await geminiAnalyze(chunk, { key, guard, ...(model ? { model } : {}) });
+
+      for (const analysis of result.analyses) {
+        const cve = String(analysis.cve || '');
+        if (!cve) continue;
+        const narrative = toNarrative(analysis);
+        const violations = tone.inspect(narrativeTexts(narrative));
+        if (violations.length) {
+          rejected.push({ cve, rules: violations.map((v) => v.rule) });
+          continue;   // 표현 정책 위반 — 룰 문장을 그대로 쓴다
+        }
+        narratives[cve] = narrative;
+      }
+    }
+    if (onProgress) onProgress({ done: facts.length, total: facts.length });
+
+    // 보고서를 AI 서술과 함께 다시 조립한다. 우선순위는 룰 판정 그대로다.
+    entry.report = buildReport(entry.scan, entry.findings, {
+      engine: rules, playbooks, narratives,
+    });
+    engine.remember(scanId, entry);
+
+    return { applied: Object.keys(narratives).length, total: facts.length, rejected };
   },
 
   /** 샘플 SBOM 목록. 방문자가 내려받아 수정한 뒤 다시 올릴 수 있다. */

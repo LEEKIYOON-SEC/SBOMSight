@@ -6,15 +6,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "[1/3] Python"
+echo "[1/4] Python"
 python3 -m pytest
 
 echo
-echo "[2/3] 이그레스 가드 적합성 (JavaScript)"
+echo "[2/4] 이그레스 가드 적합성 (JavaScript)"
 POLICY_HASH="$(python3 -c "import sys; sys.path.insert(0,'.'); from core.policy import load; print(load('policy/egress-policy.json').sha256)")"
 node tests/js/sanitizer.test.mjs "$POLICY_HASH"
 
 echo
-echo "[3/3] 파리티 — JavaScript 구현이 Python 구현과 같은 결과를 내는가"
+echo "[3/4] 파리티 — JavaScript 구현이 Python 구현과 같은 결과를 내는가"
 python3 scripts/gen_parity_fixture.py >/dev/null
 node tests/js/parity.test.mjs
+
+echo
+echo "[4/4] 브라우저 AI 경로 가드"
+node tests/js/ai-guard.test.mjs

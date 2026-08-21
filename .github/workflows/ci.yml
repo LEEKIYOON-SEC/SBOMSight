@@ -35,6 +35,10 @@ jobs:
           HASH="$(python -c "import sys; sys.path.insert(0,'.'); from core.policy import load; print(load('policy/egress-policy.json').sha256)")"
           node tests/js/sanitizer.test.mjs "$HASH"
 
+      # 데모에서는 서버가 없어 브라우저 가드가 유일한 방어다.
+      - name: 브라우저 AI 경로 가드 (JS)
+        run: node tests/js/ai-guard.test.mjs
+
       - name: 파리티 (JS ↔ Python)
         run: |
           python scripts/gen_parity_fixture.py
