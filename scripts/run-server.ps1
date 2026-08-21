@@ -20,9 +20,20 @@ if (Test-Path $EnvFile) {
 $BindHost = if ($env:SBOMSIGHT_HOST) { $env:SBOMSIGHT_HOST } else { "127.0.0.1" }
 $Port = if ($env:SBOMSIGHT_PORT) { $env:SBOMSIGHT_PORT } else { "8000" }
 
-python -c "import fastapi" 2>$null
+# 가상환경이 있으면 활성화 여부와 무관하게 그 python을 쓴다. 활성화를 잊고
+# 실행하면 전역 python에는 의존성이 없어 "먼저 설치하세요"만 반복하게 된다.
+$Python = "python"
+$VenvPython = Join-Path (Get-Location) ".venv\Scripts\python.exe"
+if (Test-Path $VenvPython) {
+    $Python = $VenvPython
+    Write-Host "[i] 가상환경 사용: .venv"
+}
+
+& $Python -c "import fastapi" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] 의존성이 없습니다. 먼저 실행하세요:"
+    Write-Host "    python -m venv .venv"
+    Write-Host "    .\.venv\Scripts\Activate.ps1"
     Write-Host "    python -m pip install -r requirements.txt"
     exit 1
 }
@@ -52,4 +63,4 @@ if ($env:SBOMSIGHT_AI_ENABLED -in @("1", "true", "yes", "on")) {
 }
 
 Write-Host "[i] http://${BindHost}:${Port}"
-python -m uvicorn server.app:app --host $BindHost --port $Port @args
+& $Python -m uvicorn server.app:app --host $BindHost --port $Port @args

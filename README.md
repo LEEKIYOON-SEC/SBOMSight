@@ -194,9 +194,14 @@ P0  ←  발화 룰: CISA KEV 등재, EPSS 높음 (0.9134 ≥ 0.5), CVSS High �
 
 ### 1. 도구와 의존성
 
+> 초기화된 Windows 11 PC에서 처음부터 구축한다면
+> **[`docs/windows-setup.md`](docs/windows-setup.md)** 에 Python 설치부터
+> 첫 스캔·Pages 배포까지 전 과정이 있다.
+
 ```powershell
 # Windows 11
 .\scripts\install-tools.ps1
+python -m venv .venv; .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 grype db update
 ```
@@ -366,6 +371,7 @@ rpm 버전 비교는 rpm 프로젝트의 `rpmvercmp` 테스트 스위트 벡터�
 
 | 문서 | 내용 |
 |---|---|
+| [`docs/windows-setup.md`](docs/windows-setup.md) | 초기화된 Windows 11 PC에 처음부터 구축하는 전체 절차 |
 | [`docs/offline-operations.md`](docs/offline-operations.md) | 폐쇄망 패치 절차 · 오프라인 DB/스냅샷 반입 · 환경변수 |
 | `/about.html` (웹 UI) | 데이터 흐름 · 3층 모델 · AI 전송 범위 · 적용 정책 전문 |
 | [`.env.example`](.env.example) | 설정 전체와 각 값의 의미 |

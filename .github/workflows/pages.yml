@@ -5,9 +5,14 @@ name: Pages 배포
 # 실제 판정은 담당자 PC에서 진짜 Syft/Grype로 이루어지고, 그 결과를
 # `python -m core.cli export --out results` 로 내보내 리포에 커밋한다.
 # 이 워크플로는 그 기록과 프론트엔드를 묶어 올릴 뿐이다.
+#
+# 브랜치 목록에 main 만 적어 두면 이 리포에서는 영원히 발화하지 않는다 —
+# 아직 main 이 없고 기본 브랜치가 개발 브랜치다. 둘 다 적어 둔다.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'claude/sbomsight-dev-plan-**'
     paths:
       - 'web/**'
       - 'results/**'

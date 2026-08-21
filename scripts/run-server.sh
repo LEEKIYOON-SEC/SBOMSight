@@ -17,9 +17,19 @@ fi
 HOST="${SBOMSIGHT_HOST:-127.0.0.1}"
 PORT="${SBOMSIGHT_PORT:-8000}"
 
-if ! python3 -c "import fastapi" 2>/dev/null; then
+# 가상환경이 있으면 활성화 여부와 무관하게 그 python을 쓴다. 활성화를 잊고
+# 실행하면 전역 python에는 의존성이 없어 "먼저 설치하세요"만 반복하게 된다.
+PYTHON="python3"
+if [ -x .venv/bin/python ]; then
+  PYTHON=".venv/bin/python"
+  echo "[i] 가상환경 사용: .venv"
+fi
+
+if ! "$PYTHON" -c "import fastapi" 2>/dev/null; then
   echo "[!] 의존성이 없습니다. 먼저 실행하세요:"
-  echo "    python3 -m pip install -r requirements.txt"
+  echo "    python3 -m venv .venv"
+  echo "    . .venv/bin/activate"
+  echo "    python -m pip install -r requirements.txt"
   exit 1
 fi
 
@@ -46,4 +56,4 @@ else
 fi
 
 echo "[i] http://${HOST}:${PORT}"
-exec python3 -m uvicorn server.app:app --host "$HOST" --port "$PORT" "$@"
+exec "$PYTHON" -m uvicorn server.app:app --host "$HOST" --port "$PORT" "$@"
