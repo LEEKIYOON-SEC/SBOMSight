@@ -30,6 +30,25 @@ from core.vulnfact import build_batch  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# 파리티 픽스처는 결정론적이어야 한다 — 시각이 매번 바뀌면 CI가 "기대값이
+# 낡았다"고 오판한다. 대조 대상은 시각이 아니라 두 구현의 판정 결과다.
+FIXED_TIMESTAMP = "2026-01-01T00:00:00+00:00"
+
+
+def ScanResultShim(result, timestamp):
+    """metadata.created_at 만 고정한 사본을 만든다."""
+    import dataclasses
+
+    from core.models import ScanResult
+
+    return ScanResult(
+        metadata=dataclasses.replace(result.metadata, created_at=timestamp),
+        findings=result.findings,
+        unindexed_packages=result.unindexed_packages,
+        enrichment=result.enrichment,
+        policy=result.policy,
+    )
+
 
 def fix_analysis_cases():
     cases = [
@@ -143,6 +162,10 @@ def main() -> int:
     raw = json.loads((ROOT / "tests/fixtures/grype-sample.json").read_text(encoding="utf-8"))
     result = normalize_grype_report(raw, scan_id="parity-scan", sbom_filename="parity.cdx.json",
                                     sbom_format="cyclonedx-json", component_count=42)
+    # 생성 시각을 고정한다. 그러지 않으면 이 파일이 매번 달라져 CI의
+    # "기대값이 낡았는가" 검사가 언제나 실패한다. 대조하려는 것은 시각이
+    # 아니라 두 구현의 판정 결과다.
+    result = ScanResultShim(result, FIXED_TIMESTAMP)
 
     # 위협정보를 결정론적으로 주입한다 (네트워크에 의존하지 않기 위해).
     import dataclasses
@@ -188,6 +211,7 @@ def main() -> int:
                              policy={"version": policy.version, "sha256": policy.sha256,
                                      "sources": list(policy.sources), "label": policy.label})
     report = ReportBuilder(config, engine=engine).build(scan_result)
+    report.generated_at = FIXED_TIMESTAMP
 
     facts = build_batch(judged)
     playbooks = {
