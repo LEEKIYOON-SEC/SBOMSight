@@ -1,9 +1,9 @@
 /**
  * 공용 상수와 표시 라벨.
  *
- * 실 운영(FastAPI)과 GitHub Pages 데모가 같은 값을 쓴다. Python 쪽
- * core/models.py 의 열거형 리터럴과 문자열이 일치해야 하며, 파리티
- * 테스트가 이를 대조한다.
+ * 여기에는 판정 로직이 없다 — 취약 여부도, 우선순위도 서버가 이미 정해서
+ * 내려준다. 이 파일이 하는 일은 그 값을 사람이 읽을 문자열로 옮기는 것뿐이다.
+ * 문자열 리터럴은 core/models.py 의 열거형 값과 일치해야 한다.
  */
 
 export const PRIORITIES = ['P0', 'P1', 'P2', 'P3'];
@@ -67,6 +67,22 @@ export const FLAG_LABEL = {
 export function describeFlag(name) {
   const [label, note] = FLAG_LABEL[name] || [name, ''];
   return { name, label, note };
+}
+
+/**
+ * 선택 키 — core/models.py 의 `Finding.key` 와 같은 형식이어야 한다.
+ * 서버가 이 문자열로 항목을 되찾으므로 한 글자라도 다르면 선택이 먹지 않는다.
+ *
+ * 설치 패키지명과 설치 버전이 들어 있는 **내부 문자열**이다. 브라우저와 로컬
+ * 서버 사이에서만 오가며, AI로 나가는 VulnFact 에는 등장하지 않는다.
+ */
+export function findingKey(f) {
+  return [
+    f.intel?.cve ?? '',
+    f.installed?.name ?? '',
+    f.installed?.version ?? '',
+    f.installed?.purl ?? '',
+  ].join('|');
 }
 
 export function priorityRank(p) {

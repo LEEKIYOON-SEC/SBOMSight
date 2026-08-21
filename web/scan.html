@@ -22,47 +22,24 @@
   <h1>SBOM 스캔</h1>
   <p class="lede">
     폐쇄망에서 <code>syft</code>로 생성해 반출한 SBOM JSON(CycloneDX · SPDX · Syft)을 올리면
-    탐지부터 보고서까지 한 흐름으로 처리합니다.
+    <b>진짜 Grype</b>가 취약점을 찾고, 공개 위협정보를 붙여 대응 검토 근거를 정리합니다.
   </p>
 
   <div id="banner"></div>
 
-  <!-- 데모 전용: 샘플 SBOM + 패키지 편집기 -->
-  <section class="card hidden" id="demo-card">
-    <h3 style="margin-top:0">데모용 샘플 SBOM</h3>
+  <!-- 전시 모드: 실제 PC에서 뽑아 둔 결과 목록 -->
+  <section class="card hidden" id="static-card">
+    <h3 style="margin-top:0">전시 중인 실제 스캔 결과</h3>
     <p class="muted" style="margin-top:0">
-      이 페이지는 서버 없이 브라우저 안에서 스캔합니다. 인덱스는 CI에서
-      <b>진짜 Syft와 Grype</b>로 만든 것이며, 여기서 하는 매칭은 Grype가 하는 것과 같은
-      판정입니다 — 설치 버전이 advisory의 영향 버전범위에 드는지 생태계 규칙으로 평가합니다.
-      올린 파일은 어디로도 전송되지 않습니다.
+      이 페이지에서는 스캔하지 않습니다. Grype는 Go 바이너리와 취약점 DB를 요구하고,
+      AI 호출에 쓰는 키는 정적 페이지에 담을 수 없습니다. 아래는 실제 PC에서
+      진짜 Syft/Grype로 수행한 결과를 그대로 옮겨 온 것입니다 —
+      판정도, AI에 전송된 내용도, 보고서도 전부 그때 실제로 일어난 일의 기록입니다.
     </p>
-    <div class="toolbar">
-      <select id="sample-pick"></select>
-      <button id="sample-load">이 샘플로 스캔</button>
-      <button id="sample-edit">패키지 편집기 열기</button>
-      <a class="btn" id="sample-download" download>SBOM 내려받기</a>
+    <div class="toolbar" style="margin-bottom:0">
+      <select id="static-pick"></select>
       <div class="spacer"></div>
-      <span class="faint" id="index-info"></span>
-    </div>
-
-    <div class="hidden" id="editor">
-      <p class="faint" style="margin-bottom:.4rem">
-        패키지를 빼거나 버전을 바꾼 뒤 다시 스캔해 보세요. 결과가 실제로 달라집니다 —
-        취약한 패키지를 지우면 그 항목이 사라지고, 버전을 Fixed Version으로 올리면
-        영향 범위를 벗어나 탐지되지 않습니다.
-      </p>
-      <div class="table-scroll" style="max-height:20rem">
-        <table>
-          <thead><tr><th style="width:3rem">포함</th><th>패키지</th><th>타입</th><th>버전</th></tr></thead>
-          <tbody id="editor-rows"></tbody>
-        </table>
-      </div>
-      <div class="toolbar">
-        <span class="faint" id="editor-count"></span>
-        <div class="spacer"></div>
-        <button id="editor-reset">되돌리기</button>
-        <button class="primary" id="editor-scan">편집한 SBOM으로 스캔</button>
-      </div>
+      <span class="faint" id="static-info"></span>
     </div>
   </section>
 
@@ -115,13 +92,24 @@
         <input type="search" id="filter-text" placeholder="CVE 또는 패키지 검색">
         <div class="spacer"></div>
         <span class="faint" id="count"></span>
-        <button id="egress-btn">AI에게 전송될 내용 보기</button>
-        <a class="btn" id="dl-md" target="_blank" rel="noopener">보고서 (Markdown)</a>
-        <a class="btn primary" id="dl-html" target="_blank" rel="noopener">보고서 (HTML)</a>
       </div>
+
+      <!-- 선택 막대 — 무엇을 고를지, 고른 것으로 무엇을 할지 -->
+      <div class="toolbar selection-bar" id="selection-bar">
+        <b id="selection-count">0건 선택</b>
+        <span class="faint" id="selection-hint">보고서와 AI 전송의 범위입니다.</span>
+        <button id="select-filtered">보이는 항목 전체 선택</button>
+        <button id="select-p0p1">P0 · P1 선택</button>
+        <button id="select-none">선택 해제</button>
+        <div class="spacer"></div>
+        <button id="egress-btn" disabled>AI에 전송될 내용 보기</button>
+        <a class="btn primary" id="go-report">선택 항목으로 보고서</a>
+      </div>
+
       <div class="table-scroll">
         <table>
           <thead><tr>
+            <th class="pick"><input type="checkbox" id="check-all" aria-label="보이는 항목 전체 선택"></th>
             <th>우선순위</th><th>CVE</th><th>패키지</th><th>설치 버전</th>
             <th>Fixed</th><th class="num">CVSS</th><th class="num">EPSS</th><th>상태</th>
           </tr></thead>
@@ -157,46 +145,63 @@
 
 <script type="module">
 import { getProvider } from './js/providers/index.js';
-import { sortFindings, summarize } from './js/core/model.js';
+import { findingKey, sortFindings, summarize } from './js/core/model.js';
 import {
-  $, esc, renderDetail, renderStats, renderStepper, renderSummaryLine, renderTable,
+  $, $$, esc, renderDetail, renderStats, renderStepper, renderSummaryLine, renderTable,
 } from './js/core/ui.js';
 
 const provider = await getProvider();
+const canUpload = provider.capabilities?.upload !== false;
+const canSelect = provider.capabilities?.select !== false;
 
 const state = {
   upload: null,
   scanId: null,
   findings: [],
-  reportIndex: new Map(),   // "CVE|패키지|버전" → 보고서 항목 (서술 + 권고사항)
+  filtered: [],
+  selected: new Set(),
+  reportIndex: new Map(),   // 선택 키 → 보고서 항목 (서술 + 권고사항)
+  ai: { ready: false, model: '' },
 };
 
 // --- 환경 안내 -------------------------------------------------------------
+let health = {};
 try {
-  const health = await provider.health();
-  if (!health.ok) {
+  health = await provider.health();
+  state.ai = health.ai || state.ai;
+  if (health.mode === 'static') {
+    $('#banner').innerHTML = `<div class="banner info">
+      <b>전시 모드</b> — ${esc(health.note || '')}
+      ${health.exported_at ? `<span class="faint">내보낸 시각 ${esc(health.exported_at)}</span>` : ''}</div>`;
+  } else if (!health.ok) {
     $('#banner').innerHTML = `<div class="banner warn">
       <b>Grype를 찾을 수 없습니다.</b> 설치 후 <code>grype db update</code>로 DB를 준비하세요.
       설치 전에는 스캔이 실패합니다.</div>`;
   }
-} catch { /* 데모 모드에서는 health가 없을 수 있다 */ }
+} catch (error) {
+  $('#banner').innerHTML = `<div class="banner danger">상태를 확인하지 못했습니다: ${esc(error.message)}</div>`;
+}
+
+if (!canUpload) $('#upload-card').classList.add('hidden');
 
 // --- 업로드 ----------------------------------------------------------------
 const dropzone = $('#dropzone');
 const fileInput = $('#file');
 const runButton = $('#run');
 
-dropzone.addEventListener('click', () => fileInput.click());
-dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('over'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
-dropzone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropzone.classList.remove('over');
-  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) handleFile(fileInput.files[0]);
-});
+if (canUpload) {
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('over'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('over');
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) handleFile(fileInput.files[0]);
+  });
+}
 
 async function handleFile(file) {
   $('#file-info').textContent = `${file.name} 업로드 중…`;
@@ -213,7 +218,7 @@ async function handleFile(file) {
 }
 
 // --- 스캔 ------------------------------------------------------------------
-runButton.addEventListener('click', async () => {
+runButton?.addEventListener('click', async () => {
   if (!state.upload) return;
   runButton.disabled = true;
   $('#progress-card').classList.remove('hidden');
@@ -254,11 +259,13 @@ async function pollUntilDone(jobId) {
 }
 
 // --- 결과 ------------------------------------------------------------------
-function findingKey(item) {
+/** 보고서 JSON 항목에서 선택 키를 만든다. 표의 키와 같은 형식이어야 한다. */
+function reportItemKey(item) {
   return [
-    item.cve ?? item.intel?.cve,
-    item.local_analysis?.installed_package ?? item.installed?.name,
-    item.local_analysis?.installed_version ?? item.installed?.version,
+    item.cve,
+    item.local_analysis?.installed_package,
+    item.local_analysis?.installed_version,
+    item.local_analysis?.purl ?? '',
   ].join('|');
 }
 
@@ -266,12 +273,16 @@ async function loadResults(scanId) {
   state.scanId = scanId;
   const scan = await provider.getScan(scanId);
   state.findings = sortFindings(scan.findings || []);
+  state.selected = new Set();
+
+  // 전시 모드에서는 그때 담당자가 실제로 고른 항목을 그대로 되살린다.
+  for (const key of scan.selection?.keys || []) state.selected.add(key);
 
   // 보고서 JSON에서 서술과 권고사항을 가져와 상세 패널에 쓴다.
   state.reportIndex = new Map();
   try {
     const report = await provider.getReport(scanId, 'json');
-    for (const item of report.findings || []) state.reportIndex.set(findingKey(item), item);
+    for (const item of report.findings || []) state.reportIndex.set(reportItemKey(item), item);
   } catch (error) {
     console.warn('보고서를 불러오지 못했습니다:', error);
   }
@@ -284,14 +295,12 @@ async function loadResults(scanId) {
     '<option value="">전체 생태계</option>' +
     ecosystems.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
 
-  if (provider.reportUrl) {
-    $('#dl-md').href = provider.reportUrl(scanId, 'markdown');
-    $('#dl-html').href = provider.reportUrl(scanId, 'html');
-  } else {
-    $('#dl-md').classList.add('hidden');
-    $('#dl-html').classList.add('hidden');
+  if (!canSelect) {
+    $$('#selection-bar button').forEach((b) => { b.hidden = true; });
+    $('#check-all').disabled = true;
+    $('#selection-hint').textContent = '이 스캔에서 실제로 선택되었던 항목입니다.';
   }
-  $('#egress-btn').classList.toggle('hidden', !provider.egressPreview);
+  $('#egress-btn').hidden = !provider.egressPreview;
 
   $('#result').classList.remove('hidden');
   applyFilters();
@@ -304,7 +313,7 @@ function applyFilters() {
   const status = $('#filter-fix').value;
   const text = $('#filter-text').value.trim().toLowerCase();
 
-  const filtered = state.findings.filter((f) => {
+  state.filtered = state.findings.filter((f) => {
     if (priority && f.verdict?.priority !== priority) return false;
     if (ecosystem && f.installed?.type !== ecosystem) return false;
     if (status === 'update' && f.fix?.update_available !== 'true') return false;
@@ -319,13 +328,91 @@ function applyFilters() {
     return true;
   });
 
-  $('#count').textContent = `${filtered.length} / ${state.findings.length}건`;
-  renderTable($('#rows'), filtered, openDrawer);
+  $('#count').textContent = `${state.filtered.length} / ${state.findings.length}건`;
+  renderTable($('#rows'), state.filtered, openDrawer, {
+    key: findingKey,
+    selected: state.selected,
+    onToggle: toggleSelection,
+    selectable: canSelect,
+  });
+  syncSelectionUi();
 }
 
 ['#filter-priority', '#filter-ecosystem', '#filter-fix'].forEach((sel) =>
   $(sel).addEventListener('change', applyFilters));
 $('#filter-text').addEventListener('input', applyFilters);
+
+// --- 선택 ------------------------------------------------------------------
+// 고른 것만 AI로 나가고, 고른 것만 보고서가 된다. 두 범위가 갈라지면
+// "미리보기에서 본 것"과 "실제로 나간 것"이 달라지므로 한 집합으로 관리한다.
+function toggleSelection(key, on) {
+  if (on) state.selected.add(key); else state.selected.delete(key);
+  syncSelectionUi();
+}
+
+function selectionKeys() {
+  return [...state.selected];
+}
+
+function syncSelectionUi() {
+  const n = state.selected.size;
+  $('#selection-count').textContent = n ? `${n}건 선택` : '선택 없음';
+  $('#egress-btn').disabled = !provider.egressPreview || (canSelect && n === 0);
+
+  const link = $('#go-report');
+  const params = new URLSearchParams({ scan: state.scanId || '' });
+  for (const key of selectionKeys()) params.append('select', key);
+  link.href = `report.html?${params}`;
+  link.textContent = n ? `선택 ${n}건으로 보고서` : '전체 보고서';
+
+  const visible = state.filtered.map(findingKey);
+  const all = visible.length > 0 && visible.every((k) => state.selected.has(k));
+  const checkAll = $('#check-all');
+  checkAll.checked = all;
+  checkAll.indeterminate = !all && visible.some((k) => state.selected.has(k));
+}
+
+$('#check-all').addEventListener('change', (event) => {
+  for (const f of state.filtered) {
+    if (event.target.checked) state.selected.add(findingKey(f));
+    else state.selected.delete(findingKey(f));
+  }
+  applyFilters();
+});
+
+$('#select-filtered').addEventListener('click', () => {
+  for (const f of state.filtered) state.selected.add(findingKey(f));
+  applyFilters();
+});
+
+$('#select-p0p1').addEventListener('click', () => {
+  for (const f of state.findings) {
+    if (f.verdict?.priority === 'P0' || f.verdict?.priority === 'P1') {
+      state.selected.add(findingKey(f));
+    }
+  }
+  applyFilters();
+});
+
+$('#select-none').addEventListener('click', () => {
+  state.selected.clear();
+  applyFilters();
+});
+
+// 보고서로 넘어가기 전에 선택을 서버에 남긴다. 나중에 export가 "이 보고서는
+// 무엇을 대상으로 만들어졌는가"를 그대로 옮길 수 있어야 하기 때문이다.
+// 기록에 실패해도 보고서는 URL의 선택 키로 정상 생성되므로 이동은 막지 않는다.
+$('#go-report').addEventListener('click', async (event) => {
+  if (!provider.saveSelection || !state.scanId) return;
+  event.preventDefault();
+  const href = event.currentTarget.href;
+  try {
+    await provider.saveSelection(state.scanId, selectionKeys());
+  } catch (error) {
+    console.warn('선택을 기록하지 못했습니다:', error);
+  }
+  location.href = href;
+});
 
 // --- 상세 패널 -------------------------------------------------------------
 function openDrawer(finding) {
@@ -355,143 +442,6 @@ function closeDrawer() {
 }
 $('#drawer-close').addEventListener('click', closeDrawer);
 $('#backdrop').addEventListener('click', closeDrawer);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
-
-// --- 데모 전용: 샘플 SBOM과 패키지 편집기 ---------------------------------------
-// "실제 Grype처럼 동작하는가"를 방문자가 직접 확인할 수 있어야 한다.
-// 패키지를 지우거나 버전을 바꾸면 결과가 실제로 달라진다.
-const demo = { samples: [], document: null, packages: [], included: new Set() };
-
-async function setupDemo() {
-  if (!provider.sampleSboms) return;
-  $('#demo-card').classList.remove('hidden');
-
-  const health = await provider.health();
-  const index = health.index || {};
-  $('#index-info').textContent =
-    `인덱스: 패키지 ${index.package_count ?? 0}개 · 취약점 ${index.vuln_count ?? 0}건`
-    + (index.generated_at ? ` · 생성 ${index.generated_at.slice(0, 10)}` : '');
-
-  demo.samples = await provider.sampleSboms();
-  $('#sample-pick').innerHTML = demo.samples
-    .map((s, i) => `<option value="${i}">${esc(s.name)} (${s.components}개 컴포넌트)</option>`).join('');
-  syncSampleLink();
-  $('#sample-pick').addEventListener('change', syncSampleLink);
-}
-
-function currentSample() {
-  return demo.samples[Number($('#sample-pick').value) || 0];
-}
-
-function syncSampleLink() {
-  const sample = currentSample();
-  if (!sample) return;
-  $('#sample-download').href = sample.path;
-  $('#sample-download').download = `${sample.name}.cdx.json`;
-}
-
-async function loadSampleDocument() {
-  const sample = currentSample();
-  const response = await fetch(sample.path);
-  if (!response.ok) throw new Error(`샘플을 불러오지 못했습니다 (${response.status})`);
-  demo.document = await response.json();
-  demo.packages = (demo.document.components || []).map((c, i) => ({
-    index: i,
-    name: c.name,
-    version: c.version,
-    type: (c.properties || []).find((p) => p.name === 'syft:package:type')?.value || '',
-  }));
-  demo.included = new Set(demo.packages.map((p) => p.index));
-  return demo.document;
-}
-
-/** 편집한 컴포넌트 목록으로 SBOM 문서를 다시 만든다.
- *
- * 원본 인덱스를 기준으로 판단해야 한다 — filter 이후의 순번을 쓰면 항목이
- * 밀려 엉뚱한 패키지의 버전이 바뀐다. */
-function editedDocument() {
-  const components = [];
-  (demo.document.components || []).forEach((component, index) => {
-    if (!demo.included.has(index)) return;
-    const edited = demo.packages.find((p) => p.index === index);
-    components.push(edited && edited.version !== component.version
-      ? { ...component, version: edited.version }
-      : component);
-  });
-  return { ...demo.document, components };
-}
-
-async function scanDocument(document, filename) {
-  const blob = new Blob([JSON.stringify(document)], { type: 'application/json' });
-  const file = new File([blob], filename, { type: 'application/json' });
-  await handleFile(file);
-  runButton.click();
-}
-
-$('#sample-load')?.addEventListener('click', async () => {
-  try {
-    await loadSampleDocument();
-    await scanDocument(demo.document, `${currentSample().name}.cdx.json`);
-  } catch (error) {
-    $('#banner').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
-  }
-});
-
-$('#sample-edit')?.addEventListener('click', async () => {
-  const editor = $('#editor');
-  if (!editor.classList.contains('hidden')) { editor.classList.add('hidden'); return; }
-  if (!demo.document) await loadSampleDocument();
-  renderEditor();
-  editor.classList.remove('hidden');
-});
-
-function renderEditor() {
-  $('#editor-rows').innerHTML = demo.packages.map((p) => `
-    <tr>
-      <td><input type="checkbox" data-index="${p.index}" ${demo.included.has(p.index) ? 'checked' : ''}></td>
-      <td><b>${esc(p.name)}</b></td>
-      <td class="faint mono">${esc(p.type)}</td>
-      <td><input type="text" class="mono" style="width:12rem" data-version="${p.index}"
-                 value="${esc(p.version)}"></td>
-    </tr>`).join('');
-
-  $('#editor-rows').querySelectorAll('input[type=checkbox]').forEach((box) => {
-    box.addEventListener('change', () => {
-      const i = Number(box.dataset.index);
-      if (box.checked) demo.included.add(i); else demo.included.delete(i);
-      updateEditorCount();
-    });
-  });
-  $('#editor-rows').querySelectorAll('input[data-version]').forEach((input) => {
-    input.addEventListener('input', () => {
-      const pkg = demo.packages.find((p) => p.index === Number(input.dataset.version));
-      if (pkg) pkg.version = input.value;
-    });
-  });
-  updateEditorCount();
-}
-
-function updateEditorCount() {
-  $('#editor-count').textContent = `${demo.included.size} / ${demo.packages.length}개 포함`;
-}
-
-$('#editor-reset')?.addEventListener('click', async () => {
-  await loadSampleDocument();
-  renderEditor();
-});
-
-$('#editor-scan')?.addEventListener('click', async () => {
-  try {
-    await scanDocument(editedDocument(), `${currentSample().name}-edited.cdx.json`);
-  } catch (error) {
-    $('#banner').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
-  }
-});
-
-await setupDemo().catch((error) => {
-  console.warn('데모 설정 실패:', error);
-  $('#demo-card').classList.add('hidden');
-});
 
 // --- 이그레스 미리보기 -------------------------------------------------------
 // "공개 데이터만 보냅니다"라는 주장은 검증할 수 있어야 의미가 있다.
@@ -503,47 +453,126 @@ $('#egress-btn').addEventListener('click', async () => {
   openEgress();
 
   try {
-    const preview = await provider.egressPreview(state.scanId);
-    const verdict = preview.ok
-      ? `<div class="banner info"><b>검증 통과</b> — 아래 내용이 전송 대상입니다.
-           적용 정책 <span class="mono">${esc(preview.policy.label)}</span></div>`
-      : `<div class="banner danger"><b>전송 차단</b> — 이그레스 정책 위반이 발견되어
-           이 상태로는 전송되지 않습니다.</div>`;
-
-    const violations = preview.violations.length
-      ? `<div class="callout"><ul>${preview.violations
-          .map((v) => `<li><code>${esc(v.rule)}</code> @ <span class="mono">${esc(v.path)}</span>
-             — ${esc(v.reason)}${v.sample ? ` <span class="mono">(${esc(v.sample)})</span>` : ''}</li>`)
-          .join('')}</ul></div>`
-      : '';
-
-    body.innerHTML = `
-      ${verdict}
-      ${violations}
-      <table class="kv">
-        <tr><th>탐지 건수</th><td>${preview.finding_count}건</td></tr>
-        <tr><th>전송 대상</th><td>${preview.fact_count}건
-          ${preview.deduplicated > 0
-            ? `<span class="faint">(중복 ${preview.deduplicated}건 제외 — 중복 수는 곧 자산 규모라 내보내지 않습니다)</span>`
-            : ''}</td></tr>
-        <tr><th>AI 사용 설정</th><td>${preview.would_send ? '사용 가능' : '미사용 (기본값)'}</td></tr>
-      </table>
-      <div class="callout">${esc(preview.note)}</div>
-
-      <div class="section">
-        <h3>전송될 데이터 (VulnFact)</h3>
-        <pre class="step-cmd" style="max-height:22rem;overflow:auto">${esc(JSON.stringify(preview.facts, null, 2))}</pre>
-      </div>
-
-      <div class="section">
-        <h3>프롬프트 원문</h3>
-        <p class="muted">시스템 지시와 요청 본문 전체입니다. 여기 없는 것은 전송되지 않습니다.</p>
-        <pre class="step-cmd" style="max-height:26rem;overflow:auto">${esc(preview.prompt)}</pre>
-      </div>`;
+    const preview = await provider.egressPreview(state.scanId, { selection: selectionKeys() });
+    body.innerHTML = renderEgress(preview);
+    wireGenerate();
   } catch (error) {
     body.innerHTML = `<div class="banner danger">미리보기를 불러오지 못했습니다: ${esc(error.message)}</div>`;
   }
 });
+
+function renderEgress(preview) {
+  const verdict = preview.ok
+    ? `<div class="banner info"><b>검증 통과</b> — 아래 내용이 전송 대상입니다.
+         적용 정책 <span class="mono">${esc(preview.policy.label)}</span></div>`
+    : `<div class="banner danger"><b>전송 차단</b> — 이그레스 정책 위반이 발견되어
+         이 상태로는 전송되지 않습니다.</div>`;
+
+  const violations = (preview.violations || []).length
+    ? `<div class="callout"><ul>${preview.violations
+        .map((v) => `<li><code>${esc(v.rule)}</code> @ <span class="mono">${esc(v.path)}</span>
+           — ${esc(v.reason)}${v.sample ? ` <span class="mono">(${esc(v.sample)})</span>` : ''}</li>`)
+        .join('')}</ul></div>`
+    : '';
+
+  const scope = preview.selection?.scope === 'selection'
+    ? `선택한 ${preview.finding_count}건`
+    : `전체 ${preview.finding_count}건`;
+
+  // 전시 모드에서는 여기서 새로 조립하지 않는다 — 기록을 그대로 보여 준다.
+  const action = preview.recorded
+    ? `<div class="callout">이 내용은 실제 PC에서 <b>이미 전송된 기록</b>입니다.
+         이 페이지에서는 AI를 호출하지 않습니다.</div>`
+    : sendButton(preview);
+
+  return `
+    ${verdict}
+    ${violations}
+    <table class="kv">
+      <tr><th>전송 범위</th><td>${esc(scope)}</td></tr>
+      <tr><th>전송 대상</th><td>${preview.fact_count}건
+        ${preview.deduplicated > 0
+          ? `<span class="faint">(중복 ${preview.deduplicated}건 제외 — 중복 수는 곧 자산 규모라 내보내지 않습니다)</span>`
+          : ''}</td></tr>
+      <tr><th>AI 사용 설정</th><td>${preview.would_send
+        ? `사용 가능${preview.model ? ` <span class="mono">${esc(preview.model)}</span>` : ''}`
+        : '미사용 (기본값)'}</td></tr>
+    </table>
+    <div class="callout">${esc(preview.note || '')}</div>
+    ${action}
+
+    <div class="section">
+      <h3>전송될 데이터 (VulnFact)</h3>
+      <pre class="step-cmd" style="max-height:22rem;overflow:auto">${esc(JSON.stringify(preview.facts, null, 2))}</pre>
+    </div>
+
+    <div class="section">
+      <h3>프롬프트 원문</h3>
+      <p class="muted">시스템 지시와 요청 본문 전체입니다. 여기 없는 것은 전송되지 않습니다.</p>
+      <pre class="step-cmd" style="max-height:26rem;overflow:auto">${esc(preview.prompt || '')}</pre>
+    </div>`;
+}
+
+function sendButton(preview) {
+  if (!provider.generateNarratives) return '';
+  if (!preview.ok) {
+    return `<div class="callout">가드가 막았으므로 전송 버튼을 제공하지 않습니다.</div>`;
+  }
+  if (!preview.would_send) {
+    return `<div class="callout">
+      AI 사용이 꺼져 있거나 키가 설정되지 않았습니다. <code>.env</code> 에
+      <code>SBOMSIGHT_AI_ENABLED=1</code> 과 <code>GEMINI_API_KEY</code> 를 넣고 서버를
+      다시 시작하세요. <b>AI 없이도 보고서는 룰 기반으로 완결됩니다.</b>
+    </div>`;
+  }
+  return `
+    <div class="toolbar" style="margin-top:.6rem">
+      <button class="primary" id="egress-send">이 내용을 전송해 서술 생성</button>
+      <div class="spacer"></div>
+      <span class="faint" id="egress-send-status"></span>
+    </div>
+    <div id="egress-send-result"></div>`;
+}
+
+function wireGenerate() {
+  const button = $('#egress-send');
+  if (!button) return;
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    $('#egress-send-status').textContent = '전송하고 생성하는 중…';
+    $('#egress-send-result').innerHTML = '';
+    try {
+      const result = await provider.generateNarratives(state.scanId, { selection: selectionKeys() });
+      const rejected = (result.rejected || []).length
+        ? `<div class="callout"><b>표현 정책에 걸린 서술 ${result.rejected.length}건은 반영하지 않았습니다.</b>
+             해당 항목은 룰 기반 문장을 그대로 씁니다.
+             <ul>${result.rejected
+               .map((r) => `<li><code>${esc(r.cve)}</code> — ${esc((r.rules || []).join(', '))}</li>`)
+               .join('')}</ul></div>`
+        : '';
+      const errors = (result.errors || []).length
+        ? `<div class="callout"><b>일부 요청이 실패했습니다.</b>
+             <ul>${result.errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></div>`
+        : '';
+      const params = new URLSearchParams({ scan: state.scanId });
+      for (const key of selectionKeys()) params.append('select', key);
+      $('#egress-send-result').innerHTML = `
+        <div class="banner info" style="margin-top:.6rem">
+          ${result.applied}/${result.requested}건에 AI 서술을 적용했습니다
+          ${result.model ? `<span class="mono">(${esc(result.model)})</span>` : ''}.
+          대응 검토 우선순위는 룰 판정 그대로입니다.
+          <a href="report.html?${params}">보고서 보기 →</a>
+        </div>${rejected}${errors}`;
+      $('#egress-send-status').textContent = '완료';
+    } catch (error) {
+      $('#egress-send-result').innerHTML =
+        `<div class="banner danger" style="margin-top:.6rem">${esc(error.message)}</div>`;
+      $('#egress-send-status').textContent = '실패';
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
 
 function openEgress() {
   $('#egress-drawer').classList.add('open');
@@ -557,11 +586,48 @@ function closeEgress() {
 }
 $('#egress-close').addEventListener('click', closeEgress);
 $('#egress-backdrop').addEventListener('click', closeEgress);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEgress(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  closeEgress();
+  closeDrawer();
+});
 
-// --- 링크로 들어온 경우 -----------------------------------------------------
+// --- 전시 모드 목록 / 링크로 들어온 경우 -------------------------------------
 const requested = new URLSearchParams(location.search).get('scan');
-if (requested) {
+
+if (!canUpload) {
+  try {
+    const { scans } = await provider.listScans();
+    if (!scans.length) {
+      $('#banner').innerHTML = `<div class="banner warn">
+        전시할 결과가 아직 없습니다. 실제 PC에서
+        <code>python -m core.cli export --out results</code> 로 결과를 내보내 주세요.</div>`;
+    } else {
+      $('#static-card').classList.remove('hidden');
+      $('#static-pick').innerHTML = scans
+        .map((s) => `<option value="${esc(s.scan_id)}">${esc(s.label || s.metadata?.sbom_filename || s.scan_id)}
+          · 탐지 ${s.finding_count}건${s.selected_count ? ` · 선택 ${s.selected_count}건` : ''}</option>`)
+        .join('');
+      const pick = $('#static-pick');
+      pick.value = requested && scans.some((s) => s.scan_id === requested) ? requested : scans[0].scan_id;
+      const show = async () => {
+        const scan = scans.find((s) => s.scan_id === pick.value) || {};
+        $('#static-info').textContent = [
+          scan.created_at ? `스캔 ${scan.created_at}` : '',
+          scan.metadata?.grype_version ? `grype ${scan.metadata.grype_version}` : '',
+          scan.ai_used ? 'AI 서술 사용' : 'AI 미사용 (룰 기반)',
+        ].filter(Boolean).join(' · ');
+        await loadResults(pick.value);
+      };
+      pick.addEventListener('change', () => show().catch((error) => {
+        $('#banner').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+      }));
+      await show();
+    }
+  } catch (error) {
+    $('#banner').innerHTML = `<div class="banner danger">전시 결과를 불러오지 못했습니다: ${esc(error.message)}</div>`;
+  }
+} else if (requested) {
   try {
     await loadResults(requested);
   } catch (error) {

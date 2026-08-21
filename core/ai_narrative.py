@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import Any
 
 from .audit import AuditLog
@@ -52,6 +54,32 @@ def _to_narrative(analysis: dict[str, Any]) -> Narrative:
     )
 
 
+def narrative_to_dict(narrative: Narrative) -> dict[str, Any]:
+    """저장용 직렬화. 우선순위성 필드는 애초에 존재하지 않는다."""
+    return {
+        "technical_risk": narrative.technical_risk,
+        "attack_preconditions": list(narrative.attack_preconditions),
+        "impact_types": list(narrative.impact_types),
+        "exploitability_note": narrative.exploitability_note,
+        "response_rationale": narrative.response_rationale,
+        "recommendation_note": narrative.recommendation_note,
+        "source": narrative.source,
+    }
+
+
+def narrative_from_dict(payload: dict[str, Any]) -> Narrative:
+    """저장된 서술을 되살린다. 알 수 없는 키는 버린다."""
+    return Narrative(
+        technical_risk=str(payload.get("technical_risk") or ""),
+        attack_preconditions=tuple(str(x) for x in payload.get("attack_preconditions") or ()),
+        impact_types=tuple(str(x) for x in payload.get("impact_types") or ()),
+        exploitability_note=str(payload.get("exploitability_note") or ""),
+        response_rationale=str(payload.get("response_rationale") or ""),
+        recommendation_note=str(payload.get("recommendation_note") or ""),
+        source=str(payload.get("source") or "ai"),
+    )
+
+
 def _narrative_texts(narrative: Narrative) -> dict[str, str]:
     return {
         "technical_risk": narrative.technical_risk,
@@ -59,6 +87,102 @@ def _narrative_texts(narrative: Narrative) -> dict[str, str]:
         "response_rationale": narrative.response_rationale,
         "recommendation_note": narrative.recommendation_note,
     }
+
+
+@dataclass(frozen=True)
+class NarrativeRun:
+    """서술 생성 1회의 결과와 그 경위.
+
+    호출부(웹 UI)가 "몇 건에 적용됐고, 무엇이 왜 반영되지 않았는지"를 사람에게
+    그대로 보여 줄 수 있어야 한다. 조용히 일부만 적용하고 끝내면 독자는 자기가
+    읽는 문장이 AI 것인지 룰 것인지 알 수 없다.
+    """
+
+    narratives: dict[str, Narrative] = dataclass_field(default_factory=dict)
+    rejected: tuple[dict[str, Any], ...] = ()      # {"cve": ..., "rules": [...]}
+    errors: tuple[str, ...] = ()
+    model: str = ""
+    requested: int = 0
+    available: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "applied": len(self.narratives),
+            "requested": self.requested,
+            "rejected": list(self.rejected),
+            "errors": list(self.errors),
+            "model": self.model,
+            "available": self.available,
+        }
+
+
+def run_narratives(
+    findings: tuple[Finding, ...] | list[Finding],
+    *,
+    config: Config | None = None,
+    scan_id: str = "",
+) -> NarrativeRun:
+    """선택된 finding들에 대해 AI 서술을 생성한다.
+
+    전달되는 것은 `build_batch`가 공개 계층에서 조립한 VulnFact뿐이다.
+    findings 자체는 이 함수 밖으로 나가지 않는다.
+    """
+    config = config or get_config()
+    guard = EgressGuard.from_config(config)
+    audit = AuditLog(config.audit_dir)
+    client = GeminiClient(config, guard=guard, audit=audit)
+    tone = ToneGuard.from_config(config)
+
+    if not client.available():
+        logger.info("AI가 비활성이거나 키가 없어 룰 기반 서술로 진행합니다.")
+        return NarrativeRun(available=False)
+
+    facts = build_batch(findings)
+    if not facts:
+        return NarrativeRun(requested=0)
+
+    limit = guard.limits.get("max_facts_per_request") or len(facts)
+    narratives: dict[str, Narrative] = {}
+    rejected: list[dict[str, Any]] = []
+    errors: list[str] = []
+    model = ""
+
+    for start in range(0, len(facts), limit):
+        chunk = facts[start : start + limit]
+        try:
+            result = client.analyze(chunk, scan_id=scan_id)
+        except EgressBlocked as blocked:
+            # 가드가 막았다면 그것은 버그이거나 공격이다. 조용히 넘기지 않는다.
+            logger.error("이그레스 가드가 전송을 차단했습니다: %s", blocked)
+            raise
+        except (GeminiUnavailable, GeminiError) as exc:
+            logger.warning("AI 서술 생성 실패, 룰 기반으로 진행합니다: %s", exc)
+            errors.append(str(exc))
+            continue
+
+        model = result.model
+        for analysis in result.analyses:
+            cve = str(analysis.get("cve") or "")
+            if not cve:
+                continue
+            narrative = _to_narrative(dict(analysis))
+            violations = tone.inspect(_narrative_texts(narrative))
+            if violations:
+                logger.warning(
+                    "%s: 표현 정책 위반 %s — 해당 서술을 버리고 룰 문장을 사용합니다",
+                    cve, [v.rule for v in violations],
+                )
+                rejected.append({"cve": cve, "rules": sorted({v.rule for v in violations})})
+                continue
+            narratives[cve] = narrative
+
+    return NarrativeRun(
+        narratives=narratives,
+        rejected=tuple(rejected),
+        errors=tuple(errors),
+        model=model,
+        requested=len(facts),
+    )
 
 
 def generate_narratives(
@@ -72,50 +196,7 @@ def generate_narratives(
     빈 dict를 받은 ReportBuilder는 전 항목을 룰 문장으로 채운다 —
     AI 없이도 보고서가 완결된다는 전제가 여기서도 지켜진다.
     """
-    config = config or get_config()
-    guard = EgressGuard.from_config(config)
-    audit = AuditLog(config.audit_dir)
-    client = GeminiClient(config, guard=guard, audit=audit)
-    tone = ToneGuard.from_config(config)
-
-    if not client.available():
-        logger.info("AI가 비활성이거나 키가 없어 룰 기반 서술로 진행합니다.")
-        return {}
-
-    facts = build_batch(findings)
-    if not facts:
-        return {}
-
-    limit = guard.limits.get("max_facts_per_request") or len(facts)
-    narratives: dict[str, Narrative] = {}
-
-    for start in range(0, len(facts), limit):
-        chunk = facts[start : start + limit]
-        try:
-            result = client.analyze(chunk, scan_id=scan_id)
-        except EgressBlocked as blocked:
-            # 가드가 막았다면 그것은 버그이거나 공격이다. 조용히 넘기지 않는다.
-            logger.error("이그레스 가드가 전송을 차단했습니다: %s", blocked)
-            raise
-        except (GeminiUnavailable, GeminiError) as exc:
-            logger.warning("AI 서술 생성 실패, 룰 기반으로 진행합니다: %s", exc)
-            continue
-
-        for analysis in result.analyses:
-            cve = str(analysis.get("cve") or "")
-            if not cve:
-                continue
-            narrative = _to_narrative(dict(analysis))
-            violations = tone.inspect(_narrative_texts(narrative))
-            if violations:
-                logger.warning(
-                    "%s: 표현 정책 위반 %s — 해당 서술을 버리고 룰 문장을 사용합니다",
-                    cve, [v.rule for v in violations],
-                )
-                continue
-            narratives[cve] = narrative
-
-    return narratives
+    return run_narratives(findings, config=config, scan_id=scan_id).narratives
 
 
 def regenerate_with_tone_retry(

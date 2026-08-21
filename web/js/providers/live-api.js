@@ -102,6 +102,19 @@ export const liveApiProvider = {
   },
 
   /**
+   * 담당자가 고른 항목을 서버에 기록한다. 보고서를 열 때마다 범위를 다시
+   * 고르지 않아도 되고, `core.cli export` 가 "이 보고서는 무엇을 대상으로
+   * 만들어졌는가"를 그대로 옮길 수 있다.
+   */
+  async saveSelection(scanId, selection) {
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/selection`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selection }),
+    })).json();
+  },
+
+  /**
    * 선택한 항목에 대해서만 AI 서술을 생성한다.
    *
    * 키는 서버 환경변수에 있고 브라우저로 내려오지 않는다. 전송되는 내용은

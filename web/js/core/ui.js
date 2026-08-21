@@ -74,9 +74,23 @@ export function renderSummaryLine(container, summary) {
 
 const TERNARY_TAG = { true: 'danger', false: 'ok', unknown: 'warn' };
 
-export function renderTable(tbody, findings, onSelect) {
+/**
+ * 결과 표.
+ *
+ * 각 행에 체크박스가 붙는다 — 보고서와 AI 전송의 범위를 담당자가 직접 고른다.
+ * 체크박스를 누르는 것과 행을 눌러 상세를 여는 것은 다른 동작이므로, 체크박스
+ * 열에서 일어난 클릭은 드로어를 열지 않는다.
+ *
+ * @param {(f) => string}   key       선택 키를 만드는 함수
+ * @param {Set<string>}     selected  현재 선택된 키
+ * @param {(key, on) => void} onToggle  체크 상태가 바뀌었을 때
+ * @param {boolean}         selectable 전시 모드에서는 false — 기록된 선택만 보여 준다
+ */
+export function renderTable(tbody, findings, onSelect, {
+  key = () => '', selected = new Set(), onToggle = null, selectable = true,
+} = {}) {
   if (!findings.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="muted" style="text-align:center;padding:2rem">
+    tbody.innerHTML = `<tr><td colspan="9" class="muted" style="text-align:center;padding:2rem">
       조건에 맞는 항목이 없습니다.</td></tr>`;
     return;
   }
@@ -87,8 +101,12 @@ export function renderTable(tbody, findings, onSelect) {
       const fix = f.fix || {};
       const flags = f.verdict?.flags || [];
       const unknownFlags = flags.filter((x) => UNKNOWN_FLAGS.has(x));
+      const k = key(f);
+      const checked = selected.has(k) ? 'checked' : '';
       return `
       <tr class="clickable" data-index="${index}">
+        <td class="pick"><input type="checkbox" data-key="${esc(k)}" ${checked}
+          ${selectable ? '' : 'disabled'} aria-label="보고서 대상으로 선택"></td>
         <td>${priorityPill(f.verdict?.priority)}</td>
         <td><b>${esc(intel.cve)}</b>${
           intel.aliases?.length ? `<div class="faint">${esc(intel.aliases.join(', '))}</div>` : ''
@@ -112,7 +130,17 @@ export function renderTable(tbody, findings, onSelect) {
     .join('');
 
   tbody.querySelectorAll('tr.clickable').forEach((row) => {
-    row.addEventListener('click', () => onSelect(findings[Number(row.dataset.index)]));
+    row.addEventListener('click', (event) => {
+      // 체크박스 열은 선택 조작 전용이다. 여기서 드로어까지 열리면
+      // 몇 건을 고르는 동안 상세 패널이 계속 튀어나온다.
+      if (event.target.closest('.pick')) return;
+      onSelect(findings[Number(row.dataset.index)]);
+    });
+  });
+
+  if (!selectable || !onToggle) return;
+  tbody.querySelectorAll('.pick input[type=checkbox]').forEach((box) => {
+    box.addEventListener('change', () => onToggle(box.dataset.key, box.checked));
   });
 }
 

@@ -40,40 +40,15 @@
     <div class="toolbar" style="margin-bottom:0">
       <select id="pick-scan"></select>
       <div class="spacer"></div>
-      <button id="ai-btn" class="hidden">AI 서술 생성 (내 키 사용)</button>
+      <a class="btn" id="back-to-scan">선택 다시 하기</a>
       <button id="print">인쇄 · PDF로 저장</button>
       <a class="btn" id="dl-md" download>Markdown 내려받기</a>
       <a class="btn primary" id="dl-html" download>HTML 내려받기</a>
     </div>
   </section>
 
+  <div id="scope"></div>
   <div id="disclaimer"></div>
-
-  <!-- 데모 전용: 방문자 자기 키로 AI 서술 생성 -->
-  <section class="card hidden" id="ai-card">
-    <h3 style="margin-top:0">AI 서술 생성 <span class="tag">선택 기능</span></h3>
-    <p class="muted" style="margin-top:0">
-      이 보고서는 <b>AI 없이 이미 완결되어 있습니다.</b> 아래는 ②기술적 위험성과
-      ④대응 필요성 분석의 서술을 더 읽기 좋게 바꾸는 선택 기능입니다.
-      대응 검토 우선순위는 로컬 룰 엔진의 산출물이며 AI가 바꾸지 못합니다.
-    </p>
-    <div class="callout">
-      <b>키는 브라우저에만 남습니다.</b> 입력한 Google AI Studio 키는 이 탭의
-      sessionStorage에만 저장되고(탭을 닫으면 사라집니다) 저희 쪽 어디로도
-      전송되지 않습니다. 호출은 브라우저에서 Google로 직접 갑니다.
-      전송되는 내용은 <b>「AI에게 전송될 내용 보기」와 정확히 같으며</b>,
-      같은 이그레스 가드를 통과해야만 호출이 일어납니다.
-    </div>
-    <div class="toolbar">
-      <input type="password" id="ai-key" placeholder="Google AI Studio API 키" style="width:22rem">
-      <button class="primary" id="ai-run">서술 생성</button>
-      <button id="ai-forget">키 지우기</button>
-      <a class="btn" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">키 발급</a>
-      <div class="spacer"></div>
-      <span class="faint" id="ai-status"></span>
-    </div>
-    <div id="ai-result"></div>
-  </section>
 
   <section id="summary" class="hidden">
     <h2>요약</h2>
@@ -102,6 +77,15 @@ import { EXPLOIT_SOURCE_LABEL, FIX_STATE_LABEL, TERNARY_LABEL } from './js/core/
 
 const provider = await getProvider();
 const params = new URLSearchParams(location.search);
+
+// 스캔 화면에서 체크한 항목이 그대로 넘어온다. 비어 있으면 전체 보고서다.
+const selection = params.getAll('select');
+
+function withSelection(base) {
+  const query = new URLSearchParams(base);
+  for (const key of selection) query.append('select', key);
+  return query;
+}
 
 function stepList(items, ordered = false) {
   if (!items?.length) return '';
@@ -222,8 +206,11 @@ function renderFinding(item, index) {
 }
 
 async function load(scanId) {
-  const report = await provider.getReport(scanId, 'json');
+  const report = await provider.getReport(scanId, 'json', { selection });
   const scan = report.scan || {};
+  const scope = report.selection?.scope === 'selection'
+    ? `선택한 ${report.findings.length}건`
+    : `전체 ${report.findings.length}건`;
 
   $('#meta').innerHTML = `
     <dt>생성 시각</dt><dd>${esc(report.generated_at)}</dd>
@@ -231,8 +218,18 @@ async function load(scanId) {
     <dt>대상 SBOM</dt><dd>${esc(scan.sbom_filename || '(미상)')}
       <span class="faint">${esc(scan.sbom_format || '')}</span></dd>
     <dt>컴포넌트</dt><dd>${scan.component_count ?? 0}개</dd>
+    <dt>보고서 범위</dt><dd>${esc(scope)}</dd>
     <dt>적용 정책</dt><dd class="mono">${esc(report.policy?.label || '')}</dd>
     <dt>서술 생성</dt><dd>${report.ai_used ? 'AI 사용' : 'AI 미사용 (룰 기반)'}</dd>`;
+
+  // 부분 보고서라면 그 사실을 문서 앞머리에 남긴다 — 결재 문서로 나갈 때
+  // "전체 스캔 결과"로 오독되면 안 된다.
+  $('#scope').innerHTML = report.selection?.scope === 'selection'
+    ? `<div class="banner warn">이 보고서는 담당자가 선택한 <b>${report.findings.length}건</b>만 담고
+         있습니다. 스캔 전체 결과가 아닙니다.</div>`
+    : '';
+
+  $('#back-to-scan').href = `scan.html?${withSelection({ scan: scanId })}`;
 
   $('#disclaimer').innerHTML = `<div class="banner info">${esc(report.disclaimer)}</div>`;
 
@@ -256,99 +253,20 @@ async function load(scanId) {
     `<li>${priorityPill(item.priority)}<a href="#f-${i + 1}">${esc(item.cve)}</a></li>`).join('');
   $('#toc-card').classList.toggle('hidden', !report.findings.length);
 
-  if (provider.reportUrl) {
-    $('#dl-md').href = provider.reportUrl(scanId, 'markdown');
-    $('#dl-md').download = `sbomsight-${scanId}.md`;
-    $('#dl-html').href = provider.reportUrl(scanId, 'html');
-    $('#dl-html').download = `sbomsight-${scanId}.html`;
-  } else {
-    // 데모 모드에서는 서버 URL이 없으므로 브라우저에서 만들어 내려받게 한다.
-    // HTML은 이 페이지가 이미 렌더링하고 인쇄(PDF)를 제공하므로 버튼을 감춘다.
+  $('#dl-md').href = provider.reportUrl(scanId, 'markdown', { selection });
+  $('#dl-md').download = `sbomsight-${scanId}.md`;
+
+  if (provider.readonly) {
+    // 전시 모드에는 HTML을 조립해 줄 서버가 없다. 이 페이지가 이미 렌더링하고
+    // 인쇄(PDF)를 제공하므로 버튼을 감춘다.
     $('#dl-html').classList.add('hidden');
-    for (const [sel, format, ext, type] of [
-      ['#dl-md', 'markdown', 'md', 'text/markdown'],
-    ]) {
-      const node = $(sel);
-      node.addEventListener('click', async (event) => {
-        event.preventDefault();
-        const text = await provider.getReport(scanId, format);
-        const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
-        const anchor = Object.assign(document.createElement('a'),
-          { href: url, download: `sbomsight-${scanId}.${ext}` });
-        anchor.click();
-        URL.revokeObjectURL(url);
-      });
-    }
+  } else {
+    $('#dl-html').href = provider.reportUrl(scanId, 'html', { selection });
+    $('#dl-html').download = `sbomsight-${scanId}.html`;
   }
 }
 
 $('#print').addEventListener('click', () => window.print());
-
-// --- 데모 전용: 방문자 키로 AI 서술 생성 ---------------------------------------
-if (provider.generateNarratives) {
-  $('#ai-card').classList.remove('hidden');
-  $('#ai-btn').classList.remove('hidden');
-  $('#ai-btn').addEventListener('click', () => {
-    $('#ai-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    $('#ai-key').focus();
-  });
-
-  const { apiKey } = await import('./js/core/gemini.js');
-  if (apiKey.get()) {
-    $('#ai-key').value = apiKey.get();
-    $('#ai-status').textContent = '이 탭에 저장된 키가 있습니다';
-  }
-
-  $('#ai-forget').addEventListener('click', () => {
-    apiKey.clear();
-    $('#ai-key').value = '';
-    $('#ai-status').textContent = '키를 지웠습니다';
-  });
-
-  $('#ai-run').addEventListener('click', async () => {
-    const key = $('#ai-key').value.trim();
-    if (!key) { $('#ai-status').textContent = '키를 입력해 주세요'; return; }
-    apiKey.set(key);
-
-    $('#ai-run').disabled = true;
-    $('#ai-result').innerHTML = '';
-    $('#ai-status').textContent = '전송 전 검증 중…';
-
-    try {
-      const result = await provider.generateNarratives(picker.value, {
-        key,
-        onProgress: ({ done, total }) => {
-          $('#ai-status').textContent = `생성 중… ${done}/${total}`;
-        },
-      });
-
-      const rejected = result.rejected.length
-        ? `<div class="callout" style="margin-top:.6rem">
-             <b>표현 정책에 걸린 서술 ${result.rejected.length}건은 반영하지 않았습니다.</b>
-             해당 항목은 룰 기반 문장을 그대로 씁니다.
-             <ul>${result.rejected.map((r) =>
-               `<li><code>${esc(r.cve)}</code> — ${esc(r.rules.join(', '))}</li>`).join('')}</ul>
-           </div>`
-        : '';
-      $('#ai-result').innerHTML =
-        `<div class="banner info" style="margin-top:.6rem">
-           ${result.applied}/${result.total}건에 AI 서술을 적용했습니다.
-           대응 검토 우선순위는 룰 판정 그대로입니다.</div>${rejected}`;
-      $('#ai-status').textContent = '완료';
-      await load(picker.value);
-    } catch (error) {
-      const violations = error.violations
-        ? `<ul>${error.violations.slice(0, 5).map((v) =>
-            `<li><code>${esc(v.rule)}</code> @ ${esc(v.path)} — ${esc(v.reason)}</li>`).join('')}</ul>`
-        : '';
-      $('#ai-result').innerHTML =
-        `<div class="banner danger" style="margin-top:.6rem">${esc(error.message)}${violations}</div>`;
-      $('#ai-status').textContent = '실패';
-    } finally {
-      $('#ai-run').disabled = false;
-    }
-  });
-}
 
 // --- 스캔 선택 --------------------------------------------------------------
 const picker = $('#pick-scan');
@@ -360,16 +278,20 @@ try {
 }
 
 if (!scans.length) {
-  $('#banner').innerHTML = `<div class="banner warn">
-    아직 스캔 기록이 없습니다. <a href="scan.html">스캔 페이지</a>에서 SBOM을 올려 주세요.</div>`;
+  $('#banner').innerHTML = provider.readonly
+    ? `<div class="banner warn">전시할 결과가 아직 없습니다.</div>`
+    : `<div class="banner warn">아직 스캔 기록이 없습니다.
+        <a href="scan.html">스캔 페이지</a>에서 SBOM을 올려 주세요.</div>`;
   $('#meta-card').classList.add('hidden');
 } else {
   picker.innerHTML = scans.map((s) =>
-    `<option value="${esc(s.scan_id)}">${esc(s.created_at)} · ${esc(s.metadata.sbom_filename || s.scan_id)}
+    `<option value="${esc(s.scan_id)}">${esc(s.created_at)} · ${esc(s.metadata?.sbom_filename || s.scan_id)}
       (${s.finding_count}건)</option>`).join('');
   const requested = params.get('scan');
   picker.value = requested && scans.some((s) => s.scan_id === requested) ? requested : scans[0].scan_id;
   picker.addEventListener('change', () => {
+    // 스캔을 바꾸면 이전 스캔의 선택 키는 의미가 없다. 범위를 전체로 되돌린다.
+    selection.length = 0;
     history.replaceState(null, '', `?scan=${encodeURIComponent(picker.value)}`);
     load(picker.value).catch((error) => {
       $('#banner').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;

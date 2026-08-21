@@ -10,27 +10,27 @@ PC 한 대(Windows 11 또는 Rocky Linux 10)에서 도는 단독 도구를 전�
 
 from __future__ import annotations
 
+import dataclasses
 import json
-import shutil
 import uuid
-from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from core import grype_runner, sbom as sbom_mod, syft_runner
+from core import grype_runner, sbom as sbom_mod, selection as selection_mod, syft_runner
+from core.ai_narrative import narrative_from_dict, narrative_to_dict, run_narratives
 from core.cli import _load_scan_result
 from core.config import get_config
-from core.models import to_jsonable
+from core.models import ScanResult, to_jsonable
 from core.policy import load as load_policy
 from core.audit import AuditLog
 from core.prompt import build_full_text
 from core.render import to_html, to_markdown
 from core.report import ReportBuilder
 from core.ruleengine import RuleEngine
-from core.sanitizer import EgressGuard
+from core.sanitizer import EgressBlocked, EgressGuard
 from core.store import Store
 from core.vulnfact import build_batch
 
@@ -54,6 +54,22 @@ def _store() -> Store:
     return Store(config.db_path)
 
 
+def _scoped(scan_id: str, select: list[str] | None) -> tuple[ScanResult, selection_mod.Selection]:
+    """스캔을 불러와 선택 범위를 적용한다.
+
+    선택이 비어 있으면 전체를 뜻한다. 이그레스 미리보기·보고서·AI 호출이 전부
+    이 한 함수를 거치므로, 화면에 보여 준 범위와 실제로 처리되는 범위가
+    어긋날 수 없다.
+    """
+    if _store().get_scan(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    result = _load_scan_result(scan_id)
+    picked = selection_mod.apply(result.findings, select)
+    if picked.requested and not picked.findings:
+        raise HTTPException(400, "선택한 항목이 이 스캔에 없습니다.")
+    return result, picked
+
+
 # ---------------------------------------------------------------------------
 # 상태
 # ---------------------------------------------------------------------------
@@ -72,8 +88,15 @@ def health() -> dict[str, Any]:
             "grype_db": grype_runner.db_status(config),
         },
         "offline": config.offline,
-        # AI는 기본적으로 꺼져 있다. 켜져 있어도 공개 취약점 데이터만 전달된다.
-        "ai": {"enabled": config.ai_enabled, "ready": config.ai_ready()},
+        # AI는 기본적으로 꺼져 있다. 켜져 있어도 공개 취약점 데이터만 전달되며,
+        # 키는 서버 환경변수에만 있고 여기로도 브라우저로도 나가지 않는다.
+        "ai": {
+            "enabled": config.ai_enabled,
+            "ready": config.ai_ready(),
+            "model": config.gemini_model,
+            "fallback_model": config.gemini_fallback_model,
+            "key_source": "server-env",
+        },
         "policy": {
             "version": policy.version,
             "sha256": policy.sha256,
@@ -181,10 +204,30 @@ def list_scans(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
 
 @app.get("/api/scans/{scan_id}")
 def get_scan(scan_id: str) -> dict[str, Any]:
-    scan = _store().get_scan(scan_id)
+    store = _store()
+    scan = store.get_scan(scan_id)
     if scan is None:
         raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    scan["selection"] = {"keys": store.get_selection(scan_id)}
+    scan["narratives"] = store.narrative_meta(scan_id)
     return scan
+
+
+@app.put("/api/scans/{scan_id}/selection")
+def put_selection(scan_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """담당자가 고른 항목을 기록한다.
+
+    보고서를 만들 때마다 범위를 다시 고르게 하지 않기 위한 것이자, 나중에
+    `core.cli export` 가 "이 보고서는 무엇을 대상으로 만들어졌는가"를 그대로
+    옮길 수 있게 하기 위한 기록이다.
+    """
+    raw = body.get("selection")
+    if not isinstance(raw, list):
+        raise HTTPException(400, "selection은 문자열 배열이어야 합니다.")
+
+    _, picked = _scoped(scan_id, [str(x) for x in raw])
+    _store().save_selection(scan_id, [f.key for f in picked.findings] if picked.requested else [])
+    return {"scan_id": scan_id, "selection": picked.to_dict()}
 
 
 @app.delete("/api/scans/{scan_id}")
@@ -199,22 +242,33 @@ def delete_scan(scan_id: str) -> dict[str, Any]:
 def get_report(
     scan_id: str,
     format: str = Query("json", pattern="^(json|markdown|html)$"),
+    select: list[str] = Query(default=[]),
 ) -> Any:
     """보고서를 생성해 돌려준다.
 
-    AI는 사용하지 않는다(Mode B). AI 서술은 M5에서 별도 엔드포인트로 붙는다.
-    """
-    if _store().get_scan(scan_id) is None:
-        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    `select`로 항목을 고르면 그 항목만 담긴다. 고르지 않으면 전체다.
 
-    result = _load_scan_result(scan_id)
-    report = ReportBuilder(config, engine=RuleEngine.from_config(config)).build(result)
+    AI 서술은 이 엔드포인트가 만들지 않는다. 이미 생성해 둔 것이 있으면
+    얹을 뿐이며, 없으면 전 항목이 룰 문장으로 채워진다 — AI 없이도 보고서가
+    완결된다는 전제는 여기서도 그대로다.
+    """
+    result, picked = _scoped(scan_id, select)
+    scoped = dataclasses.replace(result, findings=picked.findings)
+
+    stored = _store().get_narratives(scan_id)
+    narratives = {cve: narrative_from_dict(payload) for cve, payload in stored.items()}
+
+    report = ReportBuilder(config, engine=RuleEngine.from_config(config)).build(
+        scoped, narratives=narratives
+    )
 
     if format == "markdown":
         return PlainTextResponse(to_markdown(report), media_type="text/markdown; charset=utf-8")
     if format == "html":
         return HTMLResponse(to_html(report))
-    return JSONResponse(to_jsonable(report))
+    payload = to_jsonable(report)
+    payload["selection"] = picked.to_dict()
+    return JSONResponse(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -235,20 +289,24 @@ def egress_policy() -> dict[str, Any]:
 
 
 @app.get("/api/scans/{scan_id}/egress/preview")
-def egress_preview(scan_id: str, limit: int = Query(0, ge=0, le=500)) -> dict[str, Any]:
+def egress_preview(
+    scan_id: str,
+    select: list[str] = Query(default=[]),
+    limit: int = Query(0, ge=0, le=500),
+) -> dict[str, Any]:
     """AI에게 전송될 내용 전체를 그대로 돌려준다.
 
     "공개 데이터만 보냅니다"라는 주장은 검증할 수 있어야 의미가 있다.
     실제 전송에 쓰이는 것과 **같은 조립기·같은 가드**를 통과시킨 결과와,
     프롬프트 원문을 함께 낸다. 사람이 눈으로 확인한 뒤 보낼 수 있게 하기
     위한 것이며, 이 호출 자체는 외부로 아무것도 보내지 않는다.
-    """
-    if _store().get_scan(scan_id) is None:
-        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
 
-    result = _load_scan_result(scan_id)
+    `select`로 고른 항목만 조립한다. 미리보기와 실제 전송이 같은 범위여야
+    하므로 AI 호출부도 같은 선택 키를 받아 같은 방식으로 조립한다.
+    """
+    result, picked = _scoped(scan_id, select)
     guard = EgressGuard.from_config(config)
-    facts = build_batch(result.findings)
+    facts = build_batch(picked.findings)
     if limit:
         facts = facts[:limit]
 
@@ -267,9 +325,11 @@ def egress_preview(scan_id: str, limit: int = Query(0, ge=0, le=500)) -> dict[st
 
     return {
         "scan_id": scan_id,
-        "finding_count": len(result.findings),
+        "finding_count": len(picked.findings),
+        "scan_finding_count": len(result.findings),
+        "selection": picked.to_dict(),
         "fact_count": len(facts),
-        "deduplicated": len(result.findings) - len(facts),
+        "deduplicated": len(picked.findings) - len(facts),
         "ok": checked.ok,
         "violations": [v.to_dict() for v in checked.violations],
         "policy": {
@@ -280,11 +340,82 @@ def egress_preview(scan_id: str, limit: int = Query(0, ge=0, le=500)) -> dict[st
         "facts": facts,
         "prompt": build_full_text(facts),
         "would_send": config.ai_ready(),
+        "model": config.gemini_model if config.ai_ready() else "",
         "note": (
             "이 내용이 AI에게 전달되는 전부입니다. 자산명·호스트명·IP·파일 경로·"
             "설치 버전·취약 여부 판정·대응 우선순위는 포함되지 않습니다."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# AI 서술 — 고른 항목만, 서버가 쥔 키로
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/scans/{scan_id}/narratives")
+def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """선택한 항목에 대해서만 AI 서술을 생성해 저장한다.
+
+    키는 서버 환경변수(`GEMINI_API_KEY`)에서 읽으며 브라우저로 내려가지
+    않는다. 전송되는 내용은 같은 선택 키로 egress/preview가 보여 준 것과
+    동일하고, 같은 가드를 통과해야만 호출이 일어난다.
+    """
+    raw = body.get("selection") or []
+    if not isinstance(raw, list):
+        raise HTTPException(400, "selection은 문자열 배열이어야 합니다.")
+    select = [str(x) for x in raw]
+
+    _, picked = _scoped(scan_id, select)
+
+    if not config.ai_enabled:
+        raise HTTPException(
+            409,
+            "AI 사용이 꺼져 있습니다. SBOMSIGHT_AI_ENABLED=1 로 켜 주세요. "
+            "AI 없이도 보고서는 룰 기반으로 완결됩니다.",
+        )
+    if not config.gemini_api_key:
+        raise HTTPException(
+            409,
+            "GEMINI_API_KEY가 설정되어 있지 않습니다. .env 에 키를 넣고 서버를 다시 시작하세요.",
+        )
+
+    try:
+        run = run_narratives(picked.findings, config=config, scan_id=scan_id)
+    except EgressBlocked as blocked:
+        # 가드가 막았다면 전송은 일어나지 않았다. 무엇이 걸렸는지 그대로 알린다.
+        raise HTTPException(
+            422,
+            {
+                "message": "이그레스 정책 위반으로 전송이 차단되었습니다.",
+                "violations": [v.to_dict() for v in blocked.violations],
+            },
+        ) from blocked
+
+    store = _store()
+    store.save_narratives(
+        scan_id,
+        {cve: narrative_to_dict(n) for cve, n in run.narratives.items()},
+        model=run.model,
+    )
+    # 실제로 전송한 범위를 남긴다. 이것이 나중에 전시 자료의 근거가 된다.
+    store.save_selection(scan_id, [f.key for f in picked.findings] if picked.requested else [])
+
+    return {
+        "scan_id": scan_id,
+        "selection": picked.to_dict(),
+        **run.to_dict(),
+        "stored": store.narrative_meta(scan_id),
+    }
+
+
+@app.delete("/api/scans/{scan_id}/narratives")
+def drop_narratives(scan_id: str) -> dict[str, Any]:
+    """저장된 AI 서술을 지운다. 보고서는 다시 룰 문장으로 돌아간다."""
+    if _store().get_scan(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    _store().clear_narratives(scan_id)
+    return {"scan_id": scan_id, "cleared": True}
 
 
 @app.get("/api/egress/audit")

@@ -61,10 +61,15 @@ class Config:
 
     # --- AI (선택) ----------------------------------------------------------
     # 기본값 False. AI 없이도 리포트가 완결되는 것이 이 제품의 전제다.
+    #
+    # 키는 **서버 프로세스의 환경변수에서만** 읽는다. 브라우저로 내려보내지
+    # 않으며, 방문자에게 키를 입력받지도 않는다. 호출은 전부 서버에서 나간다.
     ai_enabled: bool = field(default_factory=lambda: _env_bool("SBOMSIGHT_AI_ENABLED", False))
     gemini_api_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY"))
-    gemini_model: str = field(default_factory=lambda: _env("GEMINI_MODEL") or "gemini-3.6-flash")
-    gemini_fallback_model: str = field(default_factory=lambda: _env("GEMINI_FALLBACK_MODEL") or "gemini-3.5-flash-lite")
+    gemini_model: str = field(default_factory=lambda: _env("GEMINI_MODEL") or "gemini-3.5-flash-lite")
+    # 폴백을 primary와 같게 두지 않는다. 같으면 폴백이 하는 일이 없고, 쿼터가
+    # 소진됐을 때 같은 모델을 한 번 더 두드릴 뿐이다. 비워 두면 폴백 없음.
+    gemini_fallback_model: str = field(default_factory=lambda: _env("GEMINI_FALLBACK_MODEL"))
     gemini_timeout_sec: int = field(default_factory=lambda: _env_int("GEMINI_TIMEOUT", 120))
     gemini_max_retries: int = field(default_factory=lambda: _env_int("GEMINI_MAX_RETRIES", 3))
 

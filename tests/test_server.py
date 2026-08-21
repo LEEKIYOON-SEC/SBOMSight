@@ -257,6 +257,153 @@ class TestEgressEndpoints:
         assert body["would_send"] is False
 
 
+class TestSelectionScope:
+    """고른 것만 나가고, 고른 것만 보고서가 된다."""
+
+    def _keys(self, client, seeded_scan):
+        findings = client.get(f"/api/scans/{seeded_scan}").json()["findings"]
+        return [
+            "|".join([f["intel"]["cve"], f["installed"]["name"],
+                      f["installed"]["version"], f["installed"]["purl"]])
+            for f in findings
+        ]
+
+    def test_preview_is_limited_to_the_selection(self, client, seeded_scan):
+        keys = self._keys(client, seeded_scan)
+        body = client.get(
+            f"/api/scans/{seeded_scan}/egress/preview", params={"select": keys[:1]}
+        ).json()
+        assert body["finding_count"] == 1
+        assert body["selection"]["scope"] == "selection"
+        assert body["scan_finding_count"] > 1
+
+    def test_unselected_cve_is_absent_from_the_prompt(self, client, seeded_scan):
+        keys = self._keys(client, seeded_scan)
+        full = client.get(f"/api/scans/{seeded_scan}/egress/preview").json()
+        one = client.get(
+            f"/api/scans/{seeded_scan}/egress/preview", params={"select": keys[:1]}
+        ).json()
+
+        picked = {f["cve"] for f in one["facts"]}
+        dropped = {f["cve"] for f in full["facts"]} - picked
+        assert dropped, "픽스처에 CVE가 하나뿐이라 이 테스트가 의미가 없다"
+        for cve in dropped:
+            assert cve not in one["prompt"]
+
+    def test_report_is_limited_to_the_selection(self, client, seeded_scan):
+        keys = self._keys(client, seeded_scan)
+        body = client.get(
+            f"/api/scans/{seeded_scan}/report", params={"format": "json", "select": keys[:1]}
+        ).json()
+        assert len(body["findings"]) == 1
+        assert body["selection"]["scope"] == "selection"
+
+    def test_empty_selection_is_the_whole_scan(self, client, seeded_scan):
+        body = client.get(f"/api/scans/{seeded_scan}/report?format=json").json()
+        assert body["selection"]["scope"] == "all"
+        assert len(body["findings"]) == len(self._keys(client, seeded_scan))
+
+    def test_selection_of_nothing_known_is_rejected(self, client, seeded_scan):
+        response = client.get(
+            f"/api/scans/{seeded_scan}/egress/preview", params={"select": ["nope"]}
+        )
+        assert response.status_code == 400
+
+    def test_selection_round_trips(self, client, seeded_scan):
+        keys = self._keys(client, seeded_scan)
+        put = client.put(f"/api/scans/{seeded_scan}/selection", json={"selection": keys[:1]})
+        assert put.status_code == 200
+        stored = client.get(f"/api/scans/{seeded_scan}").json()["selection"]["keys"]
+        assert stored == keys[:1]
+
+    def test_saving_an_empty_selection_clears_the_scope(self, client, seeded_scan):
+        keys = self._keys(client, seeded_scan)
+        client.put(f"/api/scans/{seeded_scan}/selection", json={"selection": keys[:1]})
+        client.put(f"/api/scans/{seeded_scan}/selection", json={"selection": []})
+        assert client.get(f"/api/scans/{seeded_scan}").json()["selection"]["keys"] == []
+
+    def test_selection_must_be_a_list(self, client, seeded_scan):
+        response = client.put(f"/api/scans/{seeded_scan}/selection", json={"selection": "all"})
+        assert response.status_code == 400
+
+
+class TestNarrativeEndpoint:
+    """AI 호출은 서버에서만 일어나고, 키는 브라우저로 내려가지 않는다."""
+
+    def test_key_never_appears_in_any_response(self, client, seeded_scan):
+        health = client.get("/api/health").json()
+        assert "key" not in json.dumps(health["ai"]).lower().replace("key_source", "")
+        assert health["ai"]["key_source"] == "server-env"
+
+    def test_refused_when_ai_is_disabled(self, client, seeded_scan):
+        response = client.post(f"/api/scans/{seeded_scan}/narratives", json={"selection": []})
+        assert response.status_code == 409
+        assert "SBOMSIGHT_AI_ENABLED" in response.json()["detail"]
+
+    def test_refused_when_key_is_missing(self, client, seeded_scan, monkeypatch):
+        import server.app
+
+        monkeypatch.setattr(server.app.config, "ai_enabled", True)
+        monkeypatch.setattr(server.app.config, "gemini_api_key", "")
+        response = client.post(f"/api/scans/{seeded_scan}/narratives", json={"selection": []})
+        assert response.status_code == 409
+        assert "GEMINI_API_KEY" in response.json()["detail"]
+
+    @staticmethod
+    def _stub_ai(client, monkeypatch, seen=None, model=""):
+        """모델을 실제로 부르지 않고 서술 생성 경로만 태운다."""
+        import server.app
+        from core.ai_narrative import NarrativeRun
+        from core.report import Narrative
+
+        def fake_run(findings, *, config, scan_id):
+            if seen is not None:
+                seen["cves"] = [f.intel.cve for f in findings]
+            return NarrativeRun(
+                narratives={
+                    f.intel.cve: Narrative(technical_risk="설명", source="ai") for f in findings
+                },
+                model=model,
+                requested=len(findings),
+            )
+
+        monkeypatch.setattr(server.app.config, "ai_enabled", True)
+        monkeypatch.setattr(server.app.config, "gemini_api_key", "test-key")
+        monkeypatch.setattr(server.app, "run_narratives", fake_run)
+
+    def test_generates_only_for_the_selection(self, client, seeded_scan, monkeypatch):
+        seen = {}
+        keys = TestSelectionScope()._keys(client, seeded_scan)
+        self._stub_ai(client, monkeypatch, seen, model="gemini-3.5-flash-lite")
+
+        body = client.post(
+            f"/api/scans/{seeded_scan}/narratives", json={"selection": keys[:1]}
+        ).json()
+
+        assert len(seen["cves"]) == 1
+        assert body["applied"] == 1
+        assert body["model"] == "gemini-3.5-flash-lite"
+        # 실제로 전송한 범위가 기록되어야 export가 그것을 옮길 수 있다.
+        assert body["selection"]["scope"] == "selection"
+        assert client.get(f"/api/scans/{seeded_scan}").json()["selection"]["keys"] == keys[:1]
+
+        # 생성한 서술이 보고서에 실제로 얹혀야 한다.
+        report = client.get(
+            f"/api/scans/{seeded_scan}/report", params={"format": "json", "select": keys[:1]}
+        ).json()
+        assert report["ai_used"] is True
+        assert report["findings"][0]["technical_risk"]["narrative"] == "설명"
+
+    def test_dropping_narratives_returns_to_rule_text(self, client, seeded_scan, monkeypatch):
+        keys = TestSelectionScope()._keys(client, seeded_scan)
+        self._stub_ai(client, monkeypatch)
+        client.post(f"/api/scans/{seeded_scan}/narratives", json={"selection": keys[:1]})
+
+        client.delete(f"/api/scans/{seeded_scan}/narratives")
+        report = client.get(f"/api/scans/{seeded_scan}/report?format=json").json()
+        assert report["ai_used"] is False
+
+
 class TestStaticFrontend:
     @pytest.mark.parametrize("path", ["/", "/scan.html", "/report.html", "/about.html"])
     def test_pages_are_served(self, client, path):

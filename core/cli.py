@@ -174,7 +174,7 @@ def _print_summary(result, engine, component_count: int) -> None:
     print(f"  적용 정책: {result.policy.get('label', '')}", file=sys.stderr)
 
 
-def _load_scan_result(source: str) -> ScanResult:
+def _load_scan_result(source: str, config=None) -> ScanResult:
     """findings.json(스캔 산출물) 또는 저장된 scan_id에서 ScanResult를 복원한다."""
     from .models import (
         AdvisoryPackage, Detection, ExploitMaturity, ExploitSource, FiredRule,
@@ -186,7 +186,7 @@ def _load_scan_result(source: str) -> ScanResult:
     if path.is_file():
         payload = json.loads(path.read_text(encoding="utf-8"))
     else:
-        stored = Store(get_config().db_path).get_scan(source)
+        stored = Store((config or get_config()).db_path).get_scan(source)
         if stored is None:
             raise FileNotFoundError(f"파일도 스캔 ID도 아닙니다: {source}")
         payload = {
@@ -311,6 +311,21 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_export(args: argparse.Namespace) -> int:
+    from .export import export_all, warn_about_contents
+
+    config = get_config()
+    index = export_all(
+        Path(args.out),
+        config=config,
+        scan_ids=args.scan or None,
+        limit=args.limit,
+        redact=not args.no_redact,
+    )
+    warn_about_contents(index, Path(args.out))
+    return 0
+
+
 def _cmd_scans(args: argparse.Namespace) -> int:
     store = Store(get_config().db_path)
     for row in store.list_scans(limit=args.limit):
@@ -360,6 +375,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_report.add_argument("--no-ai", dest="ai", action="store_false", help="AI 미사용 (기본값)")
     p_report.set_defaults(func=_cmd_report, ai=False)
+
+    p_export = sub.add_parser(
+        "export",
+        help="스캔 결과를 GitHub Pages 전시용 정적 파일로 내보냄 (내부 정보 포함 — 확인 후 커밋)",
+    )
+    p_export.add_argument("--out", default="results", help="내보낼 디렉터리 (기본: results)")
+    p_export.add_argument("--scan", action="append", help="내보낼 스캔 ID (여러 번 지정 가능)")
+    p_export.add_argument("--limit", type=int, default=5, help="--scan 미지정 시 최근 N건")
+    p_export.add_argument(
+        "--no-redact", action="store_true",
+        help="파일 경로·SBOM 파일명·스캔 대상 문자열까지 그대로 내보냄 (권장하지 않음)",
+    )
+    p_export.set_defaults(func=_cmd_export)
 
     p_scans = sub.add_parser("scans", help="저장된 스캔 목록")
     p_scans.add_argument("--limit", type=int, default=20)

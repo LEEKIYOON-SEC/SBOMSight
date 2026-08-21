@@ -43,6 +43,27 @@ CREATE TABLE IF NOT EXISTS findings (
 CREATE INDEX IF NOT EXISTS idx_findings_scan ON findings(scan_id);
 CREATE INDEX IF NOT EXISTS idx_findings_cve  ON findings(cve);
 
+-- AI가 생성한 서술. 보고서를 다시 열 때마다 모델을 또 부르지 않기 위해
+-- 남긴다. 서술은 공개 데이터에서 나온 산문이므로 자산 정보를 담지 않지만,
+-- 어느 스캔의 어느 CVE에 붙었는지는 내부 맥락이라 이 DB 안에만 둔다.
+CREATE TABLE IF NOT EXISTS narratives (
+    scan_id    TEXT NOT NULL,
+    cve        TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    model      TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (scan_id, cve)
+);
+
+-- 담당자가 고른 항목. 보고서와 AI 전송의 범위이자, 나중에 "이 보고서는
+-- 무엇을 대상으로 만들어졌는가"를 되짚는 근거다. 선택 키에는 설치 패키지명과
+-- 설치 버전이 들어 있으므로 이 DB 밖으로 나가지 않는다.
+CREATE TABLE IF NOT EXISTS selections (
+    scan_id    TEXT PRIMARY KEY,
+    keys       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 -- 위협정보 캐시. 오프라인에서도 마지막 스냅샷으로 동작하기 위한 것.
 CREATE TABLE IF NOT EXISTS intel_cache (
     source     TEXT NOT NULL,
@@ -160,7 +181,71 @@ class Store:
     def delete_scan(self, scan_id: str) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM findings WHERE scan_id = ?", (scan_id,))
+            conn.execute("DELETE FROM narratives WHERE scan_id = ?", (scan_id,))
+            conn.execute("DELETE FROM selections WHERE scan_id = ?", (scan_id,))
             conn.execute("DELETE FROM scans WHERE scan_id = ?", (scan_id,))
+
+    # --- 선택 -------------------------------------------------------------
+
+    def save_selection(self, scan_id: str, keys: list[str]) -> None:
+        """담당자가 고른 항목을 기록한다. 빈 목록은 '전체'를 뜻한다."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO selections (scan_id, keys, created_at) VALUES (?,?,?)",
+                (
+                    scan_id,
+                    json.dumps(list(dict.fromkeys(keys)), ensure_ascii=False),
+                    datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                ),
+            )
+
+    def get_selection(self, scan_id: str) -> list[str]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT keys FROM selections WHERE scan_id = ?", (scan_id,)
+            ).fetchone()
+        return json.loads(row["keys"]) if row else []
+
+    # --- AI 서술 ----------------------------------------------------------
+
+    def save_narratives(self, scan_id: str, narratives: dict[str, Any], model: str = "") -> None:
+        """CVE → 서술 dict 를 덮어쓴다.
+
+        선택한 항목만 생성했다면 그 항목만 갱신된다. 이전에 만들어 둔 다른
+        CVE의 서술은 남는다 — 담당자가 몇 번에 나누어 고를 수 있어야 한다.
+        """
+        if not narratives:
+            return
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO narratives (scan_id, cve, payload, model, created_at) "
+                "VALUES (?,?,?,?,?)",
+                [
+                    (scan_id, cve, json.dumps(payload, ensure_ascii=False), model, now)
+                    for cve, payload in narratives.items()
+                ],
+            )
+
+    def get_narratives(self, scan_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT cve, payload FROM narratives WHERE scan_id = ?", (scan_id,)
+            ).fetchall()
+        return {r["cve"]: json.loads(r["payload"]) for r in rows}
+
+    def narrative_meta(self, scan_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n, MAX(created_at) AS at, MAX(model) AS model "
+                "FROM narratives WHERE scan_id = ?",
+                (scan_id,),
+            ).fetchone()
+        return {"count": row["n"] or 0, "generated_at": row["at"] or "", "model": row["model"] or ""}
+
+    def clear_narratives(self, scan_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM narratives WHERE scan_id = ?", (scan_id,))
 
     # --- 위협정보 캐시 -----------------------------------------------------
 
