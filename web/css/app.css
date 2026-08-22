@@ -328,3 +328,12 @@ footer.site { border-top: 1px solid var(--line); margin-top: 3rem; padding: 1.25
 .group-block { margin-bottom: 2rem; }
 .group-block > h2 { border-top: 2px solid var(--line); padding-top: 1rem; }
 .group-block > h2 small { display: block; font-weight: 400; margin-top: .15rem; }
+
+/* 스캔 화면에서 바로 서버를 만든다. 자산 화면으로 갔다 오면 올리던 파일을 놓친다. */
+.inline-new { display: inline-flex; gap: .4rem; align-items: center; }
+.inline-new input { min-width: 9rem; }
+
+/* 쪽 넘김. 48,923건을 한 화면에 그리면 브라우저가 멈춘다 — 기본 100건씩 본다. */
+.pager { border-top: 1px solid var(--line); padding-top: .6rem; margin-top: .5rem; }
+.pager button { min-width: 3rem; }
+.pager #page-label { font-variant-numeric: tabular-nums; }

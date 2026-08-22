@@ -39,6 +39,12 @@
       <label class="check" id="asset-pick-wrap" hidden>서버
         <select id="asset-pick"></select>
       </label>
+      <span class="inline-new" id="asset-new" hidden>
+        <input id="asset-name" placeholder="서버 이름 (예: web-01)">
+        <input id="asset-group" placeholder="그룹 (선택)">
+        <button type="button" class="btn small primary" id="asset-add">등록</button>
+        <span class="faint" id="asset-msg"></span>
+      </span>
       <label class="check"><input type="checkbox" id="enrich" checked> 위협정보 보강 (EPSS · CISA KEV · 공개 Exploit)</label>
       <div class="spacer"></div>
       <span id="file-info" class="faint"></span>
@@ -90,7 +96,7 @@
       <div class="toolbar selection-bar" id="selection-bar">
         <b id="selection-count">0건 선택</b>
         <span class="faint" id="selection-hint">보고서와 AI 전송의 범위입니다.</span>
-        <button id="select-filtered">보이는 항목 전체 선택</button>
+        <button id="select-filtered">조건에 맞는 전체 선택</button>
         <button id="select-p0p1">즉시 · 우선 검토 선택</button>
         <button id="select-none">선택 해제</button>
         <div class="spacer"></div>
@@ -101,7 +107,7 @@
       <div class="table-scroll">
         <table>
           <thead><tr>
-            <th class="pick"><input type="checkbox" id="check-all" aria-label="보이는 항목 전체 선택"></th>
+            <th class="pick"><input type="checkbox" id="check-all" aria-label="이 쪽 전체 선택"></th>
             <th class="sortable" data-sort="priority">대응 검토</th>
             <th class="sortable" data-sort="cve">CVE</th>
             <th class="sortable" data-sort="package">패키지</th>
@@ -112,6 +118,22 @@
           </tr></thead>
           <tbody id="rows"></tbody>
         </table>
+      </div>
+
+      <div class="toolbar pager" id="pager">
+        <button id="page-first" title="처음">«</button>
+        <button id="page-prev">이전</button>
+        <span id="page-label" class="faint"></span>
+        <button id="page-next">다음</button>
+        <button id="page-last" title="마지막">»</button>
+        <label class="check">쪽당
+          <select id="page-size">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+          </select>
+        </label>
       </div>
     </div>
   </section>
@@ -142,12 +164,11 @@
 
 <script type="module">
 import { getProvider } from './js/providers/index.js';
-import { findingKey, priorityRank, sortFindings, summarize } from './js/core/model.js';
+import { findingKey } from './js/core/model.js';
 import {
   $, $$, esc, renderDetail, renderStats, renderStepper, renderSummaryLine, renderTable,
 } from './js/core/ui.js';
 import { mountTopbar } from './js/core/nav.js';
-import { downloadCsv } from './js/core/csv.js';
 
 await mountTopbar('scan.html');
 const provider = await getProvider();
@@ -157,10 +178,12 @@ const canSelect = provider.capabilities?.select !== false;
 const state = {
   upload: null,
   scanId: null,
-  findings: [],
-  filtered: [],
+  page: [],                 // 지금 화면에 그린 한 쪽
+  total: 0,                 // 필터를 적용한 뒤의 건수
+  scanTotal: 0,             // 스캔 전체 건수
+  offset: 0,
+  limit: 100,
   selected: new Set(),
-  reportIndex: new Map(),   // 선택 키 → 보고서 항목 (서술 + 권고사항)
   sort: { key: 'priority', desc: false },
   ai: { ready: false, model: '' },
 };
@@ -192,18 +215,53 @@ if (!canUpload) $('#upload-card').classList.add('hidden');
  * 나중에 "이 sbom.json 이 어느 서버 것이었지"를 파일명으로 추측하게 된다.
  * 자산 화면에서 넘어온 경우(`?asset=`)는 그 서버가 이미 골라져 있다.
  */
+const NEW_ASSET = '__new__';
+
+async function loadAssetPicker(selected = '') {
+  const { assets } = await (await fetch('api/assets')).json();
+  const preset = selected || new URLSearchParams(location.search).get('asset') || '';
+  $('#asset-pick').innerHTML =
+    '<option value="">— 미분류 —</option>'
+    + (assets || []).map((a) => `<option value="${esc(a.asset_id)}"${
+        a.asset_id === preset ? ' selected' : ''
+      }>${esc(a.name)}${a.group_name ? ` (${esc(a.group_name)})` : ''}</option>`).join('')
+    + `<option value="${NEW_ASSET}">+ 새 서버 등록…</option>`;
+  $('#asset-pick-wrap').hidden = false;
+  $('#asset-new').hidden = true;
+}
+
 if (canUpload) {
   try {
-    const { assets } = await (await fetch('api/assets')).json();
-    const preset = new URLSearchParams(location.search).get('asset') || '';
-    if (assets?.length) {
-      $('#asset-pick').innerHTML = '<option value="">— 미분류 —</option>'
-        + assets.map((a) => `<option value="${esc(a.asset_id)}"${
-          a.asset_id === preset ? ' selected' : ''
-        }>${esc(a.name)}${a.group_name ? ` (${esc(a.group_name)})` : ''}</option>`).join('');
-      $('#asset-pick-wrap').hidden = false;
-    }
+    await loadAssetPicker();
   } catch { /* 전시 모드에는 자산이 없다 */ }
+
+  // 드롭다운에서 바로 서버를 만든다. 자산 화면으로 갔다 오게 하면 올리던
+  // 파일을 놓치고, 실제로는 그래서 미분류로 올려 버리게 된다.
+  $('#asset-pick').addEventListener('change', () => {
+    const creating = $('#asset-pick').value === NEW_ASSET;
+    $('#asset-new').hidden = !creating;
+    if (creating) $('#asset-name').focus();
+  });
+
+  $('#asset-add').addEventListener('click', async () => {
+    const name = $('#asset-name').value.trim();
+    if (!name) return;
+    $('#asset-msg').textContent = '';
+    try {
+      const response = await fetch('api/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, group_name: $('#asset-group').value.trim() }),
+      });
+      const created = await response.json();
+      if (!response.ok) throw new Error(created.detail || `${response.status}`);
+      $('#asset-name').value = '';
+      $('#asset-group').value = '';
+      await loadAssetPicker(created.asset_id);
+    } catch (error) {
+      $('#asset-msg').innerHTML = `<span style="color:var(--danger)">${esc(error.message)}</span>`;
+    }
+  });
 }
 
 // --- 업로드 ----------------------------------------------------------------
@@ -263,6 +321,12 @@ async function handleFile(file) {
 }
 
 // --- 스캔 ------------------------------------------------------------------
+/** "+ 새 서버 등록…" 을 고른 채 등록하지 않았으면 미분류다. */
+function assetIdForScan() {
+  const value = $('#asset-pick')?.value || '';
+  return value === NEW_ASSET ? '' : value;
+}
+
 runButton?.addEventListener('click', async () => {
   if (!state.upload) return;
   runButton.disabled = true;
@@ -275,7 +339,7 @@ runButton?.addEventListener('click', async () => {
       uploadId: state.upload.upload_id,
       filename: state.upload.filename,
       enrich: $('#enrich').checked,
-      assetId: $('#asset-pick')?.value || '',
+      assetId: assetIdForScan(),
     });
     renderStepper($('#stepper'), steps);
     await pollUntilDone(jobId);
@@ -324,56 +388,11 @@ async function pollUntilDone(jobId) {
 }
 
 // --- 결과 ------------------------------------------------------------------
-/** 보고서 JSON 항목에서 선택 키를 만든다. 표의 키와 같은 형식이어야 한다. */
-function reportItemKey(item) {
-  return [
-    item.cve,
-    item.local_analysis?.installed_package,
-    item.local_analysis?.installed_version,
-    item.local_analysis?.purl ?? '',
-  ].join('|');
-}
+//
+// **서버가 자르고 정렬한다.** 서버 한 대가 48,923건을 낸다. 전부 내려받으면
+// 82MB 이고, 브라우저는 그것을 파싱한 뒤 DOM 노드 40만 개를 만들다가 멈춘다.
+// 여기서는 한 쪽(기본 100건)만 받아 그린다.
 
-async function loadResults(scanId) {
-  state.scanId = scanId;
-  const scan = await provider.getScan(scanId);
-  state.findings = sortFindings(scan.findings || []);
-  state.selected = new Set();
-
-  // 전시 모드에서는 그때 담당자가 실제로 고른 항목을 그대로 되살린다.
-  for (const key of scan.selection?.keys || []) state.selected.add(key);
-
-  // 보고서 JSON에서 서술과 권고사항을 가져와 상세 패널에 쓴다.
-  state.reportIndex = new Map();
-  try {
-    const report = await provider.getReport(scanId, 'json');
-    for (const item of report.findings || []) state.reportIndex.set(reportItemKey(item), item);
-  } catch (error) {
-    console.warn('보고서를 불러오지 못했습니다:', error);
-  }
-
-  renderStats($('#stats'), summarize(state.findings));
-  renderSummaryLine($('#summary-line'), summarize(state.findings));
-
-  const types = [...new Set(state.findings.map((f) => f.installed?.type).filter(Boolean))].sort();
-  $('#filter-ecosystem').innerHTML =
-    '<option value="">패키지 유형 전체</option>' +
-    types.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
-
-  readFiltersFromUrl();
-
-  if (!canSelect) {
-    $$('#selection-bar button').forEach((b) => { b.hidden = true; });
-    $('#check-all').disabled = true;
-    $('#selection-hint').textContent = '이 스캔에서 실제로 선택되었던 항목입니다.';
-  }
-  $('#egress-btn').hidden = !provider.egressPreview;
-
-  $('#result').classList.remove('hidden');
-  applyFilters();
-}
-
-// --- 필터 · 정렬 ------------------------------------------------------------
 const FILTER_FIELDS = {
   priority: '#filter-priority',
   type: '#filter-ecosystem',
@@ -381,8 +400,18 @@ const FILTER_FIELDS = {
   q: '#filter-text',
 };
 
+/** 서버에 넘길 조회 조건. 주소창에 남는 것과 같은 이름을 쓴다. */
+function queryParams() {
+  return {
+    priority: $('#filter-priority').value,
+    package_type: $('#filter-ecosystem').value,
+    status: $('#filter-fix').value,
+    q: $('#filter-text').value.trim(),
+  };
+}
+
 /**
- * 필터와 정렬 상태를 주소창에 남긴다.
+ * 필터·정렬·쪽 번호를 주소창에 남긴다.
  *
  * 남기지 않으면 새로고침 한 번에 초기화되고, "이 조건으로 보이는 것" 을 남에게
  * 링크로 건넬 수도 없다. `replaceState` 라 뒤로 가기가 필터 조작 이력으로
@@ -401,6 +430,8 @@ function writeFiltersToUrl() {
     params.delete('sort');
     params.delete('order');
   }
+  if (state.offset) params.set('offset', String(state.offset));
+  else params.delete('offset');
   window.history.replaceState(null, '', `?${params}`);
 }
 
@@ -413,79 +444,133 @@ function readFiltersFromUrl() {
   if (params.get('sort')) {
     state.sort = { key: params.get('sort'), desc: params.get('order') === 'desc' };
   }
+  state.offset = Number(params.get('offset') || 0) || 0;
 }
 
-/**
- * 정렬 키. **미확인 값은 방향과 무관하게 항상 뒤로 간다.**
- *
- * 데이터가 없는 것을 0으로 채워 줄 세우면 "EPSS 가 가장 낮은 항목" 자리에
- * 사실은 EPSS 를 못 받아온 항목이 앉는다. 그것은 거짓말이다.
- */
-const SORTERS = {
-  priority: (f) => [priorityRank(f.verdict?.priority), f.installed?.name || ''],
-  cve: (f) => [f.intel?.cve || ''],
-  package: (f) => [f.installed?.name || '', f.intel?.cve || ''],
-  cvss: (f) => [f.intel?.cvss_score ?? null],
-  epss: (f) => [f.intel?.epss ?? null],
-};
+async function loadResults(scanId) {
+  state.scanId = scanId;
+  state.selected = new Set();
+  state.offset = 0;
 
-function compare(a, b, key, desc) {
-  const left = SORTERS[key](a);
-  const right = SORTERS[key](b);
-  for (let i = 0; i < left.length; i += 1) {
-    const x = left[i];
-    const y = right[i];
-    // 미확인끼리는 동률, 미확인과 값은 언제나 미확인이 뒤.
-    if (x === null && y === null) continue;
-    if (x === null) return 1;
-    if (y === null) return -1;
-    if (x === y) continue;
-    const order = typeof x === 'string' ? x.localeCompare(y) : x - y;
-    return desc ? -order : order;
+  const summary = await provider.scanSummary(scanId);
+  renderStats($('#stats'), summary);
+  renderSummaryLine($('#summary-line'), summary);
+  state.scanTotal = summary.total;
+
+  // 그때 담당자가 실제로 고른 항목을 되살린다. 키만 받는다 — 되살리자고
+  // 48,923건을 통째로 받으면 첫 화면이 12초가 된다.
+  try {
+    const saved = provider.getSelection
+      ? await provider.getSelection(scanId)
+      : (await provider.getScan(scanId)).selection;
+    for (const key of saved?.keys || []) state.selected.add(key);
+  } catch { /* 선택 기록이 없으면 전체가 범위다 */ }
+
+  readFiltersFromUrl();
+
+  if (!canSelect) {
+    $$('#selection-bar button').forEach((b) => { b.hidden = true; });
+    $('#check-all').disabled = true;
+    $('#selection-hint').textContent = '이 스캔에서 실제로 선택되었던 항목입니다.';
   }
-  return 0;
+  $('#egress-btn').hidden = !provider.egressPreview;
+
+  $('#result').classList.remove('hidden');
+  await refresh({ pushUrl: false });
 }
 
-function applyFilters({ pushUrl = true } = {}) {
-  const priority = $('#filter-priority').value;
-  const type = $('#filter-ecosystem').value;
-  const status = $('#filter-fix').value;
-  const text = $('#filter-text').value.trim().toLowerCase();
+/** 지금 조건으로 한 쪽을 받아 그린다. */
+async function refresh({ pushUrl = true } = {}) {
+  const rows = $('#rows');
+  rows.innerHTML = '<tr><td colspan="8" class="muted" style="text-align:center;padding:1.5rem">불러오는 중…</td></tr>';
 
-  state.filtered = state.findings.filter((f) => {
-    if (priority && f.verdict?.priority !== priority) return false;
-    if (type && f.installed?.type !== type) return false;
-    if (status === 'update' && f.fix?.update_available !== 'true') return false;
-    if (status === 'nofix' && !f.verdict?.flags?.includes('no_fix_available')) return false;
-    if (status === 'kev' && f.intel?.kev !== 'true') return false;
-    if (status === 'exploit' && f.intel?.exploit_available !== 'true') return false;
-    if (text) {
-      const haystack = `${f.intel?.cve} ${f.installed?.name} ${(f.intel?.aliases || []).join(' ')}`.toLowerCase();
-      if (!haystack.includes(text)) return false;
-    }
-    return true;
-  });
+  let page;
+  try {
+    page = await provider.listFindings(state.scanId, {
+      ...queryParams(),
+      sort: state.sort.key,
+      order: state.sort.desc ? 'desc' : 'asc',
+      offset: state.offset,
+      limit: state.limit,
+    });
+  } catch (error) {
+    rows.innerHTML = `<tr><td colspan="8" class="muted" style="text-align:center;padding:1.5rem">
+      불러오지 못했습니다: ${esc(error.message)}</td></tr>`;
+    return;
+  }
 
-  state.filtered.sort((a, b) => compare(a, b, state.sort.key, state.sort.desc));
+  state.page = page.findings;
+  state.total = page.total;
+  state.scanTotal = page.scan_total;
 
-  $('#count').textContent = `${state.filtered.length} / ${state.findings.length}건`;
+  // 패키지 유형 목록은 스캔마다 고정이라 한 번만 채운다.
+  const picker = $('#filter-ecosystem');
+  if (picker.options.length <= 1 && page.package_types?.length) {
+    const keep = picker.value;
+    picker.innerHTML = '<option value="">패키지 유형 전체</option>'
+      + page.package_types.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    picker.value = keep;
+  }
+
+  $('#count').textContent = page.total === page.scan_total
+    ? `${page.total.toLocaleString()}건`
+    : `${page.total.toLocaleString()} / ${page.scan_total.toLocaleString()}건`;
   $$('th.sortable').forEach((th) => {
     th.dataset.active = th.dataset.sort === state.sort.key ? (state.sort.desc ? 'desc' : 'asc') : '';
   });
 
-  renderTable($('#rows'), state.filtered, openDrawer, {
+  renderTable(rows, page.findings, openDrawer, {
     key: findingKey,
     selected: state.selected,
     onToggle: toggleSelection,
     selectable: canSelect,
   });
+  renderPager(page);
   syncSelectionUi();
   if (pushUrl) writeFiltersToUrl();
 }
 
+function renderPager(page) {
+  const pages = Math.max(1, Math.ceil(page.total / state.limit));
+  const current = Math.floor(page.offset / state.limit) + 1;
+  const from = page.total ? page.offset + 1 : 0;
+  const to = page.offset + page.findings.length;
+
+  $('#page-label').textContent =
+    `${from.toLocaleString()}–${to.toLocaleString()} / ${page.total.toLocaleString()}건 · ${current} / ${pages}쪽`;
+  $('#page-first').disabled = page.offset === 0;
+  $('#page-prev').disabled = page.offset === 0;
+  $('#page-next').disabled = !page.has_more;
+  $('#page-last').disabled = !page.has_more;
+  $('#pager').hidden = page.total <= state.limit;
+}
+
+function goTo(offset) {
+  state.offset = Math.max(0, offset);
+  refresh();
+}
+
+$('#page-first').addEventListener('click', () => goTo(0));
+$('#page-prev').addEventListener('click', () => goTo(state.offset - state.limit));
+$('#page-next').addEventListener('click', () => goTo(state.offset + state.limit));
+$('#page-last').addEventListener('click', () => {
+  goTo(Math.max(0, (Math.ceil(state.total / state.limit) - 1) * state.limit));
+});
+$('#page-size').addEventListener('change', (event) => {
+  state.limit = Number(event.target.value) || 100;
+  goTo(0);
+});
+
+// --- 필터 · 정렬 ------------------------------------------------------------
 Object.values(FILTER_FIELDS).forEach((selector) => {
   const el = $(selector);
-  el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => applyFilters());
+  let timer = null;
+  const fire = () => {
+    // 검색은 타자마다 서버를 두드리지 않는다. 멈춘 뒤에 한 번 보낸다.
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => { state.offset = 0; refresh(); }, 250);
+  };
+  el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', fire);
 });
 
 $$('th.sortable').forEach((th) => {
@@ -496,12 +581,15 @@ $$('th.sortable').forEach((th) => {
     state.sort = state.sort.key === key
       ? { key, desc: !state.sort.desc }
       : { key, desc: key === 'cvss' || key === 'epss' };
-    applyFilters();
+    state.offset = 0;
+    refresh();
   });
 });
 
+// CSV 는 서버가 만든다. 화면은 100건씩 보지만 내려받는 것은 조건에 맞는
+// 전부여야 한다 — 결재에 올릴 목록이 화면 한 쪽일 리 없다.
 $('#csv-btn').addEventListener('click', () => {
-  downloadCsv(state.filtered, `sbomsight-${state.scanId || 'scan'}.csv`);
+  window.location.href = provider.csvUrl(state.scanId, queryParams());
 });
 
 // --- 선택 ------------------------------------------------------------------
@@ -527,38 +615,60 @@ function syncSelectionUi() {
   link.href = `report.html?${params}`;
   link.textContent = n ? `선택 ${n}건으로 보고서` : '전체 보고서';
 
-  const visible = state.filtered.map(findingKey);
+  const visible = state.page.map(findingKey);
   const all = visible.length > 0 && visible.every((k) => state.selected.has(k));
   const checkAll = $('#check-all');
   checkAll.checked = all;
   checkAll.indeterminate = !all && visible.some((k) => state.selected.has(k));
 }
 
+/**
+ * 서버에서 키를 받아 선택에 넣는다.
+ *
+ * 이제 화면에는 한 쪽밖에 없다. "조건에 맞는 전부"는 서버만 안다. 상한을
+ * 넘으면 몇 건 중 몇 건을 골랐는지 그 자리에서 말한다 — 조용히 잘라 놓고
+ * 전부 골랐다고 두면 보고서에서 항목이 빠진 것을 나중에야 알게 된다.
+ */
+async function selectFromServer(params, label) {
+  const button = document.activeElement;
+  if (button) button.disabled = true;
+  try {
+    const result = await provider.findingKeys(state.scanId, params);
+    for (const key of result.keys) state.selected.add(key);
+    $('#selection-hint').textContent = result.truncated
+      ? `${label} ${result.total.toLocaleString()}건 중 ${result.keys.length.toLocaleString()}건까지 선택했습니다.`
+      : '보고서와 AI 전송의 범위입니다.';
+  } catch (error) {
+    $('#selection-hint').textContent = `선택하지 못했습니다: ${error.message}`;
+  } finally {
+    if (button) button.disabled = false;
+  }
+  await refresh();
+}
+
 $('#check-all').addEventListener('change', (event) => {
-  for (const f of state.filtered) {
+  for (const f of state.page) {
     if (event.target.checked) state.selected.add(findingKey(f));
     else state.selected.delete(findingKey(f));
   }
-  applyFilters();
+  refresh();
 });
 
 $('#select-filtered').addEventListener('click', () => {
-  for (const f of state.filtered) state.selected.add(findingKey(f));
-  applyFilters();
+  selectFromServer(queryParams(), '조건에 맞는');
 });
 
-$('#select-p0p1').addEventListener('click', () => {
-  for (const f of state.findings) {
-    if (f.verdict?.priority === 'P0' || f.verdict?.priority === 'P1') {
-      state.selected.add(findingKey(f));
-    }
+$('#select-p0p1').addEventListener('click', async () => {
+  // 두 등급을 각각 받아 합친다. 필터는 등급 하나만 받는다.
+  for (const priority of ['P0', 'P1']) {
+    await selectFromServer({ ...queryParams(), priority }, '즉시·우선 검토');
   }
-  applyFilters();
 });
 
 $('#select-none').addEventListener('click', () => {
   state.selected.clear();
-  applyFilters();
+  $('#selection-hint').textContent = '보고서와 AI 전송의 범위입니다.';
+  refresh();
 });
 
 // 보고서로 넘어가기 전에 선택을 서버에 남긴다. 나중에 export가 "이 보고서는
@@ -577,9 +687,34 @@ $('#go-report').addEventListener('click', async (event) => {
 });
 
 // --- 상세 패널 -------------------------------------------------------------
+//
+// 서술과 권고 절차는 **그 항목 하나만** 서버에서 조립해 온다. 예전에는 화면을
+// 열 때 보고서 전체를 만들어 색인해 두었는데, 48,923건이면 그 한 번이 몇 분이다.
+
 function openDrawer(finding) {
-  const item = state.reportIndex.get(findingKey(finding));
-  const narrative = item
+  const key = findingKey(finding);
+  $('#drawer-title').textContent = `${finding.intel?.cve} · ${finding.installed?.name}`;
+  $('#drawer-body').innerHTML = '<p class="muted">불러오는 중…</p>';
+  $('#drawer').classList.add('open');
+  $('#drawer').setAttribute('aria-hidden', 'false');
+  $('#backdrop').classList.add('open');
+
+  loadDetail(finding, key).catch((error) => {
+    // 서술을 못 받아도 숫자와 판정 근거는 이미 손에 있다. 그것만이라도 보여 준다.
+    console.warn('상세를 불러오지 못했습니다:', error);
+    renderDetail($('#drawer-body'), finding, null, null);
+  });
+}
+
+async function loadDetail(finding, key) {
+  const item = provider.findingDetail
+    ? await provider.findingDetail(state.scanId, key)
+    : null;
+
+  // 드로어가 그 사이에 닫히거나 다른 항목으로 바뀌었으면 덮어쓰지 않는다.
+  if ($('#drawer-title').textContent !== `${finding.intel?.cve} · ${finding.installed?.name}`) return;
+
+  const narrative = item?.technical_risk
     ? {
         source: item.narrative_source,
         technical_risk: item.technical_risk.narrative,
@@ -589,12 +724,7 @@ function openDrawer(finding) {
         response_rationale: item.response_rationale.narrative,
       }
     : null;
-
-  $('#drawer-title').textContent = `${finding.intel?.cve} · ${finding.installed?.name}`;
   renderDetail($('#drawer-body'), finding, item?.recommendation, narrative);
-  $('#drawer').classList.add('open');
-  $('#drawer').setAttribute('aria-hidden', 'false');
-  $('#backdrop').classList.add('open');
 }
 
 function closeDrawer() {

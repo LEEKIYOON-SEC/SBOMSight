@@ -82,7 +82,7 @@ if ($IsPublic) {
         Write-Host "[!] 계정이 하나도 없어 $BindHost 로 열지 않습니다."
         Write-Host "    먼저 관리자 계정을 만드세요:"
         Write-Host "      $Python -m core.cli user add <이름> --role admin"
-        Write-Host "    또는 이 PC에서 -Listen 없이 띄운 뒤 http://127.0.0.1:$Port 에서 만드세요."
+        Write-Host "    또는 -Listen 없이 띄운 뒤 http://127.0.0.1:$Port 에서 만드세요."
         exit 1
     }
 

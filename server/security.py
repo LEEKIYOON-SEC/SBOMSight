@@ -5,6 +5,10 @@
     소켓 상대 IP 확인  →  세션 확인  →  권한 확인  →  라우트
       (허용 대역 밖이면 로그인 화면도 안 보인다)
 
+계정이 하나도 없으면 로그인 화면이 "관리자 계정 만들기"로 바뀐다. 그 화면은
+접속한 자리를 가리지 않는다 — 서버를 네트워크에 붙이기 전에 만드는 것이
+정상적인 순서이고, 자리를 가리면 그 순서가 막힌다.
+
 미들웨어로 두는 이유는 라우트가 아니라 **모든 요청**을 지나가야 하기 때문이다.
 정적 파일(`/`, `/scan.html`, `/js/...`)은 StaticFiles 마운트가 처리하므로
 라우트 의존성(Depends)으로는 걸러지지 않는다. 화면은 열리는데 API 만 막히면
@@ -21,7 +25,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from core.accounts import Accounts
-from core.netacl import Allowlist, is_loopback
+from core.netacl import Allowlist
 
 COOKIE = "sbomsight_session"
 
@@ -173,21 +177,7 @@ class AccessMiddleware(BaseHTTPMiddleware):
 
         path = request.url.path
 
-        # ② 계정이 하나도 없으면 최초 관리자를 만들어야 한다. 그 동안은 본 PC 에서만
-        #    열린다 — 네트워크의 아무나 먼저 와서 관리자를 차지하는 일이 없도록.
-        if self.access.needs_setup():
-            if is_loopback(ip):
-                return await call_next(request)
-            return JSONResponse(
-                {
-                    "detail": "아직 계정이 만들어지지 않았습니다. "
-                              "서버 PC에서 http://127.0.0.1:8000 으로 접속해 관리자 계정을 먼저 만드세요.",
-                    "needs_setup": True,
-                },
-                status_code=503,
-            )
-
-        # ③ 세션 확인.
+        # ② 세션 확인.
         session = self.access.accounts.resolve(request.cookies.get(COOKIE, ""))
         if session is not None:
             request.state.user = session
@@ -203,7 +193,7 @@ class AccessMiddleware(BaseHTTPMiddleware):
                 return RedirectResponse(f"/login.html?next={nxt}", status_code=302)
             return JSONResponse({"detail": "로그인이 필요합니다."}, status_code=401)
 
-        # ④ 권한. viewer 는 읽기 전용이다 — 자기 비밀번호와 로그아웃만 예외.
+        # ③ 권한. viewer 는 읽기 전용이다 — 자기 비밀번호와 로그아웃만 예외.
         if request.method in WRITE_METHODS and session.role != "admin":
             if path not in SELF_WRITE_PATHS:
                 return JSONResponse(

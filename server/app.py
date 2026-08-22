@@ -16,11 +16,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import (
+    HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 
 from core import (
-    artifacts, assets as assets_mod, findingview, grype_runner,
+    artifacts, assets as assets_mod, csvexport, findingview, grype_runner,
     selection as selection_mod, syft_runner,
 )
 from core.accounts import AccountError, VIEWER
@@ -29,7 +31,7 @@ from core.ai_narrative import (
     build_chain_groups, narrative_from_dict, narrative_to_dict,
     run_chain_analysis, run_narratives,
 )
-from core.cli import _load_scan_result
+from core.cli import _load_scan_result, revive_finding, revive_metadata
 from core.config import get_config
 from core.models import ScanResult, to_jsonable
 from core.netacl import Allowlist
@@ -130,11 +132,7 @@ def auth_state(request: Request) -> dict[str, Any]:
 
 @app.post("/api/auth/setup")
 def auth_setup(request: Request, body: dict[str, Any] = Body(default={})) -> Any:
-    """최초 관리자 하나를 만든다. 계정이 이미 있으면 거부한다.
-
-    미들웨어가 이 경로를 본 PC(loopback)에서만 열어 두므로, 네트워크의 누군가가
-    먼저 와서 관리자를 차지할 수는 없다.
-    """
+    """최초 관리자 하나를 만든다. 계정이 이미 있으면 거부한다."""
     if not access.needs_setup():
         raise HTTPException(409, "이미 계정이 있습니다. 관리자로 로그인해 주세요.")
 
@@ -635,30 +633,124 @@ def list_findings(
     **미확인 값은 방향과 무관하게 항상 뒤로** 간다 — 데이터가 없는 것을
     "낮음"으로 줄 세우면 거짓말이 된다.
     """
-    if sort not in findingview.SORT_KEYS:
+    if sort not in Store.SORT_KEYS:
         raise HTTPException(400, f"정렬 키가 올바르지 않습니다: {sort}")
-    if status and status not in findingview.FILTER_KEYS:
+    if status and status not in Store.FILTER_KEYS:
         raise HTTPException(400, f"상태 필터가 올바르지 않습니다: {status}")
 
-    if _store().get_scan(scan_id) is None:
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
         raise HTTPException(404, "스캔을 찾을 수 없습니다.")
 
-    result = _load_scan_result(scan_id, config)
-    page = findingview.apply(
-        result.findings,
+    page = store.page_findings(
+        scan_id,
         sort=sort, order=order, priority=priority, package_type=package_type,
         status=status, query=q, offset=offset, limit=limit,
     )
-    return {
-        "scan_id": scan_id,
-        "total": page.total,
-        "scan_total": page.scan_total,
-        "offset": page.offset,
-        "limit": page.limit,
-        "has_more": page.has_more,
-        "package_types": findingview.package_types(result.findings),
-        "findings": [to_jsonable(f) for f in page.findings],
-    }
+    return {"scan_id": scan_id, **page}
+
+
+@app.get("/api/scans/{scan_id}/summary")
+def scan_summary(scan_id: str) -> dict[str, Any]:
+    """요약 타일 값. SQL 로 센다 — 세려고 48,923건을 내려보내지 않는다."""
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    return {"scan_id": scan_id, **store.scan_summary(scan_id)}
+
+
+@app.get("/api/scans/{scan_id}/finding-keys")
+def list_finding_keys(
+    scan_id: str,
+    priority: str = Query("", pattern="^(P0|P1|P2|P3|)$"),
+    package_type: str = Query(""),
+    status: str = Query(""),
+    q: str = Query(""),
+    limit: int = Query(5000, ge=1, le=50000),
+) -> dict[str, Any]:
+    """필터에 맞는 선택 키 전부. "필터 전체 선택" 이 쓴다.
+
+    상한을 넘으면 목록은 잘리고 건수는 그대로 온다 — 화면이 "N건 중 M건만
+    선택했다"고 말할 수 있어야 한다.
+    """
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    keys, total = store.finding_keys(
+        scan_id, priority=priority, package_type=package_type,
+        status=status, query=q, limit=limit,
+    )
+    return {"scan_id": scan_id, "keys": keys, "total": total, "truncated": len(keys) < total}
+
+
+@app.get("/api/scans/{scan_id}/findings/{finding_key:path}")
+def get_finding_detail(scan_id: str, finding_key: str) -> dict[str, Any]:
+    """항목 하나의 상세. 보고서 절과 권고 절차를 그 한 건에 대해서만 조립한다.
+
+    상세를 열자고 48,923건짜리 보고서를 통째로 만들 이유가 없다.
+    """
+    store = _store()
+    payload = store.get_finding(scan_id, finding_key)
+    if payload is None:
+        raise HTTPException(404, "항목을 찾을 수 없습니다.")
+
+    finding = revive_finding(payload)
+    stored = store.get_narratives(scan_id).get(finding.intel.cve)
+    narratives = {finding.intel.cve: narrative_from_dict(stored)} if stored else {}
+
+    meta = store.get_scan_meta(scan_id) or {}
+    result = ScanResult(
+        metadata=revive_metadata(meta.get("metadata") or {}),
+        findings=(finding,),
+        policy=meta.get("policy") or {},
+    )
+    report = ReportBuilder(config, engine=RuleEngine.from_config(config)).build(
+        result, narratives=narratives
+    )
+    return to_jsonable(report.findings[0]) if report.findings else {}
+
+
+@app.get("/api/scans/{scan_id}/findings.csv")
+def export_findings_csv(
+    scan_id: str,
+    priority: str = Query("", pattern="^(P0|P1|P2|P3|)$"),
+    package_type: str = Query(""),
+    status: str = Query(""),
+    q: str = Query(""),
+) -> Any:
+    """지금 필터에 맞는 항목 전부를 CSV 로. 청크로 흘려 보낸다.
+
+    화면은 100건씩 보지만 내려받는 것은 조건에 맞는 전부여야 한다 — 결재에
+    올릴 목록이 화면 한 페이지일 리 없다.
+    """
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    stream = csvexport.rows(
+        store.iter_findings(
+            scan_id, priority=priority, package_type=package_type, status=status, query=q
+        )
+    )
+    return StreamingResponse(
+        stream,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="sbomsight-{scan_id}.csv"'},
+    )
+
+
+@app.get("/api/scans/{scan_id}/selection")
+def get_selection(scan_id: str) -> dict[str, Any]:
+    """기록된 선택 키만. **findings 는 읽지 않는다.**
+
+    화면이 시작할 때 선택을 되살리려고 스캔 전체(48,923건 · 82MB)를 받으면
+    첫 화면이 12초가 된다.
+    """
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    return {"scan_id": scan_id, "keys": store.get_selection(scan_id)}
 
 
 @app.put("/api/scans/{scan_id}/selection")

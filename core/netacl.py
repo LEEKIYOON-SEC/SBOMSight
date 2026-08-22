@@ -81,11 +81,3 @@ class Allowlist:
 
     def to_text(self) -> str:
         return "\n".join(self.entries)
-
-
-def is_loopback(ip: str) -> bool:
-    """이 PC 자신에서 온 접속인가. 최초 관리자 생성을 여기로만 허용한다."""
-    try:
-        return ipaddress.ip_address((ip or "").strip()).is_loopback
-    except ValueError:
-        return False

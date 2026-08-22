@@ -65,7 +65,7 @@ sys.exit(0 if Accounts(get_config().db_path).count() else 1)
     echo "[!] 계정이 하나도 없어 ${HOST} 로 열지 않습니다."
     echo "    먼저 관리자 계정을 만드세요:"
     echo "      $PYTHON -m core.cli user add <이름> --role admin"
-    echo "    또는 이 PC에서 --listen 없이 띄운 뒤 http://127.0.0.1:${PORT} 에서 만드세요."
+    echo "    또는 --listen 없이 띄운 뒤 http://127.0.0.1:${PORT} 에서 만드세요."
     exit 1
   fi
 

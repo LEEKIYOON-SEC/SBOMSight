@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.accounts import AccountError, Accounts, hash_password, verify_password
-from core.netacl import Allowlist, is_loopback, parse_list
+from core.netacl import Allowlist, parse_list
 
 from .conftest import ADMIN
 
@@ -210,10 +210,6 @@ class TestAllowlist:
     def test_duplicates_collapse(self):
         assert parse_list("10.0.0.5, 10.0.0.5/32") == ("10.0.0.5/32",)
 
-    def test_loopback_detection(self):
-        assert is_loopback("127.0.0.1") and is_loopback("::1")
-        assert not is_loopback("192.168.0.1")
-        assert not is_loopback("testclient")
 
 
 # ---------------------------------------------------------------------------
@@ -238,12 +234,25 @@ class TestSetupGate:
         )
         assert response.status_code == 409
 
-    def test_setup_is_refused_from_the_network(self, anon):
-        """계정이 없는 동안 네트워크의 아무나 먼저 와서 관리자를 차지할 수 없다."""
+    def test_setup_works_from_anywhere(self, anon):
+        """관리자 계정 생성은 접속한 자리를 가리지 않는다.
+
+        서버를 네트워크에 붙이기 전에 만드는 것이 정상적인 순서이고, 자리를
+        가리면 그 순서가 막힌다. 외부 노출은 `run-server --listen` 이 계정
+        유무를 보고 막는다.
+        """
         remote = TestClient(anon.app, client=("192.168.1.50", 40002))
-        response = remote.post("/api/auth/setup", json=ADMIN)
-        assert response.status_code == 503
-        assert response.json()["needs_setup"] is True
+        assert remote.post("/api/auth/setup", json=ADMIN).status_code == 200
+
+    def test_pages_redirect_to_setup_when_no_account_exists(self, anon):
+        """계정이 없으면 첫 화면이 로그인(=관리자 만들기)으로 간다.
+
+        예전에는 본 PC 에서 온 요청을 그냥 통과시켜서, 계정도 없고 권한도 없는
+        상태로 화면만 열렸다 — 설정 메뉴도 안 보이고 계정을 만들 길도 없었다.
+        """
+        response = anon.get("/", headers={"accept": "text/html"}, follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers["location"].startswith("/login.html")
 
     def test_short_password_is_refused_at_setup(self, anon):
         response = anon.post("/api/auth/setup", json={"username": "root", "password": "short"})

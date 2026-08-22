@@ -179,13 +179,91 @@ def _print_summary(result, engine, component_count: int) -> None:
     print(f"  적용 정책: {result.policy.get('label', '')}", file=sys.stderr)
 
 
-def _load_scan_result(source: str, config=None) -> ScanResult:
-    """findings.json(스캔 산출물) 또는 저장된 scan_id에서 ScanResult를 복원한다."""
+def revive_finding(f: dict) -> Finding:
+    """저장된 payload 하나를 Finding 으로 되살린다.
+
+    상세 패널이 항목 하나만 되살릴 수 있어야 한다 — 그것 하나 보자고 48,923건을
+    전부 복원하면 요청 하나가 8초가 된다.
+    """
     from .models import (
         AdvisoryPackage, Detection, ExploitMaturity, ExploitSource, FiredRule,
         FixAnalysis, FixState, InstalledPackage, Priority, RuleVerdict,
-        ScanMetadata, Severity, Ternary, VersionGap, VulnIntel,
+        Severity, Ternary, VersionGap, VulnIntel,
     )
+
+    inst, adv, intel = f["installed"], f["advisory"], f["intel"]
+    det = f.get("detection") or {}
+    fix = f.get("fix")
+    verdict = f.get("verdict")
+    return Finding(
+        installed=InstalledPackage(
+            name=inst["name"], version=inst["version"], type=inst.get("type", ""),
+            purl=inst.get("purl", ""), cpes=tuple(inst.get("cpes", ())),
+            locations=tuple(inst.get("locations", ())), language=inst.get("language", ""),
+            sbom_ref=inst.get("sbom_ref", ""),
+        ),
+        advisory=AdvisoryPackage(
+            advisory_package=adv["advisory_package"],
+            advisory_ecosystem=adv.get("advisory_ecosystem", ""),
+            affected_version_range=adv.get("affected_version_range", ""),
+            fixed_version=adv.get("fixed_version", ""),
+            fix_state=FixState(adv.get("fix_state", "unknown")),
+            os_family=adv.get("os_family", ""),
+        ),
+        intel=VulnIntel(
+            cve=intel["cve"], aliases=tuple(intel.get("aliases", ())),
+            severity=Severity(intel.get("severity", "unknown")),
+            cvss_score=intel.get("cvss_score"), cvss_vector=intel.get("cvss_vector", ""),
+            cvss_version=intel.get("cvss_version", ""), cwe=tuple(intel.get("cwe", ())),
+            description=intel.get("description", ""), published=intel.get("published", ""),
+            references=tuple(intel.get("references", ())),
+            epss=intel.get("epss"),
+            epss_snapshot_date=intel.get("epss_snapshot_date", ""),
+            kev=Ternary(intel.get("kev", "unknown")),
+            kev_date_added=intel.get("kev_date_added", ""),
+            kev_ransomware_use=intel.get("kev_ransomware_use", ""),
+            kev_snapshot_date=intel.get("kev_snapshot_date", ""),
+            exploit_available=Ternary(intel.get("exploit_available", "unknown")),
+            exploit_maturity=ExploitMaturity(intel.get("exploit_maturity", "unknown")),
+            exploit_sources=tuple(
+                ExploitSource(source=s["source"], ref=s.get("ref", ""), note=s.get("note", ""))
+                for s in intel.get("exploit_sources", ())
+            ),
+        ),
+        detection=Detection(
+            matcher=det.get("matcher", ""), match_type=det.get("match_type", ""),
+            namespace=det.get("namespace", ""), search_criteria=det.get("search_criteria", {}),
+        ),
+        fix=FixAnalysis(
+            installed_version=fix["installed_version"], fixed_version=fix.get("fixed_version", ""),
+            comparator=fix.get("comparator", "generic"),
+            is_vulnerable=Ternary(fix.get("is_vulnerable", "unknown")),
+            update_available=Ternary(fix.get("update_available", "unknown")),
+            fix_state=FixState(fix.get("fix_state", "unknown")),
+            version_gap=VersionGap(fix.get("version_gap", "unknown")),
+            reason=fix.get("reason", ""),
+        ) if fix else None,
+        verdict=RuleVerdict(
+            priority=Priority(verdict["priority"]),
+            fired_rules=tuple(
+                FiredRule(name=r["name"], explain=r.get("explain", ""))
+                for r in verdict.get("fired_rules", ())
+            ),
+            flags=tuple(verdict.get("flags", ())),
+            policy_version=verdict.get("policy_version", ""),
+            policy_sha256=verdict.get("policy_sha256", ""),
+        ) if verdict else None,
+    )
+
+def revive_metadata(meta: dict):
+    from .models import ScanMetadata
+
+    return ScanMetadata(**{k: v for k, v in meta.items() if k in ScanMetadata.__dataclass_fields__})
+
+
+def _load_scan_result(source: str, config=None) -> ScanResult:
+    """findings.json(스캔 산출물) 또는 저장된 scan_id에서 ScanResult를 복원한다."""
+    from .models import ScanMetadata  # noqa: F401  (아래 revive_metadata 가 쓴다)
 
     path = Path(source)
     if path.is_file():
@@ -201,74 +279,10 @@ def _load_scan_result(source: str, config=None) -> ScanResult:
             "policy": stored.get("policy") or {},
         }
 
-    def revive(f: dict) -> Finding:
-        inst, adv, intel = f["installed"], f["advisory"], f["intel"]
-        det = f.get("detection") or {}
-        fix = f.get("fix")
-        verdict = f.get("verdict")
-        return Finding(
-            installed=InstalledPackage(
-                name=inst["name"], version=inst["version"], type=inst.get("type", ""),
-                purl=inst.get("purl", ""), cpes=tuple(inst.get("cpes", ())),
-                locations=tuple(inst.get("locations", ())), language=inst.get("language", ""),
-                sbom_ref=inst.get("sbom_ref", ""),
-            ),
-            advisory=AdvisoryPackage(
-                advisory_package=adv["advisory_package"],
-                advisory_ecosystem=adv.get("advisory_ecosystem", ""),
-                affected_version_range=adv.get("affected_version_range", ""),
-                fixed_version=adv.get("fixed_version", ""),
-                fix_state=FixState(adv.get("fix_state", "unknown")),
-                os_family=adv.get("os_family", ""),
-            ),
-            intel=VulnIntel(
-                cve=intel["cve"], aliases=tuple(intel.get("aliases", ())),
-                severity=Severity(intel.get("severity", "unknown")),
-                cvss_score=intel.get("cvss_score"), cvss_vector=intel.get("cvss_vector", ""),
-                cvss_version=intel.get("cvss_version", ""), cwe=tuple(intel.get("cwe", ())),
-                description=intel.get("description", ""), published=intel.get("published", ""),
-                references=tuple(intel.get("references", ())),
-                epss=intel.get("epss"),
-                epss_snapshot_date=intel.get("epss_snapshot_date", ""),
-                kev=Ternary(intel.get("kev", "unknown")),
-                kev_date_added=intel.get("kev_date_added", ""),
-                kev_ransomware_use=intel.get("kev_ransomware_use", ""),
-                kev_snapshot_date=intel.get("kev_snapshot_date", ""),
-                exploit_available=Ternary(intel.get("exploit_available", "unknown")),
-                exploit_maturity=ExploitMaturity(intel.get("exploit_maturity", "unknown")),
-                exploit_sources=tuple(
-                    ExploitSource(source=s["source"], ref=s.get("ref", ""), note=s.get("note", ""))
-                    for s in intel.get("exploit_sources", ())
-                ),
-            ),
-            detection=Detection(
-                matcher=det.get("matcher", ""), match_type=det.get("match_type", ""),
-                namespace=det.get("namespace", ""), search_criteria=det.get("search_criteria", {}),
-            ),
-            fix=FixAnalysis(
-                installed_version=fix["installed_version"], fixed_version=fix.get("fixed_version", ""),
-                comparator=fix.get("comparator", "generic"),
-                is_vulnerable=Ternary(fix.get("is_vulnerable", "unknown")),
-                update_available=Ternary(fix.get("update_available", "unknown")),
-                fix_state=FixState(fix.get("fix_state", "unknown")),
-                version_gap=VersionGap(fix.get("version_gap", "unknown")),
-                reason=fix.get("reason", ""),
-            ) if fix else None,
-            verdict=RuleVerdict(
-                priority=Priority(verdict["priority"]),
-                fired_rules=tuple(
-                    FiredRule(name=r["name"], explain=r.get("explain", ""))
-                    for r in verdict.get("fired_rules", ())
-                ),
-                flags=tuple(verdict.get("flags", ())),
-                policy_version=verdict.get("policy_version", ""),
-                policy_sha256=verdict.get("policy_sha256", ""),
-            ) if verdict else None,
-        )
-
+    revive = revive_finding
     meta = payload["metadata"]
     return ScanResult(
-        metadata=ScanMetadata(**{k: v for k, v in meta.items() if k in ScanMetadata.__dataclass_fields__}),
+        metadata=revive_metadata(meta),
         findings=tuple(revive(f) for f in payload.get("findings", ())),
         enrichment=payload.get("enrichment") or {},
         policy=payload.get("policy") or {},

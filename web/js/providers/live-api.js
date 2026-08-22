@@ -110,6 +110,56 @@ export const liveApiProvider = {
     return (await request(`api/scans/${encodeURIComponent(scanId)}`)).json();
   },
 
+  /**
+   * 결과 한 페이지.
+   *
+   * 서버 한 대가 48,923건을 낸다. 전부 내려받으면 82MB 이고, 브라우저는 그것을
+   * 파싱한 뒤 DOM 노드 40만 개를 만들다가 멈춘다. 정렬·필터·페이징을 전부
+   * 서버(SQL)가 하고 여기서는 100건만 받는다.
+   */
+  async listFindings(scanId, params = {}) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== '' && value !== null && value !== undefined) query.set(key, String(value));
+    }
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/findings?${query}`)).json();
+  },
+
+  /** 기록된 선택 키. 되살리려고 스캔 전체를 받지 않는다. */
+  async getSelection(scanId) {
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/selection`)).json();
+  },
+
+  /** 요약 타일 값. 세려고 전체를 내려받지 않는다. */
+  async scanSummary(scanId) {
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/summary`)).json();
+  },
+
+  /** 지금 필터에 맞는 선택 키 전부. "필터 전체 선택" 이 쓴다. */
+  async findingKeys(scanId, params = {}) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== '' && value !== null && value !== undefined) query.set(key, String(value));
+    }
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/finding-keys?${query}`)).json();
+  },
+
+  /** 항목 하나의 상세(보고서 절·권고 절차). 그 한 건만 조립해 온다. */
+  async findingDetail(scanId, key) {
+    return (await request(
+      `api/scans/${encodeURIComponent(scanId)}/findings/${encodeURIComponent(key)}`,
+    )).json();
+  },
+
+  /** 지금 필터에 맞는 항목 전부를 CSV 로. 서버가 청크로 흘려 보낸다. */
+  csvUrl(scanId, params = {}) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== '' && value !== null && value !== undefined) query.set(key, String(value));
+    }
+    return `api/scans/${encodeURIComponent(scanId)}/findings.csv?${query}`;
+  },
+
   async listScans() {
     return (await request('api/scans')).json();
   },
