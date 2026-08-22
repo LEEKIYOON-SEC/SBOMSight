@@ -391,21 +391,17 @@ def _cmd_asset(args: argparse.Namespace) -> int:
 
     if args.action == "list":
         summary = store.asset_summary()
-        rows = assets.list(include_archived=args.all)
+        rows = assets.list()
         if not rows:
             print("자산이 없습니다. `python -m core.cli asset add <이름>` 으로 등록하세요.")
             return 0
         for asset in rows:
             info = summary.get(asset.asset_id, {})
             last = info.get("last_scan_at") or "스캔 없음"
-            mark = " [보관]" if asset.archived else ""
             print(
                 f"{asset.name:<24} {asset.group_name or '-':<14} {asset.os or '-':<16} "
-                f"스캔 {info.get('scan_count', 0):>3}건  최근 {last}{mark}"
+                f"스캔 {info.get('scan_count', 0):>3}건  최근 {last}"
             )
-        unassigned = summary.get("", {}).get("scan_count", 0)
-        if unassigned:
-            print(f"\n미분류 스캔 {unassigned}건 — `asset assign <스캔ID> <자산이름>` 으로 배정하세요.")
         return 0
 
     try:
@@ -422,7 +418,7 @@ def _cmd_asset(args: argparse.Namespace) -> int:
                 print(f"오류: '{args.name}' 자산이 없습니다.", file=sys.stderr)
                 return 1
             assets.delete(asset.asset_id)
-            print(f"삭제: {asset.name} (스캔은 미분류로 남았습니다)")
+            print(f"삭제: {asset.name} (스캔 기록은 지우지 않았습니다)")
             return 0
 
         if args.action == "assign":
@@ -604,13 +600,12 @@ def build_parser() -> argparse.ArgumentParser:
     a_add.add_argument("--note")
 
     a_list = asset_sub.add_parser("list", help="자산 목록과 마지막 스캔")
-    a_list.add_argument("--all", action="store_true", help="보관 처리한 자산도 표시")
 
     a_assign = asset_sub.add_parser("assign", help="스캔을 자산에 배정")
     a_assign.add_argument("scan_id")
     a_assign.add_argument("name", help="자산 이름")
 
-    a_remove = asset_sub.add_parser("remove", help="자산 삭제 (스캔은 미분류로 남는다)")
+    a_remove = asset_sub.add_parser("remove", help="자산 삭제 (스캔 기록은 남는다)")
     a_remove.add_argument("name")
 
     a_history = asset_sub.add_parser("history", help="최근 두 스캔 대조 — 신규·해소·유지")

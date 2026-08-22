@@ -5,6 +5,7 @@ import {
   PRIORITY_LABEL, SEVERITY_LABEL, TERNARY_LABEL,
   describeFlag, formatCvss, formatEpss, formatExploit, formatKev,
 } from './model.js';
+import { formatProbability } from './format.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -179,6 +180,85 @@ export function renderTable(tbody, findings, onSelect, {
   });
 }
 
+/**
+ * 결과 표 한 줄 = **패키지 하나**.
+ *
+ * 조치는 패키지당 한 번이다 — `openssl` 을 3.0.7로 올리면 CVE 5건이 한 번에
+ * 해소되는데, CVE 단위로 늘어놓으면 같은 패치를 5번 읽게 된다. 48,923건이
+ * 8,154줄이 되고, 고르는 단위도 인쇄하는 단위도 그것과 같아진다.
+ */
+export function renderPackageTable(tbody, groups, onOpen, {
+  selected = new Set(), onToggle = null, selectable = true,
+} = {}) {
+  if (!groups.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="muted" style="text-align:center;padding:2rem">
+      조건에 맞는 패키지가 없습니다.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = groups.map((g, index) => {
+    const priority = PRIORITIES.includes(g.priority) ? g.priority : 'P3';
+    const checked = selected.has(g.key) ? 'checked' : '';
+    const target = g.target_version
+      ? `<b class="mono">${esc(g.target_version)}</b>`
+      : '<span class="none">없음</span>';
+    const marks = [];
+    if (g.kev_count) marks.push('<span class="tag danger">실제 악용</span>');
+    if (g.exploit_count) marks.push('<span class="tag warn">공격코드 공개</span>');
+    if (marks.length < 2 && g.no_fix_count) marks.push('<span class="tag">수정본 없음</span>');
+    return `
+    <tr class="clickable row-${priority.toLowerCase()}" data-index="${index}">
+      <td class="pick"><input type="checkbox" data-key="${esc(g.key)}" ${checked}
+        ${selectable ? '' : 'disabled'} aria-label="보고서 대상으로 선택"></td>
+      <td class="review">${priorityMark(g.priority)}</td>
+      <td><b>${esc(g.package)}</b> <span class="faint">${esc(g.package_type)}</span></td>
+      <td class="fix"><span class="mono">${esc(g.installed_version)}</span>
+        <span class="arrow">→</span> ${target}</td>
+      <td class="num">${g.cve_count.toLocaleString()}</td>
+      <td class="num">${g.max_cvss ?? '<span class="faint">—</span>'}</td>
+      <td class="num">${esc(formatProbability(g.max_epss))}</td>
+      <td>${marks.slice(0, 2).join(' ') || '<span class="faint">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('tr.clickable').forEach((row) => {
+    row.addEventListener('click', (event) => {
+      if (event.target.closest('.pick')) return;
+      onOpen(groups[Number(row.dataset.index)]);
+    });
+  });
+
+  if (!selectable || !onToggle) return;
+  tbody.querySelectorAll('.pick input[type=checkbox]').forEach((box) => {
+    box.addEventListener('change', () => onToggle(box.dataset.key, box.checked));
+  });
+}
+
+/** 묶음을 펼쳤을 때 나오는 CVE 목록. 카드가 아니라 **줄**이다. */
+export function renderCveList(host, findings, onOpen) {
+  host.innerHTML = `<table class="cve-list"><thead><tr>
+      <th>대응 검토</th><th>CVE</th><th class="num">심각도</th>
+      <th class="num">악용 예측</th><th>수정 버전</th><th>근거</th>
+    </tr></thead><tbody>${findings.map((f, index) => {
+      const intel = f.intel || {};
+      const fix = f.fix || {};
+      const priority = PRIORITIES.includes(f.verdict?.priority) ? f.verdict.priority : 'P3';
+      return `<tr class="clickable row-${priority.toLowerCase()}" data-index="${index}">
+        <td class="review">${priorityMark(f.verdict?.priority)}</td>
+        <td><b class="mono">${esc(intel.cve)}</b></td>
+        <td class="num">${intel.cvss_score ?? '<span class="faint">—</span>'}</td>
+        <td class="num">${esc(formatEpss(intel) === '미확인' ? '—' : formatEpss(intel))}</td>
+        <td class="mono">${fix.fixed_version
+          ? esc(fix.fixed_version) : '<span class="none">없음</span>'}</td>
+        <td>${evidenceCell(f)}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+
+  host.querySelectorAll('tr.clickable').forEach((row) => {
+    row.addEventListener('click', () => onOpen(findings[Number(row.dataset.index)]));
+  });
+}
+
 function stepList(items, ordered = false) {
   if (!items?.length) return '';
   const tag = ordered ? 'ol' : 'ul';
@@ -218,8 +298,6 @@ export function renderDetail(body, finding, recommendation, narrative) {
       <tr><th>수정 버전</th><td class="mono">${esc(adv.fixed_version || '없음')}</td></tr>
       <tr><th>대응 검토</th><td>${priorityPill(verdict.priority)} ←
         ${esc((verdict.fired_rules || []).map((r) => r.name).join(', ') || '기본 등급')}</td></tr>
-      <tr><th>판정 기준</th><td>기본 정책 v${esc(verdict.policy_version || '')}
-        <span class="mono faint">sha256:${esc((verdict.policy_sha256 || '').slice(0, 12))}</span></td></tr>
     </table>`;
 
   const flags = (verdict.flags || []).length

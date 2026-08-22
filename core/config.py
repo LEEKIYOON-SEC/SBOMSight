@@ -80,6 +80,10 @@ class Config:
     gemini_fallback_model: str = field(default_factory=lambda: _env("GEMINI_FALLBACK_MODEL"))
     gemini_timeout_sec: int = field(default_factory=lambda: _env_int("GEMINI_TIMEOUT", 120))
     gemini_max_retries: int = field(default_factory=lambda: _env_int("GEMINI_MAX_RETRIES", 3))
+    # 한 번에 서술을 만들 수 있는 항목 수. 서술은 CVE 한 건마다 모델을 한 번
+    # 부르므로, 8,154개 패키지를 통째로 고르면 48,923번이 되고 그것은 몇 시간에
+    # 토큰 한도를 훨씬 넘는 양이다. 조용히 자르지 않고 여기서 거절한다.
+    ai_max_findings: int = field(default_factory=lambda: _env_int("SBOMSIGHT_AI_MAX_FINDINGS", 300))
 
     # --- 서버 ---------------------------------------------------------------
     host: str = field(default_factory=lambda: _env("SBOMSIGHT_HOST") or "127.0.0.1")

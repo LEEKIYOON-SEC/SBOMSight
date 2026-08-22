@@ -144,6 +144,26 @@ export const liveApiProvider = {
     return (await request(`api/scans/${encodeURIComponent(scanId)}/packages?${query}`)).json();
   },
 
+  /** 지금 조건에 맞는 묶음 키 전부. "전체 선택" 이 쓴다. 상한은 없다. */
+  async packageKeys(scanId, params = {}) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== '' && value !== null && value !== undefined) query.set(key, String(value));
+    }
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/package-keys?${query}`)).json();
+  },
+
+  /** 묶음 하나에 속한 취약점 목록. 표에서 패키지를 눌렀을 때만 부른다. */
+  async packageFindings(scanId, pkg, version = '') {
+    const query = new URLSearchParams({ limit: '500' });
+    if (version) query.set('version', version);
+    query.set('q', '');
+    const page = await (await request(
+      `api/scans/${encodeURIComponent(scanId)}/packages/${encodeURIComponent(pkg)}/findings?${query}`,
+    )).json();
+    return page.findings || [];
+  },
+
   /** 묶음 하나의 상세. 펼쳤을 때만 부른다. */
   async packageDetail(scanId, pkg, { version = '', ai = false } = {}) {
     const query = new URLSearchParams();
@@ -207,20 +227,25 @@ export const liveApiProvider = {
     return format === 'json' ? response.json() : response.text();
   },
 
-  reportUrl(scanId, format, { selection = [], ai = false, package: pkg = '', version = '' } = {}) {
-    const params = selectionParams(selection);
+  reportUrl(scanId, format, {
+    selection = [], saved = false, ai = false, package: pkg = '', version = '', cve = '',
+  } = {}) {
+    const params = saved ? new URLSearchParams({ saved: 'true' }) : selectionParams(selection);
     params.set('format', format);
     params.set('ai', String(Boolean(ai)));
     // 패키지를 지정하면 그 묶음만 담긴다. 48,923건짜리 문서를 만들어 그중
     // 한 절만 읽을 이유가 없다.
     if (pkg) params.set('package', pkg);
     if (version) params.set('version', version);
+    // CVE 하나만. 근거 팝업이 쓴다 — 6건짜리 패키지 문서를 받아 그중 한 절만
+    // 읽을 이유가 없다.
+    if (cve) params.set('cve', cve);
     return `api/scans/${encodeURIComponent(scanId)}/report?${params}`;
   },
 
   /** 연계 분석에서 전송될 내용 전체. 이 호출은 외부로 아무것도 보내지 않는다. */
-  async chainsPreview(scanId, { selection = [] } = {}) {
-    const params = selectionParams(selection);
+  async chainsPreview(scanId, { selection = [], saved = false } = {}) {
+    const params = saved ? new URLSearchParams({ saved: 'true' }) : selectionParams(selection);
     const query = params.toString();
     return (await request(
       `api/scans/${encodeURIComponent(scanId)}/chains/preview${query ? `?${query}` : ''}`,
@@ -228,11 +253,11 @@ export const liveApiProvider = {
   },
 
   /** 패키지 묶음별 연계 분석을 생성한다. 같은 가드를 통과한 VulnFact 만 나간다. */
-  async generateChains(scanId, { selection = [] } = {}) {
+  async generateChains(scanId, { selection = [], saved = false } = {}) {
     return (await request(`api/scans/${encodeURIComponent(scanId)}/chains`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ selection }),
+      body: JSON.stringify(saved ? { saved: true } : { selection }),
     })).json();
   },
 
@@ -241,8 +266,10 @@ export const liveApiProvider = {
    * 통과시킨 결과를 돌려주며, 이 호출 자체는 외부로 아무것도 보내지 않는다.
    * 선택한 항목만 넘기면 그 항목분만 조립된다.
    */
-  async egressPreview(scanId, { selection = [] } = {}) {
-    const params = selectionParams(selection);
+  async egressPreview(scanId, { selection = [], saved = false } = {}) {
+    // 저장된 선택을 가리킨다. 고른 키를 전부 주소창에 실으면 5,000건에서
+    // URL 이 250KB 가 되고 HTTP 파서가 요청을 끊는다.
+    const params = saved ? new URLSearchParams({ saved: 'true' }) : selectionParams(selection);
     const query = params.toString();
     return (await request(
       `api/scans/${encodeURIComponent(scanId)}/egress/preview${query ? `?${query}` : ''}`,
@@ -258,11 +285,14 @@ export const liveApiProvider = {
    * 고르지 않아도 되고, `core.cli export` 가 "이 보고서는 무엇을 대상으로
    * 만들어졌는가"를 그대로 옮길 수 있다.
    */
-  async saveSelection(scanId, selection) {
+  async saveSelection(scanId, body) {
+    // 패키지로 고르면 `{ packages: [...] }`, finding 키로 고르면
+    // `{ selection: [...] }`. 화면은 패키지를 고른다.
+    const payload = Array.isArray(body) ? { selection: body } : body;
     return (await request(`api/scans/${encodeURIComponent(scanId)}/selection`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ selection }),
+      body: JSON.stringify(payload),
     })).json();
   },
 
@@ -273,11 +303,11 @@ export const liveApiProvider = {
    * egressPreview가 보여 준 것과 **같은 조립기·같은 가드**를 통과한 결과이며,
    * 가드가 막으면 호출 자체가 일어나지 않는다.
    */
-  async generateNarratives(scanId, { selection = [] } = {}) {
+  async generateNarratives(scanId, { selection = [], saved = false } = {}) {
     return (await request(`api/scans/${encodeURIComponent(scanId)}/narratives`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ selection }),
+      body: JSON.stringify(saved ? { saved: true } : { selection }),
     })).json();
   },
 };

@@ -86,18 +86,12 @@ class TestAssets:
         assert updated.group_name == "내부업무"
         assert (updated.name, updated.os, updated.note) == ("web-01", "Rocky 9.3", "원본")
 
-    def test_list_hides_archived_by_default(self, assets):
+    def test_deleted_asset_leaves_the_list(self, assets):
+        """보관(archive) 은 없앴다. 남길 것과 지울 것의 구분이 하나뿐이다."""
         assets.create("web-01")
-        archived = assets.create("old-01")
-        assets.set_archived(archived.asset_id, True)
-
+        old = assets.create("old-01")
+        assets.delete(old.asset_id)
         assert [a.name for a in assets.list()] == ["web-01"]
-        assert sorted(a.name for a in assets.list(include_archived=True)) == ["old-01", "web-01"]
-
-    def test_archive_can_be_undone(self, assets):
-        created = assets.create("web-01")
-        assert assets.set_archived(created.asset_id, True).archived
-        assert not assets.set_archived(created.asset_id, False).archived
 
     def test_list_is_ordered_by_group_then_name(self, assets):
         """그룹으로 묶어 보여 주므로 그룹이 첫 정렬 키다."""
@@ -110,7 +104,6 @@ class TestAssets:
         assert assets.get("nope") is None
         for call in (
             lambda: assets.update("nope", name="x"),
-            lambda: assets.set_archived("nope", True),
             lambda: assets.delete("nope"),
         ):
             with pytest.raises(AssetError):

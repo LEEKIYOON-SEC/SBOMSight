@@ -14,9 +14,55 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 
 from .models import ScanResult, to_jsonable
+
+
+def _tune(conn: sqlite3.Connection) -> None:
+    """SQLite 기본값은 이 크기의 DB에 맞지 않는다.
+
+    48,923건짜리 스캔의 DB는 111MB인데 기본 페이지 캐시는 **2MB**다. 그래서
+    같은 쿼리를 두 번 돌려도 매번 디스크를 다시 읽고, 디스크가 느린 환경
+    (VM 위의 Windows, 네트워크 드라이브)에서는 그 차이가 화면 지연으로 그대로
+    나온다. 실측한 값들이라 근거를 적어 둔다.
+
+    - ``journal_mode=WAL`` — 기본 ``delete`` 는 쓰기마다 저널 파일을 만들고
+      지운다. Windows 의 파일 생성/삭제는 비싸고, 읽는 쪽이 쓰는 쪽을 막는다.
+      WAL 은 읽기와 쓰기가 서로를 막지 않는다.
+    - ``synchronous=NORMAL`` — WAL 에서는 이것으로도 전원이 꺼졌을 때 DB가
+      깨지지 않는다(마지막 트랜잭션 몇 개를 잃을 수 있을 뿐이다). 기본
+      ``FULL`` 은 커밋마다 fsync 를 부른다.
+    - ``cache_size=-65536`` — 64MB. 음수는 페이지 수가 아니라 KiB 다.
+    - ``mmap_size`` — 읽기를 메모리 매핑으로 돌려 복사를 한 번 줄인다.
+    - ``temp_store=MEMORY`` — ORDER BY 가 임시 B-tree 를 쓸 때 디스크로 나가지
+      않게 한다.
+    """
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA cache_size=-65536")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA mmap_size=268435456")
+
+
+def package_key(name: str, installed_version: str) -> str:
+    """묶음 하나를 가리키는 키. `이름@설치버전`.
+
+    같은 이름이 서로 다른 버전으로 두 번 깔려 있는 경우가 있고(컨테이너 안팎,
+    32/64비트 병존), 그것은 조치도 따로다. 버전을 키에서 빼면 둘이 한 줄로
+    합쳐져 "어느 쪽을 올려야 하나"를 알 수 없게 된다.
+    """
+    return f"{name}@{installed_version}"
+
+
+def split_package_key(key: str) -> tuple[str, str]:
+    """`package_key` 의 역. **마지막 `@` 로 가른다.**
+
+    npm 스코프 패키지는 이름 자체에 `@` 가 있다(`@scope/pkg@1.2.3`). 앞에서
+    자르면 이름이 잘린다.
+    """
+    name, _, version = key.rpartition("@")
+    return (name, version) if name else (key, "")
 
 
 def _sort_columns(payload: dict[str, Any]) -> tuple:
@@ -66,12 +112,18 @@ def _finding_row(scan_id: str, finding) -> tuple:
 # `x IS NULL` 을 첫 정렬 키로 두면 NULL 이 언제나 뒤에 앉는다. 데이터가 없는
 # 것을 0으로 채워 줄 세우면 "악용 예측이 가장 낮은 항목" 자리에 사실은 EPSS 를
 # 못 받아온 항목이 앉는다.
+#
+# 비워 둘 자리에는 `0` 이 아니라 `NEVER` 를 쓴다. `ORDER BY 0` 은 상수가 아니라
+# **컬럼 번호**로 읽혀서 `1st ORDER BY term out of range` 로 죽는다 — 실제로
+# 패키지·CVE 정렬이 그래서 동작하지 않았다.
+NEVER = "0=1"
+
 _SORT_SQL = {
     "priority": ("priority IS NULL", "priority", "package_name"),
     "cvss": ("cvss_score IS NULL", "cvss_score", "cve"),
     "epss": ("epss IS NULL", "epss", "cve"),
-    "package": ("0", "package_name COLLATE NOCASE", "cve"),
-    "cve": ("0", "cve", "package_name"),
+    "package": (NEVER, "package_name COLLATE NOCASE", "cve"),
+    "cve": (NEVER, "cve", "package_name"),
     "fixed": ("fixed_version = ''", "fixed_version COLLATE NOCASE", "cve"),
 }
 
@@ -227,6 +279,15 @@ class Store:
             "CREATE INDEX IF NOT EXISTS idx_findings_pkg "
             "ON findings(scan_id, package_name, installed_version)"
         )
+        # 심각도·악용 예측으로 정렬하면 인덱스가 없어 48,923행짜리 임시
+        # B-tree 를 매번 만들었다. 정렬 방향이 둘 다 쓰이므로 컬럼만 걸어
+        # 두고, "미확인은 뒤로" 규칙은 첫 키(`x IS NULL`)가 처리한다.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_findings_cvss ON findings(scan_id, cvss_score)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_findings_epss ON findings(scan_id, epss)"
+        )
         if added:
             Store._backfill(conn)
 
@@ -259,6 +320,7 @@ class Store:
     def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        _tune(conn)
         try:
             yield conn
             conn.commit()
@@ -483,30 +545,49 @@ class Store:
     # 화면에 그릴 양이 아니다. 목록은 SQL 로 집계해 쪽으로 넘기고, 상세는
     # 펼친 묶음만 조립한다.
 
-    def page_packages(
-        self,
-        scan_id: str,
-        *,
-        priority: str = "",
-        query: str = "",
-        offset: int = 0,
-        limit: int = 50,
-    ) -> dict[str, Any]:
-        """조치 대상 표 한 쪽. 패키지 하나가 한 줄이다."""
-        where = ["scan_id = ?"]
+    def _package_where(
+        self, scan_id: str, package_type: str, status: str, query: str,
+        scoped: bool = False,
+    ) -> tuple[str, list[Any]]:
+        """묶음 목록의 WHERE. `_where` 와 달리 등급은 HAVING 에서 본다 —
+        묶음의 등급은 그 안에서 가장 급한 것이라 집계 뒤에만 알 수 있다."""
+        clauses = ["scan_id = ?"]
         params: list[Any] = [scan_id]
-        if priority:
-            # 묶음의 등급은 그 안에서 가장 급한 것이다. HAVING 으로 거른다.
-            pass
+        if package_type:
+            clauses.append("package_type = ?")
+            params.append(package_type)
+        if status in _FILTER_SQL:
+            clauses.append(_FILTER_SQL[status])
         if query:
             needle = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            where.append("(package_name LIKE ? ESCAPE '\\' OR cve LIKE ? ESCAPE '\\')")
+            clauses.append("(package_name LIKE ? ESCAPE '\\' OR cve LIKE ? ESCAPE '\\')")
             params += [f"%{needle}%", f"%{needle}%"]
-        clause = " AND ".join(where)
+        if scoped:
+            # 기록해 둔 선택 안으로 좁힌다. 키 목록을 요청마다 실어 보내지
+            # 않는다 — 8,154개면 URL 이 수백 KB 다.
+            clauses.append(
+                "finding_key IN (SELECT value FROM json_each("
+                "  (SELECT keys FROM selections WHERE scan_id = ?)))"
+            )
+            params.append(scan_id)
+        return " AND ".join(clauses), params
 
+    #: 묶음 표의 정렬 키. 값은 `(미확인_뒤로, 주키, 동점_처리)`.
+    _PKG_SORT = {
+        "priority": ("priority IS NULL", "priority", "cve_count DESC"),
+        "count": (NEVER, "cve_count", "package_name COLLATE NOCASE"),
+        "cvss": ("max_cvss IS NULL", "max_cvss", "package_name COLLATE NOCASE"),
+        "epss": ("max_epss IS NULL", "max_epss", "package_name COLLATE NOCASE"),
+        "package": (NEVER, "package_name COLLATE NOCASE", "installed_version"),
+    }
+
+    PACKAGE_SORT_KEYS = tuple(_PKG_SORT)
+
+    def _package_group_sql(
+        self, priority: str
+    ) -> tuple[str, str]:
+        """집계 SELECT 와 HAVING 을 함께 낸다. 목록·건수·키가 모두 같은 것을 본다."""
         having = "HAVING MIN(priority) = ?" if priority else ""
-        having_params = [priority] if priority else []
-
         group_sql = (
             "SELECT package_name, installed_version, "
             "  MIN(package_type) AS package_type, "
@@ -514,44 +595,74 @@ class Store:
             "  COUNT(*) AS cve_count, "
             "  SUM(CASE WHEN fixed_version != '' THEN 1 ELSE 0 END) AS fixable, "
             "  SUM(CASE WHEN fixed_version = '' THEN 1 ELSE 0 END) AS no_fix, "
-            "  SUM(kev) AS kev, MAX(cvss_score) AS max_cvss, MAX(epss) AS max_epss "
-            f"FROM findings WHERE {clause} "
+            "  SUM(kev) AS kev, SUM(exploit) AS exploit, "
+            "  MAX(cvss_score) AS max_cvss, MAX(epss) AS max_epss "
+            "FROM findings WHERE {where} "
             "GROUP BY package_name, installed_version "
             f"{having}"
         )
+        return group_sql, having
+
+    def page_packages(
+        self,
+        scan_id: str,
+        *,
+        sort: str = "priority",
+        order: str = "asc",
+        priority: str = "",
+        package_type: str = "",
+        status: str = "",
+        query: str = "",
+        scoped: bool = False,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """결과 표 한 쪽. **패키지 하나가 한 줄이다.**
+
+        조치는 패키지당 한 번이다 — `openssl` 을 3.0.7로 올리면 CVE 5건이 한
+        번에 해소되는데, CVE 단위로 늘어놓으면 같은 패치를 5번 읽게 된다.
+        48,923건이 8,154줄이 되고, 그것도 쪽으로 넘긴다.
+
+        수정 버전 목록은 **묶음마다 따로 묻지 않는다.** 25개를 그리려고 쿼리를
+        26번 하던 것을 `GROUP_CONCAT` 한 번으로 바꿨다.
+        """
+        where, params = self._package_where(scan_id, package_type, status, query, scoped)
+        group_sql, having = self._package_group_sql(priority)
+        group_sql = group_sql.format(where=where)
+        having_params = [priority] if priority else []
+
+        null_last, primary, tie = self._PKG_SORT.get(sort) or self._PKG_SORT["priority"]
+        direction = "DESC" if order == "desc" else "ASC"
+        order_by = f"{null_last} ASC, {primary} {direction}, {tie}"
 
         with self._connect() as conn:
             total = conn.execute(
                 f"SELECT COUNT(*) AS n FROM ({group_sql})", (*params, *having_params)
             ).fetchone()["n"]
             rows = conn.execute(
-                f"{group_sql} ORDER BY priority IS NULL ASC, priority ASC, "
-                f"cve_count DESC, package_name ASC LIMIT ? OFFSET ?",
-                (*params, *having_params, limit, offset),
+                f"SELECT g.*, ("
+                "  SELECT GROUP_CONCAT(DISTINCT f.fixed_version) FROM findings f "
+                "  WHERE f.scan_id = ? AND f.package_name = g.package_name "
+                "    AND f.installed_version = g.installed_version AND f.fixed_version != ''"
+                f") AS fixed_versions FROM ({group_sql}) g "
+                f"ORDER BY {order_by} LIMIT ? OFFSET ?",
+                (scan_id, *params, *having_params, limit, offset),
             ).fetchall()
 
-            groups = []
-            for row in rows:
-                cves = conn.execute(
-                    "SELECT cve, fixed_version FROM findings "
-                    "WHERE scan_id = ? AND package_name = ? AND installed_version = ? "
-                    "ORDER BY cve",
-                    (scan_id, row["package_name"], row["installed_version"]),
-                ).fetchall()
-                groups.append({
-                    "package": row["package_name"],
-                    "package_type": row["package_type"] or "",
-                    "installed_version": row["installed_version"],
-                    "priority": row["priority"],
-                    "cve_count": row["cve_count"],
-                    "fixable_count": row["fixable"],
-                    "no_fix_count": row["no_fix"],
-                    "kev_count": row["kev"] or 0,
-                    "max_cvss": row["max_cvss"],
-                    "max_epss": row["max_epss"],
-                    "cves": [c["cve"] for c in cves],
-                    "fixed_versions": [c["fixed_version"] for c in cves if c["fixed_version"]],
-                })
+        groups = [{
+            "package": r["package_name"],
+            "package_type": r["package_type"] or "",
+            "installed_version": r["installed_version"],
+            "priority": r["priority"],
+            "cve_count": r["cve_count"],
+            "fixable_count": r["fixable"],
+            "no_fix_count": r["no_fix"],
+            "kev_count": r["kev"] or 0,
+            "exploit_count": r["exploit"] or 0,
+            "max_cvss": r["max_cvss"],
+            "max_epss": r["max_epss"],
+            "fixed_versions": (r["fixed_versions"] or "").split(",") if r["fixed_versions"] else [],
+        } for r in rows]
 
         return {
             "packages": groups,
@@ -560,6 +671,124 @@ class Store:
             "limit": limit,
             "has_more": offset + len(groups) < total,
         }
+
+    def package_keys(
+        self,
+        scan_id: str,
+        *,
+        priority: str = "",
+        package_type: str = "",
+        status: str = "",
+        query: str = "",
+        scoped: bool = False,
+    ) -> list[str]:
+        """지금 조건에 맞는 묶음 키 전부. "전체 선택" 이 쓴다.
+
+        상한을 두지 않는다. 키는 `이름@버전` 짧은 문자열이고, 8,154개라도
+        수백 KB다 — 담당자가 "전체"라고 했으면 전체여야 한다.
+        """
+        where, params = self._package_where(scan_id, package_type, status, query, scoped)
+        group_sql, _ = self._package_group_sql(priority)
+        group_sql = group_sql.format(where=where)
+        having_params = [priority] if priority else []
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT package_name, installed_version FROM ({group_sql}) "
+                "ORDER BY priority IS NULL ASC, priority ASC, package_name ASC",
+                (*params, *having_params),
+            ).fetchall()
+        return [package_key(r["package_name"], r["installed_version"]) for r in rows]
+
+    def existing_finding_keys(self, scan_id: str, keys: Sequence[str]) -> list[str]:
+        """주어진 키 중 이 스캔에 실제로 있는 것만. 없는 것은 조용히 버린다.
+
+        스캔을 바꾼 뒤 옛 선택이 남아 있으면 그 키들은 이 스캔에 없다. 그것을
+        오류로 내면 화면이 멈추고, 그대로 저장하면 보고서 범위가 거짓이 된다.
+        """
+        wanted = [k for k in keys if k]
+        if not wanted:
+            return []
+        with self._connect() as conn:
+            return [r["finding_key"] for r in conn.execute(
+                "SELECT finding_key FROM findings WHERE scan_id = ? "
+                "AND finding_key IN (SELECT value FROM json_each(?))",
+                (scan_id, json.dumps(wanted)),
+            )]
+
+    def packages_for_finding_keys(self, scan_id: str, keys: Sequence[str]) -> list[str]:
+        """finding 키들이 속한 묶음 키. 저장된 선택을 화면 체크로 되돌린다."""
+        wanted = [k for k in keys if k]
+        if not wanted:
+            return []
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT package_name, installed_version FROM findings "
+                "WHERE scan_id = ? AND finding_key IN (SELECT value FROM json_each(?))",
+                (scan_id, json.dumps(wanted)),
+            ).fetchall()
+        return [package_key(r["package_name"], r["installed_version"]) for r in rows]
+
+    def findings_by_keys(self, scan_id: str, keys: Sequence[str]) -> list[dict[str, Any]]:
+        """주어진 키의 payload 만. **스캔 전체를 되살리지 않는다.**
+
+        이그레스 미리보기가 48,923건을 파이썬 객체로 만들면 그 한 번이 9초다.
+        보여 줄 만큼만 읽는다.
+        """
+        wanted = [k for k in keys if k]
+        if not wanted:
+            return []
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload FROM findings WHERE scan_id = ? "
+                "AND finding_key IN (SELECT value FROM json_each(?)) "
+                "ORDER BY priority IS NULL ASC, priority ASC, cve ASC",
+                (scan_id, json.dumps(wanted)),
+            ).fetchall()
+        return [json.loads(r["payload"]) for r in rows]
+
+    def selected_packages(self, scan_id: str) -> list[str]:
+        """기록된 선택이 덮는 묶음 키. **finding 키를 거치지 않는다.**
+
+        화면이 되살려야 하는 것은 체크된 패키지 목록이다. 48,923개 finding
+        키를 받아 파이썬에서 되돌리면 그 한 번이 2.4초에 4MB 다.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT package_name, installed_version FROM findings "
+                "WHERE scan_id = ? AND finding_key IN ("
+                "  SELECT value FROM json_each("
+                "    (SELECT keys FROM selections WHERE scan_id = ?)))",
+                (scan_id, scan_id),
+            ).fetchall()
+        return [package_key(r["package_name"], r["installed_version"]) for r in rows]
+
+    def package_types(self, scan_id: str) -> list[str]:
+        """이 스캔에 실제로 있는 패키지 유형. 필터 선택지를 만든다."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT package_type FROM findings "
+                "WHERE scan_id = ? AND package_type != '' ORDER BY package_type",
+                (scan_id,),
+            ).fetchall()
+        return [r["package_type"] for r in rows]
+
+    def finding_keys_for_packages(self, scan_id: str, packages: Sequence[str]) -> list[str]:
+        """묶음 키 목록을 그 안의 finding 키 전부로 편다.
+
+        화면은 패키지를 고르지만 보고서·이그레스는 finding 단위로 돈다. 그
+        변환을 **쿼리 한 번**으로 한다 — 400개씩 끊어 21번 묻던 것이 8,154개에
+        10초였다. `이름 || '@' || 버전` 이 곧 묶음 키이므로 그대로 대조한다.
+        """
+        wanted = [k for k in packages if k]
+        if not wanted:
+            return []
+        with self._connect() as conn:
+            return [r["finding_key"] for r in conn.execute(
+                "SELECT finding_key FROM findings WHERE scan_id = ? "
+                "AND (package_name || '@' || installed_version) "
+                "    IN (SELECT value FROM json_each(?))",
+                (scan_id, json.dumps(wanted)),
+            )]
 
     def package_findings(
         self, scan_id: str, package: str, installed_version: str = ""

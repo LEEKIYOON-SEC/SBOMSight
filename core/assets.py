@@ -53,10 +53,6 @@ class Asset:
     created_at: str = ""
     archived_at: str = ""
 
-    @property
-    def archived(self) -> bool:
-        return bool(self.archived_at)
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "asset_id": self.asset_id,
@@ -65,8 +61,6 @@ class Asset:
             "os": self.os,
             "note": self.note,
             "created_at": self.created_at,
-            "archived_at": self.archived_at,
-            "archived": self.archived,
         }
 
 
@@ -266,11 +260,8 @@ class Assets:
             row = conn.execute("SELECT * FROM assets WHERE name = ?", (name,)).fetchone()
         return Asset(**dict(row)) if row else None
 
-    def list(self, *, include_archived: bool = False) -> list[Asset]:
-        sql = "SELECT * FROM assets"
-        if not include_archived:
-            sql += " WHERE archived_at = ''"
-        sql += " ORDER BY group_name, name"
+    def list(self) -> list[Asset]:
+        sql = "SELECT * FROM assets ORDER BY group_name, name"
         with self._connect() as conn:
             return [Asset(**dict(r)) for r in conn.execute(sql)]
 
@@ -302,25 +293,8 @@ class Assets:
         assert updated is not None
         return updated
 
-    def set_archived(self, asset_id: str, archived: bool) -> Asset:
-        """보관 처리. **스캔은 지우지 않는다.**
-
-        폐기한 서버라도 그때 무엇이 열려 있었는지는 감사 자료다. 목록에서
-        내리기만 하고 이력은 남긴다.
-        """
-        if self.get(asset_id) is None:
-            raise AssetError("자산을 찾을 수 없습니다.")
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE assets SET archived_at = ? WHERE asset_id = ?",
-                (_now() if archived else "", asset_id),
-            )
-        updated = self.get(asset_id)
-        assert updated is not None
-        return updated
-
     def delete(self, asset_id: str) -> None:
-        """자산을 지운다. 스캔은 미분류로 남는다.
+        """자산을 지운다. **스캔은 함께 지우지 않는다.**
 
         스캔까지 함께 지우면 실수 한 번에 몇 달치 이력이 사라진다. 스캔 삭제는
         스캔 화면에서 따로 한다.
@@ -328,7 +302,13 @@ class Assets:
         if self.get(asset_id) is None:
             raise AssetError("자산을 찾을 수 없습니다.")
         with self._connect() as conn:
-            conn.execute(
-                "UPDATE scans SET asset_id = '' WHERE asset_id = ?", (asset_id,)
-            )
+            # `scans` 는 Store 의 테이블이다. 같은 DB 파일을 쓰지만 Assets 만
+            # 단독으로 열 수도 있으므로, 없으면 없는 대로 지나간다.
+            has_scans = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='scans'"
+            ).fetchone()
+            if has_scans:
+                conn.execute(
+                    "UPDATE scans SET asset_id = '' WHERE asset_id = ?", (asset_id,)
+                )
             conn.execute("DELETE FROM assets WHERE asset_id = ?", (asset_id,))

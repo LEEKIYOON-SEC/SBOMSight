@@ -10,9 +10,11 @@
 
 import { esc } from './ui.js';
 
+// 스캔은 탭이 아니다. SBOM 은 **자산에 올리는 것**이고, 스캔 결과는 그 자산의
+// 것이다. 탭으로 두면 "어느 서버 것인지 나중에 정하는" 길이 열리고, 실제로
+// 그래서 어디에도 속하지 않는 결과가 쌓였다.
 const LINKS = [
   { href: 'index.html', label: '자산' },
-  { href: 'scan.html', label: '스캔' },
   { href: 'settings.html', label: '설정', adminOnly: true },
 ];
 

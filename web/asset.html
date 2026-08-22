@@ -13,11 +13,61 @@
 <main class="wide">
   <div class="page-head">
     <h1 id="title">—</h1>
-    <a class="btn primary" id="upload-link" href="scan.html">SBOM 올리기</a>
+    <button class="btn primary" id="open-upload" hidden>SBOM 올리기</button>
   </div>
-  <p class="muted" id="meta"></p>
 
   <div id="banner"></div>
+
+  <!-- SBOM 은 **이 자산에** 올린다. 별도 탭으로 두면 "어느 서버 것인지 나중에
+       정하는" 길이 열리고, 실제로 그래서 어디에도 속하지 않는 결과가 쌓였다. -->
+  <section class="card hidden" id="upload-card">
+    <div class="dropzone" id="dropzone">
+      <div class="big">SBOM JSON 파일을 여기에 놓거나 클릭해 선택하세요</div>
+      <div class="sub">CycloneDX JSON · SPDX JSON · Syft JSON</div>
+      <input type="file" id="file" accept=".json,application/json" hidden>
+    </div>
+    <div class="toolbar" style="margin-bottom:0">
+      <label class="check"><input type="checkbox" id="enrich" checked>
+        위협정보 보강 (EPSS · CISA KEV · 공개 Exploit)</label>
+      <div class="spacer"></div>
+      <span id="file-info" class="faint"></span>
+      <button class="btn" id="upload-cancel">닫기</button>
+      <button class="btn primary" id="run" disabled>스캔 시작</button>
+    </div>
+  </section>
+
+  <!-- 진행. 단계 목록이 아니라 **게이지**다 — 담당자가 알고 싶은 것은
+       "지금 어디쯤이고 끝났는가" 하나다. -->
+  <section class="card hidden" id="progress-card">
+    <div class="toolbar" style="margin:0 0 .6rem">
+      <b id="progress-step">준비 중…</b>
+      <div class="spacer"></div>
+      <span class="faint" id="progress-detail"></span>
+    </div>
+    <div class="gauge"><div class="gauge-fill" id="gauge"></div></div>
+    <div class="toolbar" style="margin:.6rem 0 0" id="progress-done" hidden>
+      <div class="spacer"></div>
+      <a class="btn primary" id="see-result">결과 보기 →</a>
+    </div>
+    <div id="job-error"></div>
+  </section>
+
+  <!-- 이 서버가 무엇인지가 먼저다. 이력과 변화는 그다음에 읽는다. -->
+  <h2>자산 정보</h2>
+  <div class="card">
+    <dl class="asset-info" id="meta"></dl>
+
+    <form id="edit" class="field-grid" hidden>
+      <label>서버 이름 <input name="name" required autocomplete="off"></label>
+      <label>그룹 <input name="group_name" placeholder="DMZ · 내부업무" autocomplete="off"></label>
+      <label>운영체제 <input name="os" placeholder="Rocky Linux 9.3" autocomplete="off"></label>
+      <label>비고 <input name="note" placeholder="용도 · 담당 부서 등" autocomplete="off"></label>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">저장</button>
+      </div>
+    </form>
+    <div id="edit-msg"></div>
+  </div>
 
   <h2>스캔 이력</h2>
   <div class="card">
@@ -35,25 +85,19 @@
     <div id="diff" class="muted">불러오는 중…</div>
   </div>
 
-  <section id="edit-panel" hidden>
-    <h2>자산 정보</h2>
-    <div class="card">
-      <form id="edit" class="inline-form">
-        <input name="name" placeholder="서버 이름" required>
-        <input name="group_name" placeholder="그룹">
-        <input name="os" placeholder="운영체제">
-        <input name="note" placeholder="비고">
-        <button class="btn primary" type="submit">저장</button>
-        <button class="btn" type="button" id="archive">보관</button>
-        <button class="btn danger" type="button" id="remove">삭제</button>
-      </form>
-      <p class="faint">삭제해도 이 자산의 스캔은 지워지지 않고 미분류로 남습니다.</p>
-      <div id="edit-msg"></div>
+  <!-- 삭제는 저장 옆에 두지 않는다. 옆에 있으면 누르려던 것과 다른 것을 누른다. -->
+  <section id="danger-zone" hidden>
+    <h2>자산 삭제</h2>
+    <div class="card danger-card">
+      <p class="muted" id="remove-note"></p>
+      <button class="btn danger" type="button" id="remove">이 자산 삭제</button>
+      <div id="remove-msg"></div>
     </div>
   </section>
 </main>
 
 <script type="module">
+import { getProvider } from './js/providers/index.js';
 import { $, esc } from './js/core/ui.js';
 import { mountTopbar } from './js/core/nav.js';
 import { formatWhen } from './js/core/format.js';
@@ -86,14 +130,17 @@ try {
 
 document.title = `${asset.name} — SBOMSight`;
 $('#title').textContent = asset.name;
-$('#upload-link').href = `scan.html?asset=${encodeURIComponent(asset.asset_id)}`;
+
+// 조회 권한에게는 편집 폼 대신 읽기용 목록을 보여 준다.
 $('#meta').innerHTML = [
-  asset.group_name && `그룹 <b>${esc(asset.group_name)}</b>`,
-  asset.os && `운영체제 <b>${esc(asset.os)}</b>`,
-  `스캔 <b>${asset.scans.length}</b>건`,
-  asset.archived && '<span class="tag">보관</span>',
-  asset.note && esc(asset.note),
-].filter(Boolean).join(' · ');
+  ['서버 이름', asset.name],
+  ['그룹', asset.group_name],
+  ['운영체제', asset.os],
+  ['비고', asset.note],
+  ['스캔', `${asset.scans.length}건`],
+  ['등록', formatWhen(asset.created_at)],
+].map(([key, value]) =>
+  `<dt>${esc(key)}</dt><dd>${value ? esc(value) : '<span class="faint">—</span>'}</dd>`).join('');
 
 // --- 스캔 이력 --------------------------------------------------------------
 if (!asset.scans.length) {
@@ -109,6 +156,136 @@ if (!asset.scans.length) {
       <td class="num">${s.finding_count}</td>
       <td><a href="scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
     </tr>`).join('')}</tbody></table></div>`;
+}
+
+// --- SBOM 올리기 ------------------------------------------------------------
+//
+// 진행은 **게이지 하나**다. 일곱 칸짜리 스테퍼는 무엇이 도는지는 보여 주지만
+// 담당자가 알고 싶은 것은 "지금 어디쯤이고 끝났는가" 하나다. 끝나면 결과
+// 화면으로 넘어간다.
+
+const provider = await getProvider();
+let upload = null;
+
+if (isAdmin) {
+  $('#open-upload').hidden = false;
+  $('#open-upload').addEventListener('click', () => {
+    $('#upload-card').classList.remove('hidden');
+    $('#open-upload').hidden = true;
+    $('#dropzone').scrollIntoView({ block: 'center' });
+  });
+  $('#upload-cancel').addEventListener('click', () => {
+    $('#upload-card').classList.add('hidden');
+    $('#open-upload').hidden = false;
+  });
+
+  const dropzone = $('#dropzone');
+  const fileInput = $('#file');
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('over'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('over');
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) handleFile(fileInput.files[0]);
+  });
+  $('#run').addEventListener('click', startScan);
+}
+
+function formatBytes(n) {
+  if (!n && n !== 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = n, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)}${units[unit]}`;
+}
+
+async function handleFile(file) {
+  const info = $('#file-info');
+  $('#run').disabled = true;
+  info.textContent = `${file.name} (${formatBytes(file.size)}) 업로드 중…`;
+
+  try {
+    upload = await provider.upload(file, {
+      onProgress: (loaded, total) => {
+        const pct = total ? Math.round((loaded / total) * 100) : 0;
+        info.textContent = `${file.name} 업로드 중… ${pct}% (${formatBytes(loaded)} / ${formatBytes(total)})`;
+      },
+    });
+    const fmt = upload.format === 'unknown' ? '형식 미상' : upload.format;
+    // 셀 수 없었으면 0이 아니라 미상이다. 0은 "컴포넌트가 없다"는 거짓말이 된다.
+    const count = upload.component_count === null || upload.component_count === undefined
+      ? '컴포넌트 수 미상'
+      : `컴포넌트 ${upload.component_count.toLocaleString()}개`;
+    info.innerHTML = `<b>${esc(upload.filename)}</b> · ${esc(fmt)} · ${esc(count)}`;
+    $('#run').disabled = false;
+  } catch (error) {
+    info.innerHTML = `<span class="bad">업로드 실패: ${esc(error.message)}</span>`;
+  }
+}
+
+function setGauge(percent, step, detail = '') {
+  $('#gauge').style.width = `${Math.max(2, Math.min(100, percent))}%`;
+  $('#progress-step').textContent = step;
+  $('#progress-detail').textContent = detail;
+}
+
+async function startScan() {
+  if (!upload) return;
+  $('#run').disabled = true;
+  $('#upload-card').classList.add('hidden');
+  $('#progress-card').classList.remove('hidden');
+  $('#progress-done').hidden = true;
+  $('#job-error').innerHTML = '';
+  setGauge(3, '스캔을 시작하는 중…');
+
+  let job;
+  try {
+    job = await provider.startScan({
+      uploadId: upload.upload_id,
+      filename: upload.filename,
+      enrich: $('#enrich').checked,
+      assetId: asset.asset_id,
+    });
+  } catch (error) {
+    $('#job-error').innerHTML = `<div class="banner danger">스캔을 시작하지 못했습니다: ${esc(error.message)}</div>`;
+    $('#run').disabled = false;
+    $('#open-upload').hidden = false;
+    return;
+  }
+
+  while (true) {
+    const status = await provider.pollScan(job.job_id);
+    const steps = status.steps || [];
+    const done = steps.filter((s) => s.state === 'done').length;
+    const running = steps.find((s) => s.state === 'running');
+    setGauge(
+      steps.length ? Math.round((done / steps.length) * 100) : 5,
+      running?.label || (status.state === 'done' ? '완료' : '처리 중…'),
+      running?.detail || steps.find((s) => s.state === 'done' && s.metric)?.metric || '',
+    );
+
+    if (status.state === 'done') {
+      setGauge(100, '완료', `탐지 ${(status.summary?.total ?? 0).toLocaleString()}건`);
+      $('#see-result').href = `scan.html?scan=${encodeURIComponent(status.scan_id)}`;
+      $('#progress-done').hidden = false;
+      // 결과가 이 화면의 목적이다. 다 됐다고만 하고 멈추면 한 번 더 눌러야 한다.
+      window.location.href = $('#see-result').href;
+      return;
+    }
+    if (status.state === 'failed') {
+      const failed = steps.find((s) => s.state === 'failed');
+      $('#job-error').innerHTML = `<div class="banner danger">
+        ${esc(failed?.label || '스캔')} 단계에서 실패했습니다: ${esc(failed?.detail || status.error || '')}</div>`;
+      setGauge(100, '실패');
+      $('#open-upload').hidden = false;
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 600));
+  }
 }
 
 // --- 변화 -------------------------------------------------------------------
@@ -185,45 +362,49 @@ async function renderDiff(base = '', head = '') {
 $('#compare').addEventListener('click', () => renderDiff($('#base').value, $('#head').value));
 await renderDiff();
 
-// --- 자산 정보 --------------------------------------------------------------
+// --- 자산 정보 편집 ---------------------------------------------------------
 if (isAdmin) {
-  $('#edit-panel').hidden = false;
+  // 관리자에게는 읽기용 목록 대신 편집 폼을 준다. 두 벌을 같이 두면 어느 쪽이
+  // 지금 값인지 알 수 없다.
+  $('#meta').hidden = true;
   const form = $('#edit');
+  form.hidden = false;
   form.name.value = asset.name;
   form.group_name.value = asset.group_name;
   form.os.value = asset.os;
   form.note.value = asset.note;
-  $('#archive').textContent = asset.archived ? '보관 해제' : '보관';
 
-  const save = async (body) => {
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
     try {
       await call(`api/assets/${encodeURIComponent(assetId)}`, {
-        method: 'PUT', body: JSON.stringify(body),
+        method: 'PUT',
+        body: JSON.stringify({
+          name: data.get('name'), group_name: data.get('group_name'),
+          os: data.get('os'), note: data.get('note'),
+        }),
       });
       window.location.reload();
     } catch (error) {
       $('#edit-msg').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
     }
-  };
-
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const data = new FormData(form);
-    save({
-      name: data.get('name'), group_name: data.get('group_name'),
-      os: data.get('os'), note: data.get('note'),
-    });
   });
 
-  $('#archive').addEventListener('click', () => save({ archived: !asset.archived }));
+  // --- 삭제 -----------------------------------------------------------------
+  $('#danger-zone').hidden = false;
+  $('#remove-note').textContent = asset.scans.length
+    ? `이 자산의 스캔 ${asset.scans.length}건은 함께 지워지지 않습니다.`
+      + ' 자산 등록만 사라지므로, 이력을 보려면 다시 등록한 뒤 스캔을 배정해야 합니다.'
+    : '이 자산에는 스캔이 없습니다. 지워도 잃는 이력이 없습니다.';
 
   $('#remove').addEventListener('click', async () => {
-    if (!window.confirm(`${asset.name} 자산을 삭제할까요? 스캔은 미분류로 남습니다.`)) return;
+    if (!window.confirm(`${asset.name} 자산을 삭제할까요?`)) return;
     try {
       await call(`api/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
       window.location.href = 'index.html';
     } catch (error) {
-      $('#edit-msg').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+      $('#remove-msg').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
     }
   });
 }

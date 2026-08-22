@@ -257,7 +257,6 @@ def to_markdown(report: Report) -> str:
         f"- 스캔 ID: {scan.get('scan_id', '')}",
         f"- 대상 SBOM: {scan.get('sbom_filename', '') or '(미상)'} ({scan.get('sbom_format', '')})",
         f"- 컴포넌트: {scan.get('component_count', 0)}개",
-        f"- 판정 기준: {report.policy.get('label', '')}",
     ]
     # AI 를 쓰지 않았으면 AI 이야기를 꺼내지 않는다.
     if report.ai_used:
@@ -620,8 +619,7 @@ def to_html(report: Report) -> str:
   생성 <b>{_esc(report.generated_at)}</b> ·
   스캔 <b>{_esc(scan.get('scan_id',''))}</b> ·
   SBOM <b>{_esc(scan.get('sbom_filename','') or '(미상)')}</b> ({_esc(scan.get('sbom_format',''))}) ·
-  컴포넌트 <b>{scan.get('component_count',0)}</b>개<br>
-  판정 기준 <b>{_esc(report.policy.get('label',''))}</b>{ai_line}
+  컴포넌트 <b>{scan.get('component_count',0)}</b>개{ai_line}
 </p>
 <div class="summary-disclaimer">{_esc(report.disclaimer)}</div>
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>스캔 — SBOMSight</title>
+<title>스캔 결과 — SBOMSight</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/app.css">
 </head>
@@ -11,7 +11,10 @@
 <header class="topbar"></header>
 
 <main class="wide">
-  <div class="page-head"><h1>스캔</h1></div>
+  <div class="page-head">
+    <h1>스캔 결과</h1>
+    <a class="btn" id="back-to-asset" hidden>← 자산으로</a>
+  </div>
 
   <div id="banner"></div>
 
@@ -28,44 +31,9 @@
     </div>
   </section>
 
-  <!-- 업로드 -->
-  <section class="card" id="upload-card">
-    <div class="dropzone" id="dropzone">
-      <div class="big">SBOM JSON 파일을 여기에 놓거나 클릭해 선택하세요</div>
-      <div class="sub">CycloneDX JSON · SPDX JSON · Syft JSON</div>
-      <input type="file" id="file" accept=".json,application/json" hidden>
-    </div>
-    <div class="toolbar">
-      <label class="check" id="asset-pick-wrap" hidden>서버
-        <select id="asset-pick"></select>
-      </label>
-      <span class="inline-new" id="asset-new" hidden>
-        <input id="asset-name" placeholder="서버 이름 (예: web-01)">
-        <input id="asset-group" placeholder="그룹 (선택)">
-        <button type="button" class="btn small primary" id="asset-add">등록</button>
-        <span class="faint" id="asset-msg"></span>
-      </span>
-      <label class="check"><input type="checkbox" id="enrich" checked> 위협정보 보강 (EPSS · CISA KEV · 공개 Exploit)</label>
-      <div class="spacer"></div>
-      <span id="file-info" class="faint"></span>
-      <button class="primary" id="run" disabled>스캔 시작</button>
-    </div>
-  </section>
-
-  <!-- 진행 -->
-  <section class="card hidden" id="progress-card">
-    <div class="toolbar" style="margin:0 0 .5rem">
-      <h3 style="margin:0">진행 상황</h3>
-      <div class="spacer"></div>
-      <button class="btn small" id="progress-toggle" hidden>펼치기</button>
-    </div>
-    <div class="stepper" id="stepper"></div>
-    <div id="job-error"></div>
-  </section>
-
   <!-- 결과 -->
   <section class="hidden" id="result">
-    <h2>결과</h2>
+    <h2>결과 <span class="faint" id="result-note">조치 단위(패키지)로 묶었습니다 — 눌러서 취약점을 봅니다</span></h2>
     <div class="grid cols-4" id="stats" style="margin-bottom:.75rem"></div>
     <div class="flow" id="summary-line" style="margin-bottom:1rem"></div>
 
@@ -86,7 +54,7 @@
           <option value="kev">실제 악용 확인 (CISA KEV)</option>
           <option value="exploit">공격코드 공개</option>
         </select>
-        <input type="search" id="filter-text" placeholder="CVE 또는 패키지 검색">
+        <input type="search" id="filter-text" placeholder="패키지 또는 CVE 검색">
         <div class="spacer"></div>
         <button id="csv-btn">CSV 내려받기</button>
         <span class="faint" id="count"></span>
@@ -94,14 +62,13 @@
 
       <!-- 선택 막대 — 무엇을 고를지, 고른 것으로 무엇을 할지 -->
       <div class="toolbar selection-bar" id="selection-bar">
-        <b id="selection-count">0건 선택</b>
+        <b id="selection-count">선택 없음</b>
         <span class="faint" id="selection-hint">보고서와 AI 전송의 범위입니다.</span>
-        <button id="select-filtered">조건에 맞는 전체 선택</button>
-        <button id="select-p0p1">즉시 · 우선 검토 선택</button>
+        <button id="select-all">전체 선택</button>
         <button id="select-none">선택 해제</button>
         <div class="spacer"></div>
         <button id="egress-btn" disabled>AI에 전송될 내용 보기</button>
-        <a class="btn primary" id="go-report">선택 항목으로 보고서</a>
+        <a class="btn primary" id="go-report">보고서</a>
       </div>
 
       <div class="table-scroll">
@@ -109,11 +76,11 @@
           <thead><tr>
             <th class="pick"><input type="checkbox" id="check-all" aria-label="이 쪽 전체 선택"></th>
             <th class="sortable" data-sort="priority">대응 검토</th>
-            <th class="sortable" data-sort="cve">CVE</th>
             <th class="sortable" data-sort="package">패키지</th>
-            <th>설치 <span class="arrow">→</span> 수정</th>
-            <th class="num sortable" data-sort="cvss">심각도</th>
-            <th class="num sortable" data-sort="epss">악용 예측</th>
+            <th>설치 <span class="arrow">→</span> 목표</th>
+            <th class="num sortable" data-sort="count">취약점</th>
+            <th class="num sortable" data-sort="cvss">최고 심각도</th>
+            <th class="num sortable" data-sort="epss">최고 악용 예측</th>
             <th>근거</th>
           </tr></thead>
           <tbody id="rows"></tbody>
@@ -131,7 +98,6 @@
             <option value="50">50</option>
             <option value="100" selected>100</option>
             <option value="200">200</option>
-            <option value="500">500</option>
           </select>
         </label>
       </div>
@@ -166,7 +132,8 @@
 import { getProvider } from './js/providers/index.js';
 import { findingKey } from './js/core/model.js';
 import {
-  $, $$, esc, renderDetail, renderStats, renderStepper, renderSummaryLine, renderTable,
+  $, $$, esc, renderCveList, renderDetail, renderPackageTable,
+  renderStats, renderSummaryLine,
 } from './js/core/ui.js';
 import { mountTopbar } from './js/core/nav.js';
 
@@ -176,7 +143,6 @@ const canUpload = provider.capabilities?.upload !== false;
 const canSelect = provider.capabilities?.select !== false;
 
 const state = {
-  upload: null,
   scanId: null,
   page: [],                 // 지금 화면에 그린 한 쪽
   total: 0,                 // 필터를 적용한 뒤의 건수
@@ -206,192 +172,22 @@ try {
   $('#banner').innerHTML = `<div class="banner danger">상태를 확인하지 못했습니다: ${esc(error.message)}</div>`;
 }
 
-if (!canUpload) $('#upload-card').classList.add('hidden');
-
-/**
- * 어느 서버의 SBOM 인지 먼저 고른다.
- *
- * 이 도구의 관리 단위는 스캔이 아니라 서버 한 대다. 올릴 때 정해 두지 않으면
- * 나중에 "이 sbom.json 이 어느 서버 것이었지"를 파일명으로 추측하게 된다.
- * 자산 화면에서 넘어온 경우(`?asset=`)는 그 서버가 이미 골라져 있다.
- */
-const NEW_ASSET = '__new__';
-
-async function loadAssetPicker(selected = '') {
-  const { assets } = await (await fetch('api/assets')).json();
-  const preset = selected || new URLSearchParams(location.search).get('asset') || '';
-  $('#asset-pick').innerHTML =
-    '<option value="">— 미분류 —</option>'
-    + (assets || []).map((a) => `<option value="${esc(a.asset_id)}"${
-        a.asset_id === preset ? ' selected' : ''
-      }>${esc(a.name)}${a.group_name ? ` (${esc(a.group_name)})` : ''}</option>`).join('')
-    + `<option value="${NEW_ASSET}">+ 새 서버 등록…</option>`;
-  $('#asset-pick-wrap').hidden = false;
-  $('#asset-new').hidden = true;
-}
-
-if (canUpload) {
-  try {
-    await loadAssetPicker();
-  } catch { /* 전시 모드에는 자산이 없다 */ }
-
-  // 드롭다운에서 바로 서버를 만든다. 자산 화면으로 갔다 오게 하면 올리던
-  // 파일을 놓치고, 실제로는 그래서 미분류로 올려 버리게 된다.
-  $('#asset-pick').addEventListener('change', () => {
-    const creating = $('#asset-pick').value === NEW_ASSET;
-    $('#asset-new').hidden = !creating;
-    if (creating) $('#asset-name').focus();
-  });
-
-  $('#asset-add').addEventListener('click', async () => {
-    const name = $('#asset-name').value.trim();
-    if (!name) return;
-    $('#asset-msg').textContent = '';
-    try {
-      const response = await fetch('api/assets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, group_name: $('#asset-group').value.trim() }),
-      });
-      const created = await response.json();
-      if (!response.ok) throw new Error(created.detail || `${response.status}`);
-      $('#asset-name').value = '';
-      $('#asset-group').value = '';
-      await loadAssetPicker(created.asset_id);
-    } catch (error) {
-      $('#asset-msg').innerHTML = `<span style="color:var(--danger)">${esc(error.message)}</span>`;
-    }
-  });
-}
-
-// --- 업로드 ----------------------------------------------------------------
-const dropzone = $('#dropzone');
-const fileInput = $('#file');
-const runButton = $('#run');
-
-if (canUpload) {
-  dropzone.addEventListener('click', () => fileInput.click());
-  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('over'); });
-  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
-  dropzone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('over');
-    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
-  });
-  fileInput.addEventListener('change', () => {
-    if (fileInput.files[0]) handleFile(fileInput.files[0]);
-  });
-}
-
-function formatBytes(n) {
-  if (!n && n !== 0) return '';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let value = n, unit = 0;
-  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
-  return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)}${units[unit]}`;
-}
-
-async function handleFile(file) {
-  const info = $('#file-info');
-  runButton.disabled = true;
-  info.textContent = `${file.name} (${formatBytes(file.size)}) 업로드 중…`;
-
-  try {
-    state.upload = await provider.upload(file, {
-      onProgress: (loaded, total) => {
-        const pct = total ? Math.round((loaded / total) * 100) : 0;
-        info.textContent = `${file.name} 업로드 중… ${pct}% (${formatBytes(loaded)} / ${formatBytes(total)})`;
-      },
-    });
-
-    const fmt = state.upload.format === 'unknown' ? '형식 미상' : state.upload.format;
-    // 셀 수 없었으면 0이 아니라 미상이다. 0은 "컴포넌트가 없다"는 거짓말이 된다.
-    const count = state.upload.component_count === null || state.upload.component_count === undefined
-      ? '컴포넌트 수 미상'
-      : `컴포넌트 ${state.upload.component_count.toLocaleString()}개`;
-    const saved = state.upload.compressed && state.upload.stored_bytes
-      ? ` · 저장 ${formatBytes(state.upload.stored_bytes)} (원본 ${formatBytes(state.upload.size)})`
-      : '';
-
-    info.innerHTML = `<b>${esc(state.upload.filename)}</b> · ${esc(fmt)} · ${esc(count)}${esc(saved)}`;
-    runButton.disabled = false;
-  } catch (error) {
-    info.innerHTML = `<span style="color:var(--danger)">업로드 실패: ${esc(error.message)}</span>`;
-  }
-}
-
-// --- 스캔 ------------------------------------------------------------------
-/** "+ 새 서버 등록…" 을 고른 채 등록하지 않았으면 미분류다. */
-function assetIdForScan() {
-  const value = $('#asset-pick')?.value || '';
-  return value === NEW_ASSET ? '' : value;
-}
-
-runButton?.addEventListener('click', async () => {
-  if (!state.upload) return;
-  runButton.disabled = true;
-  $('#progress-card').classList.remove('hidden');
-  $('#job-error').innerHTML = '';
-  $('#result').classList.add('hidden');
-
-  try {
-    const { job_id: jobId, steps } = await provider.startScan({
-      uploadId: state.upload.upload_id,
-      filename: state.upload.filename,
-      enrich: $('#enrich').checked,
-      assetId: assetIdForScan(),
-    });
-    renderStepper($('#stepper'), steps);
-    await pollUntilDone(jobId);
-  } catch (error) {
-    $('#job-error').innerHTML = `<div class="banner danger">스캔을 시작하지 못했습니다: ${esc(error.message)}</div>`;
-    runButton.disabled = false;
-  }
-});
-
-function collapseProgress(job) {
-  const card = $('#progress-card');
-  const toggle = $('#progress-toggle');
-  card.classList.add('collapsed');
-  toggle.hidden = false;
-
-  const detect = (job.steps || []).find((s) => s.key === 'detect');
-  $('#stepper').insertAdjacentHTML('beforebegin',
-    `<p class="muted collapsed-line" id="progress-line">스캔 완료 — ${esc(detect?.metric || '')}</p>`);
-
-  toggle.addEventListener('click', () => {
-    const open = card.classList.toggle('collapsed');
-    toggle.textContent = open ? '펼치기' : '접기';
-  });
-}
-
-async function pollUntilDone(jobId) {
-  for (;;) {
-    const job = await provider.pollScan(jobId);
-    renderStepper($('#stepper'), job.steps);
-
-    if (job.state === 'failed') {
-      $('#job-error').innerHTML = `<div class="banner danger">${esc(job.error)}</div>`;
-      runButton.disabled = false;
-      return;
-    }
-    if (job.state === 'done') {
-      await loadResults(job.scan_id);
-      runButton.disabled = false;
-      // 끝난 스테퍼는 접는다. 일곱 칸이 화면 위쪽을 계속 차지하면 정작 봐야 할
-      // 결과 표가 아래로 밀린다. 무엇이 어떻게 돌았는지는 펼쳐서 볼 수 있다.
-      collapseProgress(job);
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 600));
-  }
+// 이 결과가 어느 서버의 것인지. 스캔은 자산 화면에서 시작하므로 돌아갈 길을 둔다.
+function showAssetLink(assetId) {
+  if (!assetId) return;
+  const link = $('#back-to-asset');
+  link.href = `asset.html?id=${encodeURIComponent(assetId)}`;
+  link.hidden = false;
 }
 
 // --- 결과 ------------------------------------------------------------------
 //
-// **서버가 자르고 정렬한다.** 서버 한 대가 48,923건을 낸다. 전부 내려받으면
-// 82MB 이고, 브라우저는 그것을 파싱한 뒤 DOM 노드 40만 개를 만들다가 멈춘다.
-// 여기서는 한 쪽(기본 100건)만 받아 그린다.
+// **한 줄이 패키지 하나다.** 조치는 패키지당 한 번이고 — `openssl` 을 3.0.7로
+// 올리면 CVE 5건이 한 번에 해소된다 — 고르는 단위도 보고서를 뽑는 단위도
+// 그것과 같아야 한다. CVE 단위로 늘어놓으면 48,923줄이 되고 같은 패치를
+// 여섯 번 읽게 된다. 여기서는 8,154줄이 되고, 그것도 100개씩 쪽을 넘긴다.
+//
+// 정렬·필터·페이징은 전부 서버(SQL)가 한다.
 
 const FILTER_FIELDS = {
   priority: '#filter-priority',
@@ -457,13 +253,11 @@ async function loadResults(scanId) {
   renderSummaryLine($('#summary-line'), summary);
   state.scanTotal = summary.total;
 
-  // 그때 담당자가 실제로 고른 항목을 되살린다. 키만 받는다 — 되살리자고
+  // 그때 담당자가 실제로 고른 범위를 되살린다. 묶음 키만 받는다 — 되살리자고
   // 48,923건을 통째로 받으면 첫 화면이 12초가 된다.
   try {
-    const saved = provider.getSelection
-      ? await provider.getSelection(scanId)
-      : (await provider.getScan(scanId)).selection;
-    for (const key of saved?.keys || []) state.selected.add(key);
+    const saved = await provider.getSelection(scanId);
+    for (const key of saved?.packages || []) state.selected.add(key);
   } catch { /* 선택 기록이 없으면 전체가 범위다 */ }
 
   readFiltersFromUrl();
@@ -486,7 +280,7 @@ async function refresh({ pushUrl = true } = {}) {
 
   let page;
   try {
-    page = await provider.listFindings(state.scanId, {
+    page = await provider.listPackages(state.scanId, {
       ...queryParams(),
       sort: state.sort.key,
       order: state.sort.desc ? 'desc' : 'asc',
@@ -499,9 +293,9 @@ async function refresh({ pushUrl = true } = {}) {
     return;
   }
 
-  state.page = page.findings;
+  state.page = page.packages;
   state.total = page.total;
-  state.scanTotal = page.scan_total;
+  state.totals = page.totals || {};
 
   // 패키지 유형 목록은 스캔마다 고정이라 한 번만 채운다.
   const picker = $('#filter-ecosystem');
@@ -512,15 +306,15 @@ async function refresh({ pushUrl = true } = {}) {
     picker.value = keep;
   }
 
-  $('#count').textContent = page.total === page.scan_total
-    ? `${page.total.toLocaleString()}건`
-    : `${page.total.toLocaleString()} / ${page.scan_total.toLocaleString()}건`;
+  const allPackages = state.totals.packages ?? page.total;
+  $('#count').textContent = page.total === allPackages
+    ? `패키지 ${page.total.toLocaleString()}개 · 취약점 ${state.scanTotal.toLocaleString()}건`
+    : `패키지 ${page.total.toLocaleString()} / ${allPackages.toLocaleString()}개`;
   $$('th.sortable').forEach((th) => {
     th.dataset.active = th.dataset.sort === state.sort.key ? (state.sort.desc ? 'desc' : 'asc') : '';
   });
 
-  renderTable(rows, page.findings, openDrawer, {
-    key: findingKey,
+  renderPackageTable(rows, page.packages, openPackage, {
     selected: state.selected,
     onToggle: toggleSelection,
     selectable: canSelect,
@@ -534,10 +328,10 @@ function renderPager(page) {
   const pages = Math.max(1, Math.ceil(page.total / state.limit));
   const current = Math.floor(page.offset / state.limit) + 1;
   const from = page.total ? page.offset + 1 : 0;
-  const to = page.offset + page.findings.length;
+  const to = page.offset + page.packages.length;
 
   $('#page-label').textContent =
-    `${from.toLocaleString()}–${to.toLocaleString()} / ${page.total.toLocaleString()}건 · ${current} / ${pages}쪽`;
+    `${from.toLocaleString()}–${to.toLocaleString()} / ${page.total.toLocaleString()}개 · ${current} / ${pages}쪽`;
   $('#page-first').disabled = page.offset === 0;
   $('#page-prev').disabled = page.offset === 0;
   $('#page-next').disabled = !page.has_more;
@@ -577,17 +371,17 @@ $$('th.sortable').forEach((th) => {
   th.addEventListener('click', () => {
     const key = th.dataset.sort;
     // 같은 열을 다시 누르면 방향을 뒤집는다. 다른 열이면 그 열의 자연스러운
-    // 방향에서 시작한다 — 점수는 높은 것부터, 이름은 가나다순부터.
+    // 방향에서 시작한다 — 점수와 건수는 높은 것부터, 이름은 가나다순부터.
     state.sort = state.sort.key === key
       ? { key, desc: !state.sort.desc }
-      : { key, desc: key === 'cvss' || key === 'epss' };
+      : { key, desc: key === 'cvss' || key === 'epss' || key === 'count' };
     state.offset = 0;
     refresh();
   });
 });
 
-// CSV 는 서버가 만든다. 화면은 100건씩 보지만 내려받는 것은 조건에 맞는
-// 전부여야 한다 — 결재에 올릴 목록이 화면 한 쪽일 리 없다.
+// CSV 는 서버가 만든다. 표는 패키지로 묶어 보지만 CSV 는 취약점 한 줄씩이다 —
+// 엑셀로 넘긴 뒤에 다시 묶거나 거르는 것은 담당자 몫이다.
 $('#csv-btn').addEventListener('click', () => {
   window.location.href = provider.csvUrl(state.scanId, queryParams());
 });
@@ -595,74 +389,56 @@ $('#csv-btn').addEventListener('click', () => {
 // --- 선택 ------------------------------------------------------------------
 // 고른 것만 AI로 나가고, 고른 것만 보고서가 된다. 두 범위가 갈라지면
 // "미리보기에서 본 것"과 "실제로 나간 것"이 달라지므로 한 집합으로 관리한다.
+// 단위는 **패키지**다.
 function toggleSelection(key, on) {
   if (on) state.selected.add(key); else state.selected.delete(key);
   syncSelectionUi();
 }
 
-function selectionKeys() {
-  return [...state.selected];
-}
-
 function syncSelectionUi() {
   const n = state.selected.size;
-  $('#selection-count').textContent = n ? `${n}건 선택` : '선택 없음';
+  $('#selection-count').textContent = n ? `패키지 ${n.toLocaleString()}개 선택` : '선택 없음';
   $('#egress-btn').disabled = !provider.egressPreview || (canSelect && n === 0);
 
   const link = $('#go-report');
-  const params = new URLSearchParams({ scan: state.scanId || '' });
-  for (const key of selectionKeys()) params.append('select', key);
-  link.href = `report.html?${params}`;
-  link.textContent = n ? `선택 ${n}건으로 보고서` : '전체 보고서';
+  link.href = `report.html?scan=${encodeURIComponent(state.scanId || '')}`;
+  link.textContent = n ? `선택 ${n.toLocaleString()}개로 보고서` : '전체 보고서';
 
-  const visible = state.page.map(findingKey);
+  const visible = state.page.map((g) => g.key);
   const all = visible.length > 0 && visible.every((k) => state.selected.has(k));
   const checkAll = $('#check-all');
   checkAll.checked = all;
   checkAll.indeterminate = !all && visible.some((k) => state.selected.has(k));
 }
 
-/**
- * 서버에서 키를 받아 선택에 넣는다.
- *
- * 이제 화면에는 한 쪽밖에 없다. "조건에 맞는 전부"는 서버만 안다. 상한을
- * 넘으면 몇 건 중 몇 건을 골랐는지 그 자리에서 말한다 — 조용히 잘라 놓고
- * 전부 골랐다고 두면 보고서에서 항목이 빠진 것을 나중에야 알게 된다.
- */
-async function selectFromServer(params, label) {
-  const button = document.activeElement;
-  if (button) button.disabled = true;
-  try {
-    const result = await provider.findingKeys(state.scanId, params);
-    for (const key of result.keys) state.selected.add(key);
-    $('#selection-hint').textContent = result.truncated
-      ? `${label} ${result.total.toLocaleString()}건 중 ${result.keys.length.toLocaleString()}건까지 선택했습니다.`
-      : '보고서와 AI 전송의 범위입니다.';
-  } catch (error) {
-    $('#selection-hint').textContent = `선택하지 못했습니다: ${error.message}`;
-  } finally {
-    if (button) button.disabled = false;
-  }
-  await refresh();
-}
-
 $('#check-all').addEventListener('change', (event) => {
-  for (const f of state.page) {
-    if (event.target.checked) state.selected.add(findingKey(f));
-    else state.selected.delete(findingKey(f));
+  for (const g of state.page) {
+    if (event.target.checked) state.selected.add(g.key);
+    else state.selected.delete(g.key);
   }
   refresh();
 });
 
-$('#select-filtered').addEventListener('click', () => {
-  selectFromServer(queryParams(), '조건에 맞는');
-});
-
-$('#select-p0p1').addEventListener('click', async () => {
-  // 두 등급을 각각 받아 합친다. 필터는 등급 하나만 받는다.
-  for (const priority of ['P0', 'P1']) {
-    await selectFromServer({ ...queryParams(), priority }, '즉시·우선 검토');
+/**
+ * 지금 조건에 맞는 **전부**를 고른다.
+ *
+ * 화면에는 한 쪽밖에 없으므로 "전부"는 서버만 안다. 상한은 두지 않는다 —
+ * 담당자가 전체라고 했으면 전체여야 하고, 묶음 키는 짧은 문자열이라
+ * 8,154개라도 한 번에 오간다.
+ */
+$('#select-all').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const result = await provider.packageKeys(state.scanId, queryParams());
+    for (const key of result.keys) state.selected.add(key);
+    $('#selection-hint').textContent = '보고서와 AI 전송의 범위입니다.';
+  } catch (error) {
+    $('#selection-hint').textContent = `선택하지 못했습니다: ${error.message}`;
+  } finally {
+    button.disabled = false;
   }
+  await refresh();
 });
 
 $('#select-none').addEventListener('click', () => {
@@ -671,69 +447,143 @@ $('#select-none').addEventListener('click', () => {
   refresh();
 });
 
-// 보고서로 넘어가기 전에 선택을 서버에 남긴다. 나중에 export가 "이 보고서는
-// 무엇을 대상으로 만들어졌는가"를 그대로 옮길 수 있어야 하기 때문이다.
-// 기록에 실패해도 보고서는 URL의 선택 키로 정상 생성되므로 이동은 막지 않는다.
+/**
+ * 보고서로 넘어가기 전에 선택을 **서버에 남긴다.**
+ *
+ * 예전에는 고른 키를 전부 주소창에 실어 보냈다. 5,000건을 고르면 URL 이
+ * 250KB 가 되고, uvicorn 의 HTTP 파서가 요청 줄 길이 상한에 걸려
+ * `Invalid HTTP request received` 로 끊었다. 선택은 어차피 기록해 두어야
+ * 하는 것이므로(`export` 가 "이 보고서는 무엇을 대상으로 만들어졌는가"를
+ * 옮긴다), 기록하고 그것을 가리키기만 한다.
+ */
 $('#go-report').addEventListener('click', async (event) => {
   if (!provider.saveSelection || !state.scanId) return;
   event.preventDefault();
-  const href = event.currentTarget.href;
+  const link = event.currentTarget;
+  const href = link.href;
+  const label = link.textContent;
+  link.textContent = '선택을 기록하는 중…';
   try {
-    await provider.saveSelection(state.scanId, selectionKeys());
+    await provider.saveSelection(state.scanId, { packages: [...state.selected] });
   } catch (error) {
-    console.warn('선택을 기록하지 못했습니다:', error);
+    link.textContent = label;
+    window.alert(`선택을 기록하지 못했습니다: ${error.message}`);
+    return;
   }
   location.href = href;
 });
 
 // --- 상세 패널 -------------------------------------------------------------
 //
+// **두 단이다.** 표에서 패키지를 누르면 그 패키지의 CVE 목록이 나오고, 거기서
+// CVE 를 누르면 그 한 건의 상세가 나온다.
+//
+// 상세를 표 안에 펼치지 않는 이유가 있다. CVE 한 건의 상세는 145줄이고,
+// 패키지 하나에 6건이면 그것만으로 화면 열 장이다. 눌러서 볼 것은 눌러서
+// 보고, 표는 표로 남는다.
+//
 // 서술과 권고 절차는 **그 항목 하나만** 서버에서 조립해 온다. 예전에는 화면을
 // 열 때 보고서 전체를 만들어 색인해 두었는데, 48,923건이면 그 한 번이 몇 분이다.
 
-function openDrawer(finding) {
-  const key = findingKey(finding);
-  $('#drawer-title').textContent = `${finding.intel?.cve} · ${finding.installed?.name}`;
-  $('#drawer-body').innerHTML = '<p class="muted">불러오는 중…</p>';
+/** 지금 드로어가 무엇을 보여 주고 있는지. 늦게 도착한 응답이 덮어쓰지 못하게 한다. */
+let drawerToken = 0;
+let openGroup = null;
+
+function showDrawer() {
   $('#drawer').classList.add('open');
   $('#drawer').setAttribute('aria-hidden', 'false');
   $('#backdrop').classList.add('open');
-
-  loadDetail(finding, key).catch((error) => {
-    // 서술을 못 받아도 숫자와 판정 근거는 이미 손에 있다. 그것만이라도 보여 준다.
-    console.warn('상세를 불러오지 못했습니다:', error);
-    renderDetail($('#drawer-body'), finding, null, null);
-  });
 }
 
-async function loadDetail(finding, key) {
-  const item = provider.findingDetail
-    ? await provider.findingDetail(state.scanId, key)
-    : null;
+/** ① 패키지 하나 — 그 안의 CVE 목록. */
+async function openPackage(group) {
+  const token = ++drawerToken;
+  openGroup = group;
+  const target = group.target_version
+    ? ` → ${group.target_version}`
+    : ' (수정본 없음)';
+  $('#drawer-title').textContent = `${group.package} ${group.installed_version}${target}`;
+  $('#drawer-body').innerHTML = '<p class="muted">불러오는 중…</p>';
+  showDrawer();
 
-  // 드로어가 그 사이에 닫히거나 다른 항목으로 바뀌었으면 덮어쓰지 않는다.
-  if ($('#drawer-title').textContent !== `${finding.intel?.cve} · ${finding.installed?.name}`) return;
+  let findings;
+  try {
+    findings = await provider.packageFindings(state.scanId, group.package, group.installed_version);
+  } catch (error) {
+    if (token === drawerToken) {
+      $('#drawer-body').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+    }
+    return;
+  }
+  if (token !== drawerToken) return;
 
-  const narrative = item?.technical_risk
-    ? {
-        source: item.narrative_source,
-        technical_risk: item.technical_risk.narrative,
-        preconditions: item.technical_risk.preconditions,
-        impact_types: item.technical_risk.impact_types,
-        exploitability_note: item.exploitability.narrative,
-        response_rationale: item.response_rationale.narrative,
-      }
-    : null;
-  renderDetail($('#drawer-body'), finding, item?.recommendation, narrative);
+  const body = $('#drawer-body');
+  body.innerHTML = `
+    <p class="muted">이 패키지를 <b>${esc(group.target_version || '—')}</b> 로 올리면
+      취약점 <b>${group.fixable_count.toLocaleString()}건</b>이 해소됩니다.
+      ${group.no_fix_count
+        ? `수정본이 없는 항목이 <b>${group.no_fix_count.toLocaleString()}건</b> 있습니다.` : ''}</p>
+    <div class="toolbar">
+      <a class="btn small primary" id="pkg-report">이 패키지 보고서</a>
+      <span class="faint">CVE 를 누르면 그 한 건의 상세가 나옵니다</span>
+    </div>
+    <div id="cve-host"></div>`;
+  $('#pkg-report').href = `report.html?scan=${encodeURIComponent(state.scanId)}`
+    + `&package=${encodeURIComponent(group.package)}`
+    + `&version=${encodeURIComponent(group.installed_version)}`;
+  renderCveList($('#cve-host'), findings, (f) => openFinding(f, group));
+}
+
+/** ② CVE 한 건 — 상세. 위에 목록으로 돌아가는 길을 둔다. */
+function openFinding(finding, group) {
+  const token = ++drawerToken;
+  $('#drawer-title').textContent = `${finding.intel?.cve} · ${finding.installed?.name}`;
+  const body = $('#drawer-body');
+  body.innerHTML = '<p class="muted">불러오는 중…</p>';
+  showDrawer();
+
+  const draw = (recommendation, narrative) => {
+    if (token !== drawerToken) return;
+    body.innerHTML = '<div class="toolbar"><button class="btn small" id="back-to-pkg">'
+      + `← ${esc(group.package)} 취약점 목록</button></div><div id="detail-host"></div>`;
+    $('#back-to-pkg').addEventListener('click', () => openPackage(group));
+    renderDetail($('#detail-host'), finding, recommendation, narrative);
+  };
+
+  const key = findingKey(finding);
+  (provider.findingDetail ? provider.findingDetail(state.scanId, key) : Promise.resolve(null))
+    .then((item) => {
+      const narrative = item?.technical_risk
+        ? {
+            source: item.narrative_source,
+            technical_risk: item.technical_risk.narrative,
+            preconditions: item.technical_risk.preconditions,
+            impact_types: item.technical_risk.impact_types,
+            exploitability_note: item.exploitability.narrative,
+            response_rationale: item.response_rationale.narrative,
+          }
+        : null;
+      draw(item?.recommendation, narrative);
+    })
+    .catch((error) => {
+      // 서술을 못 받아도 숫자와 판정 근거는 이미 손에 있다. 그것만이라도 보여 준다.
+      console.warn('상세를 불러오지 못했습니다:', error);
+      draw(null, null);
+    });
 }
 
 function closeDrawer() {
+  drawerToken += 1;
+  openGroup = null;
   $('#drawer').classList.remove('open');
   $('#drawer').setAttribute('aria-hidden', 'true');
   $('#backdrop').classList.remove('open');
 }
 $('#drawer-close').addEventListener('click', closeDrawer);
 $('#backdrop').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeDrawer();
+});
 
 // --- 이그레스 미리보기 -------------------------------------------------------
 // "공개 데이터만 보냅니다"라는 주장은 검증할 수 있어야 의미가 있다.
@@ -745,7 +595,10 @@ $('#egress-btn').addEventListener('click', async () => {
   openEgress();
 
   try {
-    const preview = await provider.egressPreview(state.scanId, { selection: selectionKeys() });
+    // 고른 범위를 먼저 서버에 기록하고 그것을 가리킨다. 키를 전부 주소창에
+    // 실으면 URL 이 수백 KB 가 되어 HTTP 파서가 요청을 끊는다.
+    await provider.saveSelection(state.scanId, { packages: [...state.selected] });
+    const preview = await provider.egressPreview(state.scanId, { saved: true });
     body.innerHTML = renderEgress(preview);
     wireGenerate();
   } catch (error) {
@@ -772,8 +625,17 @@ function renderEgress(preview) {
     : '';
 
   const scope = preview.selection?.scope === 'selection'
-    ? `선택한 ${preview.finding_count}건`
-    : `전체 ${preview.finding_count}건`;
+    ? `선택한 ${preview.finding_count.toLocaleString()}건`
+    : `전체 ${preview.finding_count.toLocaleString()}건`;
+
+  // 상한에 걸렸으면 그렇다고 말한다. 조용히 자르면 "확인한 것"과 "나가는 것"이
+  // 달라지고, 그러면 이 화면이 하는 확인에 의미가 없다.
+  const capped = preview.capped
+    ? `<div class="banner warn"><b>범위가 넓습니다.</b>
+         고른 ${preview.finding_count.toLocaleString()}건 중
+         <b>${preview.cap.toLocaleString()}건</b>까지만 한 번에 전송합니다.
+         즉시·우선 검토로 좁히거나 패키지를 몇 개만 골라 주세요.</div>`
+    : '';
 
   // 전시 모드에서는 여기서 새로 조립하지 않는다 — 기록을 그대로 보여 준다.
   const action = preview.recorded
@@ -782,6 +644,7 @@ function renderEgress(preview) {
     : sendButton(preview);
 
   return `
+    ${capped}
     ${verdict}
     ${violations}
     <table class="kv">
@@ -838,7 +701,7 @@ function wireGenerate() {
     $('#egress-send-status').textContent = '전송하고 생성하는 중…';
     $('#egress-send-result').innerHTML = '';
     try {
-      const result = await provider.generateNarratives(state.scanId, { selection: selectionKeys() });
+      const result = await provider.generateNarratives(state.scanId, { saved: true });
       const rejected = (result.rejected || []).length
         ? `<div class="callout"><b>표현 정책에 걸린 서술 ${result.rejected.length}건은 반영하지 않았습니다.</b>
              해당 항목은 룰 기반 문장을 그대로 씁니다.
@@ -851,7 +714,6 @@ function wireGenerate() {
              <ul>${result.errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></div>`
         : '';
       const params = new URLSearchParams({ scan: state.scanId });
-      for (const key of selectionKeys()) params.append('select', key);
       $('#egress-send-result').innerHTML = `
         <div class="banner info" style="margin-top:.6rem">
           ${result.applied}/${result.requested}건에 AI 서술을 적용했습니다
@@ -925,10 +787,18 @@ if (!canUpload) {
   }
 } else if (requested) {
   try {
+    const meta = await provider.getScanMeta(requested);
+    showAssetLink(meta.asset_id);
     await loadResults(requested);
   } catch (error) {
     $('#banner').innerHTML = `<div class="banner danger">스캔 ${esc(requested)}을(를) 불러오지 못했습니다: ${esc(error.message)}</div>`;
   }
+} else {
+  // 스캔은 자산 화면에서 시작한다. 여기로 곧장 들어올 일은 없지만, 들어왔다면
+  // 어디로 가야 하는지 말해 준다.
+  $('#banner').innerHTML = `<div class="banner info">
+    볼 스캔이 지정되지 않았습니다. <a href="index.html">자산 화면</a>에서 서버를 고르고
+    SBOM 을 올리거나, 그 서버의 스캔 이력에서 결과를 열어 주세요.</div>`;
 }
 </script>
 </body>

@@ -72,6 +72,19 @@
   </section>
 </main>
 
+<!-- CVE 근거. 한 건이 145줄이라 표 안에 펼치면 문서가 아니라 두루마리가 된다. -->
+<dialog id="cve-dialog" class="wide-dialog">
+  <div class="toolbar" style="margin:0 0 .8rem">
+    <b id="cve-title"></b>
+    <div class="spacer"></div>
+    <a class="btn small" id="cve-dl-md" download>Markdown</a>
+    <a class="btn small" id="cve-dl-html" download>HTML</a>
+    <button type="button" class="btn small" id="cve-print">인쇄 · PDF</button>
+    <button type="button" class="btn small" id="cve-close">닫기</button>
+  </div>
+  <div id="cve-body"></div>
+</dialog>
+
 <footer class="site">
   대응 검토 우선순위는 정책 룰의 산출물이며, 내부 위험도와 최종 패치 여부는 보안담당자가 판단합니다.
 </footer>
@@ -91,8 +104,14 @@ const params = new URLSearchParams(location.search);
 const DISCLAIMER = '대응 검토 우선순위는 공개 데이터에 판정 기준을 적용한 결과이며, '
   + '내부 실제 위험도와 최종 패치 여부는 보안담당자가 판단합니다.';
 
-// 스캔 화면에서 체크한 항목이 그대로 넘어온다. 비어 있으면 전체 보고서다.
-const selection = params.getAll('select');
+/**
+ * 범위는 **서버에 기록된 선택**이다. 주소창에 싣지 않는다.
+ *
+ * 예전에는 고른 키를 전부 `?select=` 로 넘겼다. 5,000건을 고르면 URL 이
+ * 250KB 가 되고, uvicorn 의 HTTP 파서가 요청 줄 길이 상한에 걸려
+ * `Invalid HTTP request received` 로 끊었다.
+ */
+let scopedPackages = [];
 
 /**
  * AI 해설을 넣을지 **생성 시점에** 고른다.
@@ -102,12 +121,6 @@ const selection = params.getAll('select');
  * 얹히고, 없으면 생성 버튼이 뜬다.
  */
 let useAi = params.get('ai') === '1';
-
-function withSelection(base) {
-  const query = new URLSearchParams(base);
-  for (const key of selection) query.append('select', key);
-  return query;
-}
 
 function stepList(items, ordered = false) {
   if (!items?.length) return '';
@@ -142,7 +155,6 @@ function renderFinding(item, index) {
       <tr><th>공개 Exploit</th><td>${esc(item.badge.exploit)}</td></tr>
       <tr><th>수정 버전</th><td class="mono">${esc(item.badge.fixed_version)}</td></tr>
       <tr><th>대응 검토</th><td>${esc(item.badge.verdict)}</td></tr>
-      <tr><th>판정 기준</th><td class="faint">${esc(item.badge.policy)}</td></tr>
     </table>
 
     ${item.flags?.length ? `<div class="callout"><ul>${item.flags
@@ -241,6 +253,9 @@ function packageParams(extra = {}) {
   return {
     priority: $('#pkg-priority').value,
     q: $('#pkg-search').value.trim(),
+    // 고른 범위가 있으면 서버가 걸러 준다. 쪽 수와 건수가 범위와 맞아야
+    // 하는데, 받아 온 한 쪽에서 걸러 내면 "25개 중 3개"가 되어 어긋난다.
+    scoped: scopedPackages.length ? 'true' : '',
     ...extra,
   };
 }
@@ -317,7 +332,13 @@ function packageBlock(group) {
   </details>`;
 }
 
-/** 펼칠 때 그 묶음만 받아 그린다. 한 번 받으면 다시 받지 않는다. */
+/**
+ * 펼칠 때 그 묶음만 받아 그린다. 한 번 받으면 다시 받지 않는다.
+ *
+ * **CVE 상세는 여기에 펼치지 않는다.** 한 건이 145줄이라 6건짜리 패키지
+ * 하나만 열어도 열 장이고, 25개를 열면 인쇄가 9,473쪽이 됐다. 여기에는 조치
+ * 한 줄과 CVE 표만 두고, 근거는 눌렀을 때 팝업으로 낸다.
+ */
 async function expandPackage(details) {
   const body = details.querySelector('.pkg-body');
   if (details.dataset.loaded === '1') return;
@@ -326,7 +347,8 @@ async function expandPackage(details) {
   const version = details.dataset.version;
   try {
     const group = await provider.packageDetail(scanId(), pkg, { version, ai: useAi });
-    let index = 0;
+    loaded.set(details.dataset.key, group);
+
     body.innerHTML = `
       <div class="toolbar pkg-actions">
         <span class="faint">이 패키지만</span>
@@ -334,15 +356,14 @@ async function expandPackage(details) {
         <a class="btn small" data-dl="html">HTML</a>
         <button type="button" class="btn small" data-print>인쇄 · PDF</button>
       </div>
+      <p><b>${esc(group.recommendation?.action || '')}</b></p>
       ${group.chained_analysis ? `
-        <div class="card" style="margin:.75rem 0">
-          <h3 style="margin-top:0">연계 분석</h3>
-          <p class="muted">공개 데이터(CVSS 벡터 · CWE)만으로 세운 기술적 연계
-            가능성입니다. 우리 환경의 실제 위험도는 노출 경로와 보상 통제를
-            함께 보아야 합니다.</p>
-          <p>${esc(group.chained_analysis)}</p>
+        <div class="callout" style="margin:.6rem 0">
+          <b>연계 분석</b> — 공개 데이터(CVSS 벡터 · CWE)만으로 세운 기술적 연계
+          가능성입니다. 우리 환경의 실제 위험도는 노출 경로와 보상 통제를 함께
+          보아야 합니다.<br>${esc(group.chained_analysis)}
         </div>` : ''}
-      ${(group.findings || []).map((item) => renderFinding(item, ++index)).join('')}`;
+      <div class="cve-host"></div>`;
 
     const params = { package: pkg, version, ai: useAi };
     for (const format of ['markdown', 'html']) {
@@ -351,12 +372,79 @@ async function expandPackage(details) {
       link.download = `sbomsight-${pkg}.${format === 'markdown' ? 'md' : 'html'}`;
     }
     body.querySelector('[data-print]').addEventListener('click', () => printOnly(details));
+    renderCveRows(body.querySelector('.cve-host'), group, details.dataset.key);
 
     details.dataset.loaded = '1';
   } catch (error) {
     body.innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
   }
 }
+
+/** `9.4 / Critical (CVSS:3.1/...)` → `9.4`. 벡터는 팝업 안에 그대로 있다. */
+function scoreOnly(badge) {
+  if (!badge || badge === '미확인') return '—';
+  return String(badge).split('/')[0].trim();
+}
+
+/** 묶음 안의 CVE — **표 한 줄씩**. 근거는 눌렀을 때 팝업으로 낸다. */
+function renderCveRows(host, group, key) {
+  const items = group.findings || [];
+  host.innerHTML = `<table class="cve-list"><thead><tr>
+      <th>대응 검토</th><th>CVE</th><th class="num">심각도</th>
+      <th class="num">악용 예측</th><th>수정 버전</th><th>근거 보기</th>
+    </tr></thead><tbody>${items.map((item, index) => `
+      <tr class="clickable" data-index="${index}">
+        <td>${priorityPill(item.priority)}</td>
+        <td><b class="mono">${esc(item.cve)}</b></td>
+        <td class="num">${esc(scoreOnly(item.badge?.cvss))}</td>
+        <td class="num">${esc(item.badge?.epss === '미확인' ? '—' : (item.badge?.epss ?? '—'))}</td>
+        <td class="mono">${esc(item.badge?.fixed_version ?? '—')}</td>
+        <td class="faint">펼쳐 보기 →</td>
+      </tr>`).join('')}</tbody></table>`;
+
+  host.querySelectorAll('tr.clickable').forEach((row) => {
+    row.addEventListener('click', () => openFinding(key, Number(row.dataset.index)));
+  });
+}
+
+// --- CVE 근거 팝업 -----------------------------------------------------------
+//
+// 한 건의 근거가 145줄이다. 표 안에 펼치면 문서가 아니라 두루마리가 된다.
+// 여기서는 한 건만 보고, 인쇄도 그 한 건만 한다.
+
+/** 펼쳐 받아 둔 묶음. 팝업이 다시 서버를 두드리지 않게 한다. */
+const loaded = new Map();
+
+function openFinding(key, index) {
+  const group = loaded.get(key);
+  const item = group?.findings?.[index];
+  if (!item) return;
+
+  $('#cve-title').textContent = `${item.cve} · ${group.package}`;
+  $('#cve-body').innerHTML = renderFinding(item, index + 1);
+
+  const params = {
+    package: group.package, version: group.installed_version, ai: useAi, cve: item.cve,
+  };
+  for (const format of ['markdown', 'html']) {
+    const link = $(`#cve-dl-${format === 'markdown' ? 'md' : 'html'}`);
+    link.href = provider.reportUrl(scanId(), format, params);
+    link.download = `sbomsight-${item.cve}.${format === 'markdown' ? 'md' : 'html'}`;
+  }
+  $('#cve-dialog').showModal();
+}
+
+$('#cve-close').addEventListener('click', () => $('#cve-dialog').close());
+$('#cve-print').addEventListener('click', () => {
+  // 팝업 안의 내용만 인쇄한다. `<dialog>` 는 열려 있으면 그것만 인쇄된다.
+  document.body.classList.add('printing-dialog');
+  const cleanup = () => {
+    document.body.classList.remove('printing-dialog');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+});
 
 /** 이 묶음만 인쇄한다. 8,154개를 통째로 인쇄할 사람은 없다. */
 function printOnly(details) {
@@ -402,6 +490,15 @@ let scanTotal = 0;
 async function load(id) {
   const summary = await provider.scanSummary(id);
   scanTotal = summary.total;
+
+  // 범위는 서버에 기록된 선택이다. 주소창에 싣지 않는다 — 5,000건이면 URL 이
+  // 250KB 가 되고 HTTP 파서가 요청을 끊는다.
+  try {
+    const saved = await provider.getSelection(id);
+    scopedPackages = saved?.packages || [];
+  } catch {
+    scopedPackages = [];
+  }
   const meta = await provider.getScanMeta(id);
   const scan = meta.metadata || {};
 
@@ -412,7 +509,9 @@ async function load(id) {
       <span class="faint">${esc(scan.sbom_format || '')}</span></dd>
     <dt>컴포넌트</dt><dd>${(scan.component_count ?? 0).toLocaleString()}개</dd>
     <dt>탐지</dt><dd>${summary.total.toLocaleString()}건 · 패키지 ${summary.affected_packages.toLocaleString()}개</dd>
-    <dt>판정 기준</dt><dd>${esc(meta.policy?.label || '')}</dd>`;
+    <dt>범위</dt><dd>${scopedPackages.length
+      ? `고른 패키지 <b>${scopedPackages.length.toLocaleString()}개</b>`
+      : '이 스캔 전체'}</dd>`;
 
   // AI 서술이 실제로 저장되어 있을 때만 선택지를 보여 준다. 만들어 둔 것이
   // 없는데 체크박스만 있으면, 켜도 아무것도 달라지지 않아 고장으로 읽힌다.
@@ -437,12 +536,26 @@ async function load(id) {
   $('#summary').classList.remove('hidden');
   $('#actions').classList.remove('hidden');
 
+  // 표에서 "이 패키지 보고서" 로 들어온 경우. 조치 단위 하나가 문서 하나다 —
+  // 이것이 이 화면의 기본 쓰임이고, 8,154개짜리 문서는 예외 쪽이다.
+  const onePackage = params.get('package');
+  if (onePackage) {
+    $('#pkg-search').value = onePackage;
+    scopedPackages = [];
+  }
+
   pkgOffset = Number(params.get('pkg') || 0) || 0;
   await renderPackages({ pushUrl: false });
 
-  $('#dl-md').href = provider.reportUrl(id, 'markdown', { selection, ai: useAi });
+  if (onePackage) {
+    const only = $('#packages').querySelector('details.pkg');
+    if (only) only.open = true;
+  }
+
+  const scoped = scopedPackages.length > 0;
+  $('#dl-md').href = provider.reportUrl(id, 'markdown', { saved: scoped, ai: useAi });
   $('#dl-md').download = `sbomsight-${id}.md`;
-  $('#dl-html').href = provider.reportUrl(id, 'html', { selection, ai: useAi });
+  $('#dl-html').href = provider.reportUrl(id, 'html', { saved: scoped, ai: useAi });
   $('#dl-html').download = `sbomsight-${id}.html`;
 }
 
@@ -454,7 +567,7 @@ async function load(id) {
 const HEAVY = 2000;
 for (const [id, label] of [['#dl-md', 'Markdown'], ['#dl-html', 'HTML']]) {
   $(id).addEventListener('click', (event) => {
-    if (selection.length || scanTotal < HEAVY) return;
+    if (scopedPackages.length || scanTotal < HEAVY) return;
     const ok = window.confirm(
       `이 스캔은 ${scanTotal.toLocaleString()}건 전체를 담습니다. 파일이 수십 MB가 되고 `
       + '만드는 데 수십 초가 걸립니다.\n\n'
@@ -479,7 +592,7 @@ $('#print').addEventListener('click', () => {
 $('#use-ai').checked = useAi;
 $('#use-ai').addEventListener('change', (event) => {
   useAi = event.target.checked;
-  const query = withSelection({ scan: picker.value });
+  const query = new URLSearchParams({ scan: picker.value });
   if (useAi) query.set('ai', '1');
   history.replaceState(null, '', `?${query}`);
   load(picker.value).catch((error) => {
@@ -509,8 +622,8 @@ if (!scans.length) {
   const requested = params.get('scan');
   picker.value = requested && scans.some((s) => s.scan_id === requested) ? requested : scans[0].scan_id;
   picker.addEventListener('change', () => {
-    // 스캔을 바꾸면 이전 스캔의 선택 키는 의미가 없다. 범위를 전체로 되돌린다.
-    selection.length = 0;
+    // 스캔을 바꾸면 이전 스캔의 선택은 의미가 없다. 범위를 전체로 되돌린다.
+    scopedPackages = [];
     history.replaceState(null, '', `?scan=${encodeURIComponent(picker.value)}`);
     load(picker.value).catch((error) => {
       $('#banner').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;

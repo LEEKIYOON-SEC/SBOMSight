@@ -43,6 +43,12 @@ PUBLIC_PREFIXES = ("/css/", "/js/", "/assets/")
 # 인증만 되면 권한과 무관하게 허용하는 쓰기 동작 (자기 자신에 대한 것).
 SELF_WRITE_PATHS = frozenset({"/api/auth/logout", "/api/auth/password"})
 
+# 초기화된 계정(계정 이름과 같은 비밀번호)이 바꾸기 전에 닿을 수 있는 곳.
+# 나머지는 전부 비밀번호 변경 화면으로 돌린다 — 그 강제가 없으면 초기화가
+# 곧 구멍이 된다.
+CHANGE_PATHS = frozenset({"/settings.html", "/api/auth/state", "/api/auth/password",
+                          "/api/auth/logout", "/api/health"})
+
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
@@ -116,6 +122,16 @@ class AccessControl:
         self.throttle = LoginThrottle()
         self._allowlist: Allowlist | None = None
         self._has_users = False
+
+    def must_change(self, username: str) -> bool:
+        """초기화된 계정인가. 계정 이름과 같은 비밀번호가 아직 남아 있는가.
+
+        요청마다 DB 를 읽는다. 캐시하지 않는 이유는, 담당자가 비밀번호를 바꾼
+        **바로 그 요청**부터 화면이 열려야 하기 때문이다. 이 조회는 users
+        테이블의 기본키 조회 한 번이다.
+        """
+        user = self.accounts.get(username)
+        return bool(user and user.must_change)
 
     # --- IP 허용 목록 ------------------------------------------------------
 
@@ -193,7 +209,17 @@ class AccessMiddleware(BaseHTTPMiddleware):
                 return RedirectResponse(f"/login.html?next={nxt}", status_code=302)
             return JSONResponse({"detail": "로그인이 필요합니다."}, status_code=401)
 
-        # ③ 권한. viewer 는 읽기 전용이다 — 자기 비밀번호와 로그아웃만 예외.
+        # ③ 초기화된 계정은 비밀번호를 바꾸기 전에는 설정 화면 밖으로 나가지 못한다.
+        if self.access.must_change(session.username):
+            if not (path in CHANGE_PATHS or path.startswith(PUBLIC_PREFIXES)):
+                if _wants_html(request):
+                    return RedirectResponse("/settings.html?change=1", status_code=302)
+                return JSONResponse(
+                    {"detail": "초기화된 비밀번호입니다. 설정에서 새 비밀번호로 바꿔 주세요."},
+                    status_code=403,
+                )
+
+        # ④ 권한. viewer 는 읽기 전용이다 — 자기 비밀번호와 로그아웃만 예외.
         if request.method in WRITE_METHODS and session.role != "admin":
             if path not in SELF_WRITE_PATHS:
                 return JSONResponse(

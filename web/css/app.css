@@ -388,11 +388,71 @@ footer.site { border-top: 1px solid var(--line); margin-top: 3rem; padding: 1.25
   body.printing-one .pkg:not(.print-target) { display: none !important; }
   body.printing-one .pkg.print-target { border: none; margin: 0; }
   body.printing-one .pkg.print-target > summary { border-bottom: 2px solid #999; }
+
+  /* 근거 팝업만 인쇄. 열려 있는 `<dialog>` 는 top layer 에 있어 그것만 나온다. */
+  body.printing-dialog > *:not(dialog) { display: none !important; }
+  body.printing-dialog dialog.wide-dialog {
+    position: static; max-height: none; overflow: visible;
+    border: none; box-shadow: none; width: 100%; padding: 0;
+  }
+  body.printing-dialog dialog.wide-dialog .toolbar { display: none !important; }
 }
 
-/* 스캔 화면에서 바로 서버를 만든다. 자산 화면으로 갔다 오면 올리던 파일을 놓친다. */
-.inline-new { display: inline-flex; gap: .4rem; align-items: center; }
-.inline-new input { min-width: 9rem; }
+/* ---------- 자산 ---------- */
+/* 등록 폼은 평소에 자리를 차지하지 않는다. 자산 화면은 자산 목록이다. */
+dialog {
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--bg); color: var(--fg); box-shadow: var(--shadow);
+  padding: 1.25rem 1.4rem; width: min(30rem, 92vw); max-width: 92vw;
+}
+dialog::backdrop { background: rgba(20, 24, 29, .45); }
+dialog h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+dialog label, .field-grid label {
+  display: flex; flex-direction: column; gap: .3rem;
+  font-size: .82rem; color: var(--fg-muted); margin-bottom: .8rem;
+}
+dialog label .faint { font-size: .74rem; }
+.dialog-actions, .form-actions {
+  display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem;
+}
+
+/* 편집 폼. 한 줄로 늘어놓으면 어느 칸이 무슨 값인지 placeholder 로만 알 수
+   있고, 화면이 좁아지면 줄바꿈 위치가 제멋대로다. */
+.field-grid { display: grid; gap: 0 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.field-grid .form-actions { grid-column: 1 / -1; justify-content: flex-start; margin-top: .2rem; }
+
+.asset-info { display: grid; grid-template-columns: auto 1fr; gap: .3rem .9rem;
+  margin: 0; font-size: .88rem; align-items: baseline; }
+.asset-info dt { color: var(--fg-muted); white-space: nowrap; }
+.asset-info dd { margin: 0; }
+
+/* 삭제는 저장 옆에 두지 않는다. 옆에 있으면 누르려던 것과 다른 것을 누른다. */
+.danger-card { border-color: var(--danger); }
+.danger-card p { margin-top: 0; }
+
+.bad { color: var(--danger); }
+
+/* 진행 게이지. 일곱 칸짜리 스테퍼는 무엇이 도는지 보여 주지만, 담당자가 알고
+   싶은 것은 "지금 어디쯤이고 끝났는가" 하나다. */
+.gauge { height: .55rem; background: var(--bg-sunken); border-radius: 999px; overflow: hidden; }
+.gauge-fill {
+  height: 100%; width: 2%; border-radius: 999px; background: var(--accent);
+  transition: width .35s ease;
+}
+
+/* 묶음을 펼쳤을 때 나오는 CVE 목록. 카드가 아니라 줄이다 — 카드로 두면
+   패키지 하나에 6건만 있어도 화면 열 장이 된다. */
+.cve-list { font-size: .85rem; }
+.cve-list th { position: static; }
+.cve-list td { padding: .4rem .5rem; }
+.cve-list .none { color: var(--danger); font-weight: 600; }
+.cve-list tr.clickable { cursor: pointer; }
+
+/* 근거 팝업. 읽는 문서라 좁게 두지 않는다. */
+dialog.wide-dialog { width: min(56rem, 94vw); max-height: 88vh; overflow-y: auto; }
+dialog.wide-dialog .toolbar { position: sticky; top: 0; background: var(--bg);
+  padding-bottom: .6rem; border-bottom: 1px solid var(--line); z-index: 2; }
+dialog.wide-dialog .card { box-shadow: none; }
 
 /* 쪽 넘김. 48,923건을 한 화면에 그리면 브라우저가 멈춘다 — 기본 100건씩 본다. */
 .pager { border-top: 1px solid var(--line); padding-top: .6rem; margin-top: .5rem; }

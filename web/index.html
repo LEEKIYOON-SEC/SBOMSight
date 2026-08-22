@@ -13,33 +13,37 @@
 <main class="wide">
   <div class="page-head">
     <h1>자산</h1>
-    <a class="btn primary" href="scan.html">SBOM 올리기</a>
+    <button class="btn primary" id="open-add" hidden>자산 등록</button>
   </div>
 
   <div id="banner"></div>
   <div id="assets" class="muted">불러오는 중…</div>
-
-  <section id="add-panel" hidden>
-    <h2>자산 등록</h2>
-    <div class="card">
-      <form id="add-asset" class="inline-form">
-        <input name="name" placeholder="서버 이름 (예: web-01)" required>
-        <input name="group_name" placeholder="그룹 (예: DMZ)">
-        <input name="os" placeholder="운영체제 (예: Rocky 9.3)">
-        <button class="btn primary" type="submit">등록</button>
-      </form>
-      <div id="add-msg"></div>
-    </div>
-  </section>
-
-  <section id="unassigned-panel" hidden>
-    <h2>미분류 스캔</h2>
-    <div class="card">
-      <p class="muted">자산에 배정되지 않은 스캔입니다. 어느 서버의 것인지 지정하세요.</p>
-      <div id="unassigned"></div>
-    </div>
-  </section>
 </main>
+
+<!-- 등록 폼은 평소에 자리를 차지하지 않는다. 이 화면은 자산 목록이다. -->
+<dialog id="add-dialog">
+  <form id="add-asset" method="dialog">
+    <h2>자산 등록</h2>
+    <label>서버 이름
+      <input name="name" placeholder="web-01" required autocomplete="off">
+      <span class="faint">영문·숫자로 시작하고 <code>. _ -</code> 를 쓸 수 있습니다.</span>
+    </label>
+    <label>그룹
+      <input name="group_name" placeholder="DMZ · 내부업무" autocomplete="off">
+    </label>
+    <label>운영체제
+      <input name="os" placeholder="Rocky Linux 9.3" autocomplete="off">
+    </label>
+    <label>비고
+      <input name="note" placeholder="용도 · 담당 부서 등" autocomplete="off">
+    </label>
+    <div id="add-msg"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="add-cancel">취소</button>
+      <button type="submit" class="btn primary">등록</button>
+    </div>
+  </form>
+</dialog>
 
 <script type="module">
 import { getProvider } from './js/providers/index.js';
@@ -52,7 +56,8 @@ const provider = await getProvider();
 const isAdmin = state?.role === 'admin';
 const live = provider.capabilities?.upload !== false;
 
-// --- 도구 상태 --------------------------------------------------------------
+// 상태 배너는 **고쳐야 할 것이 있을 때만** 뜬다. grype 버전·DB 기준일·AI 사용
+// 가능 여부는 매일 볼 값이 아니라서 설정 → 도구 상태로 옮겼다.
 const banner = $('#banner');
 try {
   const health = await provider.health();
@@ -63,12 +68,6 @@ try {
       <b>Grype를 찾을 수 없습니다.</b> <code>scripts/install-tools.ps1</code> (Windows) 또는
       <code>scripts/install-tools.sh</code> (Linux)로 설치한 뒤
       <code>grype db update</code>로 취약점 DB를 준비하세요.</div>`;
-  } else {
-    const db = health.tools.grype_db?.built || health.tools.grype_db?.schemaVersion || '';
-    banner.innerHTML = `<div class="banner info">
-      grype <b>${esc(health.tools.grype)}</b>${db ? ` · DB ${esc(db)}` : ''}
-      · 판정 기준 <b>${esc(health.policy.label)}</b>
-      · AI ${health.ai.ready ? '<b>사용 가능</b>' : '<b>미사용</b>'}</div>`;
   }
 } catch (error) {
   banner.innerHTML = `<div class="banner danger">서버 상태를 확인하지 못했습니다: ${esc(error.message)}</div>`;
@@ -87,7 +86,12 @@ if (!live) {
     </tr>`).join('')}</tbody></table></div></div>`
     : '<div class="card"><span class="muted">전시할 결과가 아직 없습니다.</span></div>';
 } else {
-  await render();
+  if (isAdmin) $('#open-add').hidden = false;
+  // 화면을 벗어나는 도중이면 이 fetch 는 중단된다. 그때 처리하지 않은 거절이
+  // 남으면 콘솔에 오류로 찍힌다 — 실제로 잘못된 것은 없다.
+  await render().catch((error) => {
+    $('#assets').innerHTML = `<div class="banner danger">자산 목록을 불러오지 못했습니다: ${esc(error.message)}</div>`;
+  });
 }
 
 async function call(path, options = {}) {
@@ -115,78 +119,50 @@ function staleness(iso) {
 }
 
 async function render() {
-  const { assets, unassigned_scans: unassigned } = await call('api/assets');
-
-  if (isAdmin) $('#add-panel').hidden = false;
+  const { assets } = await call('api/assets');
 
   if (!assets.length) {
     $('#assets').innerHTML = `<div class="card"><span class="muted">
       등록된 자산이 없습니다. ${isAdmin
-        ? '아래에서 서버를 등록한 뒤 그 서버의 SBOM을 올리세요.'
+        ? 'SBOM은 어느 서버의 것인지 정해진 뒤에만 올릴 수 있습니다 — 먼저 <b>자산 등록</b>을 눌러 서버를 등록하세요.'
         : '관리자에게 자산 등록을 요청하세요.'}</span></div>`;
-  } else {
-    $('#assets').innerHTML = `<div class="card"><div class="table-scroll"><table>
-      <thead><tr>
-        <th>서버</th><th>그룹</th><th>운영체제</th>
-        <th>마지막 스캔</th><th class="num">탐지</th><th class="num">스캔</th><th></th>
-      </tr></thead>
-      <tbody>${assets.map((a) => {
-        const age = staleness(a.last_scan_at);
-        return `<tr>
-          <td><a href="asset.html?id=${encodeURIComponent(a.asset_id)}"><b>${esc(a.name)}</b></a>
-            ${a.archived ? '<span class="tag">보관</span>' : ''}</td>
-          <td>${esc(a.group_name || '—')}</td>
-          <td>${esc(a.os || '—')}</td>
-          <td class="${age.cls}">${esc(age.text)}
-            ${a.last_scan_at ? `<span class="faint">${esc(formatWhen(a.last_scan_at))}</span>` : ''}</td>
-          <td class="num">${a.last_scan_at ? a.last_finding_count : '—'}</td>
-          <td class="num">${a.scan_count}</td>
-          <td><a href="scan.html?asset=${encodeURIComponent(a.asset_id)}">SBOM 올리기</a></td>
-        </tr>`;
-      }).join('')}</tbody></table></div></div>`;
-  }
-
-  if (unassigned) await renderUnassigned(assets);
-  else $('#unassigned-panel').hidden = true;
-}
-
-async function renderUnassigned(assets) {
-  const { scans } = await call('api/scans?limit=200');
-  const orphans = scans.filter((s) => !s.asset_id);
-  if (!orphans.length) {
-    $('#unassigned-panel').hidden = true;
     return;
   }
 
-  $('#unassigned-panel').hidden = false;
-  const options = assets.map((a) => `<option value="${esc(a.asset_id)}">${esc(a.name)}</option>`).join('');
-  $('#unassigned').innerHTML = `<div class="table-scroll"><table>
-    <thead><tr><th>시각</th><th>SBOM</th><th class="num">탐지</th><th>자산</th><th></th></tr></thead>
-    <tbody>${orphans.map((s) => `<tr data-scan="${esc(s.scan_id)}">
-      <td>${esc(formatWhen(s.created_at))}</td>
-      <td>${esc(s.metadata?.sbom_filename || '—')}</td>
-      <td class="num">${s.finding_count}</td>
-      <td>${isAdmin && assets.length
-        ? `<select class="assign"><option value="">— 선택 —</option>${options}</select>`
-        : '<span class="faint">미분류</span>'}</td>
-      <td><a href="scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
-    </tr>`).join('')}</tbody></table></div>`;
+  $('#assets').innerHTML = `<div class="card"><div class="table-scroll"><table>
+    <thead><tr>
+      <th>서버</th><th>그룹</th><th>운영체제</th><th>비고</th>
+      <th>마지막 스캔</th><th class="num">탐지</th><th class="num">스캔</th><th></th>
+    </tr></thead>
+    <tbody>${assets.map((a) => {
+      const age = staleness(a.last_scan_at);
+      return `<tr>
+        <td><a href="asset.html?id=${encodeURIComponent(a.asset_id)}"><b>${esc(a.name)}</b></a></td>
+        <td>${esc(a.group_name || '—')}</td>
+        <td>${esc(a.os || '—')}</td>
+        <td class="faint">${esc(a.note || '—')}</td>
+        <td class="${age.cls}">${esc(age.text)}
+          ${a.last_scan_at ? `<span class="faint">${esc(formatWhen(a.last_scan_at))}</span>` : ''}</td>
+        <td class="num">${a.last_scan_at ? a.last_finding_count : '—'}</td>
+        <td class="num">${a.scan_count}</td>
+        <td><a href="asset.html?id=${encodeURIComponent(a.asset_id)}">SBOM 올리기</a></td>
+      </tr>`;
+    }).join('')}</tbody></table></div></div>`;
 }
 
-$('#unassigned').addEventListener('change', async (event) => {
-  if (!event.target.classList.contains('assign') || !event.target.value) return;
-  const scanId = event.target.closest('tr').dataset.scan;
-  try {
-    await call(`api/scans/${encodeURIComponent(scanId)}/asset`, {
-      method: 'PUT', body: JSON.stringify({ asset_id: event.target.value }),
-    });
-    await render();
-  } catch (error) {
-    window.alert(error.message);
-  }
+// --- 자산 등록 --------------------------------------------------------------
+const dialog = $('#add-dialog');
+
+$('#open-add').addEventListener('click', () => {
+  $('#add-msg').innerHTML = '';
+  $('#add-asset').reset();
+  dialog.showModal();
 });
+$('#add-cancel').addEventListener('click', () => dialog.close());
 
 $('#add-asset').addEventListener('submit', async (event) => {
+  // `method="dialog"` 은 제출되면 바로 닫는다. 서버가 이름을 거절할 수 있으므로
+  // 막아 두고, 성공했을 때만 닫는다.
   event.preventDefault();
   const data = new FormData(event.target);
   try {
@@ -196,10 +172,10 @@ $('#add-asset').addEventListener('submit', async (event) => {
         name: data.get('name'),
         group_name: data.get('group_name'),
         os: data.get('os'),
+        note: data.get('note'),
       }),
     });
-    event.target.reset();
-    $('#add-msg').innerHTML = '';
+    dialog.close();
     await render();
   } catch (error) {
     $('#add-msg').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;

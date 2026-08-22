@@ -42,7 +42,7 @@ from core.render import to_html, to_markdown
 from core.report import ReportBuilder, _highest_version
 from core.ruleengine import RuleEngine
 from core.sanitizer import EgressBlocked, EgressGuard
-from core.store import Store
+from core.store import Store, package_key, split_package_key
 from core.vulnfact import build_batch
 
 from .jobs import JobRegistry
@@ -121,11 +121,14 @@ def _scoped(scan_id: str, select: list[str] | None) -> tuple[ScanResult, selecti
 def auth_state(request: Request) -> dict[str, Any]:
     """로그인 화면이 시작할 때 묻는 것. 인증 없이 닿는 유일한 조회다."""
     user = getattr(request.state, "user", None)
+    account = access.accounts.get(user.username) if user else None
     return {
         "needs_setup": access.needs_setup(),
         "authenticated": user is not None,
         "username": user.username if user else "",
         "role": user.role if user else "",
+        # 초기화된 계정은 바꾸기 전에는 아무 화면도 열리지 않는다.
+        "must_change": bool(account.must_change) if account else False,
         "client_ip": client_ip(request),
     }
 
@@ -165,7 +168,10 @@ def auth_login(request: Request, body: dict[str, Any] = Body(default={})) -> Any
 
     access.throttle.succeed(ip)
     session = access.accounts.open_session(user.username, ttl_hours=config.session_ttl_hours)
-    response = JSONResponse({"username": user.username, "role": user.role})
+    response = JSONResponse({
+        "username": user.username, "role": user.role,
+        "must_change": bool(user.must_change),
+    })
     set_session_cookie(response, session.token, max_age=config.session_ttl_hours * 3600)
     return response
 
@@ -190,7 +196,9 @@ def auth_change_password(request: Request, body: dict[str, Any] = Body(default={
         raise HTTPException(403, "현재 비밀번호가 올바르지 않습니다.")
 
     try:
-        access.accounts.set_password(user.username, str(body.get("password", "")))
+        access.accounts.set_password(
+            user.username, str(body.get("password", "")), must_change=False
+        )
     except AccountError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -223,13 +231,25 @@ def create_user(request: Request, body: dict[str, Any] = Body(default={})) -> di
 
 @app.put("/api/users/{username}")
 def update_user(request: Request, username: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-    """비밀번호 초기화와 권한 변경. 관리자만."""
+    """비밀번호 변경·초기화와 권한 변경. 관리자만.
+
+    둘은 다른 동작이다.
+
+    - `password` — 관리자가 **정한** 새 비밀번호로 바꾼다.
+    - `reset: true` — 계정 **이름과 같은** 비밀번호로 되돌리고, 그 계정이
+      다음 로그인에서 반드시 바꾸게 한다.
+
+    예전에는 이 둘이 "초기화" 하나로 묶여 있었는데, 실제로 하는 일은 관리자가
+    새 비밀번호를 지어내는 것이라 이름과 동작이 어긋나 있었다.
+    """
     _require_admin(request)
     if access.accounts.get(username) is None:
         raise HTTPException(404, f"'{username}' 계정이 없습니다.")
 
     try:
-        if body.get("password"):
+        if body.get("reset"):
+            access.accounts.reset_password(username)
+        elif body.get("password"):
             access.accounts.set_password(username, str(body["password"]))
         if body.get("role"):
             access.accounts.set_role(username, str(body["role"]))
@@ -362,7 +382,7 @@ def _asset_or_404(asset_id: str) -> Asset:
 
 
 @app.get("/api/assets")
-def list_assets(include_archived: bool = Query(False)) -> dict[str, Any]:
+def list_assets() -> dict[str, Any]:
     """자산 목록에 마지막 스캔 정보를 붙여 돌려준다.
 
     "마지막 스캔이 언제였나"가 대시보드에서 가장 먼저 봐야 하는 값이다 —
@@ -370,7 +390,7 @@ def list_assets(include_archived: bool = Query(False)) -> dict[str, Any]:
     """
     store = _store()
     summary = store.asset_summary()
-    assets = _assets().list(include_archived=include_archived)
+    assets = _assets().list()
 
     rows = []
     for asset in assets:
@@ -418,12 +438,9 @@ def update_asset(request: Request, asset_id: str, body: dict[str, Any] = Body(de
     _require_admin(request)
     _asset_or_404(asset_id)
     try:
-        if "archived" in body:
-            asset = _assets().set_archived(asset_id, bool(body["archived"]))
-        else:
-            asset = _assets().update(asset_id, **{
-                k: body[k] for k in ("name", "group_name", "os", "note") if k in body
-            })
+        asset = _assets().update(asset_id, **{
+            k: body[k] for k in ("name", "group_name", "os", "note") if k in body
+        })
     except AssetError as exc:
         raise HTTPException(400, str(exc)) from exc
     return asset.to_dict()
@@ -431,7 +448,7 @@ def update_asset(request: Request, asset_id: str, body: dict[str, Any] = Body(de
 
 @app.delete("/api/assets/{asset_id}")
 def delete_asset(request: Request, asset_id: str) -> dict[str, Any]:
-    """자산을 지운다. **스캔은 미분류로 남는다.**
+    """자산을 지운다. **스캔 기록은 함께 지우지 않는다.**
 
     함께 지우면 실수 한 번에 몇 달치 이력이 사라진다. 스캔 삭제는 따로 한다.
     """
@@ -446,14 +463,15 @@ def delete_asset(request: Request, asset_id: str) -> dict[str, Any]:
 
 @app.put("/api/scans/{scan_id}/asset")
 def assign_scan(request: Request, scan_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-    """스캔을 자산에 배정한다. 빈 문자열이면 미분류로 되돌린다."""
+    """스캔을 다른 자산으로 옮긴다. 자산 없는 상태로는 되돌릴 수 없다."""
     _require_admin(request)
     if _store().get_scan(scan_id) is None:
         raise HTTPException(404, "스캔을 찾을 수 없습니다.")
 
     asset_id = str(body.get("asset_id", ""))
-    if asset_id:
-        _asset_or_404(asset_id)
+    if not asset_id:
+        raise HTTPException(400, "옮길 자산을 골라 주세요.")
+    _asset_or_404(asset_id)
     _store().assign_scan(scan_id, asset_id)
     return {"scan_id": scan_id, "asset_id": asset_id}
 
@@ -561,11 +579,14 @@ def start_scan(
     nvd_budget: int = Query(40, ge=0, le=500),
     asset_id: str = Query(""),
 ) -> dict[str, Any]:
-    """업로드된 SBOM에 대해 스캔을 시작한다. 진행 상황은 /api/scan/{job_id}."""
-    # 자산을 먼저 본다. 어느 서버 것인지 잘못 지정한 채로 스캔이 돌면 결과가
-    # 엉뚱한 자산의 이력에 섞이거나 미분류로 떨어진다.
-    if asset_id:
-        _asset_or_404(asset_id)
+    """업로드된 SBOM에 대해 스캔을 시작한다. 진행 상황은 /api/scan/{job_id}.
+
+    **자산은 필수다.** 어느 서버의 SBOM 인지 정해지지 않은 채로 결과가 쌓이면
+    나중에 파일명으로 추측하게 되고, 이력 비교도 성립하지 않는다. 등록이 먼저다.
+    """
+    if not asset_id:
+        raise HTTPException(400, "어느 서버의 SBOM 인지 먼저 골라 주세요. 자산 등록이 먼저입니다.")
+    _asset_or_404(asset_id)
 
     path = _find_upload(upload_id)
     if path is None:
@@ -627,7 +648,9 @@ def get_scan_meta(scan_id: str) -> dict[str, Any]:
     if meta is None:
         raise HTTPException(404, "스캔을 찾을 수 없습니다.")
     meta["narratives"] = store.narrative_meta(scan_id)
-    meta["selection"] = {"keys": store.get_selection(scan_id)}
+    # 선택 키는 싣지 않는다. 48,923건짜리 스캔에서 이 한 줄이 머리말을 4MB로
+    # 불렸다. 필요한 화면은 /selection 을 따로 부른다.
+    meta["selection"] = {"count": len(store.get_selection(scan_id))}
     return meta
 
 
@@ -682,7 +705,6 @@ def list_finding_keys(
     package_type: str = Query(""),
     status: str = Query(""),
     q: str = Query(""),
-    limit: int = Query(5000, ge=1, le=50000),
 ) -> dict[str, Any]:
     """필터에 맞는 선택 키 전부. "필터 전체 선택" 이 쓴다.
 
@@ -757,33 +779,65 @@ def export_findings_csv(
 
 
 @app.get("/api/scans/{scan_id}/selection")
-def get_selection(scan_id: str) -> dict[str, Any]:
-    """기록된 선택 키만. **findings 는 읽지 않는다.**
+def get_selection(scan_id: str, keys: bool = Query(False)) -> dict[str, Any]:
+    """기록된 선택. **findings 는 읽지 않는다.**
 
     화면이 시작할 때 선택을 되살리려고 스캔 전체(48,923건 · 82MB)를 받으면
     첫 화면이 12초가 된다.
+
+    화면은 패키지를 고르지만 보고서·이그레스는 finding 단위로 돈다. 양쪽을
+    함께 돌려준다 — 저장된 것은 finding 키이고, 그것이 속한 묶음 키를 여기서
+    되돌린다.
     """
     store = _store()
     if store.get_scan_meta(scan_id) is None:
         raise HTTPException(404, "스캔을 찾을 수 없습니다.")
-    return {"scan_id": scan_id, "keys": store.get_selection(scan_id)}
+    # 화면이 되살리는 것은 **체크된 패키지**다. finding 키 48,923개를 내려보내면
+    # 그 한 번이 2.4초에 4MB 이고, 화면은 그것을 쓰지도 않는다.
+    packages = store.selected_packages(scan_id)
+    payload: dict[str, Any] = {
+        "scan_id": scan_id,
+        "packages": packages,
+        "count": len(packages),
+    }
+    if keys:
+        payload["keys"] = store.get_selection(scan_id)
+    return payload
 
 
 @app.put("/api/scans/{scan_id}/selection")
 def put_selection(scan_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-    """담당자가 고른 항목을 기록한다.
+    """담당자가 고른 범위를 기록한다.
 
     보고서를 만들 때마다 범위를 다시 고르게 하지 않기 위한 것이자, 나중에
     `core.cli export` 가 "이 보고서는 무엇을 대상으로 만들어졌는가"를 그대로
     옮길 수 있게 하기 위한 기록이다.
-    """
-    raw = body.get("selection")
-    if not isinstance(raw, list):
-        raise HTTPException(400, "selection은 문자열 배열이어야 합니다.")
 
-    _, picked = _scoped(scan_id, [str(x) for x in raw])
-    _store().save_selection(scan_id, [f.key for f in picked.findings] if picked.requested else [])
-    return {"scan_id": scan_id, "selection": picked.to_dict()}
+    `packages` 로 묶음 키를 주면 그 안의 finding 을 전부 편다. 화면이 고르는
+    단위가 패키지이기 때문이다. 옛 방식대로 `selection` 에 finding 키를 직접
+    줄 수도 있다.
+
+    **스캔 전체를 되살리지 않는다.** 8,154개를 고른 뒤 저장하는데 48,923건을
+    파이썬 객체로 만들면 그 저장 한 번이 12초다.
+    """
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    packages = body.get("packages")
+    raw = body.get("selection")
+    if isinstance(packages, list):
+        picked = [str(x) for x in packages]
+        keys = store.finding_keys_for_packages(scan_id, picked)
+    elif isinstance(raw, list):
+        # 존재하지 않는 키는 조용히 버린다 — 스캔이 바뀐 뒤의 옛 선택이다.
+        keys = store.existing_finding_keys(scan_id, [str(x) for x in raw])
+        picked = store.packages_for_finding_keys(scan_id, keys)
+    else:
+        raise HTTPException(400, "selection 또는 packages 는 문자열 배열이어야 합니다.")
+
+    store.save_selection(scan_id, keys)
+    return {"scan_id": scan_id, "count": len(keys), "packages": picked}
 
 
 @app.delete("/api/scans/{scan_id}")
@@ -797,30 +851,95 @@ def delete_scan(scan_id: str) -> dict[str, Any]:
 @app.get("/api/scans/{scan_id}/packages")
 def list_packages(
     scan_id: str,
+    sort: str = Query("priority"),
+    order: str = Query("asc", pattern="^(asc|desc)$"),
     priority: str = Query("", pattern="^(P0|P1|P2|P3|)$"),
+    package_type: str = Query(""),
+    status: str = Query(""),
     q: str = Query(""),
+    scoped: bool = Query(False),
     offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=500),
 ) -> dict[str, Any]:
-    """조치 대상 표 한 쪽. **패키지 하나가 한 줄이다.**
+    """결과 표 한 쪽. **패키지 하나가 한 줄이다.**
 
-    48,923건은 패키지 8,154개가 된다. 그것도 한 화면에 그릴 양이 아니므로
-    SQL 로 집계해 쪽으로 넘긴다. 목표 버전은 이 쪽에 실린 묶음에 대해서만
-    계산한다 — 버전 비교는 SQL 이 못 하고, 8,154개를 다 비교할 이유도 없다.
+    조치가 패키지당 한 번이므로 세는 단위도 그렇다 — 48,923건은 조치 대상
+    8,154개다. 목표 버전은 이 쪽에 실린 묶음에 대해서만 계산한다: 버전 비교는
+    SQL 이 못 하고, 8,154개를 다 비교할 이유도 없다.
     """
     store = _store()
     if store.get_scan_meta(scan_id) is None:
         raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    if sort not in Store.PACKAGE_SORT_KEYS:
+        sort = "priority"
 
-    page = store.page_packages(scan_id, priority=priority, query=q, offset=offset, limit=limit)
+    page = store.page_packages(
+        scan_id, sort=sort, order=order, priority=priority, package_type=package_type,
+        status=status, query=q, scoped=scoped, offset=offset, limit=limit,
+    )
     engine = RuleEngine.from_config(config)
     for group in page["packages"]:
         comparator = versioning.comparator_for(group["package_type"])
         group["target_version"] = _highest_version(group.pop("fixed_versions"), comparator)
         level = engine.describe_level(Priority(group["priority"] or "P3"))
         group["priority_label"] = level.get("label", group["priority"] or "")
+        group["key"] = package_key(group["package"], group["installed_version"])
 
-    return {"scan_id": scan_id, **page, "totals": store.package_totals(scan_id)}
+    return {
+        "scan_id": scan_id,
+        **page,
+        "totals": store.package_totals(scan_id),
+        "package_types": store.package_types(scan_id),
+    }
+
+
+@app.get("/api/scans/{scan_id}/package-keys")
+def list_package_keys(
+    scan_id: str,
+    priority: str = Query("", pattern="^(P0|P1|P2|P3|)$"),
+    package_type: str = Query(""),
+    status: str = Query(""),
+    q: str = Query(""),
+) -> dict[str, Any]:
+    """지금 조건에 맞는 묶음 키 전부. "전체 선택" 이 쓴다. **상한은 없다.**
+
+    담당자가 전체라고 했으면 전체여야 한다. 키는 `이름@버전` 짧은 문자열이라
+    8,154개라도 수백 KB 이고, 한 번만 오간다.
+    """
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    keys = store.package_keys(
+        scan_id, priority=priority, package_type=package_type, status=status, query=q
+    )
+    return {"scan_id": scan_id, "keys": keys, "total": len(keys)}
+
+
+@app.get("/api/scans/{scan_id}/packages/{package}/findings")
+def get_package_findings(
+    scan_id: str,
+    package: str,
+    version: str = Query(""),
+    limit: int = Query(500, ge=1, le=2000),
+) -> dict[str, Any]:
+    """묶음 하나에 속한 취약점 목록. **표에서 패키지를 눌렀을 때만 부른다.**
+
+    보고서 절이 아니라 표의 줄들이라 payload 를 그대로 낸다 — 서술을 조립하지
+    않으므로 밀리초다. 상세는 그중 하나를 다시 눌렀을 때 따로 가져온다.
+    """
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    findings = store.package_findings(scan_id, package, version)
+    if not findings:
+        raise HTTPException(404, "패키지를 찾을 수 없습니다.")
+    return {
+        "scan_id": scan_id,
+        "package": package,
+        "installed_version": version,
+        "total": len(findings),
+        "findings": findings[:limit],
+    }
 
 
 @app.get("/api/scans/{scan_id}/packages/{package}")
@@ -867,13 +986,25 @@ def get_report(
     scan_id: str,
     format: str = Query("json", pattern="^(json|markdown|html)$"),
     select: list[str] = Query(default=[]),
+    saved: bool = Query(False),
     ai: bool = Query(True),
     package: str = Query(""),
     version: str = Query(""),
+    cve: str = Query(""),
 ) -> Any:
     """보고서를 생성해 돌려준다.
 
-    `select`로 항목을 고르면 그 항목만 담긴다. 고르지 않으면 전체다.
+    범위를 정하는 방법이 넷이다.
+
+    - `package`(+`version`) — 묶음 하나. 조치 단위 하나가 문서 하나다.
+    - `package` + `cve` — 그 묶음의 한 건. 근거 팝업이 내려받는 것.
+    - `saved=true` — 서버에 기록해 둔 선택. **화면은 이것을 쓴다.**
+    - `select` — finding 키를 직접. 스크립트용이다.
+
+    `select` 를 화면에서 쓰지 않는 이유가 있다. 5,000건을 고르면 URL 이
+    250KB 가 되고, uvicorn 의 HTTP 파서가 요청 줄 길이 상한에 걸려
+    ``Invalid HTTP request received`` 로 끊는다. 선택은 이미 서버에
+    기록되어 있으므로 그것을 가리키기만 하면 된다.
 
     AI 서술은 이 엔드포인트가 만들지 않는다. 이미 생성해 둔 것이 있으면
     얹을 뿐이며, 없으면 전 항목이 룰 문장으로 채워진다 — AI 없이도 보고서가
@@ -890,6 +1021,8 @@ def get_report(
         if meta is None:
             raise HTTPException(404, "스캔을 찾을 수 없습니다.")
         payloads = store.package_findings(scan_id, package, version)
+        if cve:
+            payloads = [p for p in payloads if (p.get("intel") or {}).get("cve") == cve]
         if not payloads:
             raise HTTPException(404, "패키지를 찾을 수 없습니다.")
         scoped = ScanResult(
@@ -899,7 +1032,8 @@ def get_report(
         )
         picked = selection_mod.apply(scoped.findings, None)
     else:
-        result, picked = _scoped(scan_id, select)
+        keys = store.get_selection(scan_id) if saved else [str(k) for k in select]
+        result, picked = _scoped(scan_id, keys)
         scoped = dataclasses.replace(result, findings=picked.findings)
 
     narratives: dict[str, Any] = {}
@@ -943,6 +1077,7 @@ def egress_policy() -> dict[str, Any]:
 def egress_preview(
     scan_id: str,
     select: list[str] = Query(default=[]),
+    saved: bool = Query(False),
     limit: int = Query(0, ge=0, le=500),
 ) -> dict[str, Any]:
     """AI에게 전송될 내용 전체를 그대로 돌려준다.
@@ -954,10 +1089,37 @@ def egress_preview(
 
     `select`로 고른 항목만 조립한다. 미리보기와 실제 전송이 같은 범위여야
     하므로 AI 호출부도 같은 선택 키를 받아 같은 방식으로 조립한다.
+
+    `saved=true` 는 서버에 기록해 둔 선택을 쓴다. 화면은 이것을 쓴다 — 고른
+    키를 전부 주소창에 실으면 URL 이 수백 KB 가 되어 HTTP 파서가 요청을 끊는다.
+
+    **한 번에 조립하는 양은 실제 전송 상한과 같다.** 미리보기가 48,923건을
+    조립하면 그 한 번이 9초인데, 정작 전송은 그만큼 되지 않는다 — 보여 주는
+    범위와 나가는 범위가 다르면 이 화면의 존재 이유가 없어진다.
     """
-    result, picked = _scoped(scan_id, select)
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    keys = store.get_selection(scan_id) if saved else [str(k) for k in select]
+    cap = config.ai_max_findings
+    scan_total = store.scan_summary(scan_id)["total"]
+    selected_total = len(keys) if keys else scan_total
+
+    # 스캔 전체를 파이썬 객체로 되살리지 않는다. 상한만큼만 payload 를 읽는다.
+    if keys:
+        payloads = store.findings_by_keys(scan_id, keys[:cap])
+        if not payloads:
+            # 고른 것이 이 스캔에 하나도 없다. 조용히 전체로 넓히면 화면이
+            # 보여 준 범위와 나가는 범위가 달라진다.
+            raise HTTPException(400, "선택한 항목이 이 스캔에 없습니다.")
+        selected_total = len(store.existing_finding_keys(scan_id, keys))
+    else:
+        payloads = store.page_findings(scan_id, limit=cap)["findings"]
+    findings = tuple(revive_finding(p) for p in payloads)
+
     guard = EgressGuard.from_config(config)
-    facts = build_batch(picked.findings)
+    facts = build_batch(findings)
     if limit:
         facts = facts[:limit]
 
@@ -976,11 +1138,19 @@ def egress_preview(
 
     return {
         "scan_id": scan_id,
-        "finding_count": len(picked.findings),
-        "scan_finding_count": len(result.findings),
-        "selection": picked.to_dict(),
+        "finding_count": selected_total,
+        "scan_finding_count": scan_total,
+        # 상한에 걸렸으면 그렇다고 말한다. 조용히 자르면 "확인한 것"과 "나가는
+        # 것"이 달라진다.
+        "capped": selected_total > cap,
+        "cap": cap,
+        "selection": {
+            "count": selected_total,
+            "requested": bool(keys),
+            "scope": "selection" if keys else "all",
+        },
         "fact_count": len(facts),
-        "deduplicated": len(picked.findings) - len(facts),
+        "deduplicated": len(findings) - len(facts),
         "ok": checked.ok,
         "violations": [v.to_dict() for v in checked.violations],
         "policy": {
@@ -1012,12 +1182,29 @@ def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> di
     않는다. 전송되는 내용은 같은 선택 키로 egress/preview가 보여 준 것과
     동일하고, 같은 가드를 통과해야만 호출이 일어난다.
     """
-    raw = body.get("selection") or []
-    if not isinstance(raw, list):
-        raise HTTPException(400, "selection은 문자열 배열이어야 합니다.")
-    select = [str(x) for x in raw]
+    store = _store()
+    if body.get("saved"):
+        select = store.get_selection(scan_id)
+    else:
+        raw = body.get("selection") or []
+        if not isinstance(raw, list):
+            raise HTTPException(400, "selection은 문자열 배열이어야 합니다.")
+        select = [str(x) for x in raw]
 
     _, picked = _scoped(scan_id, select)
+
+    # **범위 상한.** 서술은 CVE 한 건마다 모델을 한 번 부른다. 8,154개 패키지를
+    # 통째로 고르면 48,923번이고, 그것은 몇 시간이자 토큰 한도를 훨씬 넘는 양이다.
+    # 조용히 잘라 놓고 다 됐다고 하면 보고서에서 빠진 것을 나중에야 알게 되므로,
+    # 여기서 거절하고 몇 건인지 말한다.
+    count = len(picked.findings)
+    if count > config.ai_max_findings:
+        raise HTTPException(
+            400,
+            f"AI 서술은 한 번에 {config.ai_max_findings:,}건까지 만듭니다. "
+            f"지금 고른 것은 {count:,}건입니다. "
+            "즉시·우선 검토로 좁히거나 패키지를 몇 개만 골라 주세요.",
+        )
 
     if not config.ai_enabled:
         raise HTTPException(
@@ -1043,7 +1230,6 @@ def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> di
             },
         ) from blocked
 
-    store = _store()
     store.save_narratives(
         scan_id,
         {cve: narrative_to_dict(n) for cve, n in run.narratives.items()},

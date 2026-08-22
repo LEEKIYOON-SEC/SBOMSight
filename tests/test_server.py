@@ -137,14 +137,31 @@ class TestUpload:
         assert body["component_count"] is None
 
 
+def _asset(client, name="web-01"):
+    """스캔에는 자산이 **필수**다. 어느 서버의 SBOM 인지 정해지지 않은 채로
+    결과가 쌓이면 나중에 파일명으로 추측하게 된다."""
+    return client.post("/api/assets", json={"name": name}).json()["asset_id"]
+
+
 class TestScanJob:
+    def test_scan_without_an_asset_is_refused(self, client):
+        """등록이 먼저다. 이 순서가 이 도구의 관리 단위를 정한다."""
+        upload = _upload(client, CYCLONEDX, name="sbom.json").json()
+        response = client.post(f"/api/scan?upload_id={upload['upload_id']}")
+        assert response.status_code == 400
+        assert "자산" in response.json()["detail"]
+
     def test_scan_requires_existing_upload(self, client):
-        response = client.post("/api/scan?upload_id=doesnotexist")
+        asset_id = _asset(client)
+        response = client.post(f"/api/scan?upload_id=doesnotexist&asset_id={asset_id}")
         assert response.status_code == 404
 
     def test_scan_reports_all_seven_steps(self, client):
+        asset_id = _asset(client)
         upload = _upload(client, CYCLONEDX, name="sbom.json").json()
-        started = client.post(f"/api/scan?upload_id={upload['upload_id']}&enrich=false").json()
+        started = client.post(
+            f"/api/scan?upload_id={upload['upload_id']}&enrich=false&asset_id={asset_id}"
+        ).json()
 
         keys = [s["key"] for s in started["steps"]]
         assert keys == ["upload", "detect", "enrich", "prioritize", "rationale", "recommend", "report"]
@@ -442,3 +459,144 @@ class TestStaticFrontend:
     )
     def test_assets_are_served(self, client, path):
         assert client.get(path).status_code == 200
+
+
+class TestPackageView:
+    """결과 표의 한 줄은 **패키지 하나**다.
+
+    조치는 패키지당 한 번이다 — `openssl` 을 3.0.7로 올리면 CVE 5건이 한 번에
+    해소되는데, CVE 단위로 늘어놓으면 같은 패치를 5번 읽게 된다.
+    """
+
+    def test_packages_group_by_name_and_installed_version(self, client, seeded_scan):
+        body = client.get(f"/api/scans/{seeded_scan}/packages").json()
+        assert body["packages"], "패키지가 하나도 안 나오면 표가 빈다"
+
+        first = body["packages"][0]
+        # 키는 `이름@설치버전`. 같은 이름이 두 버전으로 깔려 있으면 조치도 따로다.
+        assert first["key"] == f"{first['package']}@{first['installed_version']}"
+        assert first["cve_count"] >= 1
+        assert first["priority_label"]
+
+        total_cves = sum(p["cve_count"] for p in body["packages"])
+        findings = client.get(f"/api/scans/{seeded_scan}/summary").json()["total"]
+        assert total_cves == findings, "묶었더니 건수가 달라지면 셈이 틀린 것이다"
+
+    def test_package_sort_keys_are_accepted(self, client, seeded_scan):
+        for sort in ("priority", "count", "cvss", "epss", "package"):
+            body = client.get(
+                f"/api/scans/{seeded_scan}/packages", params={"sort": sort, "order": "desc"}
+            ).json()
+            assert body["total"] >= 1, sort
+
+    def test_package_keys_have_no_cap(self, client, seeded_scan):
+        """"전체 선택"은 전체여야 한다. 조용히 자르면 보고서에서 빠진 것을
+        나중에야 알게 된다."""
+        listed = client.get(f"/api/scans/{seeded_scan}/packages", params={"limit": 500}).json()
+        keys = client.get(f"/api/scans/{seeded_scan}/package-keys").json()
+        assert keys["total"] == listed["total"]
+        assert sorted(keys["keys"]) == sorted(p["key"] for p in listed["packages"])
+
+    def test_package_findings_are_listed_without_building_a_report(self, client, seeded_scan):
+        group = client.get(f"/api/scans/{seeded_scan}/packages").json()["packages"][0]
+        body = client.get(
+            f"/api/scans/{seeded_scan}/packages/{group['package']}/findings",
+            params={"version": group["installed_version"]},
+        ).json()
+        assert body["total"] == group["cve_count"]
+        assert {f["intel"]["cve"] for f in body["findings"]}
+
+
+class TestSelectionByPackage:
+    """화면은 패키지를 고르고, 보고서·이그레스는 finding 단위로 돈다."""
+
+    def test_packages_expand_to_their_findings(self, client, seeded_scan):
+        listed = client.get(f"/api/scans/{seeded_scan}/packages", params={"limit": 500}).json()
+        one = listed["packages"][0]
+
+        put = client.put(f"/api/scans/{seeded_scan}/selection", json={"packages": [one["key"]]})
+        assert put.status_code == 200
+        assert put.json()["count"] == one["cve_count"]
+        assert put.json()["packages"] == [one["key"]]
+
+        # 되살릴 때도 같은 묶음 키가 나와야 화면 체크가 맞는다.
+        got = client.get(f"/api/scans/{seeded_scan}/selection").json()
+        assert got["packages"] == [one["key"]]
+
+    def test_selection_response_does_not_ship_every_finding_key(self, client, seeded_scan):
+        """48,923건짜리 스캔에서 이 한 줄이 응답을 4MB로 불렸다."""
+        client.put(f"/api/scans/{seeded_scan}/selection", json={"packages": []})
+        body = client.get(f"/api/scans/{seeded_scan}/selection").json()
+        assert "keys" not in body
+        assert "keys" in client.get(
+            f"/api/scans/{seeded_scan}/selection", params={"keys": "true"}
+        ).json()
+
+    def test_meta_carries_a_count_not_the_keys(self, client, seeded_scan):
+        body = client.get(f"/api/scans/{seeded_scan}/meta").json()
+        assert "keys" not in body["selection"]
+        assert "count" in body["selection"]
+
+    def test_report_can_read_the_saved_selection(self, client, seeded_scan):
+        """고른 키를 주소창에 실으면 5,000건에서 URL 이 250KB 가 되고
+        uvicorn 이 `Invalid HTTP request received` 로 끊는다."""
+        listed = client.get(f"/api/scans/{seeded_scan}/packages", params={"limit": 500}).json()
+        one = listed["packages"][0]
+        client.put(f"/api/scans/{seeded_scan}/selection", json={"packages": [one["key"]]})
+
+        body = client.get(
+            f"/api/scans/{seeded_scan}/report", params={"format": "json", "saved": "true"}
+        ).json()
+        assert len(body["findings"]) == one["cve_count"]
+        assert {f["local_analysis"]["installed_package"] for f in body["findings"]} == {one["package"]}
+
+    def test_report_of_one_cve_is_one_section(self, client, seeded_scan):
+        """근거 팝업이 내려받는 것. 6건짜리 패키지 문서를 받아 한 절만 읽을
+        이유가 없다."""
+        group = client.get(f"/api/scans/{seeded_scan}/packages").json()["packages"][0]
+        findings = client.get(
+            f"/api/scans/{seeded_scan}/packages/{group['package']}/findings",
+            params={"version": group["installed_version"]},
+        ).json()["findings"]
+        cve = findings[0]["intel"]["cve"]
+
+        body = client.get(f"/api/scans/{seeded_scan}/report", params={
+            "format": "json", "package": group["package"],
+            "version": group["installed_version"], "cve": cve,
+        }).json()
+        assert [f["cve"] for f in body["findings"]] == [cve]
+
+
+class TestScanNeedsAnAsset:
+    def test_moving_a_scan_needs_a_target(self, client, seeded_scan):
+        """자산 없는 상태로 되돌리는 길은 없앴다 — 그것이 곧 미분류다."""
+        response = client.put(f"/api/scans/{seeded_scan}/asset", json={"asset_id": ""})
+        assert response.status_code == 400
+
+
+class TestEverySortWorks:
+    """`ORDER BY 0` 은 상수가 아니라 **컬럼 번호**로 읽힌다.
+
+    그래서 패키지·CVE 정렬이 `1st ORDER BY term out of range` 로 죽고 있었다.
+    화면에서 헤더를 눌러야만 드러나는 종류의 고장이라 여기서 전부 밟는다.
+    """
+
+    def test_all_finding_sorts_in_both_directions(self, client, seeded_scan):
+        from core.store import Store
+
+        for sort in Store.SORT_KEYS:
+            for order in ("asc", "desc"):
+                response = client.get(f"/api/scans/{seeded_scan}/findings", params={
+                    "sort": sort, "order": order, "limit": 5,
+                })
+                assert response.status_code == 200, f"{sort} {order}: {response.text}"
+
+    def test_all_package_sorts_in_both_directions(self, client, seeded_scan):
+        from core.store import Store
+
+        for sort in Store.PACKAGE_SORT_KEYS:
+            for order in ("asc", "desc"):
+                response = client.get(f"/api/scans/{seeded_scan}/packages", params={
+                    "sort": sort, "order": order, "limit": 5,
+                })
+                assert response.status_code == 200, f"{sort} {order}: {response.text}"

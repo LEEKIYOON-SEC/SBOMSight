@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 ADMIN = "admin"
 VIEWER = "viewer"
@@ -49,7 +49,10 @@ CREATE TABLE IF NOT EXISTS users (
     pw_hash       TEXT NOT NULL,
     role          TEXT NOT NULL,
     created_at    TEXT NOT NULL,
-    last_login_at TEXT NOT NULL DEFAULT ''
+    last_login_at TEXT NOT NULL DEFAULT '',
+    -- 초기화된 계정. 다음 로그인에서 반드시 바꾸게 한다. 계정 이름과 같은
+    -- 비밀번호가 그대로 남아 있으면 초기화가 곧 구멍이 된다.
+    must_change   INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -72,17 +75,19 @@ class User:
     role: str
     created_at: str
     last_login_at: str = ""
+    must_change: int = 0
 
     @property
     def is_admin(self) -> bool:
         return self.role == ADMIN
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "username": self.username,
             "role": self.role,
             "created_at": self.created_at,
             "last_login_at": self.last_login_at,
+            "must_change": bool(self.must_change),
         }
 
 
@@ -162,6 +167,10 @@ class Accounts:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            # 앞선 버전의 DB. 비파괴로 붙인다.
+            names = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+            if "must_change" not in names:
+                conn.execute("ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -182,14 +191,16 @@ class Accounts:
     def list_users(self) -> list[User]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT username, role, created_at, last_login_at FROM users ORDER BY username"
+                "SELECT username, role, created_at, last_login_at, must_change "
+                "FROM users ORDER BY username"
             ).fetchall()
         return [User(**dict(r)) for r in rows]
 
     def get(self, username: str) -> User | None:
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT username, role, created_at, last_login_at FROM users WHERE username = ?",
+                "SELECT username, role, created_at, last_login_at, must_change "
+                "FROM users WHERE username = ?",
                 (username,),
             ).fetchone()
         return User(**dict(row)) if row else None
@@ -210,18 +221,42 @@ class Accounts:
             raise AccountError(f"'{name}' 계정이 이미 있습니다.") from exc
         return user
 
-    def set_password(self, username: str, password: str) -> None:
+    def set_password(self, username: str, password: str, *, must_change: bool = False) -> None:
         check_password(password)
         with self._connect() as conn:
             changed = conn.execute(
-                "UPDATE users SET pw_hash = ? WHERE username = ?",
-                (hash_password(password), username),
+                "UPDATE users SET pw_hash = ?, must_change = ? WHERE username = ?",
+                (hash_password(password), 1 if must_change else 0, username),
             ).rowcount
             if not changed:
                 raise AccountError(f"'{username}' 계정이 없습니다.")
             # 비밀번호를 바꾸면 기존 세션은 전부 끊는다. 유출을 의심해 바꾸는
             # 경우가 대부분인데 예전 세션이 살아 있으면 바꾼 의미가 없다.
             conn.execute("DELETE FROM sessions WHERE username = ?", (username,))
+
+    def reset_password(self, username: str) -> str:
+        """비밀번호를 **계정 이름과 같게** 되돌린다.
+
+        담당자가 비밀번호를 잊었을 때 관리자가 새 비밀번호를 지어내 전화로
+        불러 주는 것보다, 규칙이 정해져 있는 편이 안전하고 설명하기도 쉽다 —
+        "아이디와 같은 비밀번호로 로그인한 뒤 바꾸세요".
+
+        그래서 **다음 로그인에서 반드시 바꾸게 한다**(`must_change`). 그 강제가
+        없으면 계정 이름과 같은 비밀번호가 그대로 남아 초기화가 곧 구멍이 된다.
+        길이 규칙(8자)은 이 경로에만 적용하지 않는다. 그 값으로는 아무것도 할
+        수 없고 바꾸기 전에는 화면이 열리지 않기 때문이다.
+        """
+        if self.get(username) is None:
+            raise AccountError(f"'{username}' 계정이 없습니다.")
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE users SET pw_hash = ?, must_change = 1 WHERE username = ?",
+                (hash_password(username), username),
+            )
+            # 기존 세션은 전부 끊는다. 초기화한 계정이 예전 세션으로 계속
+            # 돌아다니면 초기화한 의미가 없다.
+            conn.execute("DELETE FROM sessions WHERE username = ?", (username,))
+        return username
 
     def set_role(self, username: str, role: str) -> None:
         check_role(role)
