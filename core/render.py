@@ -1,10 +1,17 @@
 """보고서 렌더링 — Markdown / 인쇄용 HTML.
 
-[로컬 분석 정보]는 시각적으로 분리하고 `AI 미전달` 배지를 붙인다. 보고서를
-읽는 사람이 "이 부분은 외부로 나가지 않았다"를 한눈에 알 수 있어야 한다.
+**패키지 단위로 낸다.** CVE 단위는 조치 단위와 어긋난다 — `openssl` 을 한 번
+올리면 CVE 5건이 함께 해소되는데, CVE 단위 보고서는 같은 패치 절차를 다섯 번
+설명한다. 실무자가 실행하는 것은 "패키지 업데이트" 한 번이다.
 
-AI가 쓴 문장과 룰이 만든 문장도 구분해 표시한다. 독자가 무엇을 읽고 있는지
-모르는 채로 판단하게 두지 않기 위한 것이다.
+3장 구성:
+
+    1장  요약        무엇이 몇 건이고, 그중 패치로 해소되는 것이 몇 건인가
+    2장  조치 대상   패키지 · 현재→목표 버전 · 해소 건수 (결재 문서의 본문)
+    3장  패키지별 상세  취약점 표 · 조치 절차 · (AI 사용 시) 연계 분석 · 참조
+
+AI 서술이 없어도 완결된다. AI 를 쓰지 않고 뽑은 문서에는 **전송 관련 문구가
+한 줄도 없다** — 쓰지 않은 기능에 대한 해명은 군더더기다.
 """
 
 from __future__ import annotations
@@ -12,7 +19,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from .report import Report, FindingReport
+from .report import PackageGroup, Report, FindingReport
 
 _PRIORITY_STYLE = {
     "P0": ("#b3261e", "#fce8e6"),
@@ -23,212 +30,270 @@ _PRIORITY_STYLE = {
 
 _SOURCE_LABEL = {"rule": "룰 기반 서술", "ai": "AI 생성 서술"}
 
+# 항목이 아니라 **스캔 전체**의 성질인 플래그.
+#
+# "EPSS 데이터를 확보하지 못했습니다"는 이 CVE 의 성질이 아니라 이번 스캔에
+# EPSS 스냅샷이 없었다는 뜻이다. 항목마다 네 줄씩 붙이면 187건에 750줄이
+# 되는데, 그 750줄이 말하는 것은 문장 하나다. 1장에 한 번만 싣는다.
+_SCAN_WIDE_FLAGS = frozenset({
+    "unknown_epss", "unknown_exploit", "unknown_kev", "stale_snapshot",
+})
+
+
+def _coverage_notes(report) -> list[dict[str, str]]:
+    """이번 스캔에서 확보하지 못한 데이터. 1장에 한 번 싣는다."""
+    seen: dict[str, dict[str, str]] = {}
+    for item in report.findings:
+        for flag in item.flags:
+            if flag["name"] in _SCAN_WIDE_FLAGS:
+                seen.setdefault(flag["name"], flag)
+    return list(seen.values())
+
+
+def _percent(value: float | None) -> str:
+    """EPSS 확률 → `0.11%`. 백분위는 쓰지 않는다."""
+    if value is None:
+        return "—"
+    percent = value * 100
+    if 0 < percent < 0.01:
+        return "<0.01%"
+    return f"{percent:.2f}".rstrip("0").rstrip(".") + "%"
+
+
+def _evidence(item: FindingReport) -> str:
+    """참인 신호만. '미확인'은 신호가 아니라 값이 없다는 뜻이라 적지 않는다."""
+    marks = []
+    if item.exploitability.get("kev") == "true":
+        marks.append("실제 악용")
+    if item.exploitability.get("exploit_available") == "true":
+        marks.append("공격코드 공개")
+    if not item.overview.get("fixed_version", "").strip("()") or \
+            item.overview.get("fixed_version") == "(없음)":
+        marks.append("수정본 없음")
+    return " · ".join(marks) or "—"
+
+
+def _target_text(group: PackageGroup) -> str:
+    return group.target_version or "없음"
+
 
 # ---------------------------------------------------------------------------
 # Markdown
 # ---------------------------------------------------------------------------
 
 
-def _md_steps(title: str, steps: list[str] | tuple[str, ...], *, numbered: bool = True) -> list[str]:
+def _md_steps(title: str, steps, *, numbered: bool = True) -> list[str]:
     if not steps:
         return []
     lines = [f"**{title}**", ""]
     for idx, step in enumerate(steps, 1):
         head, *rest = str(step).split("\n")
-        marker = f"{idx}. " if numbered else "- "
-        lines.append(f"{marker}{head}")
+        lines.append(f"{idx}. {head}" if numbered else f"- {head}")
         for extra in rest:
             lines.append(f"   {extra}" if extra.strip() else "")
     lines.append("")
     return lines
 
 
-def _md_finding(item: FindingReport, index: int) -> list[str]:
+def _md_finding(item: FindingReport) -> list[str]:
+    """CVE 한 건 — 묶음 안에서 짧게.
+
+    예전에는 항목마다 7절 145줄이었다. 서버 한 대에 187건이면 2만 줄이 넘어
+    아무도 끝까지 읽지 않는다. 판단에 필요한 것은 숫자와 한 문단이다.
+    나머지(전체 벡터·발화 룰·Grype 탐지 근거)는 화면 상세에 그대로 있다.
+    """
     o = item.overview
-    lines: list[str] = []
-
-    alias = f" (별칭: {', '.join(item.aliases)})" if item.aliases else ""
-    lines += [
-        f"## {index}. {item.cve} — {item.priority.value} {item.priority_label}{alias}",
-        "",
-        "| 근거 | 값 |",
-        "|---|---|",
-        f"| CVSS | {item.badge.cvss} |",
-        f"| EPSS | {item.badge.epss} |",
-        f"| CISA KEV | {item.badge.kev} |",
-        f"| 공개 Exploit | {item.badge.exploit} |",
-        f"| Fixed Version | {item.badge.fixed_version} |",
-        f"| 판정 | {item.badge.verdict} |",
-        f"| 적용 정책 | {item.badge.policy} |",
-        "",
-    ]
-
-    if item.flags:
-        # 인용문은 빈 줄로 끊기면 두 덩어리로 갈라진다. '>' 만 있는 줄로 잇는다.
-        lines += ["> **참고 사항**", ">"]
-        lines += [f"> - {f['label']}: {f['note']}" for f in item.flags]
-        lines += [""]
-
-    # ① 취약점 개요
-    cwe_text = ", ".join(o["cwe"]) if o["cwe"] else "미확인"
-    score_text = o["cvss_score"] if o["cvss_score"] is not None else "미확인"
-    vector_text = f" (`{o['cvss_vector']}`)" if o["cvss_vector"] else ""
-    lines += [
-        "### ① 취약점 개요",
-        "",
-        f"- **CVE**: {o['cve']}",
-        f"- **취약 제품**: {o['advisory_package']} ({o['advisory_ecosystem'] or '생태계 미상'})",
-        f"- **취약 버전 (advisory 기준)**: `{o['affected_version_range']}`",
-        f"- **Fixed Version**: `{o['fixed_version']}`",
-        f"- **취약점 유형 (CWE)**: {cwe_text}",
-        f"- **CVSS**: {score_text}{vector_text}",
-        f"- **공개일**: {o['published'] or '미확인'}",
+    score = o["cvss_score"] if o["cvss_score"] is not None else "—"
+    severity = o["severity"]
+    lines = [
+        f"**{item.cve}** — {item.priority_label} · CVSS {score} {severity}"
+        f" · 악용 예측 {_percent(item.exploitability.get('epss'))}"
+        + (f" · {_evidence(item)}" if _evidence(item) != "—" else ""),
         "",
     ]
     if o["description"]:
         lines += [f"> {o['description']}", ""]
+    if item.technical_risk["narrative"]:
+        lines += [item.technical_risk["narrative"], ""]
+    if item.response_rationale["narrative"]:
+        lines += [item.response_rationale["narrative"], ""]
+    actionable = [f for f in item.flags if f["name"] not in _SCAN_WIDE_FLAGS]
+    if actionable:
+        lines += [f"- {f['label']}: {f['note']}" for f in actionable] + [""]
+    return lines
 
-    # ② 기술적 위험성
-    t = item.technical_risk
-    lines += ["### ② 기술적 위험성", "", t["narrative"], ""]
-    if t["preconditions"]:
-        lines += ["**공격 조건**", ""] + [f"- {p}" for p in t["preconditions"]] + [""]
-    if t["impact_types"]:
-        lines += ["**공격 성공 시 영향 유형**", ""] + [f"- {i}" for i in t["impact_types"]] + [""]
 
-    # ③ 악용 가능성
-    e = item.exploitability
-    if e["epss"] is not None:
-        epss_text = f"{e['epss']:.4f}"
-        if e["epss_snapshot_date"]:
-            epss_text += f" (기준일 {e['epss_snapshot_date']})"
-    else:
-        epss_text = "미확인"
-    lines += [
-        "### ③ 악용 가능성",
+def _specific_steps(steps, package: str, target: str) -> list[str]:
+    """이 패키지에만 해당하는 절차만 남긴다.
+
+    폐쇄망 반입 절차(서명 검증 · 로컬 저장소 구성 등)는 같은 패키지 유형이면
+    글자 하나까지 같다. 패키지 40개짜리 보고서에 그 40줄을 40번 싣는 것은
+    문서를 여덟 배로 부풀리면서 아무것도 더 알려 주지 않는다.
+
+    패키지명이나 목표 버전이 들어 있는 줄만 남기고, 나머지는 앞 절을 가리킨다.
+    지우는 것이 아니라 **한 번만 싣는** 것이다.
+    """
+    return [s for s in steps if package in str(s) or (target and target in str(s))]
+
+
+def _md_group(group: PackageGroup, index: int, *, full_steps: bool, first_of_type: str) -> list[str]:
+    head = f"### 3.{index} {group.package}"
+    if group.package_type:
+        head += f" ({group.package_type})"
+    head += f" — 취약점 {group.cve_count}건"
+
+    lines = [
+        head,
         "",
-        e["narrative"],
-        "",
-        "| 항목 | 값 |",
-        "|---|---|",
-        f"| EPSS | {epss_text} |",
-        f"| CISA KEV | {item.badge.kev} |",
-        f"| 공개 Exploit | {e['exploit_maturity_label']} |",
-        f"| 공개일 | {e['published'] or '미확인'} |",
-        "",
+        f"- **현재 설치**: `{group.installed_version}`",
+        f"- **목표 버전**: `{_target_text(group)}`",
+        f"- **대응 검토**: {group.priority_label}",
     ]
-    if e["exploit_sources"]:
-        lines += ["**Exploit 출처**", ""]
-        lines += [
-            f"- {s['label']}: `{s['ref']}`" + (f" — {s['note']}" if s["note"] else "")
-            for s in e["exploit_sources"]
-        ]
-        lines += [""]
-
-    # ④ 대응 필요성 분석
-    r = item.response_rationale
-    lines += ["### ④ 대응 필요성 분석", "", r["narrative"], ""]
-    if r["fired_rules"]:
-        lines += ["**판정 근거 (발화 룰)**", ""]
-        lines += [f"- `{fr['name']}` — {fr['explain']}" for fr in r["fired_rules"]]
-        lines += [""]
-    lines += [
-        f"**권고 대응 우선순위**: {r['priority']} {r['priority_label']}"
-        + (f" — {r['priority_description']}" if r["priority_description"] else ""),
-        "",
-    ]
-
-    # ⑤ 권고사항
-    rec = item.recommendation
-    lines += ["### ⑤ 권고사항", "", f"**권고 조치**: {rec.action}", ""]
-    lines += _md_steps("패치 전 확인사항", rec.precheck, numbered=False)
-    if rec.online_steps:
-        lines += _md_steps(rec.online_title, rec.online_steps)
-    if rec.airgapped_steps:
-        if rec.airgapped_note:
-            lines += [f"**{rec.airgapped_title}**", "", f"> {rec.airgapped_note}", ""]
-            lines += _md_steps("절차", rec.airgapped_steps)
-        else:
-            lines += _md_steps(rec.airgapped_title, rec.airgapped_steps)
-    if rec.verification:
-        lines += _md_steps("적용 후 검증", rec.verification, numbered=False)
-    if rec.mitigations:
-        lines += _md_steps("임시 완화 방안 (수정 버전 부재)", rec.mitigations, numbered=False)
-
-    # ⑥ 근거 및 Reference
-    lines += ["### ⑥ 근거 및 Reference", ""]
-    for ref in item.references:
-        if ref.get("url"):
-            lines.append(f"- {ref['source']}: [{ref['title']}]({ref['url']})")
-        else:
-            lines.append(f"- {ref['source']}: {ref['title']}")
+    if group.no_fix_count:
+        lines.append(
+            f"- **수정 버전 없음**: {group.no_fix_count}건 — 완화 방안 검토가 필요합니다"
+        )
     lines += [""]
 
-    # [로컬 분석 정보]
-    local = item.local_analysis
-    fa = local["fix_analysis"]
-    lines += [
-        "### [로컬 분석 정보] · AI 미전달",
-        "",
-        "> 아래 정보는 우리 자산에 대한 사실이며 외부(AI)로 전달되지 않았다.",
-        "",
-        f"- **설치 패키지**: {local['installed_package']} ({local['package_type']})",
-        f"- **현재 설치 버전**: `{local['installed_version']}`",
-        f"- **Fixed Version**: `{fa['fixed_version'] or '없음'}`",
-        f"- **취약 여부**: {fa['is_vulnerable']} · **업데이트 가능**: {fa['update_available']}"
-        f" · **수정 상태**: {fa['fix_state']} · **버전 격차**: {fa['version_gap']}"
-        f" (비교자: {fa['comparator']})",
-        f"- **SBOM 내 발견**: {'예' if local['found_in_sbom'] else '아니오'}",
-        f"- **Grype 탐지**: {local['detection']['matcher']} / {local['detection']['match_type']}"
-        f" / {local['detection']['namespace']}",
-    ]
-    if local["locations"]:
-        lines.append(f"- **발견 위치**: {', '.join(local['locations'])}")
-    if fa["reason"]:
-        lines.append(f"- **판정 사유**: {fa['reason']}")
-    lines += ["", "---", ""]
+    lines += ["| CVE | 대응 검토 | CVSS | 악용 예측 | 근거 | 수정 버전 |", "|---|---|---|---|---|---|"]
+    for item in group.findings:
+        o = item.overview
+        lines.append(
+            f"| {item.cve} | {item.priority_label} "
+            f"| {o['cvss_score'] if o['cvss_score'] is not None else '—'} "
+            f"| {_percent(item.exploitability.get('epss'))} "
+            f"| {_evidence(item)} "
+            f"| `{o['fixed_version']}` |"
+        )
+    lines += [""]
+
+    if group.chained_analysis:
+        lines += [
+            "**연계 분석**",
+            "",
+            "> 공개 데이터(CVSS 벡터 · CWE)만으로 세운 기술적 연계 가능성입니다. "
+            "우리 환경의 실제 위험도는 노출 경로와 보상 통제를 함께 보아야 합니다.",
+            "",
+            group.chained_analysis,
+            "",
+        ]
+
+    if group.recommendation:
+        rec = group.recommendation
+        lines += ["**조치**", "", rec.action, ""]
+        if rec.online_steps:
+            lines += _md_steps(rec.online_title, rec.online_steps)
+
+        if full_steps:
+            lines += _md_steps("패치 전 확인사항", rec.precheck, numbered=False)
+            if rec.airgapped_steps:
+                if rec.airgapped_note:
+                    lines += [f"**{rec.airgapped_title}**", "", f"> {rec.airgapped_note}", ""]
+                    lines += _md_steps("절차", rec.airgapped_steps)
+                else:
+                    lines += _md_steps(rec.airgapped_title, rec.airgapped_steps)
+            if rec.verification:
+                lines += _md_steps("적용 후 검증", rec.verification, numbered=False)
+        else:
+            # 같은 패키지 유형의 공통 절차는 앞 절에 이미 실려 있다.
+            specific = _specific_steps(rec.airgapped_steps, group.package, group.target_version)
+            lines += [
+                f"**{rec.airgapped_title}** — 공통 절차는 `{first_of_type}` 항목을 참고하세요. "
+                f"이 패키지에만 해당하는 부분은 다음과 같습니다.",
+                "",
+            ]
+            lines += _md_steps("이 패키지 전용", specific) if specific else []
+            if rec.verification:
+                lines += _md_steps(
+                    "적용 후 검증",
+                    _specific_steps(rec.verification, group.package, group.target_version)
+                    or rec.verification,
+                    numbered=False,
+                )
+    else:
+        # 수정본이 없는 묶음. 완화 방안은 CVE 항목의 playbook 에 들어 있다.
+        mitigations = [m for item in group.findings for m in item.recommendation.mitigations]
+        lines += _md_steps(
+            "임시 완화 방안 (수정 버전 부재)", list(dict.fromkeys(mitigations)), numbered=False
+        )
+
+    lines += ["**취약점별 상세**", ""]
+    for item in group.findings:
+        lines += _md_finding(item)
+
+    references = _merge_references(group)
+    if references:
+        lines += ["**참조**", ""]
+        for ref in references:
+            lines.append(
+                f"- {ref['source']}: [{ref['title']}]({ref['url']})" if ref.get("url")
+                else f"- {ref['source']}: {ref['title']}"
+            )
+        lines += [""]
+
+    lines += ["---", ""]
     return lines
+
+
+def _merge_references(group: PackageGroup) -> list[dict[str, str]]:
+    """묶음 안의 참조를 URL 기준으로 합친다. 같은 벤더 advisory 가 반복된다."""
+    seen: dict[str, dict[str, str]] = {}
+    for item in group.findings:
+        for ref in item.references:
+            key = ref.get("url") or f"{ref.get('source')}:{ref.get('title')}"
+            seen.setdefault(key, dict(ref))
+    return list(seen.values())
 
 
 def to_markdown(report: Report) -> str:
     summary = report.summary
     labels = summary["priority_labels"]
+    scan = report.scan
 
     lines: list[str] = [
         "# 취약점 대응 검토 보고서",
         "",
         f"- 생성 시각: {report.generated_at}",
-        f"- 스캔 ID: {report.scan.get('scan_id', '')}",
-        f"- 대상 SBOM: {report.scan.get('sbom_filename', '') or '(미상)'}"
-        f" ({report.scan.get('sbom_format', '')})",
-        f"- 컴포넌트: {report.scan.get('component_count', 0)}개",
-        f"- 적용 정책: {report.policy.get('label', '')}",
-        f"- 서술 생성: {'AI 사용' if report.ai_used else 'AI 미사용 (룰 기반)'}",
+        f"- 스캔 ID: {scan.get('scan_id', '')}",
+        f"- 대상 SBOM: {scan.get('sbom_filename', '') or '(미상)'} ({scan.get('sbom_format', '')})",
+        f"- 컴포넌트: {scan.get('component_count', 0)}개",
+        f"- 판정 기준: {report.policy.get('label', '')}",
+    ]
+    # AI 를 쓰지 않았으면 AI 이야기를 꺼내지 않는다.
+    if report.ai_used:
+        lines.append("- 서술 생성: AI 사용 (공개 취약점 데이터만 전달)")
+    lines += ["", f"> {report.disclaimer}", ""]
+
+    # --- 1장 요약 ---------------------------------------------------------
+    lines += [
+        "## 1. 요약",
         "",
-        "> " + report.disclaimer.replace("\n", "\n> "),
+        f"탐지 **{summary['total']}건** · 영향 패키지 **{summary['affected_packages']}개**",
         "",
-        "## 요약",
-        "",
-        "| 대응 검토 우선순위 | 건수 |",
+        "| 대응 검토 | 건수 |",
         "|---|---|",
     ]
     for key in ("P0", "P1", "P2", "P3"):
-        lines.append(f"| {key} {labels[key]} | {summary['by_priority'][key]} |")
+        lines.append(f"| {labels[key]} | {summary['by_priority'][key]} |")
     lines += [
-        f"| **합계** | **{summary['total']}** |",
         "",
-        f"- 영향 패키지: {summary['affected_packages']}개",
-        f"- 취약 확인: {summary['vulnerable_confirmed']}건 · "
-        f"판단 불가: {summary['vulnerable_unconfirmed']}건",
-        f"- 업데이트 가능: {summary['update_available']}건 · "
-        f"수정 버전 없음: {summary['no_fix_available']}건",
-        f"- CISA KEV 등재: {summary['kev_listed']}건 · "
-        f"공개 Exploit 확인: {summary['exploit_available']}건",
+        f"- 패치로 해소 가능: **{summary['update_available']}건**",
+        f"- 수정 버전 없음: **{summary['no_fix_available']}건** (완화 방안 검토 필요)",
+        f"- 실제 악용 확인: {summary['kev_listed']}건 · 공격코드 공개: {summary['exploit_available']}건",
         "",
     ]
 
+    notes = _coverage_notes(report)
+    if notes:
+        lines += ["**확보하지 못한 데이터**", ""]
+        lines += [f"- {n['label']}: {n['note']}" for n in notes]
+        lines += [""]
+
     if report.enrichment:
-        lines += ["### 사용한 위협정보 스냅샷", "", "| 소스 | 상태 | 수록 | 해당 | 기준일 |", "|---|---|---|---|---|"]
+        lines += [
+            "| 위협정보 소스 | 상태 | 수록 | 해당 | 기준일 |",
+            "|---|---|---|---|---|",
+        ]
         for name, status in report.enrichment.items():
             lines.append(
                 f"| {name} | {status.get('state', '')} | {status.get('entries', 0)} | "
@@ -236,9 +301,53 @@ def to_markdown(report: Report) -> str:
             )
         lines.append("")
 
-    lines += ["---", ""]
-    for idx, item in enumerate(report.findings, 1):
-        lines += _md_finding(item, idx)
+    # --- 2장 조치 대상 ----------------------------------------------------
+    fixable = [g for g in report.packages if g.resolvable]
+    blocked = [g for g in report.packages if not g.resolvable]
+
+    lines += ["## 2. 조치 대상", ""]
+    if fixable:
+        lines += [
+            f"패키지 **{len(fixable)}개**를 업데이트하면 취약점 "
+            f"**{sum(g.fixable_count for g in fixable)}건**이 해소됩니다.",
+            "",
+            "| 대응 검토 | 패키지 | 현재 → 목표 | 해소 | 취약점 |",
+            "|---|---|---|---|---|",
+        ]
+        for group in fixable:
+            lines.append(
+                f"| {group.priority_label} | {group.package} "
+                f"| `{group.installed_version}` → `{group.target_version}` "
+                f"| {group.fixable_count}건 | {', '.join(group.cves)} |"
+            )
+        lines.append("")
+    else:
+        lines += ["패치로 해소할 수 있는 항목이 없습니다.", ""]
+
+    if blocked:
+        lines += [
+            f"### 수정 버전이 없는 패키지 ({len(blocked)}개)",
+            "",
+            "업데이트로 해소할 수 없습니다. 완화 방안은 3장 각 항목에 있습니다.",
+            "",
+            "| 대응 검토 | 패키지 | 설치 버전 | 취약점 |",
+            "|---|---|---|---|",
+        ]
+        for group in blocked:
+            lines.append(
+                f"| {group.priority_label} | {group.package} "
+                f"| `{group.installed_version}` | {', '.join(group.cves)} |"
+            )
+        lines.append("")
+
+    # --- 3장 패키지별 상세 ------------------------------------------------
+    lines += ["## 3. 패키지별 상세", ""]
+    seen_types: dict[str, str] = {}
+    for index, group in enumerate(report.packages, 1):
+        kind = group.package_type or "generic"
+        first = seen_types.get(kind)
+        lines += _md_group(group, index, full_steps=first is None, first_of_type=first or "")
+        seen_types.setdefault(kind, group.package)
 
     return "\n".join(lines)
 
@@ -260,128 +369,125 @@ def _html_list(items, *, ordered: bool = False) -> str:
     return f"<{tag} class='steps'>{body}</{tag}>"
 
 
-def _html_finding(item: FindingReport, index: int) -> str:
-    o, t, e, r = item.overview, item.technical_risk, item.exploitability, item.response_rationale
-    rec, local = item.recommendation, item.local_analysis
-    fa = local["fix_analysis"]
-    color, background = _PRIORITY_STYLE.get(item.priority.value, ("#4a5568", "#eef1f5"))
-
+def _html_finding(item: FindingReport) -> str:
+    o = item.overview
+    score = o["cvss_score"] if o["cvss_score"] is not None else "—"
+    description = f"<blockquote>{_esc(o['description'])}</blockquote>" if o["description"] else ""
+    narratives = "".join(
+        f"<p>{_esc(text)}</p>"
+        for text in (item.technical_risk["narrative"], item.response_rationale["narrative"])
+        if text
+    )
+    actionable = [f for f in item.flags if f["name"] not in _SCAN_WIDE_FLAGS]
     flags = ""
-    if item.flags:
-        rows = "".join(f"<li><b>{_esc(f['label'])}</b> — {_esc(f['note'])}</li>" for f in item.flags)
-        flags = f"<div class='callout'><ul>{rows}</ul></div>"
+    if actionable:
+        body = "".join(f"<li><b>{_esc(f['label'])}</b> — {_esc(f['note'])}</li>" for f in actionable)
+        flags = f"<div class='callout'><ul>{body}</ul></div>"
 
-    exploit_sources = ""
-    if e["exploit_sources"]:
-        rows = "".join(
-            f"<li>{_esc(s['label'])}: <code>{_esc(s['ref'])}</code>"
-            + (f" — {_esc(s['note'])}" if s["note"] else "")
-            + "</li>"
-            for s in e["exploit_sources"]
-        )
-        exploit_sources = f"<p class='label'>Exploit 출처</p><ul>{rows}</ul>"
+    source = _SOURCE_LABEL.get(item.narrative_source, "")
+    return f"""
+<div class="cve">
+  <p class="cve-head"><b>{_esc(item.cve)}</b> — {_esc(item.priority_label)}
+    · CVSS {_esc(score)} {_esc(o['severity'])}
+    · 악용 예측 {_esc(_percent(item.exploitability.get('epss')))}
+    {f"· {_esc(_evidence(item))}" if _evidence(item) != "—" else ""}
+    <span class="src">{_esc(source)}</span></p>
+  {description}
+  {narratives}
+  {flags}
+</div>"""
 
-    fired = ""
-    if r["fired_rules"]:
-        rows = "".join(
-            f"<li><code>{_esc(fr['name'])}</code> — {_esc(fr['explain'])}</li>" for fr in r["fired_rules"]
-        )
-        fired = f"<p class='label'>판정 근거 (발화 룰)</p><ul>{rows}</ul>"
 
-    references = "".join(
-        (
-            f"<li>{_esc(ref['source'])}: <a href='{_esc(ref['url'])}'>{_esc(ref['title'])}</a></li>"
-            if ref.get("url")
-            else f"<li>{_esc(ref['source'])}: {_esc(ref['title'])}</li>"
-        )
-        for ref in item.references
+def _html_group(group: PackageGroup, index: int, *, full_steps: bool, first_of_type: str) -> str:
+    color, background = _PRIORITY_STYLE.get(group.priority.value, ("#4a5568", "#eef1f5"))
+
+    rows = "".join(
+        f"<tr><td class='mono'>{_esc(i.cve)}</td><td>{_esc(i.priority_label)}</td>"
+        f"<td>{_esc(i.overview['cvss_score'] if i.overview['cvss_score'] is not None else '—')}</td>"
+        f"<td>{_esc(_percent(i.exploitability.get('epss')))}</td>"
+        f"<td>{_esc(_evidence(i))}</td>"
+        f"<td class='mono'>{_esc(i.overview['fixed_version'])}</td></tr>"
+        for i in group.findings
     )
 
-    airgapped = ""
-    if rec.airgapped_steps:
-        note = f"<p class='note'>{_esc(rec.airgapped_note)}</p>" if rec.airgapped_note else ""
-        airgapped = (
-            f"<p class='label'>{_esc(rec.airgapped_title)}</p>{note}"
-            f"{_html_list(rec.airgapped_steps, ordered=True)}"
+    chained = ""
+    if group.chained_analysis:
+        chained = f"""
+<h4>연계 분석</h4>
+<blockquote>공개 데이터(CVSS 벡터 · CWE)만으로 세운 기술적 연계 가능성입니다.
+우리 환경의 실제 위험도는 노출 경로와 보상 통제를 함께 보아야 합니다.</blockquote>
+<p>{_esc(group.chained_analysis)}</p>"""
+
+    if group.recommendation:
+        rec = group.recommendation
+        steps = f"<h4>조치</h4><p class='action'>{_esc(rec.action)}</p>"
+        if rec.online_steps:
+            steps += f"<p class='label'>{_esc(rec.online_title)}</p>{_html_list(rec.online_steps, ordered=True)}"
+
+        if full_steps:
+            if rec.precheck:
+                steps += f"<p class='label'>패치 전 확인사항</p>{_html_list(rec.precheck)}"
+            if rec.airgapped_steps:
+                note = f"<p class='note'>{_esc(rec.airgapped_note)}</p>" if rec.airgapped_note else ""
+                steps += (f"<p class='label'>{_esc(rec.airgapped_title)}</p>{note}"
+                          f"{_html_list(rec.airgapped_steps, ordered=True)}")
+            if rec.verification:
+                steps += f"<p class='label'>적용 후 검증</p>{_html_list(rec.verification)}"
+        else:
+            specific = _specific_steps(rec.airgapped_steps, group.package, group.target_version)
+            steps += (
+                f"<p class='label'>{_esc(rec.airgapped_title)}</p>"
+                f"<p class='note'>공통 절차는 <b>{_esc(first_of_type)}</b> 항목을 참고하세요. "
+                f"이 패키지에만 해당하는 부분은 다음과 같습니다.</p>"
+                + _html_list(specific, ordered=True)
+            )
+            verification = (_specific_steps(rec.verification, group.package, group.target_version)
+                            or list(rec.verification))
+            if verification:
+                steps += f"<p class='label'>적용 후 검증</p>{_html_list(verification)}"
+    else:
+        mitigations = list(dict.fromkeys(
+            m for item in group.findings for m in item.recommendation.mitigations
+        ))
+        steps = ("<h4>임시 완화 방안 (수정 버전 부재)</h4>" + _html_list(mitigations)
+                 if mitigations else "")
+
+    references = _merge_references(group)
+    ref_html = ""
+    if references:
+        body = "".join(
+            f"<li>{_esc(r['source'])}: <a href='{_esc(r['url'])}'>{_esc(r['title'])}</a></li>"
+            if r.get("url") else f"<li>{_esc(r['source'])}: {_esc(r['title'])}</li>"
+            for r in references
         )
+        ref_html = f"<h4>참조</h4><ul class='steps'>{body}</ul>"
+
+    no_fix = ""
+    if group.no_fix_count:
+        no_fix = (f"<tr><th>수정 버전 없음</th><td>{group.no_fix_count}건 — "
+                  f"완화 방안 검토가 필요합니다</td></tr>")
 
     return f"""
-<section class="finding" id="{_esc(item.cve)}">
-  <h2><span class="pill" style="color:{color};background:{background}">
-      {_esc(item.priority.value)} {_esc(item.priority_label)}</span>
-      {index}. {_esc(item.cve)}
-      {f"<small>별칭: {_esc(', '.join(item.aliases))}</small>" if item.aliases else ""}</h2>
-
-  <table class="badge">
-    <tr><th>CVSS</th><td>{_esc(item.badge.cvss)}</td></tr>
-    <tr><th>EPSS</th><td>{_esc(item.badge.epss)}</td></tr>
-    <tr><th>CISA KEV</th><td>{_esc(item.badge.kev)}</td></tr>
-    <tr><th>공개 Exploit</th><td>{_esc(item.badge.exploit)}</td></tr>
-    <tr><th>Fixed Version</th><td>{_esc(item.badge.fixed_version)}</td></tr>
-    <tr><th>판정</th><td>{_esc(item.badge.verdict)}</td></tr>
-    <tr><th>적용 정책</th><td class="mono">{_esc(item.badge.policy)}</td></tr>
+<section class="group">
+  <h3>3.{index} {_esc(group.package)}
+    {f"<small>({_esc(group.package_type)})</small>" if group.package_type else ""}
+    <span class="pill" style="color:{color};background:{background}">{_esc(group.priority_label)}</span>
+    <small>취약점 {group.cve_count}건</small></h3>
+  <table>
+    <tr><th>현재 설치</th><td class="mono">{_esc(group.installed_version)}</td></tr>
+    <tr><th>목표 버전</th><td class="mono">{_esc(_target_text(group))}</td></tr>
+    {no_fix}
   </table>
-  {flags}
-
-  <h3>① 취약점 개요</h3>
-  <table class="kv">
-    <tr><th>CVE</th><td>{_esc(o['cve'])}</td></tr>
-    <tr><th>취약 제품</th><td>{_esc(o['advisory_package'])} ({_esc(o['advisory_ecosystem'] or '생태계 미상')})</td></tr>
-    <tr><th>취약 버전 (advisory)</th><td class="mono">{_esc(o['affected_version_range'])}</td></tr>
-    <tr><th>Fixed Version</th><td class="mono">{_esc(o['fixed_version'])}</td></tr>
-    <tr><th>취약점 유형 (CWE)</th><td>{_esc(', '.join(o['cwe']) if o['cwe'] else '미확인')}</td></tr>
-    <tr><th>CVSS</th><td>{_esc(o['cvss_score'] if o['cvss_score'] is not None else '미확인')}
-        <span class="mono">{_esc(o['cvss_vector'])}</span></td></tr>
-    <tr><th>공개일</th><td>{_esc(o['published'] or '미확인')}</td></tr>
+  <table>
+    <tr><th>CVE</th><th>대응 검토</th><th>CVSS</th><th>악용 예측</th><th>근거</th><th>수정 버전</th></tr>
+    {rows}
   </table>
-  {f"<blockquote>{_esc(o['description'])}</blockquote>" if o['description'] else ""}
-
-  <h3>② 기술적 위험성 <span class="src">{_SOURCE_LABEL.get(item.narrative_source, '')}</span></h3>
-  <p>{_esc(t['narrative'])}</p>
-  {"<p class='label'>공격 조건</p>" + _html_list(t['preconditions']) if t['preconditions'] else ""}
-  {"<p class='label'>공격 성공 시 영향 유형</p>" + _html_list(t['impact_types']) if t['impact_types'] else ""}
-
-  <h3>③ 악용 가능성</h3>
-  <p>{_esc(e['narrative'])}</p>
-  {exploit_sources}
-
-  <h3>④ 대응 필요성 분석 <span class="src">{_SOURCE_LABEL.get(item.narrative_source, '')}</span></h3>
-  <p>{_esc(r['narrative'])}</p>
-  {fired}
-  <p class="verdict">권고 대응 우선순위: <b>{_esc(r['priority'])} {_esc(r['priority_label'])}</b>
-     {f"— {_esc(r['priority_description'])}" if r['priority_description'] else ""}</p>
-
-  <h3>⑤ 권고사항</h3>
-  <p class="action">권고 조치: <b>{_esc(rec.action)}</b></p>
-  {"<p class='label'>패치 전 확인사항</p>" + _html_list(rec.precheck) if rec.precheck else ""}
-  {f"<p class='label'>{_esc(rec.online_title)}</p>" + _html_list(rec.online_steps, ordered=True) if rec.online_steps else ""}
-  {airgapped}
-  {"<p class='label'>적용 후 검증</p>" + _html_list(rec.verification) if rec.verification else ""}
-  {"<p class='label'>임시 완화 방안 (수정 버전 부재)</p>" + _html_list(rec.mitigations) if rec.mitigations else ""}
-
-  <h3>⑥ 근거 및 Reference</h3>
-  <ul>{references}</ul>
-
-  <div class="local">
-    <h3>[로컬 분석 정보] <span class="nosend">AI 미전달</span></h3>
-    <p class="note">아래 정보는 우리 자산에 대한 사실이며 외부(AI)로 전달되지 않았다.</p>
-    <table class="kv">
-      <tr><th>설치 패키지</th><td>{_esc(local['installed_package'])} ({_esc(local['package_type'])})</td></tr>
-      <tr><th>현재 설치 버전</th><td class="mono">{_esc(local['installed_version'])}</td></tr>
-      <tr><th>Fixed Version</th><td class="mono">{_esc(fa['fixed_version'] or '없음')}</td></tr>
-      <tr><th>취약 여부</th><td>{_esc(fa['is_vulnerable'])}</td></tr>
-      <tr><th>업데이트 가능</th><td>{_esc(fa['update_available'])}</td></tr>
-      <tr><th>수정 상태 · 버전 격차</th><td>{_esc(fa['fix_state'])} · {_esc(fa['version_gap'])}
-          <span class="mono">(비교자: {_esc(fa['comparator'])})</span></td></tr>
-      <tr><th>SBOM 내 발견</th><td>{'예' if local['found_in_sbom'] else '아니오'}</td></tr>
-      <tr><th>Grype 탐지</th><td class="mono">{_esc(local['detection']['matcher'])} /
-          {_esc(local['detection']['match_type'])} / {_esc(local['detection']['namespace'])}</td></tr>
-      {f"<tr><th>발견 위치</th><td class='mono'>{_esc(', '.join(local['locations']))}</td></tr>" if local['locations'] else ""}
-      {f"<tr><th>판정 사유</th><td>{_esc(fa['reason'])}</td></tr>" if fa['reason'] else ""}
-    </table>
-  </div>
-</section>
-"""
+  {chained}
+  {steps}
+  <h4>취약점별 상세</h4>
+  {''.join(_html_finding(i) for i in group.findings)}
+  {ref_html}
+</section>"""
 
 
 _CSS = """
@@ -391,8 +497,9 @@ body{margin:0;padding:2rem 1.25rem;font-family:-apple-system,BlinkMacSystemFont,
   "Noto Sans KR","Malgun Gothic",sans-serif;color:var(--fg);background:var(--bg);line-height:1.65}
 .wrap{max-width:60rem;margin:0 auto}
 h1{font-size:1.7rem;margin:0 0 .5rem;letter-spacing:-.02em}
-h2{font-size:1.2rem;margin:2.5rem 0 .75rem;padding-top:1.25rem;border-top:2px solid var(--line)}
-h3{font-size:1rem;margin:1.5rem 0 .5rem;color:var(--accent)}
+h2{font-size:1.25rem;margin:2.5rem 0 .75rem;padding-top:1.25rem;border-top:2px solid var(--line)}
+h3{font-size:1.05rem;margin:2rem 0 .5rem;color:var(--accent)}
+h4{font-size:.92rem;margin:1.25rem 0 .4rem}
 small{font-weight:400;color:var(--muted);font-size:.8rem}
 p{margin:.5rem 0}
 code,.mono,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em}
@@ -402,31 +509,27 @@ ol.steps li pre.step,ul.steps li pre.step{font-family:ui-monospace,SFMono-Regula
   font-size:.82rem;background:var(--code);padding:.5rem .65rem;border-radius:4px;border:1px solid var(--line)}
 table{border-collapse:collapse;width:100%;margin:.75rem 0;font-size:.9rem}
 th,td{border:1px solid var(--line);padding:.45rem .6rem;text-align:left;vertical-align:top}
-th{background:#f7f9fb;font-weight:600;white-space:nowrap;width:11rem}
-table.badge th{width:9rem}
+th{background:#f7f9fb;font-weight:600;white-space:nowrap}
 .pill{display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.78rem;
-  font-weight:700;margin-right:.5rem;vertical-align:middle}
+  font-weight:700;margin-left:.5rem;vertical-align:middle}
 .src{font-size:.7rem;font-weight:400;color:var(--muted);border:1px solid var(--line);
   border-radius:3px;padding:.05rem .35rem;margin-left:.4rem;vertical-align:middle}
-.nosend{font-size:.7rem;font-weight:700;color:#b3261e;background:#fce8e6;border-radius:3px;
-  padding:.1rem .4rem;margin-left:.4rem;vertical-align:middle}
 .label{font-weight:600;margin:.9rem 0 .3rem;font-size:.9rem}
 .note{color:var(--muted);font-size:.85rem;margin:.25rem 0 .5rem}
-.callout{background:#fffbe6;border:1px solid #f0e0a0;border-radius:5px;padding:.5rem .75rem;margin:.75rem 0}
+.callout{background:#fffbe6;border:1px solid #f0e0a0;border-radius:5px;padding:.5rem .75rem;margin:.5rem 0}
 .callout ul{margin:.25rem 0;padding-left:1.1rem;font-size:.87rem}
 blockquote{margin:.75rem 0;padding:.5rem .9rem;border-left:3px solid var(--line);
   color:var(--muted);font-size:.9rem}
-.local{margin-top:1.5rem;padding:1rem;border:2px dashed #b3261e;border-radius:6px;background:#fffafa}
-.local h3{color:#b3261e;margin-top:0}
-.verdict,.action{background:var(--code);padding:.5rem .75rem;border-radius:4px}
+.cve{margin:.9rem 0;padding-left:.9rem;border-left:2px solid var(--line)}
+.cve-head{margin:0 0 .25rem;font-size:.92rem}
+.action{background:var(--code);padding:.5rem .75rem;border-radius:4px}
 .summary-disclaimer{background:#f7f9fb;border:1px solid var(--line);border-radius:6px;
   padding:.9rem 1.1rem;margin:1.25rem 0;font-size:.88rem;color:var(--muted)}
 .meta{font-size:.87rem;color:var(--muted)}
 .meta b{color:var(--fg)}
 @media print{
   body{padding:0;font-size:10.5pt}
-  h2{page-break-before:auto;break-inside:avoid}
-  section.finding{break-inside:avoid-page}
+  section.group{break-inside:avoid-page}
   a{color:inherit;text-decoration:none}
 }
 """
@@ -437,8 +540,8 @@ def to_html(report: Report) -> str:
     labels = summary["priority_labels"]
     scan = report.scan
 
-    rows = "".join(
-        f"<tr><th>{key} {_esc(labels[key])}</th><td>{summary['by_priority'][key]}건</td></tr>"
+    priority_rows = "".join(
+        f"<tr><th>{_esc(labels[key])}</th><td>{summary['by_priority'][key]}건</td></tr>"
         for key in ("P0", "P1", "P2", "P3")
     )
 
@@ -451,12 +554,60 @@ def to_html(report: Report) -> str:
             for name, s in report.enrichment.items()
         )
         enrichment = (
-            "<h3>사용한 위협정보 스냅샷</h3>"
-            "<table><tr><th>소스</th><th>상태</th><th>수록</th><th>해당</th><th>기준일</th></tr>"
-            f"{body}</table>"
+            "<table><tr><th>위협정보 소스</th><th>상태</th><th>수록</th><th>해당</th>"
+            f"<th>기준일</th></tr>{body}</table>"
         )
 
-    findings = "".join(_html_finding(item, i) for i, item in enumerate(report.findings, 1))
+    notes = _coverage_notes(report)
+    coverage = ""
+    if notes:
+        body = "".join(f"<li><b>{_esc(n['label'])}</b> — {_esc(n['note'])}</li>" for n in notes)
+        coverage = f"<p class='label'>확보하지 못한 데이터</p><div class='callout'><ul>{body}</ul></div>"
+
+    fixable = [g for g in report.packages if g.resolvable]
+    blocked = [g for g in report.packages if not g.resolvable]
+
+    if fixable:
+        rows = "".join(
+            f"<tr><td>{_esc(g.priority_label)}</td><td><b>{_esc(g.package)}</b></td>"
+            f"<td class='mono'>{_esc(g.installed_version)} → {_esc(g.target_version)}</td>"
+            f"<td>{g.fixable_count}건</td><td class='mono'>{_esc(', '.join(g.cves))}</td></tr>"
+            for g in fixable
+        )
+        action_table = (
+            f"<p>패키지 <b>{len(fixable)}개</b>를 업데이트하면 취약점 "
+            f"<b>{sum(g.fixable_count for g in fixable)}건</b>이 해소됩니다.</p>"
+            "<table><tr><th>대응 검토</th><th>패키지</th><th>현재 → 목표</th>"
+            f"<th>해소</th><th>취약점</th></tr>{rows}</table>"
+        )
+    else:
+        action_table = "<p>패치로 해소할 수 있는 항목이 없습니다.</p>"
+
+    blocked_table = ""
+    if blocked:
+        rows = "".join(
+            f"<tr><td>{_esc(g.priority_label)}</td><td><b>{_esc(g.package)}</b></td>"
+            f"<td class='mono'>{_esc(g.installed_version)}</td>"
+            f"<td class='mono'>{_esc(', '.join(g.cves))}</td></tr>"
+            for g in blocked
+        )
+        blocked_table = (
+            f"<h3>수정 버전이 없는 패키지 ({len(blocked)}개)</h3>"
+            "<p>업데이트로 해소할 수 없습니다. 완화 방안은 3장 각 항목에 있습니다.</p>"
+            "<table><tr><th>대응 검토</th><th>패키지</th><th>설치 버전</th>"
+            f"<th>취약점</th></tr>{rows}</table>"
+        )
+
+    groups = ""
+    seen_types: dict[str, str] = {}
+    for index, group in enumerate(report.packages, 1):
+        kind = group.package_type or "generic"
+        first = seen_types.get(kind)
+        groups += _html_group(group, index, full_steps=first is None, first_of_type=first or "")
+        seen_types.setdefault(kind, group.package)
+    ai_line = (
+        "<br>서술 생성 <b>AI 사용</b> (공개 취약점 데이터만 전달)" if report.ai_used else ""
+    )
 
     return f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
@@ -470,21 +621,27 @@ def to_html(report: Report) -> str:
   스캔 <b>{_esc(scan.get('scan_id',''))}</b> ·
   SBOM <b>{_esc(scan.get('sbom_filename','') or '(미상)')}</b> ({_esc(scan.get('sbom_format',''))}) ·
   컴포넌트 <b>{scan.get('component_count',0)}</b>개<br>
-  적용 정책 <b>{_esc(report.policy.get('label',''))}</b> ·
-  서술 생성 <b>{'AI 사용' if report.ai_used else 'AI 미사용 (룰 기반)'}</b>
+  판정 기준 <b>{_esc(report.policy.get('label',''))}</b>{ai_line}
 </p>
 <div class="summary-disclaimer">{_esc(report.disclaimer)}</div>
 
-<h2 style="border-top:none;padding-top:0">요약</h2>
-<table>{rows}<tr><th>합계</th><td><b>{summary['total']}건</b></td></tr></table>
-<table class="kv">
-  <tr><th>영향 패키지</th><td>{summary['affected_packages']}개</td></tr>
-  <tr><th>취약 확인 / 판단 불가</th><td>{summary['vulnerable_confirmed']}건 / {summary['vulnerable_unconfirmed']}건</td></tr>
-  <tr><th>업데이트 가능 / 수정 버전 없음</th><td>{summary['update_available']}건 / {summary['no_fix_available']}건</td></tr>
-  <tr><th>CISA KEV 등재</th><td>{summary['kev_listed']}건</td></tr>
-  <tr><th>공개 Exploit 확인</th><td>{summary['exploit_available']}건</td></tr>
+<h2 style="border-top:none;padding-top:0">1. 요약</h2>
+<p>탐지 <b>{summary['total']}건</b> · 영향 패키지 <b>{summary['affected_packages']}개</b></p>
+<table>{priority_rows}<tr><th>합계</th><td><b>{summary['total']}건</b></td></tr></table>
+<table>
+  <tr><th>패치로 해소 가능</th><td>{summary['update_available']}건</td></tr>
+  <tr><th>수정 버전 없음</th><td>{summary['no_fix_available']}건 (완화 방안 검토 필요)</td></tr>
+  <tr><th>실제 악용 확인</th><td>{summary['kev_listed']}건</td></tr>
+  <tr><th>공격코드 공개</th><td>{summary['exploit_available']}건</td></tr>
 </table>
+{coverage}
 {enrichment}
-{findings}
+
+<h2>2. 조치 대상</h2>
+{action_table}
+{blocked_table}
+
+<h2>3. 패키지별 상세</h2>
+{groups}
 </div></body></html>
 """

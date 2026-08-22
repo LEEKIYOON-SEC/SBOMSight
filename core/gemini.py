@@ -17,7 +17,10 @@ from typing import Any
 
 from .audit import AuditLog
 from .config import Config, get_config
-from .prompt import RESPONSE_SCHEMA, SYSTEM_INSTRUCTION, build_prompt
+from .prompt import (
+    CHAIN_RESPONSE_SCHEMA, RESPONSE_SCHEMA, SYSTEM_INSTRUCTION,
+    build_chain_prompt, build_prompt,
+)
 from .sanitizer import EgressBlocked, EgressGuard
 
 
@@ -98,9 +101,33 @@ class GeminiClient:
         전송 전 가드를 통과하지 못하면 EgressBlocked를 던지며, 그 사실도
         감사 로그에 남는다.
         """
-        # --- 마지막 관문 --------------------------------------------------
+        facts = self._guarded(facts, scan_id=scan_id)
+        return self._request(
+            facts, build_prompt(facts), RESPONSE_SCHEMA, "analyses", scan_id=scan_id
+        )
+
+    def analyze_chains(
+        self, groups: list[dict[str, Any]], *, scan_id: str = ""
+    ) -> GeminiResult:
+        """묶음별 연계 분석.
+
+        낮은 등급 여러 건이 서로의 전제를 충족시키면 파급력이 커진다. 그 판단에
+        필요한 재료(CVSS 벡터·CWE)는 전부 공개 데이터이므로 이그레스 원칙은
+        그대로다 — **같은 가드를 통과한 VulnFact 만** 나간다.
+
+        묶음 식별자는 `group-1` 같은 번호다. "이 자산에 이것들이 함께 설치되어
+        있다"는 사실 자체가 내부 정보이므로 패키지명으로 묶음을 부르지 않는다.
+        """
+        flat = [fact for group in groups for fact in group.get("vulnerabilities", [])]
+        self._guarded(flat, scan_id=scan_id)
+        return self._request(
+            flat, build_chain_prompt(groups), CHAIN_RESPONSE_SCHEMA, "chains", scan_id=scan_id
+        )
+
+    def _guarded(self, facts: list[dict[str, Any]], *, scan_id: str) -> list[dict[str, Any]]:
+        """마지막 관문. 여기를 통과하지 못한 것은 절대로 나가지 않는다."""
         try:
-            facts = self.guard.enforce(facts)
+            return self.guard.enforce(facts)
         except EgressBlocked as blocked:
             self.audit.record(
                 action="send", outcome="blocked", facts=facts,
@@ -112,8 +139,16 @@ class GeminiClient:
             )
             raise
 
+    def _request(
+        self,
+        facts: list[dict[str, Any]],
+        prompt: str,
+        schema: dict[str, Any],
+        key: str,
+        *,
+        scan_id: str,
+    ) -> GeminiResult:
         client, types = self._client()
-        prompt = build_prompt(facts)
         models = [self.config.gemini_model, self.config.gemini_fallback_model]
         attempts = 0
         last_error: Exception | None = None
@@ -130,14 +165,14 @@ class GeminiClient:
                             temperature=0.2,
                             top_p=0.9,
                             response_mime_type="application/json",
-                            response_schema=RESPONSE_SCHEMA,
+                            response_schema=schema,
                         ),
                     )
                     text = getattr(response, "text", "") or ""
                     payload = extract_json(text)
-                    analyses = payload.get("analyses")
+                    analyses = payload.get(key)
                     if not isinstance(analyses, list):
-                        raise GeminiError("응답에 analyses 배열이 없습니다.")
+                        raise GeminiError(f"응답에 {key} 배열이 없습니다.")
 
                     self.audit.record(
                         action="send", outcome="allowed", facts=facts,

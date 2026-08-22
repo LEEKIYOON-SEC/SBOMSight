@@ -228,7 +228,7 @@ def _load_scan_result(source: str, config=None) -> ScanResult:
                 cvss_version=intel.get("cvss_version", ""), cwe=tuple(intel.get("cwe", ())),
                 description=intel.get("description", ""), published=intel.get("published", ""),
                 references=tuple(intel.get("references", ())),
-                epss=intel.get("epss"), epss_percentile=intel.get("epss_percentile"),
+                epss=intel.get("epss"),
                 epss_snapshot_date=intel.get("epss_snapshot_date", ""),
                 kev=Ternary(intel.get("kev", "unknown")),
                 kev_date_added=intel.get("kev_date_added", ""),

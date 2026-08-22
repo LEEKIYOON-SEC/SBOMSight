@@ -31,6 +31,9 @@
     <dl class="report-meta" id="meta"></dl>
     <div class="toolbar" style="margin-bottom:0">
       <select id="pick-scan"></select>
+      <label class="check" id="ai-wrap" hidden>
+        <input type="checkbox" id="use-ai"> AI 해설 포함
+      </label>
       <div class="spacer"></div>
       <a class="btn" id="back-to-scan">선택 다시 하기</a>
       <button id="print">인쇄 · PDF로 저장</button>
@@ -47,6 +50,11 @@
     <div class="grid cols-4" id="stats" style="margin-bottom:.75rem"></div>
     <div class="flow" id="summary-line" style="margin-bottom:1rem"></div>
     <div class="card" id="snapshot-card"></div>
+  </section>
+
+  <section id="actions" class="hidden">
+    <h2>조치 대상</h2>
+    <div class="card" id="action-table"></div>
   </section>
 
   <div class="layout">
@@ -74,6 +82,15 @@ const params = new URLSearchParams(location.search);
 
 // 스캔 화면에서 체크한 항목이 그대로 넘어온다. 비어 있으면 전체 보고서다.
 const selection = params.getAll('select');
+
+/**
+ * AI 해설을 넣을지 **생성 시점에** 고른다.
+ *
+ * 기본은 미포함이다. 결재 문서를 AI 없이 내야 하는 경우가 있고, 그때는 AI
+ * 관련 문구가 한 줄도 없어야 한다. 켜면 이미 만들어 둔 서술과 연계 분석이
+ * 얹히고, 없으면 생성 버튼이 뜬다.
+ */
+let useAi = params.get('ai') === '1';
 
 function withSelection(base) {
   const query = new URLSearchParams(base);
@@ -197,8 +214,96 @@ function renderFinding(item, index) {
   </section>`;
 }
 
+/**
+ * 2장 조치 대상 — 결재 문서의 본문.
+ *
+ * "패키지 N개를 올리면 취약점 M건이 해소된다"가 담당자가 결재에 올릴 문장이다.
+ * CVE 목록만으로는 그 문장을 만들 수 없다.
+ */
+function renderActionTable(report) {
+  const packages = report.packages || [];
+  const fixable = packages.filter((g) => g.target_version);
+  const blocked = packages.filter((g) => !g.target_version);
+
+  if (!packages.length) {
+    $('#actions').classList.add('hidden');
+    return;
+  }
+  $('#actions').classList.remove('hidden');
+
+  const resolved = fixable.reduce((sum, g) => sum + g.fixable_count, 0);
+  $('#action-table').innerHTML = `
+    ${fixable.length ? `
+      <p>패키지 <b>${fixable.length}개</b>를 업데이트하면 취약점 <b>${resolved}건</b>이 해소됩니다.</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>대응 검토</th><th>패키지</th><th>현재 → 목표</th>
+          <th class="num">해소</th><th>취약점</th></tr></thead>
+        <tbody>${fixable.map((g) => `<tr>
+          <td>${esc(g.priority_label)}</td>
+          <td><b>${esc(g.package)}</b> <span class="faint">${esc(g.package_type)}</span></td>
+          <td class="mono">${esc(g.installed_version)} <span class="arrow">→</span>
+            <b>${esc(g.target_version)}</b></td>
+          <td class="num">${g.fixable_count}</td>
+          <td class="mono faint">${esc(g.cves.join(', '))}</td>
+        </tr>`).join('')}</tbody></table></div>` : '<p class="muted">패치로 해소할 수 있는 항목이 없습니다.</p>'}
+    ${blocked.length ? `
+      <h3>수정 버전이 없는 패키지 (${blocked.length}개)</h3>
+      <p class="muted">업데이트로 해소할 수 없습니다. 완화 방안은 각 항목에 있습니다.</p>
+      <div class="table-scroll"><table>
+        <thead><tr><th>대응 검토</th><th>패키지</th><th>설치 버전</th><th>취약점</th></tr></thead>
+        <tbody>${blocked.map((g) => `<tr>
+          <td>${esc(g.priority_label)}</td>
+          <td><b>${esc(g.package)}</b></td>
+          <td class="mono">${esc(g.installed_version)}</td>
+          <td class="mono faint">${esc(g.cves.join(', '))}</td>
+        </tr>`).join('')}</tbody></table></div>` : ''}`;
+}
+
+/**
+ * 3장 패키지별 상세 — CVE 카드를 패키지 아래로 모은다.
+ *
+ * 조치는 패키지당 한 번이므로 읽는 순서도 그래야 한다. CVE 카드가 평평하게
+ * 늘어서 있으면 같은 패키지의 항목이 어디에 흩어져 있는지 알 수 없다.
+ */
+function renderGroups(report) {
+  const packages = report.packages || [];
+  if (!packages.length) {
+    $('#findings').innerHTML = '';
+    $('#toc-card').classList.add('hidden');
+    return;
+  }
+
+  let index = 0;
+  const sections = packages.map((group, gi) => {
+    const cards = group.findings.map((item) => renderFinding(item, ++index)).join('');
+    return `
+      <section class="group-block" id="g-${gi + 1}">
+        <h2>${esc(group.package)}
+          <small class="faint">${esc(group.package_type)} ·
+            ${esc(group.installed_version)}${group.target_version
+              ? ` → ${esc(group.target_version)}` : ' · 수정 버전 없음'}
+            · 취약점 ${group.cve_count}건</small></h2>
+        ${group.chained_analysis ? `
+          <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin-top:0">연계 분석</h3>
+            <p class="muted">공개 데이터(CVSS 벡터 · CWE)만으로 세운 기술적 연계
+              가능성입니다. 우리 환경의 실제 위험도는 노출 경로와 보상 통제를
+              함께 보아야 합니다.</p>
+            <p>${esc(group.chained_analysis)}</p>
+          </div>` : ''}
+        ${cards}
+      </section>`;
+  });
+
+  $('#findings').innerHTML = sections.join('');
+  $('#toc').innerHTML = packages.map((g, i) =>
+    `<li><a href="#g-${i + 1}">${esc(g.package)}</a>
+       <span class="faint">${g.cve_count}</span></li>`).join('');
+  $('#toc-card').classList.remove('hidden');
+}
+
 async function load(scanId) {
-  const report = await provider.getReport(scanId, 'json', { selection });
+  const report = await provider.getReport(scanId, 'json', { selection, ai: useAi });
   const scan = report.scan || {};
   const scope = report.selection?.scope === 'selection'
     ? `선택한 ${report.findings.length}건`
@@ -212,7 +317,13 @@ async function load(scanId) {
     <dt>컴포넌트</dt><dd>${scan.component_count ?? 0}개</dd>
     <dt>보고서 범위</dt><dd>${esc(scope)}</dd>
     <dt>판정 기준</dt><dd>${esc(report.policy?.label || '')}</dd>
-    <dt>서술 생성</dt><dd>${report.ai_used ? 'AI 사용' : 'AI 미사용 (룰 기반)'}</dd>`;
+    ${report.ai_used ? '<dt>서술 생성</dt><dd>AI 사용 (공개 취약점 데이터만 전달)</dd>' : ''}`;
+
+  // AI 서술이 실제로 저장되어 있을 때만 선택지를 보여 준다. 만들어 둔 것이
+  // 없는데 체크박스만 있으면, 켜도 아무것도 달라지지 않아 고장으로 읽힌다.
+  const stored = await provider.getScan(scanId).catch(() => null);
+  const hasNarratives = (stored?.narratives?.count || 0) > 0;
+  $('#ai-wrap').hidden = !hasNarratives && !useAi;
 
   // 부분 보고서라면 그 사실을 문서 앞머리에 남긴다 — 결재 문서로 나갈 때
   // "전체 스캔 결과"로 오독되면 안 된다.
@@ -240,12 +351,10 @@ async function load(scanId) {
     : '<p class="muted">위협정보 보강 없이 생성된 보고서입니다. EPSS·KEV·Exploit이 미확인으로 남아 있습니다.</p>';
   $('#summary').classList.remove('hidden');
 
-  $('#findings').innerHTML = report.findings.map(renderFinding).join('');
-  $('#toc').innerHTML = report.findings.map((item, i) =>
-    `<li>${priorityPill(item.priority)}<a href="#f-${i + 1}">${esc(item.cve)}</a></li>`).join('');
-  $('#toc-card').classList.toggle('hidden', !report.findings.length);
+  renderActionTable(report);
+  renderGroups(report);
 
-  $('#dl-md').href = provider.reportUrl(scanId, 'markdown', { selection });
+  $('#dl-md').href = provider.reportUrl(scanId, 'markdown', { selection, ai: useAi });
   $('#dl-md').download = `sbomsight-${scanId}.md`;
 
   if (provider.readonly) {
@@ -253,12 +362,24 @@ async function load(scanId) {
     // 인쇄(PDF)를 제공하므로 버튼을 감춘다.
     $('#dl-html').classList.add('hidden');
   } else {
-    $('#dl-html').href = provider.reportUrl(scanId, 'html', { selection });
+    $('#dl-html').href = provider.reportUrl(scanId, 'html', { selection, ai: useAi });
     $('#dl-html').download = `sbomsight-${scanId}.html`;
   }
 }
 
 $('#print').addEventListener('click', () => window.print());
+
+// --- AI 해설 포함 여부 ------------------------------------------------------
+$('#use-ai').checked = useAi;
+$('#use-ai').addEventListener('change', (event) => {
+  useAi = event.target.checked;
+  const query = withSelection({ scan: picker.value });
+  if (useAi) query.set('ai', '1');
+  history.replaceState(null, '', `?${query}`);
+  load(picker.value).catch((error) => {
+    $('#banner').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+  });
+});
 
 // --- 스캔 선택 --------------------------------------------------------------
 const picker = $('#pick-scan');

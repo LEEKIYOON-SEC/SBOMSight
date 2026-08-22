@@ -206,9 +206,10 @@ class VulnIntel:
     published: str = ""
     references: tuple[str, ...] = ()
 
-    # EPSS (FIRST)
+    # EPSS — 30일 내 악용 관측 확률. **확률 하나만 쓴다.**
+    # 백분위는 두지 않는다. "확률 0.11%인데 상위 12%" 라는 두 숫자가 나란히
+    # 있으면 어느 쪽을 봐야 하는지 알 수 없고, 판정 룰도 확률만 본다.
     epss: float | None = None
-    epss_percentile: float | None = None
     epss_snapshot_date: str = ""
 
     # CISA KEV — 실제 악용 확인

@@ -1,21 +1,19 @@
 """취약점 대응 검토 보고서 조립.
 
 보고서는 **"AI가 쓴 취약점 보고서"가 아니라 "공개 취약점 데이터 + 로컬
-SBOM/Grype 결과 + (선택) AI 자연어 분석"** 으로 읽혀야 한다. 그래서
-모든 항목에 근거 배지와 출처가 붙고, AI가 쓴 문장과 룰이 만든 문장을
-구분해 표시한다(`Narrative.source`).
+SBOM/Grype 결과 + (선택) AI 자연어 분석"** 으로 읽혀야 한다. 그래서 모든 항목에
+근거가 붙고, AI가 쓴 문장과 룰이 만든 문장을 구분해 표시한다(`Narrative.source`).
 
-절 구성 (CVE 단위):
-    ① 취약점 개요        공개 데이터
-    ② 기술적 위험성      CVSS 벡터·CWE(룰) + AI 서술
-    ③ 악용 가능성        공개 데이터 (EPSS · KEV · Exploit, 출처 포함)
-    ④ 대응 필요성 분석   우선순위=룰, 서술=AI
-    ⑤ 권고사항          Playbook(룰) + AI 부연
-    ⑥ 근거 및 Reference  공개 데이터
+두 층으로 조립한다.
 
-    [로컬 분석 정보]     AI 미전달 — 설치 버전, FixAnalysis, Grype 탐지 근거
+    FindingReport  CVE 한 건 — 개요·기술적 위험성·악용 가능성·대응 근거·권고·참조
+    PackageGroup   설치 패키지 한 개 — 그 패키지에 걸린 CVE 들과 **한 번의 조치**
 
-AI가 없어도 ②④⑤가 룰 문장으로 채워져 보고서가 완결된다.
+렌더링은 `PackageGroup` 을 축으로 한다. CVE 단위는 조치 단위와 어긋나기 때문이다 —
+`openssl` 을 한 번 올리면 CVE 5건이 함께 해소되는데, CVE 단위 문서는 같은 절차를
+다섯 번 설명한다. `FindingReport` 목록은 화면과 선택 기능이 그대로 쓴다.
+
+AI 가 없어도 룰 문장으로 채워져 보고서가 완결된다.
 """
 
 from __future__ import annotations
@@ -25,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from . import cvss as cvss_mod
+from . import cvss as cvss_mod, versioning
 from .config import Config, get_config
 from .models import (
     ExploitMaturity,
@@ -41,12 +39,42 @@ from .ruleengine import RuleEngine, sort_key
 
 # 보고서 머리말. 이 도구의 성격을 읽는 사람이 오해하지 않도록 항상 싣는다.
 DISCLAIMER = (
-    "이 보고서는 공개된 취약점 데이터(CVSS · EPSS · CISA KEV · 공개 Exploit)와 "
-    "로컬 SBOM/Grype 탐지 결과를 결합해 **대응 여부를 검토하기 위한 근거**를 "
-    "정리한 것이다. 여기서 제시하는 '대응 검토 우선순위'는 아래 명시된 정책 룰을 "
-    "공개 데이터에 적용한 결과이며, 조직 내부의 실제 위험도와 최종적인 패치 여부는 "
-    "자산의 노출 경로·보상 통제·업무 영향을 함께 고려해 보안담당자가 판단한다."
+    "대응 검토 우선순위는 공개 데이터에 판정 기준을 적용한 결과이며, "
+    "내부 실제 위험도와 최종 패치 여부는 보안담당자가 판단합니다."
 )
+
+_PRIORITY_ORDER = (Priority.P0, Priority.P1, Priority.P2, Priority.P3)
+
+
+def _highest_version(versions: list[str], comparator: str) -> str:
+    """묶음을 전부 해소하는 데 필요한 **가장 높은** 수정 버전.
+
+    가장 낮은 것으로 올리면 나머지 CVE 가 남는다. 비교자가 두 값의 순서를
+    판단하지 못하면(`None`) 바꾸지 않는다 — 모르는 채로 더 높다고 단정하는 것이
+    가장 나쁘다.
+    """
+    best = ""
+    for version in versions:
+        if not best:
+            best = version
+            continue
+        order = versioning.compare(version, best, comparator)
+        if order is not None and order > 0:
+            best = version
+    return best
+
+
+def _percent(value: float) -> str:
+    """EPSS 확률을 사람이 읽는 백분율로. `0.0011` → `0.11%`.
+
+    소수점 넷째 자리 원값은 담당자가 매번 머릿속에서 100을 곱해야 하는 숫자다.
+    아주 작은 값은 `0.00%` 로 뭉개지 않고 `<0.01%` 로 쓴다 — 0 과 구분되어야 한다.
+    """
+    percent = value * 100
+    if 0 < percent < 0.01:
+        return "<0.01%"
+    return f"{percent:.2f}".rstrip("0").rstrip(".") + "%"
+
 
 _SEVERITY_LABEL = {
     Severity.CRITICAL: "Critical",
@@ -128,9 +156,43 @@ class FindingReport:
     response_rationale: dict[str, Any]  # ④
     recommendation: Recommendation      # ⑤
     references: tuple[dict[str, str], ...]  # ⑥
-    local_analysis: dict[str, Any]      # [로컬 분석 정보] — AI 미전달
+    local_analysis: dict[str, Any]      # 이 자산에서 — 설치 버전·FixAnalysis·탐지 근거
     flags: tuple[dict[str, str], ...]
     narrative_source: str
+
+
+@dataclass(frozen=True)
+class PackageGroup:
+    """같은 설치 패키지에 걸린 취약점들을 한 묶음으로.
+
+    **CVE 단위는 조치 단위와 어긋난다.** `openssl` 을 3.0.7-27 로 올리면 CVE 5건이
+    한 번에 해소되는데, CVE 단위 보고서는 같은 패치 절차를 다섯 번 설명한다.
+    실무자가 실제로 실행하는 것은 "패키지 업데이트" 한 번이다.
+
+    `target_version` 은 이 묶음을 전부 해소하는 데 필요한 **가장 높은** 수정
+    버전이다. 가장 낮은 것으로 올리면 나머지가 남는다.
+    """
+
+    package: str
+    package_type: str
+    installed_version: str
+    target_version: str
+    priority: Priority
+    priority_label: str
+    cve_count: int
+    fixable_count: int
+    no_fix_count: int
+    kev_count: int
+    max_cvss: float | None
+    max_epss: float | None
+    cves: tuple[str, ...]
+    findings: tuple[FindingReport, ...]
+    recommendation: Recommendation | None = None
+    chained_analysis: str = ""      # AI 사용 시에만 채워진다
+
+    @property
+    def resolvable(self) -> bool:
+        return bool(self.target_version)
 
 
 @dataclass
@@ -139,6 +201,7 @@ class Report:
     scan: dict[str, Any]
     summary: dict[str, Any]
     findings: list[FindingReport] = field(default_factory=list)
+    packages: list[PackageGroup] = field(default_factory=list)
     policy: dict[str, Any] = field(default_factory=dict)
     enrichment: dict[str, Any] = field(default_factory=dict)
     disclaimer: str = DISCLAIMER
@@ -200,18 +263,13 @@ def _rule_exploitability_note(finding: Finding) -> str:
         parts.append("CISA KEV 등재 여부를 확인하지 못했다")
 
     if intel.epss is not None:
-        # 숫자 뒤 조사(로/으로)는 읽는 방식에 따라 갈리므로 조사를 붙이지 않는다.
-        sentence = (
-            f"EPSS 점수는 {intel.epss:.4f} — 향후 30일 내 악용 시도가 관측될 확률이 "
-            f"{intel.epss * 100:.1f}%로 추정된다"
+        # 확률 하나만 쓴다. 백분위를 함께 쓰면 두 숫자 중 어느 쪽을 봐야 하는지
+        # 알 수 없다. 숫자 뒤 조사(로/으로)는 읽는 방식에 따라 갈리므로 붙이지 않는다.
+        parts.append(
+            f"향후 30일 내 악용 시도가 관측될 확률은 {_percent(intel.epss)}로 추정된다 (EPSS)"
         )
-        if intel.epss_percentile is not None:
-            # percentile은 '이 CVE보다 낮은 비율'이므로 상위 비율은 그 여집합이다.
-            top = (1 - intel.epss_percentile) * 100
-            sentence += f" (전체 CVE 중 상위 {top:.1f}% 구간)"
-        parts.append(sentence)
     else:
-        parts.append("EPSS 점수를 확보하지 못했다 (악용 가능성이 낮다는 뜻은 아니다)")
+        parts.append("악용 예측(EPSS) 값을 확보하지 못했다 (악용 가능성이 낮다는 뜻은 아니다)")
 
     if intel.exploit_available is Ternary.TRUE:
         names = sorted({_EXPLOIT_SOURCE_LABEL.get(s.source, s.source) for s in intel.exploit_sources})
@@ -279,9 +337,8 @@ def _build_badge(finding: Finding, engine: RuleEngine) -> EvidenceBadge:
 
     epss = "미확인"
     if intel.epss is not None:
-        percentile = f" · 백분위 {intel.epss_percentile:.4f}" if intel.epss_percentile is not None else ""
         snapshot = f" · 기준일 {intel.epss_snapshot_date}" if intel.epss_snapshot_date else ""
-        epss = f"{intel.epss:.4f}{percentile}{snapshot}"
+        epss = f"{_percent(intel.epss)}{snapshot}"
 
     if intel.kev is Ternary.TRUE:
         kev = f"YES (등재 {intel.kev_date_added})" if intel.kev_date_added else "YES"
@@ -426,13 +483,17 @@ class ReportBuilder:
         result: ScanResult,
         *,
         narratives: dict[str, Narrative] | None = None,
+        chains: dict[str, str] | None = None,
     ) -> Report:
         """스캔 결과를 보고서로 옮긴다.
 
         narratives: CVE ID → AI가 생성한 서술. 없으면 전부 룰 문장으로 채운다.
-                    이 인자가 비어 있어도 보고서는 완결된다.
+        chains:     패키지명 → AI가 생성한 연계 분석. 없으면 그 절이 빠진다.
+
+        두 인자가 모두 비어 있어도 보고서는 완결된다 — 그것이 이 도구의 전제다.
         """
         narratives = narratives or {}
+        chains = chains or {}
         findings = sorted(result.findings, key=sort_key)
         items = [self._build_finding(f, narratives.get(f.intel.cve)) for f in findings]
 
@@ -441,6 +502,7 @@ class ReportBuilder:
             scan=to_jsonable(result.metadata),
             summary=self._summarize(findings),
             findings=items,
+            packages=self._group_by_package(findings, items, chains),
             policy=result.policy or {
                 "version": self.engine.policy.version,
                 "sha256": self.engine.policy.sha256,
@@ -448,7 +510,7 @@ class ReportBuilder:
                 "label": self.engine.policy.label,
             },
             enrichment=result.enrichment,
-            ai_used=any(i.narrative_source == "ai" for i in items),
+            ai_used=any(i.narrative_source == "ai" for i in items) or bool(chains),
         )
 
     def _build_finding(self, finding: Finding, ai: Narrative | None) -> FindingReport:
@@ -510,7 +572,6 @@ class ReportBuilder:
             },
             exploitability={
                 "epss": finding.intel.epss,
-                "epss_percentile": finding.intel.epss_percentile,
                 "epss_snapshot_date": finding.intel.epss_snapshot_date,
                 "kev": finding.intel.kev.value,
                 "kev_date_added": finding.intel.kev_date_added,
@@ -544,6 +605,87 @@ class ReportBuilder:
             local_analysis=_build_local_analysis(finding),
             flags=tuple(self.engine.describe_flag(f) for f in (verdict.flags if verdict else ())),
             narrative_source=narrative.source,
+        )
+
+    def _group_by_package(
+        self,
+        findings: list[Finding],
+        items: list[FindingReport],
+        chains: dict[str, str] | None = None,
+    ) -> list[PackageGroup]:
+        """설치 패키지 단위로 묶는다. 조치 단위가 그것이기 때문이다.
+
+        묶는 키는 `(패키지명, 설치 버전, 유형)` 이다. 같은 이름이라도 버전이
+        다르면 다른 설치본이고 조치도 따로다 — 컨테이너 이미지 여러 개를 한
+        SBOM 에 담으면 실제로 그런 일이 생긴다.
+        """
+        buckets: dict[tuple[str, str, str], list[tuple[Finding, FindingReport]]] = {}
+        for finding, item in zip(findings, items):
+            key = (finding.installed.name, finding.installed.version, finding.installed.type)
+            buckets.setdefault(key, []).append((finding, item))
+
+        chains = chains or {}
+        groups = [
+            self._build_group(key, pairs, chains.get(key[0], ""))
+            for key, pairs in buckets.items()
+        ]
+        # 대응 검토가 급한 것부터, 같으면 해소되는 건수가 많은 것부터.
+        # 한 번의 업데이트로 다섯 건이 사라지는 패키지가 먼저 눈에 들어와야 한다.
+        groups.sort(key=lambda g: (_PRIORITY_ORDER.index(g.priority), -g.cve_count, g.package))
+        return groups
+
+    def _build_group(
+        self,
+        key: tuple[str, str, str],
+        pairs: list[tuple[Finding, FindingReport]],
+        chained_analysis: str = "",
+    ) -> PackageGroup:
+        package, installed_version, package_type = key
+        findings = [f for f, _ in pairs]
+        items = [i for _, i in pairs]
+
+        comparator = versioning.comparator_for(package_type)
+        target = _highest_version(
+            [f.advisory.fixed_version for f in findings if f.advisory.fixed_version], comparator
+        )
+
+        priority = min(
+            (f.verdict.priority for f in findings if f.verdict),
+            key=_PRIORITY_ORDER.index,
+            default=Priority.P3,
+        )
+        scores = [f.intel.cvss_score for f in findings if f.intel.cvss_score is not None]
+        epss = [f.intel.epss for f in findings if f.intel.epss is not None]
+
+        recommendation = None
+        if target:
+            # 조치는 묶음당 한 번이다. 대표 절차를 최고 목표 버전 기준으로 만든다.
+            recommendation = self.playbooks.build(
+                ecosystem=package_type or findings[0].advisory.advisory_ecosystem,
+                package=package,
+                installed_version=installed_version,
+                fixed_version=target,
+                cve=", ".join(dict.fromkeys(f.intel.cve for f in findings)),
+                os_family=findings[0].advisory.os_family,
+            )
+
+        return PackageGroup(
+            package=package,
+            package_type=package_type,
+            installed_version=installed_version,
+            target_version=target,
+            priority=priority,
+            priority_label=self.engine.describe_level(priority).get("label", priority.value),
+            cve_count=len(findings),
+            fixable_count=sum(1 for f in findings if f.advisory.fixed_version),
+            no_fix_count=sum(1 for f in findings if not f.advisory.fixed_version),
+            kev_count=sum(1 for f in findings if f.intel.kev is Ternary.TRUE),
+            max_cvss=max(scores) if scores else None,
+            max_epss=max(epss) if epss else None,
+            cves=tuple(dict.fromkeys(f.intel.cve for f in findings)),
+            findings=tuple(items),
+            recommendation=recommendation,
+            chained_analysis=chained_analysis,
         )
 
     def _summarize(self, findings: Iterable[Finding]) -> dict[str, Any]:

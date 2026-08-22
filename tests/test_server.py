@@ -215,7 +215,9 @@ class TestReportEndpoint:
         md = client.get(f"/api/scans/{seeded_scan}/report?format=markdown")
         assert md.status_code == 200
         assert "취약점 대응 검토 보고서" in md.text
-        assert "[로컬 분석 정보] · AI 미전달" in md.text
+        assert "## 2. 조치 대상" in md.text
+        # AI 를 쓰지 않은 보고서에는 전송 관련 문구가 한 줄도 없다.
+        assert "AI 미전달" not in md.text
 
         html = client.get(f"/api/scans/{seeded_scan}/report?format=html")
         assert html.status_code == 200

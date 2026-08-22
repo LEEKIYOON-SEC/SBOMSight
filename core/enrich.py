@@ -47,7 +47,7 @@ class SourceStatus:
     """소스 하나의 수집 결과. UI의 '위협정보 보강' 단계에 그대로 표시된다."""
 
     name: str
-    state: str = "skipped"          # ok / cached / failed / skipped / offline
+    state: str = "skipped"    # ok / cached / failed / skipped / offline / disabled
     snapshot_date: str = ""
     fetched_at: str = ""
     entries: int = 0
@@ -80,6 +80,10 @@ class BulkSource:
 
     name = ""
     url = ""
+    # 선택 소스는 명시적으로 켜야 수집한다. 라이선스 검토가 필요하거나,
+    # 켜서 얻는 신호가 판정에 결정적이지 않은 것들이다.
+    optional = False
+    license = ""
 
     def __init__(self, config: Config):
         self.config = config
@@ -128,8 +132,23 @@ class BulkSource:
 
     # -- 적재 -------------------------------------------------------------
 
+    def enabled(self) -> bool:
+        """선택 소스인지, 켜져 있는지."""
+        return not self.optional or self.name in self.config.optional_sources
+
     def load(self, *, force: bool = False) -> tuple[dict[str, Any], SourceStatus]:
         status = SourceStatus(name=self.name)
+
+        if not self.enabled():
+            # **끈 것을 '없음'으로 처리하지 않는다.** 이 소스가 담당하던 신호는
+            # unknown 으로 남고, Rule Engine 이 그렇게 표시한다.
+            status.state = "disabled"
+            status.detail = (
+                f"기본 꺼짐 — SBOMSIGHT_COLLECT_{self.name.upper()}=1 로 켤 수 있습니다."
+                + (f" 라이선스: {self.license}" if self.license else "")
+            )
+            return {}, status
+
         cached = self._read_cache()
 
         if cached and not force:
@@ -204,7 +223,7 @@ class EpssSource(BulkSource):
             if not cve:
                 continue
             try:
-                index[cve] = [float(row.get("epss") or 0), float(row.get("percentile") or 0)]
+                index[cve] = float(row.get("epss") or 0)
             except ValueError:
                 continue
         return index, snapshot_date
@@ -242,9 +261,22 @@ class KevSource(BulkSource):
 
 
 class ExploitDbSource(BulkSource):
-    """Exploit-DB 인덱스. 공개 exploit/PoC 코드의 존재를 알려 준다."""
+    """Exploit-DB 인덱스. 공개 exploit/PoC 코드의 존재를 알려 준다.
+
+    **기본은 꺼져 있다** (`SBOMSIGHT_COLLECT_EXPLOITDB=1` 로 켠다). 두 가지 이유다.
+
+    1. Exploit-DB 는 GPL-2.0 (copyleft) 로 배포된다. 조회에만 쓰는 것과 우리
+       산출물에 담아 배포하는 것은 성격이 다르고, 사내 반입·배포 기준에 맞는지는
+       확인이 필요하다. (저는 법률 판단을 할 수 없습니다. 기본을 끔으로 두는
+       이유가 이것입니다.)
+    2. 켜서 얻는 것은 "공격코드가 공개되어 있다"는 신호 하나인데, 실제 악용
+       확인(KEV)과 악용 확률(EPSS)은 Grype 가 이미 준다. 우선순위 판정에
+       결정적이지 않다.
+    """
 
     name = "exploitdb"
+    license = "GPL-2.0 (copyleft — 사내 반입·배포 기준 확인 필요)"
+    optional = True
     url = "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv"
 
     def parse(self, raw: bytes) -> tuple[dict[str, Any], str]:
@@ -275,9 +307,15 @@ class MetasploitSource(BulkSource):
     모듈이 존재한다는 것은 **즉시 사용 가능한 공격 도구가 공개되어 있다**는
     뜻이므로 exploit_maturity를 weaponized로 본다. PoC 코드 한 조각이 있는
     것과는 다른 수준의 신호다.
+
+    기본은 꺼져 있다 (`SBOMSIGHT_COLLECT_METASPLOIT=1` 로 켠다). 라이선스는
+    BSD 3-Clause 계열이라 고지하면 무난하지만, 이 신호 없이도 KEV·EPSS 로
+    우선순위가 정해지므로 네트워크를 쓰지 않는 쪽을 기본으로 둔다.
     """
 
     name = "metasploit"
+    license = "BSD 3-Clause 계열 (출처 고지 권장)"
+    optional = True
     url = "https://raw.githubusercontent.com/rapid7/metasploit-framework/master/db/modules_metadata_base.json"
 
     def parse(self, raw: bytes) -> tuple[dict[str, Any], str]:
@@ -469,17 +507,20 @@ class Enricher:
         patch: dict[str, Any] = {}
 
         # --- EPSS ---------------------------------------------------------
-        if epss_status.usable:
+        # **Grype 가 준 값이 있으면 건드리지 않는다.** 판정의 근간(CVSS·수정 상태)과
+        # 같은 출처에서 온 값이라, 다른 날짜의 외부 스냅샷으로 덮어쓰면 한 화면
+        # 안에서 두 시점이 섞인다. 비어 있을 때만 채운다.
+        if finding.intel.epss is None and epss_status.usable:
             row = epss_index.get(cve)
-            if row:
-                patch["epss"] = row[0]
-                patch["epss_percentile"] = row[1]
+            if row is not None:
+                patch["epss"] = row
             patch["epss_snapshot_date"] = epss_status.snapshot_date
         # 소스를 못 쓴 경우 epss는 None으로 남고, Rule Engine이
         # unknown_epss 플래그를 세운다. 0.0으로 채우지 않는다.
 
         # --- CISA KEV -----------------------------------------------------
-        if kev_status.usable:
+        # 여기도 Grype 가 답했으면 그 답을 쓴다.
+        if finding.intel.kev is Ternary.UNKNOWN and kev_status.usable:
             entry = kev_index.get(cve)
             patch["kev"] = Ternary.TRUE if entry else Ternary.FALSE
             patch["kev_snapshot_date"] = kev_status.snapshot_date

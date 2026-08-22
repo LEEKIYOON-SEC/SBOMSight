@@ -56,6 +56,14 @@ class Config:
         or "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
     )
     nvd_api_key: str = field(default_factory=lambda: _env("NVD_API_KEY"))
+    # 선택 수집기. 기본은 전부 꺼져 있다.
+    #
+    # EPSS·KEV 는 Grype 가 판정과 같은 출처에서 함께 준다. 남는 것은
+    # "공격코드가 공개되어 있다"는 신호 하나인데, Exploit-DB 는 GPL-2.0
+    # (copyleft) 이라 사내 반입·배포 기준 확인이 필요하다. 켜지 않아도
+    # 우선순위 판정은 KEV·EPSS·CVSS 로 성립한다.
+    collect_exploitdb: bool = field(default_factory=lambda: _env_bool("SBOMSIGHT_COLLECT_EXPLOITDB", False))
+    collect_metasploit: bool = field(default_factory=lambda: _env_bool("SBOMSIGHT_COLLECT_METASPLOIT", False))
     # 스냅샷이 이보다 오래되면 stale_snapshot 플래그를 세운다.
     snapshot_stale_days: int = field(default_factory=lambda: _env_int("SBOMSIGHT_SNAPSHOT_STALE_DAYS", 7))
 
@@ -114,6 +122,16 @@ class Config:
     def ensure_dirs(self) -> None:
         for path in (self.data_dir, self.upload_dir, self.audit_dir, self.cache_dir):
             path.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def optional_sources(self) -> frozenset[str]:
+        """켜져 있는 선택 수집기 이름."""
+        return frozenset(
+            name for name, on in (
+                ("exploitdb", self.collect_exploitdb),
+                ("metasploit", self.collect_metasploit),
+            ) if on
+        )
 
     def ai_ready(self) -> bool:
         """AI를 실제로 호출할 수 있는 상태인지."""

@@ -220,23 +220,41 @@ class TestSummary:
 
 
 class TestRendering:
-    def test_markdown_has_disclaimer_and_all_sections(self, report):
+    def test_markdown_has_the_three_chapters(self, report):
         text = to_markdown(report)
-        assert "보안담당자가 판단한다" in text
-        for heading in ("① 취약점 개요", "② 기술적 위험성", "③ 악용 가능성",
-                        "④ 대응 필요성 분석", "⑤ 권고사항", "⑥ 근거 및 Reference"):
+        assert "보안담당자가 판단합니다" in text
+        for heading in ("## 1. 요약", "## 2. 조치 대상", "## 3. 패키지별 상세"):
             assert heading in text
-        assert "[로컬 분석 정보] · AI 미전달" in text
 
-    def test_markdown_marks_rule_vs_ai(self, report):
-        assert "AI 미사용 (룰 기반)" in to_markdown(report)
+    def test_markdown_without_ai_says_nothing_about_sending(self, report):
+        """AI 를 쓰지 않고 뽑은 문서에는 전송 관련 문구가 **한 줄도 없어야** 한다.
+
+        쓰지 않은 기능에 대한 해명은 군더더기다.
+        """
+        text = to_markdown(report)
+        for phrase in ("AI 미전달", "외부로 전달", "전송", "로컬 분석 정보"):
+            assert phrase not in text, f"AI 미사용 보고서에 '{phrase}' 가 남아 있습니다"
+
+    def test_markdown_groups_by_package_not_by_cve(self, report):
+        """같은 패키지의 CVE 두 건은 한 절에 들어간다 — 조치가 한 번이기 때문이다."""
+        text = to_markdown(report)
+        for group in report.packages:
+            heading = f"{group.package}"
+            assert text.count(f"### 3.") == len(report.packages)
+            assert heading in text
+
+    def test_markdown_action_table_lists_target_version(self, report):
+        text = to_markdown(report)
+        for group in report.packages:
+            if group.resolvable:
+                assert f"`{group.installed_version}` → `{group.target_version}`" in text
 
     def test_html_renders_and_escapes(self, report):
         page = to_html(report)
         assert page.startswith("<!doctype html>")
-        assert "AI 미전달" in page
+        assert "AI 미전달" not in page
         assert "<script>" not in page          # 설명문에 스크립트가 섞여도 이스케이프된다
-        assert "폐쇄망" in page
+        assert "3. 패키지별 상세" in page
 
     def test_html_escapes_hostile_description(self, scan_result):
         """SBOM·advisory 문자열이 그대로 HTML에 들어가면 안 된다."""

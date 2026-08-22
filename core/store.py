@@ -55,6 +55,18 @@ CREATE TABLE IF NOT EXISTS narratives (
     PRIMARY KEY (scan_id, cve)
 );
 
+-- 패키지 묶음별 연계 분석. 낮은 등급 여러 건이 서로의 전제를 충족시키면
+-- 파급력이 커진다는 판단을 AI가 서술한 것이다. 서술은 공개 데이터에서 나온
+-- 산문이지만 어느 스캔의 어느 패키지에 붙었는지는 내부 맥락이다.
+CREATE TABLE IF NOT EXISTS chains (
+    scan_id    TEXT NOT NULL,
+    package    TEXT NOT NULL,
+    analysis   TEXT NOT NULL,
+    model      TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (scan_id, package)
+);
+
 -- 담당자가 고른 항목. 보고서와 AI 전송의 범위이자, 나중에 "이 보고서는
 -- 무엇을 대상으로 만들어졌는가"를 되짚는 근거다. 선택 키에는 설치 패키지명과
 -- 설치 버전이 들어 있으므로 이 DB 밖으로 나가지 않는다.
@@ -235,6 +247,7 @@ class Store:
         with self._connect() as conn:
             conn.execute("DELETE FROM findings WHERE scan_id = ?", (scan_id,))
             conn.execute("DELETE FROM narratives WHERE scan_id = ?", (scan_id,))
+            conn.execute("DELETE FROM chains WHERE scan_id = ?", (scan_id,))
             conn.execute("DELETE FROM selections WHERE scan_id = ?", (scan_id,))
             conn.execute("DELETE FROM scans WHERE scan_id = ?", (scan_id,))
 
@@ -299,6 +312,32 @@ class Store:
     def clear_narratives(self, scan_id: str) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM narratives WHERE scan_id = ?", (scan_id,))
+            conn.execute("DELETE FROM chains WHERE scan_id = ?", (scan_id,))
+
+    # --- 연계 분석 --------------------------------------------------------
+
+    def save_chains(self, scan_id: str, chains: dict[str, str], model: str = "") -> None:
+        """패키지명 → 연계 분석 서술.
+
+        서술 자체는 공개 데이터에서 나온 산문이지만, **어느 스캔의 어느 패키지에
+        붙었는지는 내부 맥락**이라 이 DB 안에만 둔다.
+        """
+        if not chains:
+            return
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO chains (scan_id, package, analysis, model, created_at) "
+                "VALUES (?,?,?,?,?)",
+                [(scan_id, package, text, model, now) for package, text in chains.items()],
+            )
+
+    def get_chains(self, scan_id: str) -> dict[str, str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT package, analysis FROM chains WHERE scan_id = ?", (scan_id,)
+            ).fetchall()
+        return {r["package"]: r["analysis"] for r in rows}
 
     # --- 위협정보 캐시 -----------------------------------------------------
 

@@ -233,3 +233,143 @@ def regenerate_with_tone_retry(
         pending = retry
 
     return narratives
+
+
+# ---------------------------------------------------------------------------
+# 연계 분석 — 패키지 묶음 단위
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ChainRun:
+    """연계 분석 1회의 결과와 경위."""
+
+    analyses: dict[str, str] = dataclass_field(default_factory=dict)  # 패키지명 → 서술
+    rejected: tuple[dict[str, Any], ...] = ()
+    errors: tuple[str, ...] = ()
+    model: str = ""
+    requested: int = 0
+    available: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "applied": len(self.analyses),
+            "requested": self.requested,
+            "rejected": list(self.rejected),
+            "errors": list(self.errors),
+            "model": self.model,
+            "available": self.available,
+        }
+
+
+def build_chain_groups(
+    packages: list[Any],
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """PackageGroup 목록을 전송 가능한 묶음 데이터로 옮긴다.
+
+    돌려주는 것은 `(전송할 묶음, 묶음번호 → 패키지명)` 이다. **패키지명은 전송
+    데이터에 들어가지 않는다** — advisory 가 지목한 패키지명은 이미 VulnFact 안에
+    공개 데이터로 있지만, "이것들이 한 자산에 함께 설치되어 있다"는 사실 자체는
+    내부 정보다. 되돌리는 표는 우리 쪽에만 남는다.
+
+    취약점이 한 건뿐인 묶음은 보내지 않는다. 혼자서는 연쇄할 상대가 없다.
+    """
+    groups: list[dict[str, Any]] = []
+    index: dict[str, str] = {}
+    for number, group in enumerate(packages, 1):
+        if group.cve_count < 2:
+            continue
+        key = f"group-{number}"
+        index[key] = group.package
+        groups.append({
+            "group": key,
+            "vulnerabilities": [
+                build_vuln_fact_from_report(item) for item in group.findings
+            ],
+        })
+    return groups, index
+
+
+def build_vuln_fact_from_report(item: Any) -> dict[str, Any]:
+    """FindingReport 에서 공개 계층만 뽑는다.
+
+    `core.vulnfact.build_vuln_fact` 와 같은 원칙이지만 입력이 보고서 항목이다.
+    보고서를 다시 만들지 않고 이미 조립된 것에서 꺼내 쓰기 위한 것이며,
+    **화이트리스트로 만든다** — 필드를 빠뜨려서 새는 것이 아니라, 적지 않은
+    필드는 애초에 들어갈 자리가 없다.
+    """
+    o = item.overview
+    e = item.exploitability
+    return {
+        "cve": item.cve,
+        "cvss_score": o.get("cvss_score"),
+        "cvss_vector": o.get("cvss_vector", ""),
+        "severity": o.get("severity", ""),
+        "cwe": list(o.get("cwe") or ()),
+        "epss": e.get("epss"),
+        "kev": e.get("kev", "unknown"),
+        "exploit_available": e.get("exploit_available", "unknown"),
+        "advisory_package": o.get("advisory_package", ""),
+        "advisory_ecosystem": o.get("advisory_ecosystem", ""),
+        "affected_version_range": o.get("affected_version_range", ""),
+        "fixed_version": o.get("fixed_version", ""),
+    }
+
+
+def run_chain_analysis(
+    packages: list[Any],
+    *,
+    config: Config | None = None,
+    scan_id: str = "",
+) -> ChainRun:
+    """패키지 묶음별 연계 분석을 생성한다.
+
+    전달되는 것은 VulnFact 뿐이고, 같은 이그레스 가드를 통과한다.
+    """
+    config = config or get_config()
+    guard = EgressGuard.from_config(config)
+    audit = AuditLog(config.audit_dir)
+    client = GeminiClient(config, guard=guard, audit=audit)
+    tone = ToneGuard.from_config(config)
+
+    if not client.available():
+        return ChainRun(available=False)
+
+    groups, index = build_chain_groups(packages)
+    if not groups:
+        return ChainRun(requested=0)
+
+    analyses: dict[str, str] = {}
+    rejected: list[dict[str, Any]] = []
+    errors: list[str] = []
+    model = ""
+
+    try:
+        result = client.analyze_chains(groups, scan_id=scan_id)
+    except EgressBlocked:
+        raise
+    except (GeminiUnavailable, GeminiError) as exc:
+        logger.warning("연계 분석 생성 실패, 보고서는 연계 분석 없이 나갑니다: %s", exc)
+        return ChainRun(requested=len(groups), errors=(str(exc),))
+
+    model = result.model
+    for chain in result.analyses:
+        key = str(chain.get("group") or "")
+        text = str(chain.get("analysis") or "").strip()
+        package = index.get(key)
+        if not package or not text:
+            continue
+        violations = tone.inspect({"chain": text})
+        if violations:
+            logger.warning(
+                "%s: 표현 정책 위반 %s — 연계 분석을 버립니다",
+                package, [v.rule for v in violations],
+            )
+            rejected.append({"package": package, "rules": sorted({v.rule for v in violations})})
+            continue
+        analyses[package] = text
+
+    return ChainRun(
+        analyses=analyses, rejected=tuple(rejected), errors=tuple(errors),
+        model=model, requested=len(groups),
+    )

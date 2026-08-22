@@ -25,14 +25,17 @@ from core import (
 )
 from core.accounts import AccountError, VIEWER
 from core.assets import Asset, AssetError, Assets
-from core.ai_narrative import narrative_from_dict, narrative_to_dict, run_narratives
+from core.ai_narrative import (
+    build_chain_groups, narrative_from_dict, narrative_to_dict,
+    run_chain_analysis, run_narratives,
+)
 from core.cli import _load_scan_result
 from core.config import get_config
 from core.models import ScanResult, to_jsonable
 from core.netacl import Allowlist
 from core.policy import load as load_policy
 from core.audit import AuditLog
-from core.prompt import build_full_text
+from core.prompt import build_chain_full_text, build_full_text
 from core.render import to_html, to_markdown
 from core.report import ReportBuilder
 from core.ruleengine import RuleEngine
@@ -688,6 +691,7 @@ def get_report(
     scan_id: str,
     format: str = Query("json", pattern="^(json|markdown|html)$"),
     select: list[str] = Query(default=[]),
+    ai: bool = Query(True),
 ) -> Any:
     """보고서를 생성해 돌려준다.
 
@@ -696,15 +700,23 @@ def get_report(
     AI 서술은 이 엔드포인트가 만들지 않는다. 이미 생성해 둔 것이 있으면
     얹을 뿐이며, 없으면 전 항목이 룰 문장으로 채워진다 — AI 없이도 보고서가
     완결된다는 전제는 여기서도 그대로다.
+
+    `ai=false` 는 **생성해 둔 서술까지 빼고** 뽑는다. 결재 문서를 AI 없이
+    내야 하는 경우가 있고, 그때는 AI 관련 문구가 한 줄도 없어야 한다.
     """
     result, picked = _scoped(scan_id, select)
     scoped = dataclasses.replace(result, findings=picked.findings)
 
-    stored = _store().get_narratives(scan_id)
-    narratives = {cve: narrative_from_dict(payload) for cve, payload in stored.items()}
+    store = _store()
+    narratives: dict[str, Any] = {}
+    chains: dict[str, str] = {}
+    if ai:
+        stored = store.get_narratives(scan_id)
+        narratives = {cve: narrative_from_dict(payload) for cve, payload in stored.items()}
+        chains = store.get_chains(scan_id)
 
     report = ReportBuilder(config, engine=RuleEngine.from_config(config)).build(
-        scoped, narratives=narratives
+        scoped, narratives=narratives, chains=chains
     )
 
     if format == "markdown":
@@ -851,6 +863,72 @@ def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> di
         "selection": picked.to_dict(),
         **run.to_dict(),
         "stored": store.narrative_meta(scan_id),
+    }
+
+
+@app.post("/api/scans/{scan_id}/chains")
+def make_chains(scan_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """패키지 묶음별 연계 분석을 생성해 저장한다.
+
+    낮은 등급 여러 건이 서로의 전제를 충족시키면 파급력이 커진다 — 그 판단에
+    필요한 재료(CVSS 벡터·CWE)는 전부 공개 데이터이므로 이그레스 원칙은
+    그대로다. 같은 가드를 통과한 VulnFact 만 나가고, 묶음은 `group-1` 같은
+    번호로 부른다.
+    """
+    raw = body.get("selection") or []
+    if not isinstance(raw, list):
+        raise HTTPException(400, "selection은 문자열 배열이어야 합니다.")
+
+    _, picked = _scoped(scan_id, [str(x) for x in raw])
+
+    if not config.ai_enabled:
+        raise HTTPException(409, "AI 사용이 꺼져 있습니다. SBOMSIGHT_AI_ENABLED=1 로 켜 주세요.")
+    if not config.gemini_api_key:
+        raise HTTPException(409, "GEMINI_API_KEY가 설정되어 있지 않습니다.")
+
+    scoped = dataclasses.replace(_load_scan_result(scan_id, config), findings=picked.findings)
+    report = ReportBuilder(config, engine=RuleEngine.from_config(config)).build(scoped)
+
+    try:
+        run = run_chain_analysis(report.packages, config=config, scan_id=scan_id)
+    except EgressBlocked as blocked:
+        raise HTTPException(
+            422,
+            {
+                "message": "이그레스 정책 위반으로 전송이 차단되었습니다.",
+                "violations": [v.to_dict() for v in blocked.violations],
+            },
+        ) from blocked
+
+    _store().save_chains(scan_id, run.analyses, model=run.model)
+    return {"scan_id": scan_id, **run.to_dict()}
+
+
+@app.get("/api/scans/{scan_id}/chains/preview")
+def chains_preview(scan_id: str, select: list[str] = Query(default=[])) -> dict[str, Any]:
+    """연계 분석에서 전송될 내용 전체. 보내기 전에 사람이 눈으로 확인한다."""
+    _, picked = _scoped(scan_id, select)
+    scoped = dataclasses.replace(_load_scan_result(scan_id, config), findings=picked.findings)
+    report = ReportBuilder(config, engine=RuleEngine.from_config(config)).build(scoped)
+
+    groups, index = build_chain_groups(report.packages)
+    guard = EgressGuard.from_config(config)
+    facts = [fact for group in groups for fact in group["vulnerabilities"]]
+    checked = guard.check(facts)
+
+    return {
+        "scan_id": scan_id,
+        "group_count": len(groups),
+        "fact_count": len(facts),
+        # 묶음 번호 → 패키지명. **이 표는 전송되지 않는다.**
+        "local_index": index,
+        "ok": checked.ok,
+        "violations": [v.to_dict() for v in checked.violations],
+        "prompt": build_chain_full_text(groups),
+        "note": (
+            "이 내용이 AI에게 전달되는 전부입니다. 묶음은 group-1 같은 번호로만 "
+            "불리며, 자산명·호스트명·IP·파일 경로·설치 버전·판정 결과는 포함되지 않습니다."
+        ),
     }
 
 

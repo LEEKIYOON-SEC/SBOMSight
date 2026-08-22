@@ -51,7 +51,6 @@ def build_context(finding: Finding) -> dict[str, Any]:
         "cvss_score": intel.cvss_score,
         "severity": intel.severity.value,
         "epss": intel.epss,
-        "epss_percentile": intel.epss_percentile,
         "kev": intel.kev.value,
         "exploit_available": intel.exploit_available.value,
         "exploit_maturity": intel.exploit_maturity.value,

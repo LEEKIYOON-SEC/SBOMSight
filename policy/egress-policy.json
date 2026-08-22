@@ -40,7 +40,6 @@
       "items": { "type": "string", "pattern": "^CWE-\\d{1,5}$", "max_length": 16 }
     },
     "epss": { "type": "number", "nullable": true, "min": 0, "max": 1 },
-    "epss_percentile": { "type": "number", "nullable": true, "min": 0, "max": 1 },
     "epss_snapshot_date": { "type": "string", "nullable": true, "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$" },
     "kev": { "type": "string", "enum": ["true", "false", "unknown"] },
     "kev_date_added": { "type": "string", "nullable": true, "pattern": "^(\\d{4}-\\d{2}-\\d{2})?$" },

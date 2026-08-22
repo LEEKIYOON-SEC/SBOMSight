@@ -124,3 +124,78 @@ affected_version_range와 fixed_version은 공개 advisory가 공표한 값이�
 def build_full_text(facts: list[dict[str, Any]]) -> str:
     """UI의 "AI에게 전송될 내용 전체 보기"에 그대로 실리는 문자열."""
     return f"=== 시스템 지시 ===\n{SYSTEM_INSTRUCTION}\n\n=== 요청 ===\n{build_prompt(facts)}"
+
+
+# ---------------------------------------------------------------------------
+# 연계 분석 — 낮은 등급 여러 건이 엮이면 파급력이 커진다
+# ---------------------------------------------------------------------------
+
+CHAIN_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "chains": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "group": {
+                        "type": "string",
+                        "description": "요청에 실린 group 식별자를 그대로 옮긴다.",
+                    },
+                    "analysis": {
+                        "type": "string",
+                        "description": (
+                            "이 묶음의 취약점들이 서로의 전제를 충족시켜 연쇄될 수 있는지, "
+                            "CVSS 벡터와 CWE 로 읽히는 근거만으로 서술. 연쇄 가능성이 "
+                            "보이지 않으면 그렇게 쓴다. 4~6문장."
+                        ),
+                    },
+                },
+                "required": ["group", "analysis"],
+            },
+        }
+    },
+    "required": ["chains"],
+}
+
+
+def build_chain_prompt(groups: list[dict[str, Any]]) -> str:
+    """묶음별 연계 분석 요청.
+
+    **전달되는 것은 VulnFact 뿐이다.** 묶음 식별자도 패키지명이 아니라
+    `group-1` 같은 번호다 — advisory 가 지목한 패키지명은 이미 VulnFact 안에
+    공개 데이터로 들어 있지만, "이 자산에 이것들이 함께 설치되어 있다"는 사실
+    자체는 내부 정보이므로 묶음을 우리 자산과 연결 짓지 않는다.
+
+    이 함수의 계약은 build_prompt 와 같다: 반환 문자열 전체를 화면에 그대로
+    보여 줄 수 있어야 한다.
+    """
+    payload = json.dumps({"groups": groups}, ensure_ascii=False, indent=2)
+    return f"""\
+아래는 공개 취약점 데이터를 묶음별로 정리한 것입니다. 각 묶음에 대해 **취약점들이
+서로 연쇄될 수 있는지**를 분석하십시오.
+
+낮은 심각도의 취약점도 서로의 전제를 충족시키면 파급력이 커집니다. 예를 들어
+`PR:N` 이면서 정보 노출(`C:H`)에 그치는 취약점이, `PR:L` 을 요구하는 다른
+취약점의 전제를 충족시킬 수 있습니다.
+
+지켜야 할 것:
+
+- CVSS 벡터(AV/AC/PR/UI/S/C/I/A)와 CWE 로 **읽히는 근거만** 쓰십시오.
+  벡터가 비어 있는 항목은 연쇄 논리의 근거로 삼지 마십시오.
+- 연쇄 가능성이 보이지 않으면 "제시된 데이터로는 연쇄 가능성이 확인되지
+  않습니다"라고 쓰십시오. 억지로 엮지 마십시오.
+- **공개 데이터 기준의 기술적 가능성**을 쓰는 것이며, 특정 환경에서 실제로
+  성립하는지는 알 수 없습니다. 단정하지 마십시오.
+- 묶음이 어느 자산의 것인지, 실제로 설치되어 있는지는 알 수 없습니다.
+
+{payload}
+
+각 묶음에 대해 하나의 분석 객체를 만들고, group 필드에 위 데이터의 group 값을
+그대로 넣으십시오.
+"""
+
+
+def build_chain_full_text(groups: list[dict[str, Any]]) -> str:
+    """연계 분석에서 "전송될 내용 전체 보기"에 실리는 문자열."""
+    return f"=== 시스템 지시 ===\n{SYSTEM_INSTRUCTION}\n\n=== 요청 ===\n{build_chain_prompt(groups)}"

@@ -8,35 +8,35 @@
     "kev_listed": {
       "field": "kev",
       "op": "is_true",
-      "label": "CISA KEV 등재",
+      "label": "실제 악용 확인 (CISA KEV)",
       "rationale": "CISA가 실제 악용을 확인해 카탈로그에 등재한 취약점"
     },
     "exploit_weaponized": {
       "field": "exploit_maturity",
       "op": "==",
       "value": "weaponized",
-      "label": "무기화된 exploit 존재",
+      "label": "무기화된 공격코드 공개",
       "rationale": "Metasploit 모듈 등 즉시 사용 가능한 공격 도구가 공개됨"
     },
     "exploit_public_poc": {
       "field": "exploit_maturity",
       "op": "in",
       "value": ["public_poc", "weaponized"],
-      "label": "공개 exploit/PoC 존재",
+      "label": "공격코드 공개",
       "rationale": "공개된 exploit 또는 PoC 코드가 확인됨"
     },
     "epss_high": {
       "field": "epss",
       "op": ">=",
       "value": 0.5,
-      "label": "EPSS 높음",
+      "label": "악용 예측 높음",
       "rationale": "향후 30일 내 악용 시도 확률이 통계적으로 높음"
     },
     "epss_moderate": {
       "field": "epss",
       "op": ">=",
       "value": 0.1,
-      "label": "EPSS 중간",
+      "label": "악용 예측 중간",
       "rationale": "향후 30일 내 악용 시도 확률이 무시하기 어려운 수준"
     },
     "cvss_critical": {
@@ -58,7 +58,7 @@
   "levels": [
     {
       "priority": "P0",
-      "label": "즉시 대응 검토",
+      "label": "즉시 검토",
       "description": "실제 악용이 확인되었거나 악용 가능성이 통계적으로 높고 기술적 심각도도 높은 경우",
       "when": [
         ["kev_listed"],
@@ -68,7 +68,7 @@
     },
     {
       "priority": "P1",
-      "label": "우선 대응 검토",
+      "label": "우선 검토",
       "description": "기술적 심각도가 최상위이거나, 악용 가능성 신호와 높은 심각도가 함께 관측되는 경우",
       "when": [
         ["cvss_critical"],
@@ -78,7 +78,7 @@
     },
     {
       "priority": "P2",
-      "label": "계획 대응 검토",
+      "label": "계획 검토",
       "description": "기술적 심각도가 높음 구간이나 악용 가능성 신호는 관측되지 않은 경우",
       "when": [
         ["cvss_high"]
@@ -109,19 +109,19 @@
     "unknown_epss": {
       "field": "epss",
       "op": "is_missing",
-      "label": "EPSS 미확인",
+      "label": "악용 예측 미확인",
       "note": "EPSS 데이터를 확보하지 못했다. 악용 가능성이 낮다는 뜻이 아니다"
     },
     "unknown_exploit": {
       "field": "exploit_available",
       "op": "is_unknown",
-      "label": "Exploit 존재 여부 미확인",
+      "label": "공격코드 공개 여부 미확인",
       "note": "공개 exploit 존재 여부를 확인하지 못했다. 없다는 뜻이 아니다"
     },
     "unknown_kev": {
       "field": "kev",
       "op": "is_unknown",
-      "label": "KEV 조회 실패",
+      "label": "실제 악용 확인 실패",
       "note": "CISA KEV 카탈로그를 조회하지 못했다"
     },
     "no_cvss": {

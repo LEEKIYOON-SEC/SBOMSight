@@ -163,7 +163,13 @@ def export_scan(
     report_payload = to_jsonable(report)
     report_payload["selection"] = picked.to_dict()
     if redact:
-        for item in report_payload.get("findings") or []:
+        # 항목은 두 곳에 실린다 — 평면 `findings` 와 패키지 묶음 안의 `findings`.
+        # 한쪽만 지우면 다른 쪽으로 파일 경로가 그대로 나간다. 실제로 그랬다.
+        items = list(report_payload.get("findings") or [])
+        for group in report_payload.get("packages") or []:
+            items.extend(group.get("findings") or [])
+
+        for item in items:
             local = item.get("local_analysis") or {}
             local["locations"] = []
             detection = local.get("detection") or {}

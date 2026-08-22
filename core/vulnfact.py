@@ -45,7 +45,6 @@ def build_vuln_fact(advisory: AdvisoryPackage, intel: VulnIntel) -> dict[str, An
 
         # --- 악용 가능성 (공개) ---
         "epss": intel.epss,
-        "epss_percentile": intel.epss_percentile,
         "epss_snapshot_date": intel.epss_snapshot_date,
         "kev": intel.kev.value,
         "kev_date_added": intel.kev_date_added,

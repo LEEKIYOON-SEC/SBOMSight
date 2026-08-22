@@ -77,6 +77,10 @@ def config(tmp_path):
     cfg.data_dir = tmp_path / "data"
     cfg.ensure_dirs()
     cfg.offline = True          # 테스트는 네트워크를 타지 않는다
+    # 선택 수집기는 기본이 꺼짐이다. 그 동작은 아래 TestOptionalSources 가
+    # 따로 고정하고, 여기서는 수집 로직 자체를 보기 위해 켠다.
+    cfg.collect_exploitdb = True
+    cfg.collect_metasploit = True
     return cfg
 
 
@@ -105,7 +109,8 @@ class TestParsers:
     def test_epss_reads_snapshot_date_from_header(self, config):
         index, snapshot = EpssSource(config).parse(gzip.compress(EPSS_CSV))
         assert snapshot == "2026-08-18"
-        assert index["CVE-2024-3094"] == [0.9134, 0.9991]
+        # 백분위는 담지 않는다 — 화면에도 보고서에도 쓰지 않기로 했다.
+        assert index["CVE-2024-3094"] == 0.9134
 
     def test_epss_handles_uncompressed_csv(self, config):
         index, _ = EpssSource(config).parse(EPSS_CSV)
@@ -135,7 +140,7 @@ class TestEnrichment:
 
         intel = finding.intel
         assert intel.epss == 0.9134
-        assert intel.epss_percentile == 0.9991
+        assert intel.epss_snapshot_date  # 스냅샷 기준일이 함께 남는다
         assert intel.epss_snapshot_date == "2026-08-18"
         assert intel.kev is Ternary.TRUE
         assert intel.kev_date_added == "2024-03-29"
@@ -209,7 +214,56 @@ class TestUnavailableSourcesStayUnknown:
     def test_offline_with_no_cache_reports_offline_state(self, config, tmp_path):
         enricher = Enricher(config, Store(tmp_path / "t.db"))
         _, report = enricher.enrich([make_finding("CVE-2024-3094")], nvd_budget=0)
-        assert all(s.state == "offline" for s in report.sources.values())
+        bulk = [s for name, s in report.sources.items() if name != "nvd"]
+        assert all(s.state == "offline" for s in bulk)
+
+
+class TestOptionalSources:
+    """Exploit-DB · Metasploit 은 **기본이 꺼짐**이다.
+
+    EPSS·KEV 는 Grype 가 판정과 같은 출처에서 함께 준다. 남는 것은 "공격코드가
+    공개되어 있다"는 신호 하나인데, Exploit-DB 는 GPL-2.0 (copyleft) 이라
+    사내 반입·배포 기준 확인이 필요하다. 켜지 않아도 판정은 성립한다.
+    """
+
+    @pytest.fixture
+    def off(self, tmp_path):
+        cfg = Config()
+        cfg.data_dir = tmp_path / "data"
+        cfg.ensure_dirs()
+        cfg.offline = True
+        return cfg      # collect_* 기본값 = False
+
+    def test_default_is_off(self, off):
+        assert off.optional_sources == frozenset()
+
+    def test_disabled_source_reports_why_and_how_to_enable(self, off):
+        _, status = ExploitDbSource(off).load()
+        assert status.state == "disabled"
+        assert "SBOMSIGHT_COLLECT_EXPLOITDB=1" in status.detail
+        assert "GPL-2.0" in status.detail
+
+    def test_disabled_source_is_not_usable(self, off):
+        """끈 것을 '없음'으로 처리하면 안 된다 — unknown 으로 남아야 한다."""
+        _, status = MetasploitSource(off).load()
+        assert status.usable is False
+
+    def test_disabled_leaves_exploit_unknown_not_false(self, off, tmp_path):
+        seed_caches(off, epss=False, kev=False)
+        enricher = Enricher(off, Store(tmp_path / "t.db"))
+        (finding,), _ = enricher.enrich([make_finding("CVE-2024-3094")], nvd_budget=0)
+        assert finding.intel.exploit_available is Ternary.UNKNOWN
+
+    def test_enabling_one_does_not_enable_the_other(self, off):
+        off.collect_metasploit = True
+        assert off.optional_sources == frozenset({"metasploit"})
+        assert MetasploitSource(off).enabled() is True
+        assert ExploitDbSource(off).enabled() is False
+
+    def test_epss_and_kev_are_never_gated(self, off):
+        """이 둘은 선택 소스가 아니다. Grype 가 주지 못했을 때의 보완재다."""
+        assert EpssSource(off).enabled() is True
+        assert KevSource(off).enabled() is True
 
 
 def test_enrichment_report_counts_matches(config, tmp_path):

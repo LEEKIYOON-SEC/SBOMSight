@@ -46,6 +46,11 @@
 }
 
 * { box-sizing: border-box; }
+
+/* `hidden` 속성은 UA 스타일시트의 `display:none` 으로 동작한다. 그런데 저자
+   규칙(`.check { display:inline-flex }` 등)이 명시도에서 이기면 숨겨지지 않는다.
+   실제로 자산 선택과 AI 토글이 숨겨야 할 때 그대로 보였다. */
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -318,3 +323,8 @@ pre.step-cmd {
 .flow .arrow { color: var(--fg-faint); }
 footer.site { border-top: 1px solid var(--line); margin-top: 3rem; padding: 1.25rem 1.5rem;
   color: var(--fg-faint); font-size: .8rem; text-align: center; }
+
+/* 보고서 뷰어 — 패키지 묶음. 조치가 패키지당 한 번이므로 읽는 순서도 그렇다. */
+.group-block { margin-bottom: 2rem; }
+.group-block > h2 { border-top: 2px solid var(--line); padding-top: 1rem; }
+.group-block > h2 small { display: block; font-weight: 400; margin-top: .15rem; }

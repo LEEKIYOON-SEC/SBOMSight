@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from core.models import FixState, Severity, Ternary
-from core.normalize import normalize_grype_report
+from core.normalize import normalize_grype_report, normalize_match
 
 FIXTURE = Path(__file__).parent / "fixtures" / "grype-sample.json"
 
@@ -126,3 +126,79 @@ def test_detection_records_matcher_and_namespace(result):
 def test_empty_report_is_handled():
     result = normalize_grype_report({"matches": []}, scan_id="empty")
     assert result.findings == ()
+
+
+class TestGrypeSuppliedIntel:
+    """EPSS·KEV 는 Grype 가 준다.
+
+    판정의 근간(CVSS·수정 상태)과 **같은 출처**에서 오므로 서로 어긋날 일이 없고,
+    네트워크 없이도 늘 있다. 예전에는 FIRST·CISA 에서 따로 받아왔는데, 그러면
+    스캔 시점과 스냅샷 시점이 갈라지고 폐쇄망에서는 아예 비었다.
+    """
+
+    @staticmethod
+    def _match(**vuln):
+        base = {
+            "id": "CVE-2024-3094",
+            "severity": "Critical",
+            "fix": {"versions": ["5.6.2"], "state": "fixed"},
+        }
+        base.update(vuln)
+        return {
+            "artifact": {"name": "xz", "version": "5.6.0-2.el9", "type": "rpm"},
+            "vulnerability": base,
+        }
+
+    def test_epss_is_read_from_grype(self):
+        finding = normalize_match(self._match(
+            epss=[{"cve": "CVE-2024-3094", "epss": 0.9134, "percentile": 0.9991, "date": "2026-08-20"}],
+        ))
+        assert finding.intel.epss == 0.9134
+        assert finding.intel.epss_snapshot_date == "2026-08-20"
+
+    def test_kev_listing_is_read_from_grype(self):
+        finding = normalize_match(self._match(
+            knownExploited=[{
+                "cve": "CVE-2024-3094", "dateAdded": "2024-03-29",
+                "knownRansomwareCampaignUse": "Known",
+            }],
+        ))
+        assert finding.intel.kev is Ternary.TRUE
+        assert finding.intel.kev_date_added == "2024-03-29"
+        assert finding.intel.kev_ransomware_use == "Known"
+
+    def test_empty_kev_list_means_looked_up_and_absent(self):
+        """빈 목록은 Grype 가 조회했고 없었다는 뜻이다 — 그때만 '아니오'다."""
+        finding = normalize_match(self._match(knownExploited=[]))
+        assert finding.intel.kev is Ternary.FALSE
+
+    def test_missing_kev_key_stays_unknown(self):
+        """키 자체가 없으면 미확인이다.
+
+        `false` 로 단정하면, KEV 를 담지 않는 DB 구성에서 실제로 악용 중인
+        취약점이 화면에서 조용한 항목이 된다.
+        """
+        finding = normalize_match(self._match())
+        assert finding.intel.kev is Ternary.UNKNOWN
+        assert finding.intel.epss is None
+
+    def test_epss_is_read_from_related_when_primary_lacks_it(self):
+        """RHSA 가 primary 이고 CVE 가 related 에 있을 때도 값을 놓치지 않는다."""
+        match = {
+            "artifact": {"name": "openssl", "version": "1:3.0.7-24.el9", "type": "rpm"},
+            "vulnerability": {"id": "RHSA-2024:2064", "severity": "Important",
+                              "fix": {"versions": [], "state": "unknown"}},
+            "relatedVulnerabilities": [{
+                "id": "CVE-2024-2511", "severity": "Low",
+                "epss": [{"cve": "CVE-2024-2511", "epss": 0.0043, "date": "2026-08-20"}],
+                "knownExploited": [],
+            }],
+        }
+        finding = normalize_match(match)
+        assert finding.intel.cve == "CVE-2024-2511"
+        assert finding.intel.epss == 0.0043
+        assert finding.intel.kev is Ternary.FALSE
+
+    def test_malformed_epss_entry_is_ignored_not_crashed(self):
+        finding = normalize_match(self._match(epss=["nope", {"epss": None}, {}]))
+        assert finding.intel.epss is None

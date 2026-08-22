@@ -114,17 +114,43 @@ export const liveApiProvider = {
     return (await request('api/scans')).json();
   },
 
-  async getReport(scanId, format = 'json', { selection = [] } = {}) {
+  /**
+   * 보고서.
+   *
+   * `ai=false` 는 만들어 둔 AI 서술까지 빼고 뽑는다. 결재 문서를 AI 없이 내야
+   * 하는 경우가 있고, 그때는 AI 관련 문구가 한 줄도 없어야 한다.
+   */
+  async getReport(scanId, format = 'json', { selection = [], ai = false } = {}) {
     const params = selectionParams(selection);
     params.set('format', format);
+    params.set('ai', String(Boolean(ai)));
     const response = await request(`api/scans/${encodeURIComponent(scanId)}/report?${params}`);
     return format === 'json' ? response.json() : response.text();
   },
 
-  reportUrl(scanId, format, { selection = [] } = {}) {
+  reportUrl(scanId, format, { selection = [], ai = false } = {}) {
     const params = selectionParams(selection);
     params.set('format', format);
+    params.set('ai', String(Boolean(ai)));
     return `api/scans/${encodeURIComponent(scanId)}/report?${params}`;
+  },
+
+  /** 연계 분석에서 전송될 내용 전체. 이 호출은 외부로 아무것도 보내지 않는다. */
+  async chainsPreview(scanId, { selection = [] } = {}) {
+    const params = selectionParams(selection);
+    const query = params.toString();
+    return (await request(
+      `api/scans/${encodeURIComponent(scanId)}/chains/preview${query ? `?${query}` : ''}`,
+    )).json();
+  },
+
+  /** 패키지 묶음별 연계 분석을 생성한다. 같은 가드를 통과한 VulnFact 만 나간다. */
+  async generateChains(scanId, { selection = [] } = {}) {
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/chains`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selection }),
+    })).json();
   },
 
   /**

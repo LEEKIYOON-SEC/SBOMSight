@@ -25,6 +25,7 @@ from .models import (
     ScanMetadata,
     ScanResult,
     Severity,
+    Ternary,
     VulnIntel,
 )
 from . import fixanalysis
@@ -222,8 +223,56 @@ def _merge_vuln_sources(match: dict[str, Any]) -> tuple[str, tuple[str, ...], di
         "description": description,
         "urls": tuple(dict.fromkeys(u for u in urls if u)),
         "severity": primary.get("severity") or next((r.get("severity") for r in related if r.get("severity")), ""),
+        "epss": _pick_epss([primary, *related]),
+        "kev": _pick_kev([primary, *related]),
     }
     return cve_id, aliases, merged
+
+
+def _pick_epss(sources: list[dict[str, Any]]) -> dict[str, Any]:
+    """Grype 가 실어 보내는 EPSS 를 읽는다.
+
+    판정의 근간(CVSS·수정 상태)과 **같은 출처**에서 오므로 서로 어긋날 일이 없고,
+    네트워크 없이도 늘 있다. 예전에는 FIRST 에서 따로 받아왔는데, 그러면 스캔
+    시점과 EPSS 스냅샷 시점이 갈라지고 폐쇄망에서는 아예 비었다.
+
+    형태: `"epss": [{"cve": …, "epss": 0.00042, "percentile": 0.1, "date": "…"}]`
+    백분위는 읽지 않는다 — 화면에도 보고서에도 쓰지 않기로 했다.
+    """
+    for source in sources:
+        for entry in source.get("epss") or ():
+            if not isinstance(entry, dict):
+                continue
+            score = entry.get("epss")
+            if isinstance(score, (int, float)):
+                return {"score": float(score), "date": str(entry.get("date") or "")}
+    return {}
+
+
+def _pick_kev(sources: list[dict[str, Any]]) -> dict[str, Any]:
+    """Grype 가 실어 보내는 CISA KEV 등재 여부.
+
+    **비어 있다고 '등재 안 됨'으로 읽지 않는다.** Grype DB 가 KEV 를 담지 않는
+    구성일 수도 있고, 그때 `false` 로 단정하면 실제 악용 중인 취약점이 화면에서
+    조용한 항목이 된다. 값이 없으면 `unknown` 이다.
+
+    형태: `"knownExploited": [{"cve": …, "dateAdded": "…",
+                               "knownRansomwareCampaignUse": "Known", …}]`
+    """
+    for source in sources:
+        listed = source.get("knownExploited")
+        if not isinstance(listed, list):
+            continue
+        for entry in listed:
+            if isinstance(entry, dict):
+                return {
+                    "listed": True,
+                    "date_added": str(entry.get("dateAdded") or ""),
+                    "ransomware": str(entry.get("knownRansomwareCampaignUse") or ""),
+                }
+        # 키가 있고 목록이 비어 있으면 Grype 가 KEV 를 조회했고 없었다는 뜻이다.
+        return {"listed": False}
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +310,7 @@ def normalize_match(match: dict[str, Any], *, os_family: str = "") -> Finding | 
     )
 
     score, vector, cvss_version = _best_cvss(merged["cvss"])
+    epss, kev = merged["epss"], merged["kev"]
     intel = VulnIntel(
         cve=cve_id,
         aliases=aliases,
@@ -270,6 +320,18 @@ def normalize_match(match: dict[str, Any], *, os_family: str = "") -> Finding | 
         cvss_version=cvss_version,
         description=merged["description"],
         references=merged["urls"],
+        # EPSS·KEV 를 Grype 가 주면 그대로 쓴다. 판정의 근간과 같은 출처라
+        # 어긋날 일이 없고, 폐쇄망에서도 늘 있다. 없으면 미확인으로 남고
+        # 보강 단계가 채운다 — 없는 것을 0이나 '아니오'로 채우지 않는다.
+        epss=epss.get("score"),
+        epss_snapshot_date=epss.get("date", ""),
+        kev=(
+            Ternary.TRUE if kev.get("listed") is True
+            else Ternary.FALSE if kev.get("listed") is False
+            else Ternary.UNKNOWN
+        ),
+        kev_date_added=kev.get("date_added", ""),
+        kev_ransomware_use=kev.get("ransomware", ""),
     )
 
     finding = Finding(installed=installed, advisory=advisory, intel=intel, detection=detection)
