@@ -113,6 +113,25 @@ def store_bytes(payload: bytes, base: Path, name: str, *, compress: bool = True)
     return StoredFile(path=path, stored_bytes=path.stat().st_size, original_bytes=len(payload))
 
 
+def store_file(src: Path, base: Path, name: str, *, compress: bool = True) -> StoredFile:
+    """디스크에 이미 있는 파일을 보관처로 옮긴다. **원본 바이트를 그대로 옮긴다.**
+
+    Grype 원본을 보관할 때 쓴다. `dict` 를 다시 `json.dumps` 해서 저장하면 키 순서·
+    공백·유니코드 이스케이프가 달라져 "Grype 가 실제로 낸 것"과 미묘하게 어긋난다.
+    나중에 원본과 대조(`core.cli verify`)하는 것이 이 도구가 Grype 를 신뢰하는
+    근거이므로, 바이트가 변하면 안 된다.
+
+    청크로 흘려 쓰므로 파일이 몇 GB 여도 메모리는 일정하다. 옮긴 뒤 원본은 지운다.
+    """
+    src = Path(src)
+    path = _target(base, name, compress=compress)
+    with _writer(path, compress=compress) as out, open(src, "rb") as handle:
+        shutil.copyfileobj(handle, out, CHUNK)
+    original = src.stat().st_size
+    src.unlink(missing_ok=True)
+    return StoredFile(path=path, stored_bytes=path.stat().st_size, original_bytes=original)
+
+
 def read_bytes(path: Path) -> bytes:
     """저장본을 읽는다. 압축 여부는 확장자로 판단한다."""
     path = Path(path)

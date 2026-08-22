@@ -35,17 +35,33 @@ def _resolve(binary: str) -> str:
     return found
 
 
+def decode(raw: bytes) -> str:
+    """도구 출력은 **항상 UTF-8로 읽는다.**
+
+    `text=True` 만 주면 파이썬이 시스템 로케일 인코딩으로 디코딩한다. 한국어
+    Windows 에서는 그것이 CP949 이고, Syft·Grype 가 내는 UTF-8 바이트(예: `—`
+    = 0xE2 0x80 0x94)를 만나는 순간 리더 스레드가 UnicodeDecodeError 로 죽는다.
+    그러면 출력이 통째로 사라지고 "실행 실패 (exit=0)" 같은 엉뚱한 오류만 남는다.
+
+    진단용 문자열이 몇 글자 깨지는 것보다 도구를 못 쓰게 되는 쪽이 훨씬 나쁘므로
+    errors="replace" 로 읽는다.
+    """
+    return raw.decode("utf-8", errors="replace")
+
+
 def _run(argv: list[str], timeout: int) -> str:
     try:
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+        proc = subprocess.run(argv, capture_output=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired as exc:
         raise ToolExecutionError(f"{argv[0]} 실행이 {timeout}초를 넘겨 중단되었습니다.") from exc
+
+    stdout, stderr = decode(proc.stdout or b""), decode(proc.stderr or b"")
     if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-10:]
+        tail = (stderr or stdout).strip().splitlines()[-10:]
         raise ToolExecutionError(
             f"{argv[0]} 실행 실패 (exit={proc.returncode})\n" + "\n".join(tail)
         )
-    return proc.stdout
+    return stdout
 
 
 def version(config: Config | None = None) -> str:

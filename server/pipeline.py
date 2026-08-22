@@ -6,7 +6,6 @@ core/cli.py의 흐름과 동일하되, 각 단계가 끝날 때마다 JobRegistr
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,31 +60,33 @@ def run_scan(
 
     # --- 2. 취약점 탐지 ---------------------------------------------------
     registry.start(job, "detect", "Grype 실행 중")
+    # scan_id 를 먼저 정한다. Grype 출력을 그 스캔의 보관처로 바로 받아,
+    # 파이썬 문자열을 거치지 않고 원본 바이트 그대로 남기기 위함이다.
+    scan_id = new_scan_id()
+    scan_dir = config.scan_dir(scan_id)
+    raw_path = scan_dir / "grype.raw.json"
     try:
         # Grype는 .gz 를 읽지 못한다. 압축 저장본이면 임시 파일로 풀어 넘기고,
         # 원본 그대로면 복사 없이 그 경로를 쓴다.
         with artifacts.open_plain(sbom_path) as plain_path:
-            raw = grype_runner.scan_sbom(plain_path, config=config)
+            raw = grype_runner.scan_sbom(plain_path, config=config, raw_out=raw_path)
     except (grype_runner.ToolNotFoundError, grype_runner.ToolExecutionError, FileNotFoundError) as exc:
+        raw_path.unlink(missing_ok=True)  # 쓰다 만 출력을 남기지 않는다
         registry.fail(job, "detect", str(exc))
         return
 
+    # Grype 원본을 그대로 보관한다. 이 도구는 Grype 를 신뢰하기로 했고, 그
+    # 신뢰는 "언제든 원본과 대조할 수 있다"가 받쳐 준다
+    # (python -m core.cli verify).
+    artifacts.store_file(raw_path, scan_dir, "grype.json", compress=config.compress_storage)
+
     result = normalize_grype_report(
         raw,
-        scan_id=new_scan_id(),
+        scan_id=scan_id,
         sbom_filename=original_name,
         sbom_format=info.format,
         sbom_sha256=info.sha256,
         component_count=info.component_count or 0,
-    )
-    # Grype 원본을 그대로 보관한다. 이 도구는 Grype 를 신뢰하기로 했고, 그
-    # 신뢰는 "언제든 원본과 대조할 수 있다"가 받쳐 준다
-    # (python -m core.cli verify).
-    artifacts.store_bytes(
-        json.dumps(raw, ensure_ascii=False).encode("utf-8"),
-        config.scan_dir(result.metadata.scan_id),
-        "grype.json",
-        compress=config.compress_storage,
     )
 
     detail = f"grype {result.metadata.grype_version} · DB {result.metadata.grype_db_built or '미상'}"

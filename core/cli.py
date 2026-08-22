@@ -63,8 +63,11 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     if args.offline:
         config.offline = True
 
+    raw_out = Path(args.raw_out) if getattr(args, "raw_out", None) else None
     with artifacts.open_plain(sbom_path) as plain_path:
-        raw = grype_runner.scan_sbom(plain_path, config=config)
+        raw = grype_runner.scan_sbom(plain_path, config=config, raw_out=raw_out)
+    if raw_out is not None:
+        print(f"Grype 원본 보관: {raw_out} ({raw_out.stat().st_size:,} bytes)", file=sys.stderr)
     result = normalize_grype_report(
         raw,
         scan_id=args.scan_id or _new_scan_id(),
@@ -378,6 +381,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan.add_argument("--no-enrich", action="store_true", help="위협정보 보강 건너뜀 (EPSS/KEV/Exploit 미확인 상태로 남음)")
     p_scan.add_argument("--offline", action="store_true", help="네트워크를 쓰지 않고 캐시된 스냅샷만 사용")
     p_scan.add_argument("--nvd-budget", type=int, default=40, help="NVD에서 CWE를 조회할 최대 CVE 건수")
+    p_scan.add_argument(
+        "--raw-out",
+        help="Grype 원본 JSON을 남길 경로. 나중에 `verify`로 우리 결과와 대조할 수 있다",
+    )
     p_scan.set_defaults(func=_cmd_scan)
 
     p_analyze = sub.add_parser("analyze", help="이미 확보한 Grype JSON 리포트를 분석")
