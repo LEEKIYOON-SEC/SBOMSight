@@ -125,6 +125,35 @@ export const liveApiProvider = {
     return (await request(`api/scans/${encodeURIComponent(scanId)}/findings?${query}`)).json();
   },
 
+  /** 스캔 머리말(메타·정책·보강 상태). findings 는 들어 있지 않다. */
+  async getScanMeta(scanId) {
+    const scan = await (await request(`api/scans/${encodeURIComponent(scanId)}/meta`)).json();
+    return scan;
+  },
+
+  /**
+   * 조치 대상 한 쪽. **패키지 하나가 한 줄이다.**
+   *
+   * 48,923건은 패키지 8,154개가 된다. 그것도 한 화면에 그릴 양이 아니다.
+   */
+  async listPackages(scanId, params = {}) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== '' && value !== null && value !== undefined) query.set(key, String(value));
+    }
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/packages?${query}`)).json();
+  },
+
+  /** 묶음 하나의 상세. 펼쳤을 때만 부른다. */
+  async packageDetail(scanId, pkg, { version = '', ai = false } = {}) {
+    const query = new URLSearchParams();
+    if (version) query.set('version', version);
+    query.set('ai', String(Boolean(ai)));
+    return (await request(
+      `api/scans/${encodeURIComponent(scanId)}/packages/${encodeURIComponent(pkg)}?${query}`,
+    )).json();
+  },
+
   /** 기록된 선택 키. 되살리려고 스캔 전체를 받지 않는다. */
   async getSelection(scanId) {
     return (await request(`api/scans/${encodeURIComponent(scanId)}/selection`)).json();
@@ -178,10 +207,14 @@ export const liveApiProvider = {
     return format === 'json' ? response.json() : response.text();
   },
 
-  reportUrl(scanId, format, { selection = [], ai = false } = {}) {
+  reportUrl(scanId, format, { selection = [], ai = false, package: pkg = '', version = '' } = {}) {
     const params = selectionParams(selection);
     params.set('format', format);
     params.set('ai', String(Boolean(ai)));
+    // 패키지를 지정하면 그 묶음만 담긴다. 48,923건짜리 문서를 만들어 그중
+    // 한 절만 읽을 이유가 없다.
+    if (pkg) params.set('package', pkg);
+    if (version) params.set('version', version);
     return `api/scans/${encodeURIComponent(scanId)}/report?${params}`;
   },
 

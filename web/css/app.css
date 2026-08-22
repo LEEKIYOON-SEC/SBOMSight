@@ -324,10 +324,71 @@ pre.step-cmd {
 footer.site { border-top: 1px solid var(--line); margin-top: 3rem; padding: 1.25rem 1.5rem;
   color: var(--fg-faint); font-size: .8rem; text-align: center; }
 
-/* 보고서 뷰어 — 패키지 묶음. 조치가 패키지당 한 번이므로 읽는 순서도 그렇다. */
-.group-block { margin-bottom: 2rem; }
-.group-block > h2 { border-top: 2px solid var(--line); padding-top: 1rem; }
-.group-block > h2 small { display: block; font-weight: 400; margin-top: .15rem; }
+/* ---------- 보고서 — 패키지 아코디언 ---------- */
+/* 조치가 패키지당 한 번이므로 읽는 순서도 그렇다. 그런데 8,154개 묶음을 전부
+   펼쳐 두면 CVE 카드가 수만 장이 되어 화면이 서지 않는다. 접힌 줄은 표의 한
+   행처럼 읽히고, 펼친 것만 문서가 된다. */
+.pkg { border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg); margin-bottom: .45rem; }
+.pkg[open] { border-color: var(--line-strong); box-shadow: var(--shadow); }
+
+.pkg > summary {
+  display: grid; gap: .3rem .9rem; align-items: baseline;
+  grid-template-columns: minmax(9rem, 1.3fr) 5.5rem minmax(11rem, 1.1fr) minmax(8rem, auto);
+  padding: .55rem .9rem .55rem 1.1rem;
+  cursor: pointer; list-style: none; border-left: 3px solid transparent;
+  border-radius: var(--radius);
+}
+.pkg > summary::-webkit-details-marker { display: none; }
+.pkg > summary:hover { background: var(--bg-soft); }
+.pkg[open] > summary { border-bottom: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) 0 0; }
+.pkg[data-priority="P0"] > summary { border-left-color: var(--p0); }
+.pkg[data-priority="P1"] > summary { border-left-color: var(--p1); }
+.pkg[data-priority="P2"] > summary { border-left-color: var(--p2); }
+.pkg[data-priority="P3"] > summary { border-left-color: var(--p3); }
+
+/* 펼침 표시. `<summary>` 기본 삼각형은 grid 안에서 자리를 흐트러뜨린다. */
+.pkg-name { display: flex; gap: .4rem; align-items: baseline; min-width: 0; }
+.pkg-name::before { content: '▸'; color: var(--fg-faint); font-size: .8em; }
+.pkg[open] .pkg-name::before { content: '▾'; color: var(--accent); }
+.pkg-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkg-review { font-size: .82rem; font-weight: 600; white-space: nowrap; }
+.pkg[data-priority="P0"] .pkg-review { color: var(--p0); }
+.pkg[data-priority="P1"] .pkg-review { color: var(--p1); }
+.pkg-target { font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pkg-target .arrow { color: var(--fg-faint); margin: 0 .15rem; }
+.pkg-target .none { color: var(--danger); font-weight: 600; }
+.pkg-count { font-size: .8rem; color: var(--fg-muted); white-space: nowrap; text-align: right;
+  font-variant-numeric: tabular-nums; }
+
+.pkg-body { padding: .9rem 1rem 1.1rem; }
+.pkg-body > .card:last-child, .pkg-body > section:last-child { margin-bottom: 0; }
+.pkg-actions { margin: 0 0 .75rem; padding-bottom: .6rem;
+  border-bottom: 1px dashed var(--line); }
+
+@media (max-width: 52rem) {
+  .pkg > summary { grid-template-columns: 1fr auto; }
+  .pkg-count { grid-column: 2; }
+}
+
+/* 한 묶음만 인쇄한다. 8,154개를 통째로 인쇄할 사람은 없고, 브라우저도 그것을
+   페이지로 나누다 멈춘다. 인쇄 대상만 남기고 나머지는 트리에서 지운다 —
+   `visibility` 로는 빈 페이지가 남는다. */
+@media print {
+  .topbar, footer.site, .toolbar, .pager, #banner, #disclaimer { display: none !important; }
+  .card { box-shadow: none; border-color: #999; }
+  .pkg { break-inside: auto; box-shadow: none; }
+  .pkg > summary { border-left-width: 3px; }
+  /* 한 묶음짜리 문서에 "패키지 8,154개를 업데이트하면" 이 찍히면 거짓말이 된다. */
+  body.printing-one #summary,
+  body.printing-one #meta-card,
+  body.printing-one #actions > h2,
+  body.printing-one #action-summary,
+  body.printing-one .pkg:not(.print-target) { display: none !important; }
+  body.printing-one .pkg.print-target { border: none; margin: 0; }
+  body.printing-one .pkg.print-target > summary { border-bottom: 2px solid #999; }
+}
 
 /* 스캔 화면에서 바로 서버를 만든다. 자산 화면으로 갔다 오면 올리던 파일을 놓친다. */
 .inline-new { display: inline-flex; gap: .4rem; align-items: center; }

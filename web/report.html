@@ -11,13 +11,6 @@
     font-size: .87rem; align-items: baseline; }
   .report-meta dt { color: var(--fg-muted); white-space: nowrap; }
   .report-meta dd { margin: 0; }
-  .toc { position: sticky; top: 3.4rem; max-height: calc(100vh - 5rem); overflow-y: auto; }
-  .toc ol { list-style: none; margin: 0; padding: 0; font-size: .84rem; }
-  .toc li { margin: .15rem 0; display: flex; gap: .4rem; align-items: baseline; }
-  .toc a { color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .toc a:hover { color: var(--fg); }
-  .layout { display: grid; grid-template-columns: 15rem 1fr; gap: 1.5rem; align-items: start; }
-  @media (max-width: 62rem) { .layout { grid-template-columns: 1fr; } .toc { position: static; max-height: none; } }
 </style>
 </head>
 <body>
@@ -36,13 +29,13 @@
       </label>
       <div class="spacer"></div>
       <a class="btn" id="back-to-scan">선택 다시 하기</a>
-      <button id="print">인쇄 · PDF로 저장</button>
-      <a class="btn" id="dl-md" download>Markdown 내려받기</a>
-      <a class="btn primary" id="dl-html" download>HTML 내려받기</a>
+      <button id="print" title="펼쳐 둔 패키지만 인쇄됩니다. 접힌 것은 나오지 않습니다.">
+        펼친 항목 인쇄 · PDF</button>
+      <a class="btn" id="dl-md" download>전체 Markdown</a>
+      <a class="btn primary" id="dl-html" download>전체 HTML</a>
     </div>
   </section>
 
-  <div id="scope"></div>
   <div id="disclaimer"></div>
 
   <section id="summary" class="hidden">
@@ -54,16 +47,29 @@
 
   <section id="actions" class="hidden">
     <h2>조치 대상</h2>
-    <div class="card" id="action-table"></div>
-  </section>
+    <p id="action-summary" class="muted"></p>
 
-  <div class="layout">
-    <nav class="toc card hidden" id="toc-card">
-      <h3 style="margin-top:0">항목</h3>
-      <ol id="toc"></ol>
-    </nav>
-    <div id="findings"></div>
-  </div>
+    <div class="toolbar">
+      <select id="pkg-priority">
+        <option value="">대응 검토 전체</option>
+        <option value="P0">즉시 검토</option>
+        <option value="P1">우선 검토</option>
+        <option value="P2">계획 검토</option>
+        <option value="P3">모니터링</option>
+      </select>
+      <input type="search" id="pkg-search" placeholder="패키지 또는 CVE 검색">
+      <div class="spacer"></div>
+      <span class="faint">패키지를 눌러 상세를 펼칩니다</span>
+    </div>
+
+    <div id="packages"></div>
+
+    <div class="toolbar pager" id="pkg-pager" hidden>
+      <button id="pkg-prev">이전</button>
+      <span id="pkg-label" class="faint"></span>
+      <button id="pkg-next">다음</button>
+    </div>
+  </section>
 </main>
 
 <footer class="site">
@@ -75,10 +81,15 @@ import { getProvider } from './js/providers/index.js';
 import { $, esc, priorityPill, renderStats, renderSummaryLine } from './js/core/ui.js';
 import { EXPLOIT_SOURCE_LABEL, FIX_STATE_LABEL, TERNARY_LABEL } from './js/core/model.js';
 import { mountTopbar } from './js/core/nav.js';
+import { formatWhen } from './js/core/format.js';
 
 await mountTopbar('report.html');
 const provider = await getProvider();
 const params = new URLSearchParams(location.search);
+
+// 보고서 머리말. 서버 보고서의 것과 같은 문장이다.
+const DISCLAIMER = '대응 검토 우선순위는 공개 데이터에 판정 기준을 적용한 결과이며, '
+  + '내부 실제 위험도와 최종 패치 여부는 보안담당자가 판단합니다.';
 
 // 스캔 화면에서 체크한 항목이 그대로 넘어온다. 비어 있으면 전체 보고서다.
 const selection = params.getAll('select');
@@ -215,131 +226,205 @@ function renderFinding(item, index) {
 }
 
 /**
- * 2장 조치 대상 — 결재 문서의 본문.
+ * 2장 조치 대상 · 3장 패키지별 상세.
  *
- * "패키지 N개를 올리면 취약점 M건이 해소된다"가 담당자가 결재에 올릴 문장이다.
- * CVE 목록만으로는 그 문장을 만들 수 없다.
+ * 둘 다 **패키지 단위로 쪽을 넘긴다.** 48,923건은 패키지 8,154개가 되는데,
+ * 그것을 한 화면에 평평하게 늘어놓으면 스크롤조차 되지 않는다. 상세는 펼친
+ * 묶음만 서버에서 조립해 온다 — 전체 보고서를 만들면 20초에 수십 MB 다.
  */
-function renderActionTable(report) {
-  const packages = report.packages || [];
-  const fixable = packages.filter((g) => g.target_version);
-  const blocked = packages.filter((g) => !g.target_version);
 
-  if (!packages.length) {
-    $('#actions').classList.add('hidden');
+const PACKAGE_PAGE = 25;
+let pkgOffset = 0;
+let pkgTotal = 0;
+
+function packageParams(extra = {}) {
+  return {
+    priority: $('#pkg-priority').value,
+    q: $('#pkg-search').value.trim(),
+    ...extra,
+  };
+}
+
+async function renderPackages({ pushUrl = true } = {}) {
+  const host = $('#packages');
+  host.innerHTML = '<p class="muted">불러오는 중…</p>';
+
+  let page;
+  try {
+    page = await provider.listPackages(scanId(), {
+      ...packageParams(),
+      offset: pkgOffset,
+      limit: PACKAGE_PAGE,
+    });
+  } catch (error) {
+    host.innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
     return;
   }
-  $('#actions').classList.remove('hidden');
 
-  const resolved = fixable.reduce((sum, g) => sum + g.fixable_count, 0);
-  $('#action-table').innerHTML = `
-    ${fixable.length ? `
-      <p>패키지 <b>${fixable.length}개</b>를 업데이트하면 취약점 <b>${resolved}건</b>이 해소됩니다.</p>
-      <div class="table-scroll"><table>
-        <thead><tr><th>대응 검토</th><th>패키지</th><th>현재 → 목표</th>
-          <th class="num">해소</th><th>취약점</th></tr></thead>
-        <tbody>${fixable.map((g) => `<tr>
-          <td>${esc(g.priority_label)}</td>
-          <td><b>${esc(g.package)}</b> <span class="faint">${esc(g.package_type)}</span></td>
-          <td class="mono">${esc(g.installed_version)} <span class="arrow">→</span>
-            <b>${esc(g.target_version)}</b></td>
-          <td class="num">${g.fixable_count}</td>
-          <td class="mono faint">${esc(g.cves.join(', '))}</td>
-        </tr>`).join('')}</tbody></table></div>` : '<p class="muted">패치로 해소할 수 있는 항목이 없습니다.</p>'}
-    ${blocked.length ? `
-      <h3>수정 버전이 없는 패키지 (${blocked.length}개)</h3>
-      <p class="muted">업데이트로 해소할 수 없습니다. 완화 방안은 각 항목에 있습니다.</p>
-      <div class="table-scroll"><table>
-        <thead><tr><th>대응 검토</th><th>패키지</th><th>설치 버전</th><th>취약점</th></tr></thead>
-        <tbody>${blocked.map((g) => `<tr>
-          <td>${esc(g.priority_label)}</td>
-          <td><b>${esc(g.package)}</b></td>
-          <td class="mono">${esc(g.installed_version)}</td>
-          <td class="mono faint">${esc(g.cves.join(', '))}</td>
-        </tr>`).join('')}</tbody></table></div>` : ''}`;
+  pkgTotal = page.total;
+  const t = page.totals || {};
+  $('#action-summary').innerHTML = t.fixable_packages
+    ? `패키지 <b>${t.fixable_packages.toLocaleString()}개</b>를 업데이트하면 취약점
+       <b>${t.fixable.toLocaleString()}건</b>이 해소됩니다.
+       ${t.no_fix ? `수정 버전이 없는 항목이 <b>${t.no_fix.toLocaleString()}건</b> 있습니다.` : ''}`
+    : '패치로 해소할 수 있는 항목이 없습니다.';
+
+  host.innerHTML = page.packages.length
+    ? page.packages.map(packageBlock).join('')
+    : '<p class="muted">조건에 맞는 패키지가 없습니다.</p>';
+
+  const pages = Math.max(1, Math.ceil(page.total / PACKAGE_PAGE));
+  const current = Math.floor(page.offset / PACKAGE_PAGE) + 1;
+  $('#pkg-label').textContent =
+    `${(page.total ? page.offset + 1 : 0).toLocaleString()}–${(page.offset + page.packages.length).toLocaleString()}`
+    + ` / ${page.total.toLocaleString()}개 · ${current} / ${pages}쪽`;
+  $('#pkg-prev').disabled = page.offset === 0;
+  $('#pkg-next').disabled = !page.has_more;
+  $('#pkg-pager').hidden = page.total <= PACKAGE_PAGE;
+
+  if (pushUrl) {
+    const params = new URLSearchParams(window.location.search);
+    if (pkgOffset) params.set('pkg', String(pkgOffset)); else params.delete('pkg');
+    window.history.replaceState(null, '', `?${params}`);
+  }
 }
 
 /**
- * 3장 패키지별 상세 — CVE 카드를 패키지 아래로 모은다.
+ * 묶음 하나. **접힌 채로 나온다.**
  *
- * 조치는 패키지당 한 번이므로 읽는 순서도 그래야 한다. CVE 카드가 평평하게
- * 늘어서 있으면 같은 패키지의 항목이 어디에 흩어져 있는지 알 수 없다.
+ * 펼칠 때 그 묶음만 서버에서 받아 그린다. 미리 다 그려 두면 패키지 25개만
+ * 있어도 CVE 카드가 수백 장이고, 8,154개면 화면이 서지 않는다.
  */
-function renderGroups(report) {
-  const packages = report.packages || [];
-  if (!packages.length) {
-    $('#findings').innerHTML = '';
-    $('#toc-card').classList.add('hidden');
-    return;
-  }
+function packageBlock(group) {
+  const target = group.target_version
+    ? `<span class="mono">${esc(group.installed_version)}</span> <span class="arrow">→</span>
+       <b class="mono">${esc(group.target_version)}</b>`
+    : `<span class="mono">${esc(group.installed_version)}</span>
+       <span class="arrow">→</span> <span class="none">없음</span>`;
 
-  let index = 0;
-  const sections = packages.map((group, gi) => {
-    const cards = group.findings.map((item) => renderFinding(item, ++index)).join('');
-    return `
-      <section class="group-block" id="g-${gi + 1}">
-        <h2>${esc(group.package)}
-          <small class="faint">${esc(group.package_type)} ·
-            ${esc(group.installed_version)}${group.target_version
-              ? ` → ${esc(group.target_version)}` : ' · 수정 버전 없음'}
-            · 취약점 ${group.cve_count}건</small></h2>
-        ${group.chained_analysis ? `
-          <div class="card" style="margin-bottom:1rem">
-            <h3 style="margin-top:0">연계 분석</h3>
-            <p class="muted">공개 데이터(CVSS 벡터 · CWE)만으로 세운 기술적 연계
-              가능성입니다. 우리 환경의 실제 위험도는 노출 경로와 보상 통제를
-              함께 보아야 합니다.</p>
-            <p>${esc(group.chained_analysis)}</p>
-          </div>` : ''}
-        ${cards}
-      </section>`;
-  });
-
-  $('#findings').innerHTML = sections.join('');
-  $('#toc').innerHTML = packages.map((g, i) =>
-    `<li><a href="#g-${i + 1}">${esc(g.package)}</a>
-       <span class="faint">${g.cve_count}</span></li>`).join('');
-  $('#toc-card').classList.remove('hidden');
+  return `
+  <details class="pkg" data-priority="${esc(group.priority || '')}"
+           data-package="${esc(group.package)}" data-version="${esc(group.installed_version)}">
+    <summary>
+      <span class="pkg-name"><b>${esc(group.package)}</b>
+        <span class="faint">${esc(group.package_type)}</span></span>
+      <span class="pkg-review">${esc(group.priority_label || '')}</span>
+      <span class="pkg-target">${target}</span>
+      <span class="pkg-count">취약점 ${group.cve_count}건${
+        group.no_fix_count ? ` · 수정본 없음 ${group.no_fix_count}` : ''}</span>
+    </summary>
+    <div class="pkg-body"><p class="muted">펼치는 중…</p></div>
+  </details>`;
 }
 
-async function load(scanId) {
-  const report = await provider.getReport(scanId, 'json', { selection, ai: useAi });
-  const scan = report.scan || {};
-  const scope = report.selection?.scope === 'selection'
-    ? `선택한 ${report.findings.length}건`
-    : `전체 ${report.findings.length}건`;
+/** 펼칠 때 그 묶음만 받아 그린다. 한 번 받으면 다시 받지 않는다. */
+async function expandPackage(details) {
+  const body = details.querySelector('.pkg-body');
+  if (details.dataset.loaded === '1') return;
+
+  const pkg = details.dataset.package;
+  const version = details.dataset.version;
+  try {
+    const group = await provider.packageDetail(scanId(), pkg, { version, ai: useAi });
+    let index = 0;
+    body.innerHTML = `
+      <div class="toolbar pkg-actions">
+        <span class="faint">이 패키지만</span>
+        <a class="btn small" data-dl="markdown">Markdown</a>
+        <a class="btn small" data-dl="html">HTML</a>
+        <button type="button" class="btn small" data-print>인쇄 · PDF</button>
+      </div>
+      ${group.chained_analysis ? `
+        <div class="card" style="margin:.75rem 0">
+          <h3 style="margin-top:0">연계 분석</h3>
+          <p class="muted">공개 데이터(CVSS 벡터 · CWE)만으로 세운 기술적 연계
+            가능성입니다. 우리 환경의 실제 위험도는 노출 경로와 보상 통제를
+            함께 보아야 합니다.</p>
+          <p>${esc(group.chained_analysis)}</p>
+        </div>` : ''}
+      ${(group.findings || []).map((item) => renderFinding(item, ++index)).join('')}`;
+
+    const params = { package: pkg, version, ai: useAi };
+    for (const format of ['markdown', 'html']) {
+      const link = body.querySelector(`[data-dl="${format}"]`);
+      link.href = provider.reportUrl(scanId(), format, params);
+      link.download = `sbomsight-${pkg}.${format === 'markdown' ? 'md' : 'html'}`;
+    }
+    body.querySelector('[data-print]').addEventListener('click', () => printOnly(details));
+
+    details.dataset.loaded = '1';
+  } catch (error) {
+    body.innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+  }
+}
+
+/** 이 묶음만 인쇄한다. 8,154개를 통째로 인쇄할 사람은 없다. */
+function printOnly(details) {
+  document.body.classList.add('printing-one');
+  details.classList.add('print-target');
+  const cleanup = () => {
+    document.body.classList.remove('printing-one');
+    details.classList.remove('print-target');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+}
+
+$('#packages').addEventListener('toggle', (event) => {
+  if (event.target.tagName === 'DETAILS' && event.target.open) expandPackage(event.target);
+}, true);
+
+$('#pkg-prev').addEventListener('click', () => {
+  pkgOffset = Math.max(0, pkgOffset - PACKAGE_PAGE);
+  renderPackages();
+});
+$('#pkg-next').addEventListener('click', () => {
+  pkgOffset += PACKAGE_PAGE;
+  renderPackages();
+});
+for (const selector of ['#pkg-priority', '#pkg-search']) {
+  const el = $(selector);
+  let timer = null;
+  el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => { pkgOffset = 0; renderPackages(); }, 250);
+  });
+}
+
+function scanId() {
+  return picker.value || params.get('scan') || '';
+}
+
+/** 이 스캔의 전체 탐지 건수. "전체 내려받기" 가 얼마나 큰지 판단하는 데 쓴다. */
+let scanTotal = 0;
+
+async function load(id) {
+  const summary = await provider.scanSummary(id);
+  scanTotal = summary.total;
+  const meta = await provider.getScanMeta(id);
+  const scan = meta.metadata || {};
 
   $('#meta').innerHTML = `
-    <dt>생성 시각</dt><dd>${esc(report.generated_at)}</dd>
-    <dt>스캔 ID</dt><dd class="mono">${esc(scan.scan_id || '')}</dd>
+    <dt>스캔 시각</dt><dd>${esc(formatWhen(meta.created_at))}</dd>
+    <dt>스캔 ID</dt><dd class="mono">${esc(id)}</dd>
     <dt>대상 SBOM</dt><dd>${esc(scan.sbom_filename || '(미상)')}
       <span class="faint">${esc(scan.sbom_format || '')}</span></dd>
-    <dt>컴포넌트</dt><dd>${scan.component_count ?? 0}개</dd>
-    <dt>보고서 범위</dt><dd>${esc(scope)}</dd>
-    <dt>판정 기준</dt><dd>${esc(report.policy?.label || '')}</dd>
-    ${report.ai_used ? '<dt>서술 생성</dt><dd>AI 사용 (공개 취약점 데이터만 전달)</dd>' : ''}`;
+    <dt>컴포넌트</dt><dd>${(scan.component_count ?? 0).toLocaleString()}개</dd>
+    <dt>탐지</dt><dd>${summary.total.toLocaleString()}건 · 패키지 ${summary.affected_packages.toLocaleString()}개</dd>
+    <dt>판정 기준</dt><dd>${esc(meta.policy?.label || '')}</dd>`;
 
   // AI 서술이 실제로 저장되어 있을 때만 선택지를 보여 준다. 만들어 둔 것이
   // 없는데 체크박스만 있으면, 켜도 아무것도 달라지지 않아 고장으로 읽힌다.
-  const stored = await provider.getScan(scanId).catch(() => null);
-  const hasNarratives = (stored?.narratives?.count || 0) > 0;
-  $('#ai-wrap').hidden = !hasNarratives && !useAi;
+  $('#ai-wrap').hidden = (meta.narratives?.count || 0) === 0 && !useAi;
 
-  // 부분 보고서라면 그 사실을 문서 앞머리에 남긴다 — 결재 문서로 나갈 때
-  // "전체 스캔 결과"로 오독되면 안 된다.
-  $('#scope').innerHTML = report.selection?.scope === 'selection'
-    ? `<div class="banner warn">이 보고서는 담당자가 선택한 <b>${report.findings.length}건</b>만 담고
-         있습니다. 스캔 전체 결과가 아닙니다.</div>`
-    : '';
+  $('#back-to-scan').href = `scan.html?scan=${encodeURIComponent(id)}`;
+  $('#disclaimer').innerHTML = `<div class="banner info">${esc(DISCLAIMER)}</div>`;
 
-  $('#back-to-scan').href = `scan.html?${withSelection({ scan: scanId })}`;
+  renderStats($('#stats'), summary);
+  renderSummaryLine($('#summary-line'), summary);
 
-  $('#disclaimer').innerHTML = `<div class="banner info">${esc(report.disclaimer)}</div>`;
-
-  renderStats($('#stats'), report.summary);
-  renderSummaryLine($('#summary-line'), report.summary);
-
-  const enrichment = report.enrichment || {};
+  const enrichment = meta.enrichment || {};
   $('#snapshot-card').innerHTML = Object.keys(enrichment).length
     ? `<h3 style="margin-top:0">사용한 위협정보 스냅샷</h3>
        <table><thead><tr><th>소스</th><th>상태</th><th class="num">수록</th>
@@ -350,24 +435,45 @@ async function load(scanId) {
           <td>${esc(s.snapshot_date || '-')}</td></tr>`).join('')}</tbody></table>`
     : '<p class="muted">위협정보 보강 없이 생성된 보고서입니다. EPSS·KEV·Exploit이 미확인으로 남아 있습니다.</p>';
   $('#summary').classList.remove('hidden');
+  $('#actions').classList.remove('hidden');
 
-  renderActionTable(report);
-  renderGroups(report);
+  pkgOffset = Number(params.get('pkg') || 0) || 0;
+  await renderPackages({ pushUrl: false });
 
-  $('#dl-md').href = provider.reportUrl(scanId, 'markdown', { selection, ai: useAi });
-  $('#dl-md').download = `sbomsight-${scanId}.md`;
-
-  if (provider.readonly) {
-    // 전시 모드에는 HTML을 조립해 줄 서버가 없다. 이 페이지가 이미 렌더링하고
-    // 인쇄(PDF)를 제공하므로 버튼을 감춘다.
-    $('#dl-html').classList.add('hidden');
-  } else {
-    $('#dl-html').href = provider.reportUrl(scanId, 'html', { selection, ai: useAi });
-    $('#dl-html').download = `sbomsight-${scanId}.html`;
-  }
+  $('#dl-md').href = provider.reportUrl(id, 'markdown', { selection, ai: useAi });
+  $('#dl-md').download = `sbomsight-${id}.md`;
+  $('#dl-html').href = provider.reportUrl(id, 'html', { selection, ai: useAi });
+  $('#dl-html').download = `sbomsight-${id}.html`;
 }
 
-$('#print').addEventListener('click', () => window.print());
+/**
+ * 전체 내려받기는 큰 스캔에서 **정말로 크다** — 48,923건이면 62MB에 26초다.
+ * 눌러 놓고 브라우저가 멈춘 줄 아는 일이 없도록 먼저 말해 준다. 선택 범위가
+ * 있으면 그만큼만 나가므로 묻지 않는다.
+ */
+const HEAVY = 2000;
+for (const [id, label] of [['#dl-md', 'Markdown'], ['#dl-html', 'HTML']]) {
+  $(id).addEventListener('click', (event) => {
+    if (selection.length || scanTotal < HEAVY) return;
+    const ok = window.confirm(
+      `이 스캔은 ${scanTotal.toLocaleString()}건 전체를 담습니다. 파일이 수십 MB가 되고 `
+      + '만드는 데 수십 초가 걸립니다.\n\n'
+      + '패키지 하나만 필요하면 취소하고, 그 패키지를 펼쳐 "이 패키지만" 버튼을 눌러 주세요.\n\n'
+      + `전체 ${label} 를 계속 내려받을까요?`);
+    if (!ok) event.preventDefault();
+  });
+}
+
+// 8,154개를 통째로 인쇄할 수는 없다 — 접힌 `<details>` 는 내용이 렌더되지도
+// 않으므로, 아무것도 펼치지 않고 누르면 빈 목록만 나온다. 그 상태를 말해 준다.
+$('#print').addEventListener('click', () => {
+  if (!document.querySelector('details.pkg[open]')) {
+    window.alert('인쇄할 패키지를 먼저 펼쳐 주세요. 펼친 항목만 인쇄됩니다.\n'
+      + '전체가 필요하면 "전체 Markdown" 또는 "전체 HTML" 을 내려받아 주세요.');
+    return;
+  }
+  window.print();
+});
 
 // --- AI 해설 포함 여부 ------------------------------------------------------
 $('#use-ai').checked = useAi;
@@ -398,8 +504,8 @@ if (!scans.length) {
   $('#meta-card').classList.add('hidden');
 } else {
   picker.innerHTML = scans.map((s) =>
-    `<option value="${esc(s.scan_id)}">${esc(s.created_at)} · ${esc(s.metadata?.sbom_filename || s.scan_id)}
-      (${s.finding_count}건)</option>`).join('');
+    `<option value="${esc(s.scan_id)}">${esc(formatWhen(s.created_at))} · ${esc(s.metadata?.sbom_filename || s.scan_id)}
+      (${s.finding_count.toLocaleString()}건)</option>`).join('');
   const requested = params.get('scan');
   picker.value = requested && scans.some((s) => s.scan_id === requested) ? requested : scans[0].scan_id;
   picker.addEventListener('change', () => {

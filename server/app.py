@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core import (
     artifacts, assets as assets_mod, csvexport, findingview, grype_runner,
-    selection as selection_mod, syft_runner,
+    selection as selection_mod, syft_runner, versioning,
 )
 from core.accounts import AccountError, VIEWER
 from core.assets import Asset, AssetError, Assets
@@ -33,13 +33,13 @@ from core.ai_narrative import (
 )
 from core.cli import _load_scan_result, revive_finding, revive_metadata
 from core.config import get_config
-from core.models import ScanResult, to_jsonable
+from core.models import Priority, ScanResult, to_jsonable
 from core.netacl import Allowlist
 from core.policy import load as load_policy
 from core.audit import AuditLog
 from core.prompt import build_chain_full_text, build_full_text
 from core.render import to_html, to_markdown
-from core.report import ReportBuilder
+from core.report import ReportBuilder, _highest_version
 from core.ruleengine import RuleEngine
 from core.sanitizer import EgressBlocked, EgressGuard
 from core.store import Store
@@ -615,6 +615,22 @@ def get_scan(scan_id: str) -> dict[str, Any]:
     return scan
 
 
+@app.get("/api/scans/{scan_id}/meta")
+def get_scan_meta(scan_id: str) -> dict[str, Any]:
+    """스캔 머리말. **findings 는 들어 있지 않다.**
+
+    보고서 화면이 시작할 때 필요한 것은 시각·SBOM·정책·보강 상태뿐이다.
+    그것을 위해 48,923건을 내려보내면 첫 화면이 8초가 된다.
+    """
+    store = _store()
+    meta = store.get_scan_meta(scan_id)
+    if meta is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    meta["narratives"] = store.narrative_meta(scan_id)
+    meta["selection"] = {"keys": store.get_selection(scan_id)}
+    return meta
+
+
 @app.get("/api/scans/{scan_id}/findings")
 def list_findings(
     scan_id: str,
@@ -778,12 +794,82 @@ def delete_scan(scan_id: str) -> dict[str, Any]:
     return {"deleted": scan_id}
 
 
+@app.get("/api/scans/{scan_id}/packages")
+def list_packages(
+    scan_id: str,
+    priority: str = Query("", pattern="^(P0|P1|P2|P3|)$"),
+    q: str = Query(""),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+) -> dict[str, Any]:
+    """조치 대상 표 한 쪽. **패키지 하나가 한 줄이다.**
+
+    48,923건은 패키지 8,154개가 된다. 그것도 한 화면에 그릴 양이 아니므로
+    SQL 로 집계해 쪽으로 넘긴다. 목표 버전은 이 쪽에 실린 묶음에 대해서만
+    계산한다 — 버전 비교는 SQL 이 못 하고, 8,154개를 다 비교할 이유도 없다.
+    """
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    page = store.page_packages(scan_id, priority=priority, query=q, offset=offset, limit=limit)
+    engine = RuleEngine.from_config(config)
+    for group in page["packages"]:
+        comparator = versioning.comparator_for(group["package_type"])
+        group["target_version"] = _highest_version(group.pop("fixed_versions"), comparator)
+        level = engine.describe_level(Priority(group["priority"] or "P3"))
+        group["priority_label"] = level.get("label", group["priority"] or "")
+
+    return {"scan_id": scan_id, **page, "totals": store.package_totals(scan_id)}
+
+
+@app.get("/api/scans/{scan_id}/packages/{package}")
+def get_package_detail(
+    scan_id: str,
+    package: str,
+    version: str = Query(""),
+    ai: bool = Query(False),
+) -> dict[str, Any]:
+    """묶음 하나의 상세. **펼쳤을 때만 부른다.**
+
+    보고서 전체를 만들면 48,923건에 20초가 걸리고 JSON 은 수십 MB 다.
+    펼친 묶음 하나만 조립하면 밀리초다.
+    """
+    store = _store()
+    meta = store.get_scan_meta(scan_id)
+    if meta is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    payloads = store.package_findings(scan_id, package, version)
+    if not payloads:
+        raise HTTPException(404, "패키지를 찾을 수 없습니다.")
+
+    findings = tuple(revive_finding(p) for p in payloads)
+    narratives, chains = {}, {}
+    if ai:
+        stored = store.get_narratives(scan_id)
+        narratives = {cve: narrative_from_dict(v) for cve, v in stored.items()}
+        chains = store.get_chains(scan_id)
+
+    result = ScanResult(
+        metadata=revive_metadata(meta.get("metadata") or {}),
+        findings=findings,
+        policy=meta.get("policy") or {},
+    )
+    report = ReportBuilder(config, engine=RuleEngine.from_config(config)).build(
+        result, narratives=narratives, chains=chains
+    )
+    return to_jsonable(report.packages[0]) if report.packages else {}
+
+
 @app.get("/api/scans/{scan_id}/report")
 def get_report(
     scan_id: str,
     format: str = Query("json", pattern="^(json|markdown|html)$"),
     select: list[str] = Query(default=[]),
     ai: bool = Query(True),
+    package: str = Query(""),
+    version: str = Query(""),
 ) -> Any:
     """보고서를 생성해 돌려준다.
 
@@ -796,10 +882,26 @@ def get_report(
     `ai=false` 는 **생성해 둔 서술까지 빼고** 뽑는다. 결재 문서를 AI 없이
     내야 하는 경우가 있고, 그때는 AI 관련 문구가 한 줄도 없어야 한다.
     """
-    result, picked = _scoped(scan_id, select)
-    scoped = dataclasses.replace(result, findings=picked.findings)
-
     store = _store()
+
+    if package:
+        # 패키지 하나만. 48,923건짜리 문서를 만들어 그중 한 절만 읽을 이유가 없다.
+        meta = store.get_scan_meta(scan_id)
+        if meta is None:
+            raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+        payloads = store.package_findings(scan_id, package, version)
+        if not payloads:
+            raise HTTPException(404, "패키지를 찾을 수 없습니다.")
+        scoped = ScanResult(
+            metadata=revive_metadata(meta.get("metadata") or {}),
+            findings=tuple(revive_finding(p) for p in payloads),
+            policy=meta.get("policy") or {},
+        )
+        picked = selection_mod.apply(scoped.findings, None)
+    else:
+        result, picked = _scoped(scan_id, select)
+        scoped = dataclasses.replace(result, findings=picked.findings)
+
     narratives: dict[str, Any] = {}
     chains: dict[str, str] = {}
     if ai:

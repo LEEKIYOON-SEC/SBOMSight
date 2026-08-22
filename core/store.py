@@ -23,7 +23,7 @@ def _sort_columns(payload: dict[str, Any]) -> tuple:
     """정렬·필터에 쓰는 값을 payload 에서 꺼낸다.
 
     `findings` 테이블의 컬럼 순서와 **정확히** 같아야 한다 —
-    package_type · cvss_score · epss · fixed_version ·
+    package_type · installed_version · cvss_score · epss · fixed_version ·
     update_available · no_fix · kev · exploit.
 
     참(true)만 1이다. `unknown` 은 0이지만 그것은 "아니오"라는 뜻이 아니라
@@ -36,6 +36,7 @@ def _sort_columns(payload: dict[str, Any]) -> tuple:
     flags = (payload.get("verdict") or {}).get("flags") or []
     return (
         str(installed.get("type") or ""),
+        str(installed.get("version") or ""),
         intel.get("cvss_score"),
         intel.get("epss"),
         str(advisory.get("fixed_version") or ""),
@@ -110,6 +111,7 @@ CREATE TABLE IF NOT EXISTS findings (
     priority     TEXT,
     payload      TEXT NOT NULL,
     package_type TEXT NOT NULL DEFAULT '',
+    installed_version TEXT NOT NULL DEFAULT '',
     cvss_score   REAL,
     epss         REAL,
     fixed_version TEXT NOT NULL DEFAULT '',
@@ -122,6 +124,8 @@ CREATE TABLE IF NOT EXISTS findings (
 CREATE INDEX IF NOT EXISTS idx_findings_scan ON findings(scan_id);
 CREATE INDEX IF NOT EXISTS idx_findings_cve  ON findings(cve);
 CREATE INDEX IF NOT EXISTS idx_findings_sort ON findings(scan_id, priority, package_name);
+-- installed_version 을 쓰는 인덱스는 _migrate 에서 만든다. 이 스크립트는
+-- 마이그레이션보다 먼저 돌아서, 컬럼이 아직 없는 기존 DB 에서는 실패한다.
 
 -- AI가 생성한 서술. 보고서를 다시 열 때마다 모델을 또 부르지 않기 위해
 -- 남긴다. 서술은 공개 데이터에서 나온 산문이므로 자산 정보를 담지 않지만,
@@ -204,6 +208,7 @@ class Store:
         added = False
         for name, ddl in (
             ("package_type", "TEXT NOT NULL DEFAULT ''"),
+            ("installed_version", "TEXT NOT NULL DEFAULT ''"),
             ("cvss_score", "REAL"),
             ("epss", "REAL"),
             ("fixed_version", "TEXT NOT NULL DEFAULT ''"),
@@ -217,6 +222,10 @@ class Store:
                 added = True
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_findings_sort ON findings(scan_id, priority, package_name)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_findings_pkg "
+            "ON findings(scan_id, package_name, installed_version)"
         )
         if added:
             Store._backfill(conn)
@@ -240,9 +249,9 @@ class Store:
 
         if updates:
             conn.executemany(
-                "UPDATE findings SET package_type = ?, cvss_score = ?, epss = ?, "
-                "fixed_version = ?, update_available = ?, no_fix = ?, kev = ?, exploit = ? "
-                "WHERE scan_id = ? AND finding_key = ?",
+                "UPDATE findings SET package_type = ?, installed_version = ?, cvss_score = ?, "
+                "epss = ?, fixed_version = ?, update_available = ?, no_fix = ?, kev = ?, "
+                "exploit = ? WHERE scan_id = ? AND finding_key = ?",
                 updates,
             )
 
@@ -278,9 +287,9 @@ class Store:
             conn.execute("DELETE FROM findings WHERE scan_id = ?", (result.metadata.scan_id,))
             conn.executemany(
                 "INSERT INTO findings (scan_id, finding_key, cve, package_name, priority, payload,"
-                " package_type, cvss_score, epss, fixed_version,"
+                " package_type, installed_version, cvss_score, epss, fixed_version,"
                 " update_available, no_fix, kev, exploit) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [_finding_row(result.metadata.scan_id, f) for f in result.findings],
             )
 
@@ -466,6 +475,123 @@ class Store:
             "limit": limit,
             "has_more": offset + len(rows) < total,
             "package_types": [t["package_type"] for t in types],
+        }
+
+    # --- 패키지 묶음 -------------------------------------------------------
+    #
+    # 보고서는 패키지 단위다. 48,923건은 패키지 8,154개가 되는데, 그것도 한
+    # 화면에 그릴 양이 아니다. 목록은 SQL 로 집계해 쪽으로 넘기고, 상세는
+    # 펼친 묶음만 조립한다.
+
+    def page_packages(
+        self,
+        scan_id: str,
+        *,
+        priority: str = "",
+        query: str = "",
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """조치 대상 표 한 쪽. 패키지 하나가 한 줄이다."""
+        where = ["scan_id = ?"]
+        params: list[Any] = [scan_id]
+        if priority:
+            # 묶음의 등급은 그 안에서 가장 급한 것이다. HAVING 으로 거른다.
+            pass
+        if query:
+            needle = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            where.append("(package_name LIKE ? ESCAPE '\\' OR cve LIKE ? ESCAPE '\\')")
+            params += [f"%{needle}%", f"%{needle}%"]
+        clause = " AND ".join(where)
+
+        having = "HAVING MIN(priority) = ?" if priority else ""
+        having_params = [priority] if priority else []
+
+        group_sql = (
+            "SELECT package_name, installed_version, "
+            "  MIN(package_type) AS package_type, "
+            "  MIN(priority) AS priority, "
+            "  COUNT(*) AS cve_count, "
+            "  SUM(CASE WHEN fixed_version != '' THEN 1 ELSE 0 END) AS fixable, "
+            "  SUM(CASE WHEN fixed_version = '' THEN 1 ELSE 0 END) AS no_fix, "
+            "  SUM(kev) AS kev, MAX(cvss_score) AS max_cvss, MAX(epss) AS max_epss "
+            f"FROM findings WHERE {clause} "
+            "GROUP BY package_name, installed_version "
+            f"{having}"
+        )
+
+        with self._connect() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) AS n FROM ({group_sql})", (*params, *having_params)
+            ).fetchone()["n"]
+            rows = conn.execute(
+                f"{group_sql} ORDER BY priority IS NULL ASC, priority ASC, "
+                f"cve_count DESC, package_name ASC LIMIT ? OFFSET ?",
+                (*params, *having_params, limit, offset),
+            ).fetchall()
+
+            groups = []
+            for row in rows:
+                cves = conn.execute(
+                    "SELECT cve, fixed_version FROM findings "
+                    "WHERE scan_id = ? AND package_name = ? AND installed_version = ? "
+                    "ORDER BY cve",
+                    (scan_id, row["package_name"], row["installed_version"]),
+                ).fetchall()
+                groups.append({
+                    "package": row["package_name"],
+                    "package_type": row["package_type"] or "",
+                    "installed_version": row["installed_version"],
+                    "priority": row["priority"],
+                    "cve_count": row["cve_count"],
+                    "fixable_count": row["fixable"],
+                    "no_fix_count": row["no_fix"],
+                    "kev_count": row["kev"] or 0,
+                    "max_cvss": row["max_cvss"],
+                    "max_epss": row["max_epss"],
+                    "cves": [c["cve"] for c in cves],
+                    "fixed_versions": [c["fixed_version"] for c in cves if c["fixed_version"]],
+                })
+
+        return {
+            "packages": groups,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(groups) < total,
+        }
+
+    def package_findings(
+        self, scan_id: str, package: str, installed_version: str = ""
+    ) -> list[dict[str, Any]]:
+        """묶음 하나에 속한 항목 전부. 펼쳤을 때만 부른다."""
+        sql = ("SELECT payload FROM findings WHERE scan_id = ? AND package_name = ?")
+        params: list[Any] = [scan_id, package]
+        if installed_version:
+            sql += " AND installed_version = ?"
+            params.append(installed_version)
+        sql += " ORDER BY priority IS NULL ASC, priority ASC, cve ASC"
+        with self._connect() as conn:
+            return [json.loads(r["payload"]) for r in conn.execute(sql, params)]
+
+    def package_totals(self, scan_id: str) -> dict[str, int]:
+        """조치 대상 요약 — 몇 개를 올리면 몇 건이 해소되는가."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS packages, "
+                "  SUM(CASE WHEN fixable > 0 THEN 1 ELSE 0 END) AS fixable_packages, "
+                "  SUM(fixable) AS fixable, SUM(no_fix) AS no_fix "
+                "FROM (SELECT SUM(CASE WHEN fixed_version != '' THEN 1 ELSE 0 END) AS fixable, "
+                "             SUM(CASE WHEN fixed_version = '' THEN 1 ELSE 0 END) AS no_fix "
+                "      FROM findings WHERE scan_id = ? "
+                "      GROUP BY package_name, installed_version)",
+                (scan_id,),
+            ).fetchone()
+        return {
+            "packages": row["packages"] or 0,
+            "fixable_packages": row["fixable_packages"] or 0,
+            "fixable": row["fixable"] or 0,
+            "no_fix": row["no_fix"] or 0,
         }
 
     def get_finding(self, scan_id: str, finding_key: str) -> dict[str, Any] | None:
