@@ -79,7 +79,7 @@ try {
 if (state.authenticated) {
   window.location.replace(nextPath());
 } else if (state.needs_setup) {
-  // 최초 1회. 서버는 이 요청을 본 PC(127.0.0.1)에서만 받는다.
+  // 최초 1회. 계정이 하나도 없을 때만 이 화면이 나온다.
   const el = form({
     title: '관리자 계정 만들기',
     note: '이 도구에는 아직 계정이 없습니다. 처음 만드는 계정이 관리자가 되며, '
