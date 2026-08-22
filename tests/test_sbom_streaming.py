@@ -118,14 +118,14 @@ class TestExactCount:
         ]}
         assert run(doc, chunk).component_count == 3
 
-    def test_gives_up_rather_than_guessing_past_budget(self, monkeypatch):
-        """예산을 넘으면 틀린 숫자 대신 미상을 낸다."""
-        import core.sbom as sbom_mod
+    def test_counts_large_documents_without_giving_up(self):
+        """크다고 세기를 포기하지 않는다.
 
-        monkeypatch.setattr(sbom_mod, "_COUNT_BUDGET", 2048)
-        info = run(cyclonedx(2000), 1024)
-        assert info.component_count is None
-        assert info.format == "cyclonedx-json"      # 형식은 여전히 안다
+        한때 예산 제한을 두어 큰 파일에서 "미상"을 냈지만 걷어냈다. 이 도구는
+        운영용이고 화면에 뜨는 숫자는 전부 정확해야 한다. 시간이 더 걸리는 것은
+        감수할 수 있어도 불확실한 숫자를 남기는 것은 감수 대상이 아니다.
+        """
+        assert run(cyclonedx(20_000), 1 << 20).component_count == 20_000
 
 
 class TestDigestAndSize:

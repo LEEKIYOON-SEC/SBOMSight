@@ -164,9 +164,16 @@ class TestFlags:
         verdict = engine.evaluate(make_finding(cvss=5.0, installed="1.0.0", fixed="2.0.0"))
         assert "update_available" in verdict.flags
 
-    def test_vulnerability_unconfirmed_when_version_uncomparable(self, engine):
+    def test_uncomparable_version_does_not_weaken_the_verdict(self, engine):
+        """버전 문자열을 못 읽어도 Grype 판정은 그대로다.
+
+        예전에는 여기서 `vulnerability_unconfirmed` 플래그가 붙어 "취약 여부 판단
+        불가"로 표시됐다. 하지만 판정한 것은 Grype 이고 우리 비교자가 못 읽은
+        것뿐이다. 우리 한계를 Grype 판정에 대한 의심으로 옮겨 적으면 안 된다.
+        """
         verdict = engine.evaluate(make_finding(cvss=5.0, installed="git-abcdef", fixed="2.0.0"))
-        assert "vulnerability_unconfirmed" in verdict.flags
+        assert "vulnerability_unconfirmed" not in verdict.flags
+        assert "update_available" in verdict.flags
 
     def test_stale_snapshot_flagged(self, engine):
         verdict = engine.evaluate(make_finding(cvss=5.0, snapshot="2020-01-01"), stale_days=7)

@@ -100,6 +100,10 @@ class Config:
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
 
+    def scan_dir(self, scan_id: str) -> Path:
+        """스캔 하나의 산출물 보관처 — Grype 원본을 여기에 둔다."""
+        return self.data_dir / "scans" / scan_id
+
     def ensure_dirs(self) -> None:
         for path in (self.data_dir, self.upload_dir, self.audit_dir, self.cache_dir):
             path.mkdir(parents=True, exist_ok=True)

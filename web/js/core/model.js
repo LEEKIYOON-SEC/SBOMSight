@@ -45,7 +45,7 @@ export const SEVERITY_LABEL = {
 
 /** 판정에 쓰인 데이터가 없다는 뜻의 플래그들. 값이 낮다는 뜻이 아니다. */
 export const UNKNOWN_FLAGS = new Set([
-  'unknown_epss', 'unknown_exploit', 'unknown_kev', 'no_cvss', 'vulnerability_unconfirmed',
+  'unknown_epss', 'unknown_exploit', 'unknown_kev', 'no_cvss',
 ]);
 
 /**
@@ -56,7 +56,6 @@ export const UNKNOWN_FLAGS = new Set([
 export const FLAG_LABEL = {
   no_fix_available: ['수정 버전 없음', '패치로 해소할 수 없으므로 완화 방안 검토가 필요합니다'],
   update_available: ['업데이트 가능', '상위 버전으로 갱신할 수 있습니다'],
-  vulnerability_unconfirmed: ['취약 여부 판단 불가', '버전 문자열을 비교할 수 없어 영향 여부를 확정하지 못했습니다. 수동 확인이 필요합니다'],
   unknown_epss: ['EPSS 미확인', 'EPSS 데이터를 확보하지 못했습니다. 악용 가능성이 낮다는 뜻이 아닙니다'],
   unknown_exploit: ['Exploit 존재 여부 미확인', '공개 exploit 존재 여부를 확인하지 못했습니다. 없다는 뜻이 아닙니다'],
   unknown_kev: ['KEV 조회 실패', 'CISA KEV 카탈로그를 조회하지 못했습니다'],
@@ -108,14 +107,12 @@ export function sortFindings(findings) {
 
 export function summarize(findings) {
   const byPriority = { P0: 0, P1: 0, P2: 0, P3: 0 };
-  let vulnerable = 0, unconfirmed = 0, updatable = 0, noFix = 0, kev = 0, exploit = 0;
+  let updatable = 0, noFix = 0, kev = 0, exploit = 0;
   const packages = new Set();
 
   for (const f of findings) {
     const p = f.verdict?.priority;
     if (p in byPriority) byPriority[p] += 1;
-    if (f.fix?.is_vulnerable === 'true') vulnerable += 1;
-    if (f.fix?.is_vulnerable === 'unknown') unconfirmed += 1;
     if (f.fix?.update_available === 'true') updatable += 1;
     if (f.verdict?.flags?.includes('no_fix_available')) noFix += 1;
     if (f.intel?.kev === 'true') kev += 1;
@@ -126,8 +123,6 @@ export function summarize(findings) {
   return {
     total: findings.length,
     by_priority: byPriority,
-    vulnerable_confirmed: vulnerable,
-    vulnerable_unconfirmed: unconfirmed,
     update_available: updatable,
     no_fix_available: noFix,
     kev_listed: kev,

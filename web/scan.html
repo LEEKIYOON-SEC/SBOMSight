@@ -85,7 +85,6 @@
           <option value="">전체</option>
           <option value="update">업데이트 가능</option>
           <option value="nofix">수정 버전 없음</option>
-          <option value="unknown">취약 여부 판단 불가</option>
           <option value="kev">CISA KEV 등재</option>
           <option value="exploit">공개 Exploit 확인</option>
         </select>
@@ -341,7 +340,6 @@ function applyFilters() {
     if (ecosystem && f.installed?.type !== ecosystem) return false;
     if (status === 'update' && f.fix?.update_available !== 'true') return false;
     if (status === 'nofix' && !f.verdict?.flags?.includes('no_fix_available')) return false;
-    if (status === 'unknown' && f.fix?.is_vulnerable !== 'unknown') return false;
     if (status === 'kev' && f.intel?.kev !== 'true') return false;
     if (status === 'exploit' && f.intel?.exploit_available !== 'true') return false;
     if (text) {

@@ -217,13 +217,12 @@ _ARRAY_KEY = {
 
 # 배열 원소를 **정확히** 센다. 표지 문자열을 세는 방법도 생각했지만
 # (`"bom-ref"` 등) 그 필드가 없는 SBOM이 실제로 존재해서 0개로 세어 버린다.
-# 틀린 숫자를 보여 주느니 정확히 세거나 "미상"이라고 말하는 편이 낫다.
 #
-# 구조 문자만 골라 훑으면 실측 약 24MB/s다. 100MB SBOM이 4초로, 파일을 받는
-# 시간보다 짧다. 다만 10GB면 7분이 걸리므로 예산을 넘으면 세기를 포기하고
-# "미상"으로 둔다 — 화면에 띄울 숫자 하나 때문에 업로드를 몇 분씩 붙잡지 않는다.
+# 한때는 큰 파일에서 세기를 포기하고 "미상"을 내는 예산 제한을 두었는데 걷어냈다.
+# 이 도구는 운영용이고, 화면에 뜨는 숫자는 전부 정확해야 한다. 시간이 더 걸리는
+# 것은 감수할 수 있지만 불확실한 숫자를 남기는 것은 감수 대상이 아니다.
+# 구조 문자만 골라 훑으므로 실측 약 24MB/s — 100MB가 4초로 파일을 받는 시간보다 짧다.
 _STRUCTURAL = re.compile(rb'["{}\[\]\\]')
-_COUNT_BUDGET = 512 * 1024 * 1024
 
 
 class _ArrayCounter:
@@ -245,11 +244,9 @@ class _ArrayCounter:
         self._esc_next = False
         self.count = 0
         self.done = False
-        self.overflowed = False
-        self._scanned = 0
 
     def feed(self, chunk: bytes) -> None:
-        if self.done or self.overflowed:
+        if self.done:
             return
 
         if self._seeking:
@@ -267,11 +264,6 @@ class _ArrayCounter:
             self._seeking = False
             self._tail = b""
             chunk, self._depth = window[bracket:], 0
-
-        self._scanned += len(chunk)
-        if self._scanned > _COUNT_BUDGET:
-            self.overflowed = True
-            return
 
         # 이 청크에서 이스케이프된 바이트의 위치. -1은 없음.
         # 직전 청크가 역슬래시로 끝났으면 이 청크의 첫 바이트가 그 대상이다.
@@ -305,7 +297,7 @@ class _ArrayCounter:
 
     @property
     def result(self) -> int | None:
-        if self.overflowed or self._seeking:
+        if self._seeking:
             return None
         return self.count
 

@@ -315,6 +315,18 @@ class ScanMetadata:
     provider: str = "grype"
     source: str = ""                 # SBOM이 기술한 대상 — 내부 정보일 수 있다
 
+    # Grype 결과와 우리가 보여 주는 것 사이의 차이를 숨기지 않기 위한 회계.
+    # 이 도구는 Grype 를 신뢰하기로 했으므로, 우리 쪽에서 매치가 사라졌다면
+    # 몇 건이 왜 사라졌는지 말할 수 있어야 한다.
+    grype_match_count: int = 0       # Grype 가 낸 matches 배열의 길이
+    merged_count: int = 0            # 같은 (CVE·패키지·버전)이라 합쳐진 매치 수
+    dropped: tuple[dict[str, Any], ...] = ()   # 옮기지 못한 매치와 그 사유
+
+    @property
+    def accounted(self) -> bool:
+        """Grype 매치가 하나도 새지 않았는가."""
+        return self.grype_match_count == 0 or not self.dropped
+
 
 @dataclass(frozen=True)
 class ScanResult:

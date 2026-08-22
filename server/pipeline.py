@@ -6,6 +6,7 @@ core/cli.py의 흐름과 동일하되, 각 단계가 끝날 때마다 JobRegistr
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -77,11 +78,28 @@ def run_scan(
         sbom_sha256=info.sha256,
         component_count=info.component_count or 0,
     )
-    registry.finish(
-        job, "detect",
-        metric=f"{len(result.findings)}건 탐지",
-        detail=f"grype {result.metadata.grype_version} · DB {result.metadata.grype_db_built or '미상'}",
+    # Grype 원본을 그대로 보관한다. 이 도구는 Grype 를 신뢰하기로 했고, 그
+    # 신뢰는 "언제든 원본과 대조할 수 있다"가 받쳐 준다
+    # (python -m core.cli verify).
+    artifacts.store_bytes(
+        json.dumps(raw, ensure_ascii=False).encode("utf-8"),
+        config.scan_dir(result.metadata.scan_id),
+        "grype.json",
+        compress=config.compress_storage,
     )
+
+    detail = f"grype {result.metadata.grype_version} · DB {result.metadata.grype_db_built or '미상'}"
+    meta = result.metadata
+    if meta.merged_count or meta.dropped:
+        # 매치가 줄었으면 왜 줄었는지 그 자리에서 말한다. 조용히 사라지지 않는다.
+        notes = []
+        if meta.merged_count:
+            notes.append(f"중복 {meta.merged_count}건 합침")
+        if meta.dropped:
+            notes.append(f"미전환 {len(meta.dropped)}건")
+        detail += f" · Grype 매치 {meta.grype_match_count}건 ({', '.join(notes)})"
+
+    registry.finish(job, "detect", metric=f"{len(result.findings)}건 탐지", detail=detail)
 
     # --- 3. 위협정보 보강 -------------------------------------------------
     findings = result.findings

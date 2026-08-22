@@ -106,12 +106,6 @@
       "label": "업데이트 가능",
       "note": "상위 버전으로 갱신할 수 있다"
     },
-    "vulnerability_unconfirmed": {
-      "field": "is_vulnerable",
-      "op": "is_unknown",
-      "label": "취약 여부 판단 불가",
-      "note": "버전 문자열을 비교할 수 없어 영향 여부를 확정하지 못했다. 수동 확인이 필요하다"
-    },
     "unknown_epss": {
       "field": "epss",
       "op": "is_missing",

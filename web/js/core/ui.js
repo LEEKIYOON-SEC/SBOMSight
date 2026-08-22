@@ -54,14 +54,16 @@ export function renderStats(container, summary) {
   container.innerHTML = tiles.join('');
 }
 
-/** 판단 불가 건수는 항상 함께 보여 준다 — '취약 0건'과 전혀 다른 상황이므로. */
+/**
+ * 요약 줄.
+ *
+ * "취약 확인 / 판단 불가"를 뺐다. 표에 있는 것은 전부 Grype 가 취약하다고 탐지한
+ * 것이므로 "취약 확인 N건"은 "전체 N건"의 재진술이었고, "판단 불가"는 우리
+ * 비교자가 못 읽었다는 뜻이 Grype 판정에 대한 의심으로 읽히던 자리였다.
+ */
 export function renderSummaryLine(container, summary) {
   container.innerHTML = `
     <span>영향 패키지 <b>${summary.affected_packages}</b>개</span>
-    <span class="arrow">·</span>
-    <span>취약 확인 <b>${summary.vulnerable_confirmed}</b>건</span>
-    <span class="arrow">·</span>
-    <span>판단 불가 <b>${summary.vulnerable_unconfirmed}</b>건</span>
     <span class="arrow">·</span>
     <span>업데이트 가능 <b>${summary.update_available}</b>건</span>
     <span class="arrow">·</span>
@@ -71,8 +73,6 @@ export function renderSummaryLine(container, summary) {
     <span class="arrow">·</span>
     <span>공개 Exploit <b>${summary.exploit_available}</b>건</span>`;
 }
-
-const TERNARY_TAG = { true: 'danger', false: 'ok', unknown: 'warn' };
 
 /**
  * 결과 표.
@@ -117,9 +117,6 @@ export function renderTable(tbody, findings, onSelect, {
         <td class="num">${intel.cvss_score ?? '—'}</td>
         <td class="num">${intel.epss === null || intel.epss === undefined ? '—' : intel.epss.toFixed(4)}</td>
         <td>
-          <span class="tag ${TERNARY_TAG[fix.is_vulnerable] || 'warn'}">취약 ${
-            esc(TERNARY_LABEL[fix.is_vulnerable] || '미확인')
-          }</span>
           ${intel.kev === 'true' ? '<span class="tag danger">KEV</span>' : ''}
           ${intel.exploit_available === 'true' ? '<span class="tag warn">Exploit</span>' : ''}
           ${flags.includes('no_fix_available') ? '<span class="tag danger">수정본 없음</span>' : ''}
@@ -284,7 +281,6 @@ export function renderDetail(body, finding, recommendation, narrative) {
       <table class="kv">
         <tr><th>설치 패키지</th><td>${esc(inst.name)} (${esc(inst.type || '')})</td></tr>
         <tr><th>현재 설치 버전</th><td class="mono">${esc(inst.version)}</td></tr>
-        <tr><th>취약 여부</th><td>${esc(TERNARY_LABEL[fix.is_vulnerable] || '미확인')}</td></tr>
         <tr><th>업데이트 가능</th><td>${esc(TERNARY_LABEL[fix.update_available] || '미확인')}</td></tr>
         <tr><th>수정 상태</th><td>${esc(FIX_STATE_LABEL[fix.fix_state] || '미확인')}</td></tr>
         <tr><th>버전 격차</th><td>${esc(fix.version_gap || '미확인')} <span class="faint">(비교자: ${esc(fix.comparator || '')})</span></td></tr>

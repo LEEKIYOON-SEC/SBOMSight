@@ -313,6 +313,30 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_verify(args: argparse.Namespace) -> int:
+    """Grype 원본과 우리 결과를 대조한다.
+
+    이 도구는 Grype 를 신뢰하기로 선택했다. Grype 가 틀리면 그것은 Grype 의
+    오류이고 감수한다. 우리 코드 때문에 결과가 달라지는 것은 감수 대상이 아니므로,
+    그 경계를 명령 하나로 확인할 수 있게 한다.
+    """
+    from .verify import load_grype_json, verify
+
+    config = get_config()
+    raw = load_grype_json(Path(args.grype_json))
+    result = _load_scan_result(args.source, config)
+
+    report = verify(raw, result)
+    print(report.summary(), file=sys.stderr)
+    if report.mismatches:
+        print("", file=sys.stderr)
+        for mismatch in report.mismatches[: args.limit]:
+            print(f"  {mismatch}", file=sys.stderr)
+        if len(report.mismatches) > args.limit:
+            print(f"  … 외 {len(report.mismatches) - args.limit}건", file=sys.stderr)
+    return 0 if report.ok else 1
+
+
 def _cmd_export(args: argparse.Namespace) -> int:
     from .export import export_all, warn_about_contents
 
@@ -377,6 +401,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_report.add_argument("--no-ai", dest="ai", action="store_false", help="AI 미사용 (기본값)")
     p_report.set_defaults(func=_cmd_report, ai=False)
+
+    p_verify = sub.add_parser(
+        "verify",
+        help="Grype 원본과 우리 결과를 대조 — 우리 코드가 결과를 바꾸지 않았는지 확인",
+    )
+    p_verify.add_argument("grype_json", help="grype -o json 산출물 (.gz 도 가능)")
+    p_verify.add_argument("source", help="findings.json 경로 또는 저장된 스캔 ID")
+    p_verify.add_argument("--limit", type=int, default=20, help="출력할 불일치 최대 건수")
+    p_verify.set_defaults(func=_cmd_verify)
 
     p_export = sub.add_parser(
         "export",

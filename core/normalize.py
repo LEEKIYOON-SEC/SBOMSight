@@ -308,13 +308,31 @@ def normalize_grype_report(
             source_desc = target
         source_desc = source_desc or str(source.get("type") or "")
 
+    # Grype 매치를 하나도 조용히 잃지 않는다. 옮기지 못했거나 합쳐진 것은
+    # 개수와 사유를 남겨 화면과 보고서에서 설명할 수 있게 한다. 이 도구는
+    # Grype 를 신뢰하기로 했고, 그 신뢰는 "우리가 흘린 게 없다"가 받쳐 준다.
+    matches = [m for m in (payload.get("matches") or ()) if isinstance(m, dict)]
     findings: list[Finding] = []
+    dropped: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for match in payload.get("matches") or ():
-        if not isinstance(match, dict):
-            continue
+    merged = 0
+
+    for index, match in enumerate(matches):
         finding = normalize_match(match, os_family=os_family)
-        if finding is None or finding.key in seen:
+        if finding is None:
+            vuln = match.get("vulnerability") if isinstance(match.get("vulnerability"), dict) else {}
+            artifact = match.get("artifact") if isinstance(match.get("artifact"), dict) else {}
+            dropped.append({
+                "index": index,
+                "vulnerability": str(vuln.get("id") or ""),
+                "package": str(artifact.get("name") or ""),
+                "reason": "매치에 패키지 이름이 없어 옮길 수 없었습니다",
+            })
+            continue
+        if finding.key in seen:
+            # 같은 취약점·패키지·버전을 Grype 가 여러 경로(cpe/rpm 매처 등)로
+            # 찾아낸 경우다. 같은 사실이므로 합치되, 몇 건이었는지는 남긴다.
+            merged += 1
             continue
         seen.add(finding.key)
         findings.append(finding)
@@ -330,5 +348,8 @@ def normalize_grype_report(
         grype_db_built=str(db.get("built") or "") if isinstance(db, dict) else "",
         provider="grype",
         source=source_desc,
+        grype_match_count=len(matches),
+        merged_count=merged,
+        dropped=tuple(dropped),
     )
     return ScanResult(metadata=metadata, findings=tuple(findings))

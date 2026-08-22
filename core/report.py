@@ -252,10 +252,6 @@ def _rule_response_rationale(finding: Finding, engine: RuleEngine) -> str:
         tail.append(
             "공개된 수정 버전이 없어 업데이트로는 해소할 수 없으므로 완화 방안 검토가 함께 필요하다"
         )
-    if "vulnerability_unconfirmed" in verdict.flags:
-        tail.append(
-            "설치 버전 문자열을 비교할 수 없어 실제 영향 여부가 확정되지 않았다. 수동 확인이 필요하다"
-        )
     if "stale_snapshot" in verdict.flags:
         tail.append("판정에 사용한 위협정보 스냅샷이 오래되어 최신 데이터로 재확인이 권고된다")
 
