@@ -125,11 +125,6 @@ h3 { font-size: .95rem; margin: 1.25rem 0 .5rem; color: var(--accent); }
 .tag.warn { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
 .tag.danger { color: var(--danger); border-color: var(--danger); background: var(--danger-bg); }
 .tag.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-bg); }
-.nosend {
-  color: var(--danger); background: var(--danger-bg);
-  border: 1px solid var(--danger); border-radius: var(--radius-sm);
-  padding: .05rem .4rem; font-size: .7rem; font-weight: 700;
-}
 
 /* ---------- 통계 타일 ---------- */
 .stat { padding: .85rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-soft); }
@@ -213,6 +208,12 @@ body.gate { display: flex; align-items: center; justify-content: center; min-hei
 .dropzone .big { font-size: 1rem; font-weight: 600; }
 .dropzone .sub { font-size: .82rem; color: var(--fg-muted); margin-top: .3rem; }
 
+/* 끝난 스테퍼는 접는다. 일곱 칸이 화면 위쪽을 계속 차지하면 정작 봐야 할
+   결과 표가 아래로 밀린다. */
+.collapsed .stepper { display: none; }
+.collapsed-line { margin: 0; font-size: .85rem; }
+#progress-card:not(.collapsed) .collapsed-line { display: none; }
+
 /* ---------- 표 ---------- */
 table { border-collapse: collapse; width: 100%; font-size: .87rem; }
 th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -223,6 +224,33 @@ tbody tr.clickable { cursor: pointer; }
 .table-scroll { overflow-x: auto; max-height: 34rem; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); }
 .kv th { width: 12rem; background: var(--bg-soft); position: static; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 헤더 클릭 정렬. 지금 어느 열로 정렬 중인지 화살표로 보인다 — 없으면
+   눌러 놓고도 뭐가 적용됐는지 알 수 없다. */
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--fg); }
+th.sortable::after { content: ''; margin-left: .3rem; color: var(--fg-faint); }
+th.sortable[data-active="asc"]::after { content: '▲'; color: var(--accent); }
+th.sortable[data-active="desc"]::after { content: '▼'; color: var(--accent); }
+th.sortable[data-active] { color: var(--fg); }
+
+/* 대응 검토는 배지가 아니라 그 행의 성격이다. 좌측 색 띠로 낸다 — 배지로 두면
+   KEV·Exploit 배지와 한 칸에 뭉쳐 서로를 가린다. */
+td.review { white-space: nowrap; font-weight: 600; }
+td.review .mark {
+  display: inline-block; width: .3rem; height: .85rem; border-radius: 1px;
+  margin-right: .45rem; vertical-align: -.1rem;
+}
+.mark.p0 { background: var(--p0); }
+.mark.p1 { background: var(--p1); }
+.mark.p2 { background: var(--p2); }
+.mark.p3 { background: var(--p3); }
+tr.row-p0 td:first-child { box-shadow: inset .18rem 0 0 var(--p0); }
+tr.row-p1 td:first-child { box-shadow: inset .18rem 0 0 var(--p1); }
+
+/* 설치 → 수정. 조치를 한 칸에서 읽는다. */
+td.fix { white-space: nowrap; }
+td.fix .none { color: var(--danger); font-weight: 600; }
 
 /* 선택 열. 여기서 일어난 클릭은 상세 드로어를 열지 않는다(ui.js). */
 th.pick, td.pick { width: 2.2rem; padding-right: 0; }
@@ -263,9 +291,6 @@ td.pick input:disabled { cursor: default; }
 .section > h3 { margin-top: 0; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .src-badge { font-size: .68rem; font-weight: 400; color: var(--fg-faint);
   border: 1px solid var(--line); border-radius: 3px; padding: 0 .3rem; }
-.local-box { border: 2px dashed var(--danger); border-radius: var(--radius);
-  padding: .9rem 1.1rem; background: var(--danger-bg); }
-.local-box h3 { color: var(--danger); }
 .callout { background: var(--warn-bg); border: 1px solid var(--warn);
   border-radius: var(--radius-sm); padding: .6rem .8rem; font-size: .84rem; }
 .callout ul { margin: .25rem 0; padding-left: 1.1rem; }

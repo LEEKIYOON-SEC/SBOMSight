@@ -6,12 +6,20 @@
  * 문자열 리터럴은 core/models.py 의 열거형 값과 일치해야 한다.
  */
 
+import { formatProbability } from './format.js';
+
 export const PRIORITIES = ['P0', 'P1', 'P2', 'P3'];
 
+/**
+ * 화면에 보이는 것은 이 문구뿐이다. `P0`·`P1` 같은 코드는 **표시하지 않는다.**
+ *
+ * 코드를 보여 주면 읽는 사람이 매번 "P1이 뭐였지"를 되짚어야 하고, 코드에는
+ * 뜻이 없으므로 되짚을 근거도 화면에 없다. 내부 값은 정렬·필터의 축으로만 남는다.
+ */
 export const PRIORITY_LABEL = {
-  P0: '즉시 대응 검토',
-  P1: '우선 대응 검토',
-  P2: '계획 대응 검토',
+  P0: '즉시 검토',
+  P1: '우선 검토',
+  P2: '계획 검토',
   P3: '모니터링',
 };
 
@@ -131,18 +139,16 @@ export function summarize(findings) {
   };
 }
 
-/** EPSS 백분위는 '이 CVE보다 낮은 비율'이므로 상위 비율은 그 여집합이다. */
-export function epssTopPercent(percentile) {
-  if (percentile === null || percentile === undefined) return null;
-  return (1 - percentile) * 100;
-}
-
+/**
+ * EPSS — **확률 하나만** 쓴다. `0.0011` 이 아니라 `0.11%` 다.
+ *
+ * 백분위는 넣지 않는다. "확률 0.11% 인데 상위 12%" 라는 두 숫자가 나란히 있으면
+ * 어느 쪽을 봐야 하는지 알 수 없다. 우리가 쓰는 것은 "30일 안에 악용이 관측될
+ * 확률" 이고, 그 하나로 충분하다.
+ */
 export function formatEpss(intel) {
   if (intel?.epss === null || intel?.epss === undefined) return '미확인';
-  let text = intel.epss.toFixed(4);
-  const top = epssTopPercent(intel.epss_percentile);
-  if (top !== null) text += ` (상위 ${top.toFixed(1)}%)`;
-  return text;
+  return formatProbability(intel.epss);
 }
 
 export function formatKev(intel) {

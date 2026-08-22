@@ -10,12 +10,8 @@
 <body>
 <header class="topbar"></header>
 
-<main class="wrap">
-  <h1>SBOM 스캔</h1>
-  <p class="lede">
-    폐쇄망에서 <code>syft</code>로 생성해 반출한 SBOM JSON(CycloneDX · SPDX · Syft)을 올리면
-    <b>진짜 Grype</b>가 취약점을 찾고, 공개 위협정보를 붙여 대응 검토 근거를 정리합니다.
-  </p>
+<main class="wide">
+  <div class="page-head"><h1>스캔</h1></div>
 
   <div id="banner"></div>
 
@@ -23,10 +19,7 @@
   <section class="card hidden" id="static-card">
     <h3 style="margin-top:0">전시 중인 실제 스캔 결과</h3>
     <p class="muted" style="margin-top:0">
-      이 페이지에서는 스캔하지 않습니다. Grype는 Go 바이너리와 취약점 DB를 요구하고,
-      AI 호출에 쓰는 키는 정적 페이지에 담을 수 없습니다. 아래는 실제 PC에서
-      진짜 Syft/Grype로 수행한 결과를 그대로 옮겨 온 것입니다 —
-      판정도, AI에 전송된 내용도, 보고서도 전부 그때 실제로 일어난 일의 기록입니다.
+      실제 PC에서 Syft·Grype로 수행한 결과입니다. 이 페이지에서는 새로 스캔하지 않습니다.
     </p>
     <div class="toolbar" style="margin-bottom:0">
       <select id="static-pick"></select>
@@ -55,7 +48,11 @@
 
   <!-- 진행 -->
   <section class="card hidden" id="progress-card">
-    <h3 style="margin-top:0">진행 상황</h3>
+    <div class="toolbar" style="margin:0 0 .5rem">
+      <h3 style="margin:0">진행 상황</h3>
+      <div class="spacer"></div>
+      <button class="btn small" id="progress-toggle" hidden>펼치기</button>
+    </div>
     <div class="stepper" id="stepper"></div>
     <div id="job-error"></div>
   </section>
@@ -69,22 +66,23 @@
     <div class="card">
       <div class="toolbar">
         <select id="filter-priority">
-          <option value="">전체 우선순위</option>
-          <option value="P0">P0 즉시 대응 검토</option>
-          <option value="P1">P1 우선 대응 검토</option>
-          <option value="P2">P2 계획 대응 검토</option>
-          <option value="P3">P3 모니터링</option>
+          <option value="">대응 검토 전체</option>
+          <option value="P0">즉시 검토</option>
+          <option value="P1">우선 검토</option>
+          <option value="P2">계획 검토</option>
+          <option value="P3">모니터링</option>
         </select>
-        <select id="filter-ecosystem"><option value="">전체 생태계</option></select>
+        <select id="filter-ecosystem"><option value="">패키지 유형 전체</option></select>
         <select id="filter-fix">
-          <option value="">전체</option>
+          <option value="">상태 전체</option>
           <option value="update">업데이트 가능</option>
           <option value="nofix">수정 버전 없음</option>
-          <option value="kev">CISA KEV 등재</option>
-          <option value="exploit">공개 Exploit 확인</option>
+          <option value="kev">실제 악용 확인 (CISA KEV)</option>
+          <option value="exploit">공격코드 공개</option>
         </select>
         <input type="search" id="filter-text" placeholder="CVE 또는 패키지 검색">
         <div class="spacer"></div>
+        <button id="csv-btn">CSV 내려받기</button>
         <span class="faint" id="count"></span>
       </div>
 
@@ -93,7 +91,7 @@
         <b id="selection-count">0건 선택</b>
         <span class="faint" id="selection-hint">보고서와 AI 전송의 범위입니다.</span>
         <button id="select-filtered">보이는 항목 전체 선택</button>
-        <button id="select-p0p1">P0 · P1 선택</button>
+        <button id="select-p0p1">즉시 · 우선 검토 선택</button>
         <button id="select-none">선택 해제</button>
         <div class="spacer"></div>
         <button id="egress-btn" disabled>AI에 전송될 내용 보기</button>
@@ -104,8 +102,13 @@
         <table>
           <thead><tr>
             <th class="pick"><input type="checkbox" id="check-all" aria-label="보이는 항목 전체 선택"></th>
-            <th>우선순위</th><th>CVE</th><th>패키지</th><th>설치 버전</th>
-            <th>Fixed</th><th class="num">CVSS</th><th class="num">EPSS</th><th>상태</th>
+            <th class="sortable" data-sort="priority">대응 검토</th>
+            <th class="sortable" data-sort="cve">CVE</th>
+            <th class="sortable" data-sort="package">패키지</th>
+            <th>설치 <span class="arrow">→</span> 수정</th>
+            <th class="num sortable" data-sort="cvss">심각도</th>
+            <th class="num sortable" data-sort="epss">악용 예측</th>
+            <th>근거</th>
           </tr></thead>
           <tbody id="rows"></tbody>
         </table>
@@ -139,11 +142,12 @@
 
 <script type="module">
 import { getProvider } from './js/providers/index.js';
-import { findingKey, sortFindings, summarize } from './js/core/model.js';
+import { findingKey, priorityRank, sortFindings, summarize } from './js/core/model.js';
 import {
   $, $$, esc, renderDetail, renderStats, renderStepper, renderSummaryLine, renderTable,
 } from './js/core/ui.js';
 import { mountTopbar } from './js/core/nav.js';
+import { downloadCsv } from './js/core/csv.js';
 
 await mountTopbar('scan.html');
 const provider = await getProvider();
@@ -157,6 +161,7 @@ const state = {
   filtered: [],
   selected: new Set(),
   reportIndex: new Map(),   // 선택 키 → 보고서 항목 (서술 + 권고사항)
+  sort: { key: 'priority', desc: false },
   ai: { ready: false, model: '' },
 };
 
@@ -280,6 +285,22 @@ runButton?.addEventListener('click', async () => {
   }
 });
 
+function collapseProgress(job) {
+  const card = $('#progress-card');
+  const toggle = $('#progress-toggle');
+  card.classList.add('collapsed');
+  toggle.hidden = false;
+
+  const detect = (job.steps || []).find((s) => s.key === 'detect');
+  $('#stepper').insertAdjacentHTML('beforebegin',
+    `<p class="muted collapsed-line" id="progress-line">스캔 완료 — ${esc(detect?.metric || '')}</p>`);
+
+  toggle.addEventListener('click', () => {
+    const open = card.classList.toggle('collapsed');
+    toggle.textContent = open ? '펼치기' : '접기';
+  });
+}
+
 async function pollUntilDone(jobId) {
   for (;;) {
     const job = await provider.pollScan(jobId);
@@ -293,6 +314,9 @@ async function pollUntilDone(jobId) {
     if (job.state === 'done') {
       await loadResults(job.scan_id);
       runButton.disabled = false;
+      // 끝난 스테퍼는 접는다. 일곱 칸이 화면 위쪽을 계속 차지하면 정작 봐야 할
+      // 결과 표가 아래로 밀린다. 무엇이 어떻게 돌았는지는 펼쳐서 볼 수 있다.
+      collapseProgress(job);
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -331,10 +355,12 @@ async function loadResults(scanId) {
   renderStats($('#stats'), summarize(state.findings));
   renderSummaryLine($('#summary-line'), summarize(state.findings));
 
-  const ecosystems = [...new Set(state.findings.map((f) => f.installed?.type).filter(Boolean))].sort();
+  const types = [...new Set(state.findings.map((f) => f.installed?.type).filter(Boolean))].sort();
   $('#filter-ecosystem').innerHTML =
-    '<option value="">전체 생태계</option>' +
-    ecosystems.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
+    '<option value="">패키지 유형 전체</option>' +
+    types.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
+
+  readFiltersFromUrl();
 
   if (!canSelect) {
     $$('#selection-bar button').forEach((b) => { b.hidden = true; });
@@ -347,16 +373,88 @@ async function loadResults(scanId) {
   applyFilters();
 }
 
-// --- 필터 ------------------------------------------------------------------
-function applyFilters() {
+// --- 필터 · 정렬 ------------------------------------------------------------
+const FILTER_FIELDS = {
+  priority: '#filter-priority',
+  type: '#filter-ecosystem',
+  status: '#filter-fix',
+  q: '#filter-text',
+};
+
+/**
+ * 필터와 정렬 상태를 주소창에 남긴다.
+ *
+ * 남기지 않으면 새로고침 한 번에 초기화되고, "이 조건으로 보이는 것" 을 남에게
+ * 링크로 건넬 수도 없다. `replaceState` 라 뒤로 가기가 필터 조작 이력으로
+ * 채워지지도 않는다.
+ */
+function writeFiltersToUrl() {
+  const params = new URLSearchParams(window.location.search);
+  for (const [name, selector] of Object.entries(FILTER_FIELDS)) {
+    const value = $(selector).value.trim();
+    if (value) params.set(name, value); else params.delete(name);
+  }
+  if (state.sort.key !== 'priority' || state.sort.desc) {
+    params.set('sort', state.sort.key);
+    params.set('order', state.sort.desc ? 'desc' : 'asc');
+  } else {
+    params.delete('sort');
+    params.delete('order');
+  }
+  window.history.replaceState(null, '', `?${params}`);
+}
+
+function readFiltersFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  for (const [name, selector] of Object.entries(FILTER_FIELDS)) {
+    const value = params.get(name);
+    if (value !== null) $(selector).value = value;
+  }
+  if (params.get('sort')) {
+    state.sort = { key: params.get('sort'), desc: params.get('order') === 'desc' };
+  }
+}
+
+/**
+ * 정렬 키. **미확인 값은 방향과 무관하게 항상 뒤로 간다.**
+ *
+ * 데이터가 없는 것을 0으로 채워 줄 세우면 "EPSS 가 가장 낮은 항목" 자리에
+ * 사실은 EPSS 를 못 받아온 항목이 앉는다. 그것은 거짓말이다.
+ */
+const SORTERS = {
+  priority: (f) => [priorityRank(f.verdict?.priority), f.installed?.name || ''],
+  cve: (f) => [f.intel?.cve || ''],
+  package: (f) => [f.installed?.name || '', f.intel?.cve || ''],
+  cvss: (f) => [f.intel?.cvss_score ?? null],
+  epss: (f) => [f.intel?.epss ?? null],
+};
+
+function compare(a, b, key, desc) {
+  const left = SORTERS[key](a);
+  const right = SORTERS[key](b);
+  for (let i = 0; i < left.length; i += 1) {
+    const x = left[i];
+    const y = right[i];
+    // 미확인끼리는 동률, 미확인과 값은 언제나 미확인이 뒤.
+    if (x === null && y === null) continue;
+    if (x === null) return 1;
+    if (y === null) return -1;
+    if (x === y) continue;
+    const order = typeof x === 'string' ? x.localeCompare(y) : x - y;
+    return desc ? -order : order;
+  }
+  return 0;
+}
+
+function applyFilters({ pushUrl = true } = {}) {
   const priority = $('#filter-priority').value;
-  const ecosystem = $('#filter-ecosystem').value;
+  const type = $('#filter-ecosystem').value;
   const status = $('#filter-fix').value;
   const text = $('#filter-text').value.trim().toLowerCase();
 
   state.filtered = state.findings.filter((f) => {
     if (priority && f.verdict?.priority !== priority) return false;
-    if (ecosystem && f.installed?.type !== ecosystem) return false;
+    if (type && f.installed?.type !== type) return false;
     if (status === 'update' && f.fix?.update_available !== 'true') return false;
     if (status === 'nofix' && !f.verdict?.flags?.includes('no_fix_available')) return false;
     if (status === 'kev' && f.intel?.kev !== 'true') return false;
@@ -368,7 +466,13 @@ function applyFilters() {
     return true;
   });
 
+  state.filtered.sort((a, b) => compare(a, b, state.sort.key, state.sort.desc));
+
   $('#count').textContent = `${state.filtered.length} / ${state.findings.length}건`;
+  $$('th.sortable').forEach((th) => {
+    th.dataset.active = th.dataset.sort === state.sort.key ? (state.sort.desc ? 'desc' : 'asc') : '';
+  });
+
   renderTable($('#rows'), state.filtered, openDrawer, {
     key: findingKey,
     selected: state.selected,
@@ -376,11 +480,29 @@ function applyFilters() {
     selectable: canSelect,
   });
   syncSelectionUi();
+  if (pushUrl) writeFiltersToUrl();
 }
 
-['#filter-priority', '#filter-ecosystem', '#filter-fix'].forEach((sel) =>
-  $(sel).addEventListener('change', applyFilters));
-$('#filter-text').addEventListener('input', applyFilters);
+Object.values(FILTER_FIELDS).forEach((selector) => {
+  const el = $(selector);
+  el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => applyFilters());
+});
+
+$$('th.sortable').forEach((th) => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    // 같은 열을 다시 누르면 방향을 뒤집는다. 다른 열이면 그 열의 자연스러운
+    // 방향에서 시작한다 — 점수는 높은 것부터, 이름은 가나다순부터.
+    state.sort = state.sort.key === key
+      ? { key, desc: !state.sort.desc }
+      : { key, desc: key === 'cvss' || key === 'epss' };
+    applyFilters();
+  });
+});
+
+$('#csv-btn').addEventListener('click', () => {
+  downloadCsv(state.filtered, `sbomsight-${state.scanId || 'scan'}.csv`);
+});
 
 // --- 선택 ------------------------------------------------------------------
 // 고른 것만 AI로 나가고, 고른 것만 보고서가 된다. 두 범위가 갈라지면
@@ -502,10 +624,14 @@ $('#egress-btn').addEventListener('click', async () => {
 });
 
 function renderEgress(preview) {
+  // "검증 통과" 만으로는 무엇을 확인했다는 것인지 알 수 없다. 확인한 내용을
+  // 그대로 평문으로 쓴다 — 이 화면의 존재 이유가 그 확인이다.
   const verdict = preview.ok
-    ? `<div class="banner info"><b>검증 통과</b> — 아래 내용이 전송 대상입니다.
-         적용 정책 <span class="mono">${esc(preview.policy.label)}</span></div>`
-    : `<div class="banner danger"><b>전송 차단</b> — 이그레스 정책 위반이 발견되어
+    ? `<div class="banner info"><b>전송 항목 확인됨</b> —
+         전송 대상 ${preview.fact_count}건을 확인했습니다.
+         자산명·호스트명·IP·파일 경로·설치 버전·판정 결과는 포함되지 않았습니다.
+         <span class="faint">AI 전송 허용 항목 ${esc(preview.policy.label)}</span></div>`
+    : `<div class="banner danger"><b>전송 차단</b> — 허용 항목에 없는 값이 발견되어
          이 상태로는 전송되지 않습니다.</div>`;
 
   const violations = (preview.violations || []).length

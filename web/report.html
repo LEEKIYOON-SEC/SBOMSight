@@ -112,9 +112,9 @@ function renderFinding(item, index) {
       <tr><th>EPSS</th><td>${esc(item.badge.epss)}</td></tr>
       <tr><th>CISA KEV</th><td>${esc(item.badge.kev)}</td></tr>
       <tr><th>공개 Exploit</th><td>${esc(item.badge.exploit)}</td></tr>
-      <tr><th>Fixed Version</th><td class="mono">${esc(item.badge.fixed_version)}</td></tr>
-      <tr><th>판정</th><td>${esc(item.badge.verdict)}</td></tr>
-      <tr><th>적용 정책</th><td class="mono faint">${esc(item.badge.policy)}</td></tr>
+      <tr><th>수정 버전</th><td class="mono">${esc(item.badge.fixed_version)}</td></tr>
+      <tr><th>대응 검토</th><td>${esc(item.badge.verdict)}</td></tr>
+      <tr><th>판정 기준</th><td class="faint">${esc(item.badge.policy)}</td></tr>
     </table>
 
     ${item.flags?.length ? `<div class="callout"><ul>${item.flags
@@ -123,9 +123,9 @@ function renderFinding(item, index) {
     <div class="section">
       <h3>① 취약점 개요</h3>
       <table class="kv">
-        <tr><th>취약 제품</th><td>${esc(o.advisory_package)} (${esc(o.advisory_ecosystem || '생태계 미상')})</td></tr>
-        <tr><th>취약 버전 (advisory)</th><td class="mono">${esc(o.affected_version_range)}</td></tr>
-        <tr><th>Fixed Version</th><td class="mono">${esc(o.fixed_version)}</td></tr>
+        <tr><th>취약 제품</th><td>${esc(o.advisory_package)} (${esc(o.advisory_ecosystem || '패키지 유형 미상')})</td></tr>
+        <tr><th>취약 버전</th><td class="mono">${esc(o.affected_version_range)}</td></tr>
+        <tr><th>수정 버전</th><td class="mono">${esc(o.fixed_version)}</td></tr>
         <tr><th>취약점 유형 (CWE)</th><td>${esc(o.cwe?.join(', ') || '미확인')}</td></tr>
         <tr><th>CVSS 벡터</th><td class="mono">${esc(o.cvss_vector || '미확인')}</td></tr>
         <tr><th>공개일</th><td>${esc(o.published || '미확인')}</td></tr>
@@ -180,9 +180,8 @@ function renderFinding(item, index) {
         : `<li>${esc(ref.source)}: ${esc(ref.title)}</li>`).join('')}</ul>
     </div>
 
-    <div class="section local-box">
-      <h3>[로컬 분석 정보] <span class="nosend">AI 미전달</span></h3>
-      <p class="muted">아래 정보는 우리 자산에 대한 사실이며 외부(AI)로 전달되지 않았습니다.</p>
+    <div class="section">
+      <h3>⑦ 이 자산에서</h3>
       <table class="kv">
         <tr><th>설치 패키지</th><td>${esc(local.installed_package)} (${esc(local.package_type)})</td></tr>
         <tr><th>현재 설치 버전</th><td class="mono">${esc(local.installed_version)}</td></tr>
@@ -212,7 +211,7 @@ async function load(scanId) {
       <span class="faint">${esc(scan.sbom_format || '')}</span></dd>
     <dt>컴포넌트</dt><dd>${scan.component_count ?? 0}개</dd>
     <dt>보고서 범위</dt><dd>${esc(scope)}</dd>
-    <dt>적용 정책</dt><dd class="mono">${esc(report.policy?.label || '')}</dd>
+    <dt>판정 기준</dt><dd>${esc(report.policy?.label || '')}</dd>
     <dt>서술 생성</dt><dd>${report.ai_used ? 'AI 사용' : 'AI 미사용 (룰 기반)'}</dd>`;
 
   // 부분 보고서라면 그 사실을 문서 앞머리에 남긴다 — 결재 문서로 나갈 때
