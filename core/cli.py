@@ -363,6 +363,99 @@ def _cmd_scans(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_asset(args: argparse.Namespace) -> int:
+    """자산(서버) 관리와 이력 비교.
+
+    이 도구의 관리 단위는 스캔이 아니라 서버 한 대다. CLI 로도 다룰 수 있어야
+    폐쇄망에서 배치 스크립트로 매달 돌릴 수 있다.
+    """
+    from .assets import AssetError, Assets, diff_findings
+
+    config = get_config()
+    assets = Assets(config.db_path)
+    store = Store(config.db_path)
+
+    if args.action == "list":
+        summary = store.asset_summary()
+        rows = assets.list(include_archived=args.all)
+        if not rows:
+            print("자산이 없습니다. `python -m core.cli asset add <이름>` 으로 등록하세요.")
+            return 0
+        for asset in rows:
+            info = summary.get(asset.asset_id, {})
+            last = info.get("last_scan_at") or "스캔 없음"
+            mark = " [보관]" if asset.archived else ""
+            print(
+                f"{asset.name:<24} {asset.group_name or '-':<14} {asset.os or '-':<16} "
+                f"스캔 {info.get('scan_count', 0):>3}건  최근 {last}{mark}"
+            )
+        unassigned = summary.get("", {}).get("scan_count", 0)
+        if unassigned:
+            print(f"\n미분류 스캔 {unassigned}건 — `asset assign <스캔ID> <자산이름>` 으로 배정하세요.")
+        return 0
+
+    try:
+        if args.action == "add":
+            asset = assets.create(
+                args.name, group_name=args.group or "", os=args.os or "", note=args.note or ""
+            )
+            print(f"등록: {asset.name} ({asset.asset_id})")
+            return 0
+
+        if args.action == "remove":
+            asset = assets.by_name(args.name)
+            if asset is None:
+                print(f"오류: '{args.name}' 자산이 없습니다.", file=sys.stderr)
+                return 1
+            assets.delete(asset.asset_id)
+            print(f"삭제: {asset.name} (스캔은 미분류로 남았습니다)")
+            return 0
+
+        if args.action == "assign":
+            asset = assets.by_name(args.name)
+            if asset is None:
+                print(f"오류: '{args.name}' 자산이 없습니다.", file=sys.stderr)
+                return 1
+            if not store.assign_scan(args.scan_id, asset.asset_id):
+                print(f"오류: 스캔 '{args.scan_id}' 을 찾을 수 없습니다.", file=sys.stderr)
+                return 1
+            print(f"배정: {args.scan_id} → {asset.name}")
+            return 0
+
+    except AssetError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 1
+
+    # history — 같은 자산의 최근 두 스캔을 대조한다.
+    asset = assets.by_name(args.name)
+    if asset is None:
+        print(f"오류: '{args.name}' 자산이 없습니다.", file=sys.stderr)
+        return 1
+
+    scans = store.list_scans(limit=500, asset_id=asset.asset_id)
+    if len(scans) < 2:
+        print(f"'{asset.name}' 에 스캔이 {len(scans)}건뿐입니다. 비교하려면 2건 이상 필요합니다.")
+        return 0
+
+    head_id, base_id = scans[0]["scan_id"], scans[1]["scan_id"]
+    base, head = store.get_scan(base_id), store.get_scan(head_id)
+    assert base is not None and head is not None
+
+    diff = diff_findings(
+        base["findings"], head["findings"],
+        base_scan_id=base_id, head_scan_id=head_id,
+        base_created_at=base["created_at"], head_created_at=head["created_at"],
+    )
+    print(f"{asset.name}  {base['created_at']} → {head['created_at']}")
+    print(f"  신규 {len(diff.added)}건 · 해소 {len(diff.resolved)}건 · 유지 {len(diff.remaining)}건\n")
+    for label, changes in (("신규", diff.added), ("해소", diff.resolved)):
+        for change in changes[: args.limit]:
+            print(f"  [{label}] {change.cve:<18} {change.package_name} {change.installed_version}")
+        if len(changes) > args.limit:
+            print(f"  … {label} 외 {len(changes) - args.limit}건")
+    return 0
+
+
 def _cmd_user(args: argparse.Namespace) -> int:
     """계정 관리 — 최초 관리자를 만드는 부트스트랩용.
 
@@ -486,6 +579,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_scans = sub.add_parser("scans", help="저장된 스캔 목록")
     p_scans.add_argument("--limit", type=int, default=20)
     p_scans.set_defaults(func=_cmd_scans)
+
+    p_asset = sub.add_parser("asset", help="자산(서버) 등록·배정·이력 비교")
+    asset_sub = p_asset.add_subparsers(dest="action", required=True)
+
+    a_add = asset_sub.add_parser("add", help="자산 등록")
+    a_add.add_argument("name", help="서버 이름 (예: web-01)")
+    a_add.add_argument("--group", help="그룹 (예: DMZ, 내부업무)")
+    a_add.add_argument("--os", help="운영체제 (예: Rocky 9.3)")
+    a_add.add_argument("--note")
+
+    a_list = asset_sub.add_parser("list", help="자산 목록과 마지막 스캔")
+    a_list.add_argument("--all", action="store_true", help="보관 처리한 자산도 표시")
+
+    a_assign = asset_sub.add_parser("assign", help="스캔을 자산에 배정")
+    a_assign.add_argument("scan_id")
+    a_assign.add_argument("name", help="자산 이름")
+
+    a_remove = asset_sub.add_parser("remove", help="자산 삭제 (스캔은 미분류로 남는다)")
+    a_remove.add_argument("name")
+
+    a_history = asset_sub.add_parser("history", help="최근 두 스캔 대조 — 신규·해소·유지")
+    a_history.add_argument("name")
+    a_history.add_argument("--limit", type=int, default=20, help="갈래별 출력 최대 건수")
+
+    p_asset.set_defaults(func=_cmd_asset)
 
     p_user = sub.add_parser(
         "user",

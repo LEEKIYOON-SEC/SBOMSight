@@ -92,11 +92,12 @@ export const liveApiProvider = {
     });
   },
 
-  async startScan({ uploadId, filename, enrich = true }) {
+  async startScan({ uploadId, filename, enrich = true, assetId = '' }) {
     const params = new URLSearchParams({
       upload_id: uploadId,
       filename: filename || '',
       enrich: String(enrich),
+      asset_id: assetId || '',
     });
     return (await request(`api/scan?${params}`, { method: 'POST' })).json();
   },

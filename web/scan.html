@@ -43,6 +43,9 @@
       <input type="file" id="file" accept=".json,application/json" hidden>
     </div>
     <div class="toolbar">
+      <label class="check" id="asset-pick-wrap" hidden>서버
+        <select id="asset-pick"></select>
+      </label>
       <label class="check"><input type="checkbox" id="enrich" checked> 위협정보 보강 (EPSS · CISA KEV · 공개 Exploit)</label>
       <div class="spacer"></div>
       <span id="file-info" class="faint"></span>
@@ -177,6 +180,27 @@ try {
 
 if (!canUpload) $('#upload-card').classList.add('hidden');
 
+/**
+ * 어느 서버의 SBOM 인지 먼저 고른다.
+ *
+ * 이 도구의 관리 단위는 스캔이 아니라 서버 한 대다. 올릴 때 정해 두지 않으면
+ * 나중에 "이 sbom.json 이 어느 서버 것이었지"를 파일명으로 추측하게 된다.
+ * 자산 화면에서 넘어온 경우(`?asset=`)는 그 서버가 이미 골라져 있다.
+ */
+if (canUpload) {
+  try {
+    const { assets } = await (await fetch('api/assets')).json();
+    const preset = new URLSearchParams(location.search).get('asset') || '';
+    if (assets?.length) {
+      $('#asset-pick').innerHTML = '<option value="">— 미분류 —</option>'
+        + assets.map((a) => `<option value="${esc(a.asset_id)}"${
+          a.asset_id === preset ? ' selected' : ''
+        }>${esc(a.name)}${a.group_name ? ` (${esc(a.group_name)})` : ''}</option>`).join('');
+      $('#asset-pick-wrap').hidden = false;
+    }
+  } catch { /* 전시 모드에는 자산이 없다 */ }
+}
+
 // --- 업로드 ----------------------------------------------------------------
 const dropzone = $('#dropzone');
 const fileInput = $('#file');
@@ -246,6 +270,7 @@ runButton?.addEventListener('click', async () => {
       uploadId: state.upload.upload_id,
       filename: state.upload.filename,
       enrich: $('#enrich').checked,
+      assetId: $('#asset-pick')?.value || '',
     });
     renderStepper($('#stepper'), steps);
     await pollUntilDone(jobId);

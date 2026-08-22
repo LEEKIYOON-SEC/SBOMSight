@@ -178,6 +178,16 @@ textarea { font-family: var(--mono); width: 100%; resize: vertical; }
 label.check { display: inline-flex; align-items: center; gap: .35rem; font-size: .85rem; color: var(--fg-muted); }
 
 button.small, .btn.small { font-size: .78rem; padding: .25rem .55rem; }
+
+/* 오래된 자산이 눈에 띄어야 목록의 의미가 있다. 스무 대의 날짜를 읽어 가며
+   머릿속으로 빼기를 하게 두지 않는다. */
+.stale-warn { color: var(--warn); font-weight: 600; }
+.stale-bad { color: var(--danger); font-weight: 700; }
+.stale-none { color: var(--fg-faint); }
+td .faint { margin-left: .4rem; }
+.stat.added .n { color: var(--danger); }
+.stat.resolved .n { color: var(--ok); }
+td.changed { color: var(--accent); font-weight: 600; }
 button.danger, .btn.danger { color: var(--danger); border-color: var(--danger); }
 
 .inline-form { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }

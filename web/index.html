@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SBOMSight</title>
+<title>자산 — SBOMSight</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/app.css">
 </head>
@@ -12,34 +12,52 @@
 
 <main class="wide">
   <div class="page-head">
-    <h1>스캔 기록</h1>
+    <h1>자산</h1>
     <a class="btn primary" href="scan.html">SBOM 올리기</a>
   </div>
 
   <div id="banner"></div>
+  <div id="assets" class="muted">불러오는 중…</div>
 
-  <div class="card">
-    <div id="recent" class="muted">불러오는 중…</div>
-  </div>
+  <section id="add-panel" hidden>
+    <h2>자산 등록</h2>
+    <div class="card">
+      <form id="add-asset" class="inline-form">
+        <input name="name" placeholder="서버 이름 (예: web-01)" required>
+        <input name="group_name" placeholder="그룹 (예: DMZ)">
+        <input name="os" placeholder="운영체제 (예: Rocky 9.3)">
+        <button class="btn primary" type="submit">등록</button>
+      </form>
+      <div id="add-msg"></div>
+    </div>
+  </section>
+
+  <section id="unassigned-panel" hidden>
+    <h2>미분류 스캔</h2>
+    <div class="card">
+      <p class="muted">자산에 배정되지 않은 스캔입니다. 어느 서버의 것인지 지정하세요.</p>
+      <div id="unassigned"></div>
+    </div>
+  </section>
 </main>
 
 <script type="module">
 import { getProvider } from './js/providers/index.js';
 import { $, esc } from './js/core/ui.js';
 import { mountTopbar } from './js/core/nav.js';
+import { daysSince, formatWhen } from './js/core/format.js';
 
-await mountTopbar('index.html');
+const state = await mountTopbar('index.html');
 const provider = await getProvider();
+const isAdmin = state?.role === 'admin';
+const live = provider.capabilities?.upload !== false;
 
 // --- 도구 상태 --------------------------------------------------------------
 const banner = $('#banner');
 try {
   const health = await provider.health();
   if (health.mode === 'static') {
-    banner.innerHTML = `<div class="banner info">
-      <b>전시 모드</b> — ${esc(health.note || '')}
-      ${health.tools?.grype ? `<span class="faint">grype ${esc(health.tools.grype)}</span>` : ''}
-      ${health.exported_at ? `<span class="faint">· 내보낸 시각 ${esc(health.exported_at)}</span>` : ''}</div>`;
+    banner.innerHTML = `<div class="banner info"><b>전시 모드</b> — ${esc(health.note || '')}</div>`;
   } else if (!health.ok) {
     banner.innerHTML = `<div class="banner warn">
       <b>Grype를 찾을 수 없습니다.</b> <code>scripts/install-tools.ps1</code> (Windows) 또는
@@ -56,31 +74,137 @@ try {
   banner.innerHTML = `<div class="banner danger">서버 상태를 확인하지 못했습니다: ${esc(error.message)}</div>`;
 }
 
-// --- 스캔 목록 --------------------------------------------------------------
-const recent = $('#recent');
-try {
+if (!live) {
+  // 전시 모드에는 자산 개념이 없다 — 내보낸 결과만 있다. 스캔 목록으로 대체한다.
   const { scans } = await provider.listScans();
-  if (!scans.length) {
-    recent.innerHTML = provider.readonly
-      ? '<span class="muted">전시할 결과가 아직 없습니다.</span>'
-      : '<span class="muted">아직 스캔 기록이 없습니다. <a href="scan.html">SBOM을 올려</a> 시작하세요.</span>';
-  } else {
-    recent.innerHTML = `<div class="table-scroll"><table>
-      <thead><tr><th>시각</th><th>SBOM</th><th class="num">컴포넌트</th>
-        <th class="num">탐지</th><th>스캔 ID</th><th></th></tr></thead>
-      <tbody>${scans.map((s) => `
-        <tr>
-          <td>${esc(s.created_at)}</td>
-          <td>${esc(s.metadata?.sbom_filename || '—')}</td>
-          <td class="num">${s.metadata?.component_count ?? '—'}</td>
-          <td class="num">${s.finding_count}</td>
-          <td class="mono faint">${esc(s.scan_id)}</td>
-          <td><a href="scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
-        </tr>`).join('')}</tbody></table></div>`;
-  }
-} catch (error) {
-  recent.innerHTML = `<span class="muted">스캔 목록을 불러오지 못했습니다: ${esc(error.message)}</span>`;
+  $('#assets').innerHTML = scans.length ? `<div class="card"><div class="table-scroll"><table>
+    <thead><tr><th>시각</th><th>SBOM</th><th class="num">탐지</th><th></th></tr></thead>
+    <tbody>${scans.map((s) => `<tr>
+      <td>${esc(formatWhen(s.created_at))}</td>
+      <td>${esc(s.metadata?.sbom_filename || '—')}</td>
+      <td class="num">${s.finding_count}</td>
+      <td><a href="scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
+    </tr>`).join('')}</tbody></table></div></div>`
+    : '<div class="card"><span class="muted">전시할 결과가 아직 없습니다.</span></div>';
+} else {
+  await render();
 }
+
+async function call(path, options = {}) {
+  const response = await fetch(path, {
+    headers: options.body ? { 'Content-Type': 'application/json' } : {},
+    ...options,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || `${response.status} ${response.statusText}`);
+  return payload;
+}
+
+/**
+ * 경과일에 색을 준다.
+ *
+ * 자산이 스무 대를 넘어가면 "마지막 스캔 2026-03-11" 같은 날짜를 스무 번 읽어
+ * 머릿속에서 빼기를 하게 된다. 오래된 것이 눈에 띄어야 목록의 의미가 있다.
+ */
+function staleness(iso) {
+  const days = daysSince(iso);
+  if (days === null) return { text: '스캔 없음', cls: 'stale-none' };
+  if (days > 90) return { text: `${days}일 전`, cls: 'stale-bad' };
+  if (days > 30) return { text: `${days}일 전`, cls: 'stale-warn' };
+  return { text: days === 0 ? '오늘' : `${days}일 전`, cls: '' };
+}
+
+async function render() {
+  const { assets, unassigned_scans: unassigned } = await call('api/assets');
+
+  if (isAdmin) $('#add-panel').hidden = false;
+
+  if (!assets.length) {
+    $('#assets').innerHTML = `<div class="card"><span class="muted">
+      등록된 자산이 없습니다. ${isAdmin
+        ? '아래에서 서버를 등록한 뒤 그 서버의 SBOM을 올리세요.'
+        : '관리자에게 자산 등록을 요청하세요.'}</span></div>`;
+  } else {
+    $('#assets').innerHTML = `<div class="card"><div class="table-scroll"><table>
+      <thead><tr>
+        <th>서버</th><th>그룹</th><th>운영체제</th>
+        <th>마지막 스캔</th><th class="num">탐지</th><th class="num">스캔</th><th></th>
+      </tr></thead>
+      <tbody>${assets.map((a) => {
+        const age = staleness(a.last_scan_at);
+        return `<tr>
+          <td><a href="asset.html?id=${encodeURIComponent(a.asset_id)}"><b>${esc(a.name)}</b></a>
+            ${a.archived ? '<span class="tag">보관</span>' : ''}</td>
+          <td>${esc(a.group_name || '—')}</td>
+          <td>${esc(a.os || '—')}</td>
+          <td class="${age.cls}">${esc(age.text)}
+            ${a.last_scan_at ? `<span class="faint">${esc(formatWhen(a.last_scan_at))}</span>` : ''}</td>
+          <td class="num">${a.last_scan_at ? a.last_finding_count : '—'}</td>
+          <td class="num">${a.scan_count}</td>
+          <td><a href="scan.html?asset=${encodeURIComponent(a.asset_id)}">SBOM 올리기</a></td>
+        </tr>`;
+      }).join('')}</tbody></table></div></div>`;
+  }
+
+  if (unassigned) await renderUnassigned(assets);
+  else $('#unassigned-panel').hidden = true;
+}
+
+async function renderUnassigned(assets) {
+  const { scans } = await call('api/scans?limit=200');
+  const orphans = scans.filter((s) => !s.asset_id);
+  if (!orphans.length) {
+    $('#unassigned-panel').hidden = true;
+    return;
+  }
+
+  $('#unassigned-panel').hidden = false;
+  const options = assets.map((a) => `<option value="${esc(a.asset_id)}">${esc(a.name)}</option>`).join('');
+  $('#unassigned').innerHTML = `<div class="table-scroll"><table>
+    <thead><tr><th>시각</th><th>SBOM</th><th class="num">탐지</th><th>자산</th><th></th></tr></thead>
+    <tbody>${orphans.map((s) => `<tr data-scan="${esc(s.scan_id)}">
+      <td>${esc(formatWhen(s.created_at))}</td>
+      <td>${esc(s.metadata?.sbom_filename || '—')}</td>
+      <td class="num">${s.finding_count}</td>
+      <td>${isAdmin && assets.length
+        ? `<select class="assign"><option value="">— 선택 —</option>${options}</select>`
+        : '<span class="faint">미분류</span>'}</td>
+      <td><a href="scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+$('#unassigned').addEventListener('change', async (event) => {
+  if (!event.target.classList.contains('assign') || !event.target.value) return;
+  const scanId = event.target.closest('tr').dataset.scan;
+  try {
+    await call(`api/scans/${encodeURIComponent(scanId)}/asset`, {
+      method: 'PUT', body: JSON.stringify({ asset_id: event.target.value }),
+    });
+    await render();
+  } catch (error) {
+    window.alert(error.message);
+  }
+});
+
+$('#add-asset').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  try {
+    await call('api/assets', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: data.get('name'),
+        group_name: data.get('group_name'),
+        os: data.get('os'),
+      }),
+    });
+    event.target.reset();
+    $('#add-msg').innerHTML = '';
+    await render();
+  } catch (error) {
+    $('#add-msg').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+  }
+});
 </script>
 </body>
 </html>

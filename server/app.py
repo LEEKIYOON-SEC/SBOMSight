@@ -20,9 +20,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from core import (
-    artifacts, findingview, grype_runner, selection as selection_mod, syft_runner,
+    artifacts, assets as assets_mod, findingview, grype_runner,
+    selection as selection_mod, syft_runner,
 )
 from core.accounts import AccountError, VIEWER
+from core.assets import Asset, AssetError, Assets
 from core.ai_narrative import narrative_from_dict, narrative_to_dict, run_narratives
 from core.cli import _load_scan_result
 from core.config import get_config
@@ -343,6 +345,163 @@ def policy() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# 자산 — 이 도구의 관리 단위는 스캔이 아니라 서버 한 대다
+# ---------------------------------------------------------------------------
+
+
+def _assets() -> Assets:
+    return Assets(config.db_path)
+
+
+def _asset_or_404(asset_id: str) -> Asset:
+    asset = _assets().get(asset_id)
+    if asset is None:
+        raise HTTPException(404, "자산을 찾을 수 없습니다.")
+    return asset
+
+
+@app.get("/api/assets")
+def list_assets(include_archived: bool = Query(False)) -> dict[str, Any]:
+    """자산 목록에 마지막 스캔 정보를 붙여 돌려준다.
+
+    "마지막 스캔이 언제였나"가 대시보드에서 가장 먼저 봐야 하는 값이다 —
+    석 달 전에 한 번 올리고 잊은 서버가 목록에 조용히 섞여 있으면 안 된다.
+    """
+    store = _store()
+    summary = store.asset_summary()
+    assets = _assets().list(include_archived=include_archived)
+
+    rows = []
+    for asset in assets:
+        row = asset.to_dict()
+        row.update(summary.get(asset.asset_id, {
+            "scan_count": 0, "last_scan_at": "", "last_scan_id": "",
+            "last_finding_count": 0, "last_sbom_filename": "",
+        }))
+        rows.append(row)
+
+    unassigned = summary.get(assets_mod.UNASSIGNED, {})
+    return {
+        "assets": rows,
+        # 자산 개념 이전에 만들어진 스캔들. 화면에서 배정할 수 있게 개수를 알린다.
+        "unassigned_scans": unassigned.get("scan_count", 0),
+    }
+
+
+@app.post("/api/assets")
+def create_asset(request: Request, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    _require_admin(request)
+    try:
+        asset = _assets().create(
+            str(body.get("name", "")),
+            group_name=str(body.get("group_name", "")),
+            os=str(body.get("os", "")),
+            note=str(body.get("note", "")),
+        )
+    except AssetError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return asset.to_dict()
+
+
+@app.get("/api/assets/{asset_id}")
+def get_asset(asset_id: str, limit: int = Query(50, ge=1, le=500)) -> dict[str, Any]:
+    asset = _asset_or_404(asset_id)
+    return {
+        **asset.to_dict(),
+        "scans": _store().list_scans(limit=limit, asset_id=asset_id),
+    }
+
+
+@app.put("/api/assets/{asset_id}")
+def update_asset(request: Request, asset_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    _require_admin(request)
+    _asset_or_404(asset_id)
+    try:
+        if "archived" in body:
+            asset = _assets().set_archived(asset_id, bool(body["archived"]))
+        else:
+            asset = _assets().update(asset_id, **{
+                k: body[k] for k in ("name", "group_name", "os", "note") if k in body
+            })
+    except AssetError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return asset.to_dict()
+
+
+@app.delete("/api/assets/{asset_id}")
+def delete_asset(request: Request, asset_id: str) -> dict[str, Any]:
+    """자산을 지운다. **스캔은 미분류로 남는다.**
+
+    함께 지우면 실수 한 번에 몇 달치 이력이 사라진다. 스캔 삭제는 따로 한다.
+    """
+    _require_admin(request)
+    _asset_or_404(asset_id)
+    try:
+        _assets().delete(asset_id)
+    except AssetError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"deleted": asset_id}
+
+
+@app.put("/api/scans/{scan_id}/asset")
+def assign_scan(request: Request, scan_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """스캔을 자산에 배정한다. 빈 문자열이면 미분류로 되돌린다."""
+    _require_admin(request)
+    if _store().get_scan(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    asset_id = str(body.get("asset_id", ""))
+    if asset_id:
+        _asset_or_404(asset_id)
+    _store().assign_scan(scan_id, asset_id)
+    return {"scan_id": scan_id, "asset_id": asset_id}
+
+
+@app.get("/api/assets/{asset_id}/history")
+def asset_history(
+    asset_id: str,
+    base: str = Query(""),
+    head: str = Query(""),
+) -> dict[str, Any]:
+    """같은 자산의 두 스캔을 대조한다. 지정이 없으면 최근 두 건.
+
+    비교 축은 `(cve, 설치 패키지명)` 이다. `Finding.key` 는 설치 버전을 포함하므로
+    패치하면 키가 바뀐다 — 그것으로 비교하면 "패치했더니 하나 사라지고 하나
+    새로 생겼다"는 엉뚱한 답이 나온다.
+    """
+    _asset_or_404(asset_id)
+    store = _store()
+    scans = store.list_scans(limit=500, asset_id=asset_id)
+    known = {s["scan_id"]: s for s in scans}
+
+    if not base and not head:
+        if len(scans) < 2:
+            return {
+                "asset_id": asset_id,
+                "comparable": False,
+                "detail": "비교하려면 이 자산에 스캔이 2건 이상 있어야 합니다.",
+                "scans": scans,
+            }
+        head, base = scans[0]["scan_id"], scans[1]["scan_id"]
+
+    for scan_id in (base, head):
+        if scan_id not in known:
+            raise HTTPException(404, f"이 자산의 스캔이 아닙니다: {scan_id}")
+
+    base_scan = store.get_scan(base)
+    head_scan = store.get_scan(head)
+    if base_scan is None or head_scan is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    diff = assets_mod.diff_findings(
+        base_scan["findings"], head_scan["findings"],
+        base_scan_id=base, head_scan_id=head,
+        base_created_at=base_scan["created_at"], head_created_at=head_scan["created_at"],
+    )
+    return {"asset_id": asset_id, "comparable": True, "scans": scans, **diff.to_dict()}
+
+
+# ---------------------------------------------------------------------------
 # 업로드 · 스캔
 # ---------------------------------------------------------------------------
 
@@ -399,8 +558,14 @@ def start_scan(
     filename: str = Query(""),
     enrich: bool = Query(True),
     nvd_budget: int = Query(40, ge=0, le=500),
+    asset_id: str = Query(""),
 ) -> dict[str, Any]:
     """업로드된 SBOM에 대해 스캔을 시작한다. 진행 상황은 /api/scan/{job_id}."""
+    # 자산을 먼저 본다. 어느 서버 것인지 잘못 지정한 채로 스캔이 돌면 결과가
+    # 엉뚱한 자산의 이력에 섞이거나 미분류로 떨어진다.
+    if asset_id:
+        _asset_or_404(asset_id)
+
     path = _find_upload(upload_id)
     if path is None:
         raise HTTPException(404, "업로드를 찾을 수 없습니다. 다시 업로드해 주세요.")
@@ -415,6 +580,7 @@ def start_scan(
         config=config,
         enrich=enrich,
         nvd_budget=nvd_budget,
+        asset_id=asset_id,
     )
     return {"job_id": job.job_id, "steps": job.to_dict()["steps"]}
 

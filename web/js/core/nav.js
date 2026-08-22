@@ -11,8 +11,8 @@
 import { esc } from './ui.js';
 
 const LINKS = [
-  { href: 'index.html', label: '스캔 기록' },
-  { href: 'scan.html', label: '새 스캔' },
+  { href: 'index.html', label: '자산' },
+  { href: 'scan.html', label: '스캔' },
   { href: 'settings.html', label: '설정', adminOnly: true },
 ];
 

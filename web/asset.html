@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>자산 상세 — SBOMSight</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="topbar"></header>
+
+<main class="wide">
+  <div class="page-head">
+    <h1 id="title">—</h1>
+    <a class="btn primary" id="upload-link" href="scan.html">SBOM 올리기</a>
+  </div>
+  <p class="muted" id="meta"></p>
+
+  <div id="banner"></div>
+
+  <h2>스캔 이력</h2>
+  <div class="card">
+    <div id="scans" class="muted">불러오는 중…</div>
+  </div>
+
+  <h2>변화</h2>
+  <div class="card">
+    <div class="toolbar" id="compare-bar" hidden>
+      <label class="check">이전 <select id="base"></select></label>
+      <span class="arrow">→</span>
+      <label class="check">이후 <select id="head"></select></label>
+      <button class="btn" id="compare">비교</button>
+    </div>
+    <div id="diff" class="muted">불러오는 중…</div>
+  </div>
+
+  <section id="edit-panel" hidden>
+    <h2>자산 정보</h2>
+    <div class="card">
+      <form id="edit" class="inline-form">
+        <input name="name" placeholder="서버 이름" required>
+        <input name="group_name" placeholder="그룹">
+        <input name="os" placeholder="운영체제">
+        <input name="note" placeholder="비고">
+        <button class="btn primary" type="submit">저장</button>
+        <button class="btn" type="button" id="archive">보관</button>
+        <button class="btn danger" type="button" id="remove">삭제</button>
+      </form>
+      <p class="faint">삭제해도 이 자산의 스캔은 지워지지 않고 미분류로 남습니다.</p>
+      <div id="edit-msg"></div>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { $, esc } from './js/core/ui.js';
+import { mountTopbar } from './js/core/nav.js';
+import { formatWhen } from './js/core/format.js';
+
+const state = await mountTopbar('index.html');
+const isAdmin = state?.role === 'admin';
+const assetId = new URLSearchParams(window.location.search).get('id') || '';
+
+async function call(path, options = {}) {
+  const response = await fetch(path, {
+    headers: options.body ? { 'Content-Type': 'application/json' } : {},
+    ...options,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || `${response.status} ${response.statusText}`);
+  return payload;
+}
+
+function fail(message) {
+  $('#banner').innerHTML = `<div class="banner danger">${esc(message)}</div>`;
+}
+
+let asset;
+try {
+  asset = await call(`api/assets/${encodeURIComponent(assetId)}`);
+} catch (error) {
+  fail(error.message);
+  throw error;
+}
+
+document.title = `${asset.name} — SBOMSight`;
+$('#title').textContent = asset.name;
+$('#upload-link').href = `scan.html?asset=${encodeURIComponent(asset.asset_id)}`;
+$('#meta').innerHTML = [
+  asset.group_name && `그룹 <b>${esc(asset.group_name)}</b>`,
+  asset.os && `운영체제 <b>${esc(asset.os)}</b>`,
+  `스캔 <b>${asset.scans.length}</b>건`,
+  asset.archived && '<span class="tag">보관</span>',
+  asset.note && esc(asset.note),
+].filter(Boolean).join(' · ');
+
+// --- 스캔 이력 --------------------------------------------------------------
+if (!asset.scans.length) {
+  $('#scans').innerHTML = '<span class="muted">아직 이 자산의 스캔이 없습니다.</span>';
+} else {
+  $('#scans').innerHTML = `<div class="table-scroll"><table>
+    <thead><tr><th>시각</th><th>SBOM</th><th class="num">컴포넌트</th>
+      <th class="num">탐지</th><th></th></tr></thead>
+    <tbody>${asset.scans.map((s) => `<tr>
+      <td>${esc(formatWhen(s.created_at))}</td>
+      <td>${esc(s.metadata?.sbom_filename || '—')}</td>
+      <td class="num">${s.metadata?.component_count ?? '—'}</td>
+      <td class="num">${s.finding_count}</td>
+      <td><a href="scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+// --- 변화 -------------------------------------------------------------------
+
+/**
+ * 세 갈래로 낸다 — 신규 · 해소 · 유지.
+ *
+ * "187건에서 184건이 됐다"만으로는 같은 수라도 내용이 완전히 바뀐 경우를
+ * 구분할 수 없다. 지난달에 없던 것이 무엇인지가 실제로 봐야 하는 값이다.
+ */
+function changeTable(rows, { showPrevious = false } = {}) {
+  if (!rows.length) return '<span class="muted">없음</span>';
+  return `<div class="table-scroll"><table>
+    <thead><tr><th>CVE</th><th>패키지</th><th>설치 버전</th>
+      ${showPrevious ? '<th>이전 버전</th>' : ''}<th>수정 버전</th></tr></thead>
+    <tbody>${rows.map((c) => `<tr>
+      <td class="mono">${esc(c.cve)}</td>
+      <td>${esc(c.package_name)}</td>
+      <td class="mono">${esc(c.installed_version || '—')}</td>
+      ${showPrevious ? `<td class="mono ${
+        c.previous_version && c.previous_version !== c.installed_version ? 'changed' : 'faint'
+      }">${esc(c.previous_version || '—')}</td>` : ''}
+      <td class="mono">${esc(c.fixed_version || '없음')}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function fillSelect(select, scans, selected) {
+  select.innerHTML = scans.map((s) =>
+    `<option value="${esc(s.scan_id)}"${s.scan_id === selected ? ' selected' : ''}>
+      ${esc(formatWhen(s.created_at))} · 탐지 ${s.finding_count}건</option>`).join('');
+}
+
+async function renderDiff(base = '', head = '') {
+  const params = new URLSearchParams();
+  if (base) params.set('base', base);
+  if (head) params.set('head', head);
+  const query = params.toString();
+
+  let result;
+  try {
+    result = await call(
+      `api/assets/${encodeURIComponent(assetId)}/history${query ? `?${query}` : ''}`,
+    );
+  } catch (error) {
+    $('#diff').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+    return;
+  }
+
+  if (!result.comparable) {
+    $('#diff').innerHTML = `<span class="muted">${esc(result.detail)}</span>`;
+    return;
+  }
+
+  $('#compare-bar').hidden = false;
+  fillSelect($('#base'), result.scans, result.base_scan_id);
+  fillSelect($('#head'), result.scans, result.head_scan_id);
+
+  $('#diff').innerHTML = `
+    <p class="muted">${esc(formatWhen(result.base_created_at))}
+      <span class="arrow">→</span> ${esc(formatWhen(result.head_created_at))}</p>
+    <div class="grid cols-4">
+      <div class="stat added"><div class="n">${result.counts.added}</div><div class="k">신규</div></div>
+      <div class="stat resolved"><div class="n">${result.counts.resolved}</div><div class="k">해소</div></div>
+      <div class="stat"><div class="n">${result.counts.remaining}</div><div class="k">유지</div></div>
+    </div>
+    <h3>신규 ${result.counts.added}건</h3>
+    ${changeTable(result.added)}
+    <h3>해소 ${result.counts.resolved}건</h3>
+    ${changeTable(result.resolved)}
+    <h3>유지 ${result.counts.remaining}건</h3>
+    ${changeTable(result.remaining, { showPrevious: true })}`;
+}
+
+$('#compare').addEventListener('click', () => renderDiff($('#base').value, $('#head').value));
+await renderDiff();
+
+// --- 자산 정보 --------------------------------------------------------------
+if (isAdmin) {
+  $('#edit-panel').hidden = false;
+  const form = $('#edit');
+  form.name.value = asset.name;
+  form.group_name.value = asset.group_name;
+  form.os.value = asset.os;
+  form.note.value = asset.note;
+  $('#archive').textContent = asset.archived ? '보관 해제' : '보관';
+
+  const save = async (body) => {
+    try {
+      await call(`api/assets/${encodeURIComponent(assetId)}`, {
+        method: 'PUT', body: JSON.stringify(body),
+      });
+      window.location.reload();
+    } catch (error) {
+      $('#edit-msg').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+    }
+  };
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    save({
+      name: data.get('name'), group_name: data.get('group_name'),
+      os: data.get('os'), note: data.get('note'),
+    });
+  });
+
+  $('#archive').addEventListener('click', () => save({ archived: !asset.archived }));
+
+  $('#remove').addEventListener('click', async () => {
+    if (!window.confirm(`${asset.name} 자산을 삭제할까요? 스캔은 미분류로 남습니다.`)) return;
+    try {
+      await call(`api/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+      window.location.href = 'index.html';
+    } catch (error) {
+      $('#edit-msg').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+    }
+  });
+}
+</script>
+</body>
+</html>

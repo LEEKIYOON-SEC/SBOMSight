@@ -93,12 +93,16 @@ class Store:
         """앞선 버전에서 만들어진 DB에 새 컬럼을 채워 넣는다.
 
         스캔 결과에는 내부 자산 정보가 담겨 있어 지우고 다시 만들라고 할 수
-        없다. 그래서 파괴적 마이그레이션은 하지 않는다.
+        없다. 그래서 파괴적 마이그레이션은 하지 않는다. 기존 스캔은
+        `asset_id=''`(미분류)로 남고 화면에서 자산에 배정할 수 있다.
         """
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(scans)")}
         for column in ("enrichment", "policy"):
             if column not in existing:
                 conn.execute(f"ALTER TABLE scans ADD COLUMN {column} TEXT NOT NULL DEFAULT '{{}}'")
+        if "asset_id" not in existing:
+            conn.execute("ALTER TABLE scans ADD COLUMN asset_id TEXT NOT NULL DEFAULT ''")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_scans_asset ON scans(asset_id, created_at)")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -112,12 +116,13 @@ class Store:
 
     # --- 스캔 -------------------------------------------------------------
 
-    def save_scan(self, result: ScanResult) -> None:
+    def save_scan(self, result: ScanResult, *, asset_id: str = "") -> None:
         meta = to_jsonable(result.metadata)
         with self._connect() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO scans "
-                "(scan_id, created_at, metadata, finding_count, enrichment, policy) VALUES (?,?,?,?,?,?)",
+                "(scan_id, created_at, metadata, finding_count, enrichment, policy, asset_id) "
+                "VALUES (?,?,?,?,?,?,?)",
                 (
                     result.metadata.scan_id,
                     result.metadata.created_at,
@@ -125,6 +130,7 @@ class Store:
                     len(result.findings),
                     json.dumps(result.enrichment or {}, ensure_ascii=False),
                     json.dumps(result.policy or {}, ensure_ascii=False),
+                    asset_id,
                 ),
             )
             conn.execute("DELETE FROM findings WHERE scan_id = ?", (result.metadata.scan_id,))
@@ -143,13 +149,18 @@ class Store:
                 ],
             )
 
-    def list_scans(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_scans(self, limit: int = 50, *, asset_id: str | None = None) -> list[dict[str, Any]]:
+        """스캔 목록. `asset_id` 를 주면 그 자산 것만 (`""` 는 미분류를 뜻한다)."""
+        sql = "SELECT scan_id, created_at, metadata, finding_count, policy, asset_id FROM scans"
+        params: list[Any] = []
+        if asset_id is not None:
+            sql += " WHERE asset_id = ?"
+            params.append(asset_id)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT scan_id, created_at, metadata, finding_count, policy "
-                "FROM scans ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [
             {
                 "scan_id": r["scan_id"],
@@ -157,9 +168,50 @@ class Store:
                 "finding_count": r["finding_count"],
                 "metadata": json.loads(r["metadata"]),
                 "policy": json.loads(r["policy"] or "{}"),
+                "asset_id": r["asset_id"],
             }
             for r in rows
         ]
+
+    def assign_scan(self, scan_id: str, asset_id: str) -> bool:
+        """스캔을 자산에 배정한다. 빈 문자열이면 미분류로 되돌린다."""
+        with self._connect() as conn:
+            return bool(
+                conn.execute(
+                    "UPDATE scans SET asset_id = ? WHERE scan_id = ?", (asset_id, scan_id)
+                ).rowcount
+            )
+
+    def asset_summary(self) -> dict[str, dict[str, Any]]:
+        """자산별 마지막 스캔과 누적 스캔 수. 대시보드 한 줄 한 줄이 이것이다.
+
+        자산마다 질의를 돌리면 자산 수만큼 왕복한다. 한 번에 집계한다.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT asset_id, COUNT(*) AS scans, MAX(created_at) AS last_at FROM scans "
+                "GROUP BY asset_id"
+            ).fetchall()
+            latest = conn.execute(
+                "SELECT s.asset_id, s.scan_id, s.created_at, s.finding_count, s.metadata FROM scans s "
+                "JOIN (SELECT asset_id, MAX(created_at) AS m FROM scans GROUP BY asset_id) t "
+                "  ON t.asset_id = s.asset_id AND t.m = s.created_at"
+            ).fetchall()
+
+        newest = {r["asset_id"]: r for r in latest}
+        summary: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            last = newest.get(row["asset_id"])
+            summary[row["asset_id"]] = {
+                "scan_count": row["scans"],
+                "last_scan_at": row["last_at"] or "",
+                "last_scan_id": last["scan_id"] if last else "",
+                "last_finding_count": last["finding_count"] if last else 0,
+                "last_sbom_filename": (
+                    json.loads(last["metadata"]).get("sbom_filename", "") if last else ""
+                ),
+            }
+        return summary
 
     def get_scan(self, scan_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -172,6 +224,7 @@ class Store:
         return {
             "scan_id": row["scan_id"],
             "created_at": row["created_at"],
+            "asset_id": row["asset_id"],
             "metadata": json.loads(row["metadata"]),
             "enrichment": json.loads(row["enrichment"] or "{}"),
             "policy": json.loads(row["policy"] or "{}"),

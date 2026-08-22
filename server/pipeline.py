@@ -36,6 +36,7 @@ def run_scan(
     config: Config,
     enrich: bool = True,
     nvd_budget: int = 40,
+    asset_id: str = "",
 ) -> None:
     """업로드된 SBOM 하나를 끝까지 처리한다. 실패는 해당 단계에 기록된다."""
     store = Store(config.db_path)
@@ -144,7 +145,7 @@ def run_scan(
             "label": engine.policy.label,
         },
     )
-    store.save_scan(result)
+    store.save_scan(result, asset_id=asset_id)
 
     # --- 5~7. 근거 · 권고 · 보고서 ------------------------------------------
     registry.start(job, "rationale", "판정 근거 정리 중")
