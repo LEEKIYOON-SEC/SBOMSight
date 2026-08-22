@@ -6,12 +6,11 @@ core/cli.py의 흐름과 동일하되, 각 단계가 끝날 때마다 JobRegistr
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from core import grype_runner, sbom as sbom_mod
+from core import artifacts, grype_runner, sbom as sbom_mod
 from core.config import Config
 from core.enrich import Enricher
 from core.models import ScanResult, Ternary
@@ -41,26 +40,31 @@ def run_scan(
     """업로드된 SBOM 하나를 끝까지 처리한다. 실패는 해당 단계에 기록된다."""
     store = Store(config.db_path)
 
-    # --- 1. SBOM 업로드 / 파싱 -------------------------------------------
-    registry.start(job, "upload", f"{original_name} 파싱 중")
+    # --- 1. SBOM 훑기 -----------------------------------------------------
+    # 파일을 파이썬 객체로 올리지 않는다. 필요한 것은 형식·개수·해시뿐이고,
+    # 실제 매칭은 Grype가 파일을 직접 읽어 한다. 100MB든 10GB든 메모리는 일정하다.
+    registry.start(job, "upload", f"{original_name} 확인 중")
     try:
-        _, fmt, packages, digest = sbom_mod.load(sbom_path)
-    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+        info = sbom_mod.inspect(sbom_path)
+    except OSError as exc:
         registry.fail(job, "upload", f"SBOM 파일을 읽을 수 없습니다: {exc}")
         return
-    if fmt == "unknown":
+    if info.format == "unknown":
         registry.finish(
             job, "upload",
-            metric=f"{len(packages)}개",
+            metric=info.count_label,
             detail="SBOM 형식을 알아보지 못했습니다. Grype에 그대로 넘깁니다.",
         )
     else:
-        registry.finish(job, "upload", metric=f"컴포넌트 {len(packages)}개", detail=fmt)
+        registry.finish(job, "upload", metric=f"컴포넌트 {info.count_label}", detail=info.format)
 
     # --- 2. 취약점 탐지 ---------------------------------------------------
     registry.start(job, "detect", "Grype 실행 중")
     try:
-        raw = grype_runner.scan_sbom(sbom_path, config=config)
+        # Grype는 .gz 를 읽지 못한다. 압축 저장본이면 임시 파일로 풀어 넘기고,
+        # 원본 그대로면 복사 없이 그 경로를 쓴다.
+        with artifacts.open_plain(sbom_path) as plain_path:
+            raw = grype_runner.scan_sbom(plain_path, config=config)
     except (grype_runner.ToolNotFoundError, grype_runner.ToolExecutionError, FileNotFoundError) as exc:
         registry.fail(job, "detect", str(exc))
         return
@@ -69,9 +73,9 @@ def run_scan(
         raw,
         scan_id=new_scan_id(),
         sbom_filename=original_name,
-        sbom_format=fmt,
-        sbom_sha256=digest,
-        component_count=len(packages),
+        sbom_format=info.format,
+        sbom_sha256=info.sha256,
+        component_count=info.component_count or 0,
     )
     registry.finish(
         job, "detect",
@@ -150,7 +154,7 @@ def run_scan(
     )
 
     summary = dict(report_model.summary)
-    summary["component_count"] = len(packages)
+    summary["component_count"] = info.component_count or 0
     summary["policy"] = result.policy
     summary["enrichment"] = enrichment
     registry.complete(job, result.metadata.scan_id, summary)

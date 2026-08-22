@@ -203,17 +203,40 @@ if (canUpload) {
   });
 }
 
+function formatBytes(n) {
+  if (!n && n !== 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = n, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)}${units[unit]}`;
+}
+
 async function handleFile(file) {
-  $('#file-info').textContent = `${file.name} 업로드 중…`;
+  const info = $('#file-info');
   runButton.disabled = true;
+  info.textContent = `${file.name} (${formatBytes(file.size)}) 업로드 중…`;
+
   try {
-    state.upload = await provider.upload(file);
+    state.upload = await provider.upload(file, {
+      onProgress: (loaded, total) => {
+        const pct = total ? Math.round((loaded / total) * 100) : 0;
+        info.textContent = `${file.name} 업로드 중… ${pct}% (${formatBytes(loaded)} / ${formatBytes(total)})`;
+      },
+    });
+
     const fmt = state.upload.format === 'unknown' ? '형식 미상' : state.upload.format;
-    $('#file-info').innerHTML =
-      `<b>${esc(state.upload.filename)}</b> · ${esc(fmt)} · 컴포넌트 ${state.upload.component_count}개`;
+    // 셀 수 없었으면 0이 아니라 미상이다. 0은 "컴포넌트가 없다"는 거짓말이 된다.
+    const count = state.upload.component_count === null || state.upload.component_count === undefined
+      ? '컴포넌트 수 미상'
+      : `컴포넌트 ${state.upload.component_count.toLocaleString()}개`;
+    const saved = state.upload.compressed && state.upload.stored_bytes
+      ? ` · 저장 ${formatBytes(state.upload.stored_bytes)} (원본 ${formatBytes(state.upload.size)})`
+      : '';
+
+    info.innerHTML = `<b>${esc(state.upload.filename)}</b> · ${esc(fmt)} · ${esc(count)}${esc(saved)}`;
     runButton.disabled = false;
   } catch (error) {
-    $('#file-info').innerHTML = `<span style="color:var(--danger)">업로드 실패: ${esc(error.message)}</span>`;
+    info.innerHTML = `<span style="color:var(--danger)">업로드 실패: ${esc(error.message)}</span>`;
   }
 }
 

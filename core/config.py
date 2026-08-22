@@ -76,7 +76,12 @@ class Config:
     # --- 서버 ---------------------------------------------------------------
     host: str = field(default_factory=lambda: _env("SBOMSIGHT_HOST") or "127.0.0.1")
     port: int = field(default_factory=lambda: _env_int("SBOMSIGHT_PORT", 8000))
-    max_upload_mb: int = field(default_factory=lambda: _env_int("SBOMSIGHT_MAX_UPLOAD_MB", 64))
+    # 실 서버 한 대의 SBOM이 100MB를 넘는다. 다시 손댈 일이 없도록 넉넉히 둔다.
+    # 파일을 통째로 메모리에 올리지 않으므로(core/sbom.py inspect) 이 값이 커도
+    # 메모리 사용량은 청크 하나에 머문다.
+    max_upload_mb: int = field(default_factory=lambda: _env_int("SBOMSIGHT_MAX_UPLOAD_MB", 10240))
+    # 보관 시 gzip 압축. SBOM JSON은 구조가 반복적이라 실측 25배 이상 줄어든다.
+    compress_storage: bool = field(default_factory=lambda: _env_bool("SBOMSIGHT_COMPRESS_STORAGE", True))
 
     @property
     def db_path(self) -> Path:

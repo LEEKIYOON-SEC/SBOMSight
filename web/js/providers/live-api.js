@@ -44,10 +44,39 @@ export const liveApiProvider = {
     return (await request('api/policy')).json();
   },
 
-  async upload(file) {
-    const form = new FormData();
-    form.append('file', file);
-    return (await request('api/upload', { method: 'POST', body: form })).json();
+  /**
+   * SBOM 업로드.
+   *
+   * multipart 를 쓰지 않는다. Starlette 의 multipart 파서는 파트 하나를 1MB로
+   * 제한하고 서버 쪽에서 그 값을 올릴 방법이 없다 — 실 서버 SBOM 은 100MB를
+   * 넘으므로 그 경로로는 애초에 올라가지 않았다. 본문에 파일을 그대로 싣는다.
+   *
+   * fetch 대신 XHR 을 쓰는 이유는 하나뿐이다: fetch 는 업로드 진행률을 주지
+   * 않는다. 100MB를 올리는 동안 화면이 멈춘 것처럼 보이면 안 된다.
+   */
+  upload(file, { onProgress } = {}) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${BASE}api/upload?filename=${encodeURIComponent(file.name)}`);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+
+      if (onProgress) {
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) onProgress(event.loaded, event.total);
+        });
+      }
+
+      xhr.addEventListener('load', () => {
+        let body = null;
+        try { body = JSON.parse(xhr.responseText); } catch { /* 아래에서 처리 */ }
+        if (xhr.status >= 200 && xhr.status < 300 && body) resolve(body);
+        else reject(new Error(body?.detail || `${xhr.status} ${xhr.statusText}`));
+      });
+      xhr.addEventListener('error', () => reject(new Error('업로드 중 연결이 끊겼습니다.')));
+      xhr.addEventListener('abort', () => reject(new Error('업로드가 취소되었습니다.')));
+
+      xhr.send(file);
+    });
   },
 
   async startScan({ uploadId, filename, enrich = true }) {

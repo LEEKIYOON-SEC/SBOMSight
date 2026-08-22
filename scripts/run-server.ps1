@@ -8,8 +8,18 @@
 #   tests/test_scripts.py 가 BOM 유무를 검사한다.
 #
 # 업로드된 SBOM과 스캔 결과에는 내부 자산 정보가 담긴다. 그래서 기본
-# 바인딩은 127.0.0.1이며, 외부에 노출하려면 SBOMSIGHT_HOST를 명시적으로
-# 바꿔야 한다.
+# 바인딩은 127.0.0.1이며, 외부에 노출하려면 -Listen 을 주거나 SBOMSIGHT_HOST를
+# 명시적으로 바꿔야 한다.
+#
+#   .\scripts\run-server.ps1            로컬에서만 (기본)
+#   .\scripts\run-server.ps1 -Listen    내부망에 개방 + 방화벽 규칙 안내
+[CmdletBinding()]
+param(
+    [switch]$Listen,
+    [string]$BindAddress = "",
+    [int]$BindPort = 0
+)
+
 $ErrorActionPreference = "Stop"
 
 Set-Location (Join-Path $PSScriptRoot "..")
@@ -25,8 +35,17 @@ if (Test-Path $EnvFile) {
     }
 }
 
-$BindHost = if ($env:SBOMSIGHT_HOST) { $env:SBOMSIGHT_HOST } else { "127.0.0.1" }
-$Port = if ($env:SBOMSIGHT_PORT) { $env:SBOMSIGHT_PORT } else { "8000" }
+# 우선순위: 명령행 인자 > -Listen > .env / 환경변수 > 기본값
+$BindHost =
+    if ($BindAddress)            { $BindAddress }
+    elseif ($Listen)             { "0.0.0.0" }
+    elseif ($env:SBOMSIGHT_HOST) { $env:SBOMSIGHT_HOST }
+    else                         { "127.0.0.1" }
+
+$Port =
+    if ($BindPort -gt 0)         { "$BindPort" }
+    elseif ($env:SBOMSIGHT_PORT) { $env:SBOMSIGHT_PORT }
+    else                         { "8000" }
 
 # 가상환경이 있으면 활성화 여부와 무관하게 그 python을 쓴다. 활성화를 잊고
 # 실행하면 전역 python에는 의존성이 없어 "먼저 설치하세요"만 반복하게 된다.
@@ -52,9 +71,38 @@ if (-not (Get-Command $GrypeBin -ErrorAction SilentlyContinue)) {
     Write-Host "    GRYPE_BIN 환경변수로 경로를 지정하세요. (설치 전에는 스캔이 실패합니다)"
 }
 
-if ($BindHost -ne "127.0.0.1" -and $BindHost -ne "localhost") {
-    Write-Host "[!] 주의: $BindHost 로 바인딩합니다. 스캔 결과에는 내부 자산 정보가 담기므로"
-    Write-Host "    신뢰할 수 없는 네트워크에 노출하지 마세요."
+$IsPublic = $BindHost -ne "127.0.0.1" -and $BindHost -ne "localhost"
+
+if ($IsPublic) {
+    Write-Host ""
+    Write-Host "[!] $BindHost 로 바인딩합니다 — 이 PC 밖에서 접속할 수 있게 됩니다."
+    Write-Host "    스캔 결과에는 어떤 서버에 어떤 취약점이 있는지가 그대로 담깁니다."
+    Write-Host "    신뢰할 수 있는 내부망에서만 여세요."
+    Write-Host ""
+
+    # 바인딩을 열어도 Windows 방화벽이 두 번째 관문이다. 규칙이 없으면
+    # 다른 PC에서 접속이 조용히 실패하고, 원인을 찾기 어렵다.
+    $RuleName = "SBOMSight ($Port)"
+    $Existing = Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue
+    if ($Existing) {
+        Write-Host "[i] 방화벽 규칙 있음: $RuleName"
+    } else {
+        Write-Host "[!] 방화벽 인바운드 규칙이 없습니다. 관리자 PowerShell에서 한 번 실행하세요:"
+        Write-Host ""
+        Write-Host "    New-NetFirewallRule -DisplayName '$RuleName' -Direction Inbound ``"
+        Write-Host "      -LocalPort $Port -Protocol TCP -Action Allow -Profile Private"
+        Write-Host ""
+        Write-Host "    (규칙이 없으면 다른 PC에서 접속이 되지 않습니다)"
+        Write-Host ""
+    }
+
+    # 접속에 쓸 주소를 알려 준다. 0.0.0.0 은 주소가 아니라 '전부'라는 뜻이라
+    # 그대로 브라우저에 칠 수 없다.
+    $Addresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -ne "127.0.0.1" -and $_.PrefixOrigin -ne "WellKnown" }
+    foreach ($Address in $Addresses) {
+        Write-Host "[i] 접속 주소  http://$($Address.IPAddress):$Port"
+    }
 }
 
 # AI 상태를 미리 알려 준다 — 결과 화면에서 전송 버튼이 안 보이는 이유를

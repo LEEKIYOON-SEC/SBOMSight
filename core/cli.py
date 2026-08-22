@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import grype_runner, sbom as sbom_mod, syft_runner
+from . import artifacts, grype_runner, sbom as sbom_mod, syft_runner
 from .enrich import Enricher
 from .ruleengine import RuleEngine, sort_key
 from .config import get_config
@@ -51,8 +51,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     config.ensure_dirs()
 
     sbom_path = Path(args.sbom)
-    _, fmt, packages, digest = sbom_mod.load(sbom_path)
-    if fmt == "unknown":
+    # 파일을 통째로 올리지 않는다. 형식·개수·해시만 훑는다 (core/sbom.py 참고).
+    info = sbom_mod.inspect(sbom_path)
+    if info.format == "unknown":
         print(
             f"경고: '{sbom_path.name}'의 SBOM 형식을 알아보지 못했습니다. "
             f"Grype에는 그대로 넘깁니다.",
@@ -62,17 +63,18 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     if args.offline:
         config.offline = True
 
-    raw = grype_runner.scan_sbom(sbom_path, config=config)
+    with artifacts.open_plain(sbom_path) as plain_path:
+        raw = grype_runner.scan_sbom(plain_path, config=config)
     result = normalize_grype_report(
         raw,
         scan_id=args.scan_id or _new_scan_id(),
         sbom_filename=sbom_path.name,
-        sbom_format=fmt,
-        sbom_sha256=digest,
-        component_count=len(packages),
+        sbom_format=info.format,
+        sbom_sha256=info.sha256,
+        component_count=info.component_count or 0,
     )
 
-    return _finish(result, args, config, component_count=len(packages))
+    return _finish(result, args, config, component_count=info.component_count or 0)
 
 
 def _finish(result: ScanResult, args, config, *, component_count: int) -> int:

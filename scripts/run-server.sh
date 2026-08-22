@@ -14,7 +14,22 @@ if [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 
-HOST="${SBOMSIGHT_HOST:-127.0.0.1}"
+# --listen 은 내부망에 개방한다. 기본은 이 PC에서만 보인다.
+LISTEN=0
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --listen) LISTEN=1 ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
+if [ "$LISTEN" = "1" ]; then
+  HOST="0.0.0.0"
+else
+  HOST="${SBOMSIGHT_HOST:-127.0.0.1}"
+fi
 PORT="${SBOMSIGHT_PORT:-8000}"
 
 # 가상환경이 있으면 활성화 여부와 무관하게 그 python을 쓴다. 활성화를 잊고
@@ -39,8 +54,17 @@ if ! command -v "${GRYPE_BIN:-grype}" >/dev/null 2>&1; then
 fi
 
 if [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ]; then
-  echo "[!] 주의: ${HOST} 로 바인딩합니다. 스캔 결과에는 내부 자산 정보가 담기므로"
-  echo "    신뢰할 수 없는 네트워크에 노출하지 마세요."
+  echo
+  echo "[!] ${HOST} 로 바인딩합니다 — 이 PC 밖에서 접속할 수 있게 됩니다."
+  echo "    스캔 결과에는 어떤 서버에 어떤 취약점이 있는지가 그대로 담깁니다."
+  echo "    신뢰할 수 있는 내부망에서만 여세요."
+  # 0.0.0.0 은 주소가 아니라 '전부'라는 뜻이라 브라우저에 그대로 칠 수 없다.
+  if command -v hostname >/dev/null 2>&1; then
+    for addr in $(hostname -I 2>/dev/null || true); do
+      echo "[i] 접속 주소  http://${addr}:${PORT}"
+    done
+  fi
+  echo
 fi
 
 # AI 상태를 미리 알려 준다 — 결과 화면에서 전송 버튼이 안 보이는 이유를

@@ -84,33 +84,72 @@ class TestHealthAndPolicy:
         assert all("priority" in level and "when" in level for level in body["policy"]["levels"])
 
 
+def _upload(client, payload, name="sbom.cdx.json"):
+    """새 업로드 방식 — 본문에 파일 바이트를 그대로 싣는다.
+
+    multipart 를 쓰지 않는 이유는 Starlette 의 `max_part_size` 가 1MB로 고정되어
+    있어 실 서버 SBOM(100MB+)이 아예 올라가지 않기 때문이다.
+    """
+    body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+    return client.post(f"/api/upload?filename={name}", content=body)
+
+
 class TestUpload:
     def test_upload_reports_format_and_component_count(self, client):
-        response = client.post(
-            "/api/upload",
-            files={"file": ("sbom.cdx.json", json.dumps(CYCLONEDX), "application/json")},
-        )
+        response = _upload(client, CYCLONEDX)
         assert response.status_code == 200
         body = response.json()
         assert body["format"] == "cyclonedx-json"
         assert body["component_count"] == 2
         assert len(body["sha256"]) == 64
         assert body["upload_id"]
+        assert body["filename"] == "sbom.cdx.json"
 
-    def test_non_json_upload_is_rejected(self, client):
-        response = client.post(
-            "/api/upload", files={"file": ("x.json", b"not json at all", "application/json")}
-        )
+    def test_upload_is_stored_compressed(self, client):
+        """SBOM JSON은 압축이 아주 잘 먹는다. 보관 비용이 곧 운영 수명이다."""
+        big = {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": [
+            {"type": "library", "name": f"package-{i}", "version": "1.0.0",
+             "purl": f"pkg:rpm/rocky/package-{i}@1.0.0"} for i in range(2000)
+        ]}
+        body = _upload(client, big).json()
+        assert body["compressed"] is True
+        assert body["component_count"] == 2000
+        # 저장본이 원본보다 확실히 작아야 한다.
+        assert body["stored_bytes"] < body["size"] / 5
+
+    def test_upload_larger_than_starlette_multipart_limit(self, client):
+        """1MB는 예전 구현이 죽던 지점이다. 이제는 통과해야 한다."""
+        payload = {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": [
+            {"type": "library", "name": f"pkg-{i}", "version": "1.0",
+             "description": "x" * 200} for i in range(5000)
+        ]}
+        raw = json.dumps(payload).encode()
+        assert len(raw) > 1024 * 1024, "이 테스트는 1MB를 넘겨야 의미가 있다"
+
+        response = _upload(client, raw)
+        assert response.status_code == 200
+        assert response.json()["component_count"] == 5000
+
+    def test_empty_upload_is_rejected(self, client):
+        response = _upload(client, b"")
         assert response.status_code == 400
-        assert "JSON" in response.json()["detail"]
+
+    def test_oversized_upload_is_rejected(self, client, monkeypatch):
+        import server.app
+
+        monkeypatch.setattr(server.app.config, "max_upload_mb", 1)
+        response = _upload(client, b"x" * (2 * 1024 * 1024))
+        assert response.status_code == 413
+        assert "1MB" in response.json()["detail"]
 
     def test_unknown_format_is_accepted_but_labelled(self, client):
         """형식을 몰라도 거부하지 않는다 — Grype가 읽을 수도 있다."""
-        response = client.post(
-            "/api/upload", files={"file": ("x.json", json.dumps({"hello": "world"}), "application/json")}
-        )
+        response = _upload(client, {"hello": "world"}, name="x.json")
         assert response.status_code == 200
-        assert response.json()["format"] == "unknown"
+        body = response.json()
+        assert body["format"] == "unknown"
+        # 셀 수 없으면 0이 아니라 미상이다. 0은 "컴포넌트가 없다"는 거짓말이 된다.
+        assert body["component_count"] is None
 
 
 class TestScanJob:
@@ -119,10 +158,7 @@ class TestScanJob:
         assert response.status_code == 404
 
     def test_scan_reports_all_seven_steps(self, client):
-        upload = client.post(
-            "/api/upload",
-            files={"file": ("sbom.json", json.dumps(CYCLONEDX), "application/json")},
-        ).json()
+        upload = _upload(client, CYCLONEDX, name="sbom.json").json()
         started = client.post(f"/api/scan?upload_id={upload['upload_id']}&enrich=false").json()
 
         keys = [s["key"] for s in started["steps"]]

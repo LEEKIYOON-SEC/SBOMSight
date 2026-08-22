@@ -11,15 +11,17 @@ PC 한 대(Windows 11 또는 Rocky Linux 10)에서 도는 단독 도구를 전�
 from __future__ import annotations
 
 import dataclasses
-import json
 import uuid
+from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, Body, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from core import grype_runner, sbom as sbom_mod, selection as selection_mod, syft_runner
+from core import (
+    artifacts, findingview, grype_runner, selection as selection_mod, syft_runner,
+)
 from core.ai_narrative import narrative_from_dict, narrative_to_dict, run_narratives
 from core.cli import _load_scan_result
 from core.config import get_config
@@ -52,6 +54,17 @@ WEB_DIR = config.repo_root / "web"
 
 def _store() -> Store:
     return Store(config.db_path)
+
+
+def _find_upload(upload_id: str) -> Path | None:
+    """업로드본을 찾는다. 압축 저장이 켜졌다 꺼졌다 해도 둘 다 찾아 준다."""
+    if not upload_id.isalnum():          # 경로 조작 차단
+        return None
+    for name in (f"{upload_id}.json.gz", f"{upload_id}.json"):
+        candidate = config.upload_dir / name
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _scoped(scan_id: str, select: list[str] | None) -> tuple[ScanResult, selection_mod.Selection]:
@@ -125,35 +138,47 @@ def policy() -> dict[str, Any]:
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...)) -> dict[str, Any]:
-    """SBOM JSON을 받아 저장하고 형식·컴포넌트 수를 알려 준다."""
-    upload_id = uuid.uuid4().hex[:12]
-    target = config.upload_dir / f"{upload_id}.json"
-    limit = config.max_upload_mb * 1024 * 1024
+async def upload(request: Request, filename: str = Query("")) -> dict[str, Any]:
+    """SBOM JSON을 받아 저장하고 형식·컴포넌트 수를 알려 준다.
 
-    size = 0
-    with target.open("wb") as out:
-        while chunk := await file.read(1024 * 1024):
-            size += len(chunk)
-            if size > limit:
-                out.close()
-                target.unlink(missing_ok=True)
-                raise HTTPException(413, f"업로드 크기가 {config.max_upload_mb}MB를 넘습니다.")
-            out.write(chunk)
+    **multipart 를 쓰지 않는다.** Starlette 의 `MultiPartParser` 는 파트 하나를
+    1MB(`max_part_size`)로 제한하고 FastAPI 의 `UploadFile = File(...)` 로는 그
+    값을 넘길 방법이 없다. 실 서버 SBOM 은 100MB를 넘으므로 그 경로로는 애초에
+    올릴 수 없었다. 그래서 요청 본문을 그대로 받는다.
+
+        POST /api/upload?filename=sbom.json
+        Content-Type: application/json
+        body: 파일 바이트 그대로
+
+    받는 즉시 gzip 으로 흘려 쓰면서 같은 통과에서 해시·형식·컴포넌트 수를
+    계산한다. 파일 크기와 무관하게 메모리는 청크 하나에 머문다.
+    """
+    upload_id = uuid.uuid4().hex[:12]
 
     try:
-        _, fmt, packages, digest = sbom_mod.load(target)
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        target.unlink(missing_ok=True)
-        raise HTTPException(400, f"JSON으로 읽을 수 없는 파일입니다: {exc}") from exc
+        stored, info = await artifacts.store_stream(
+            request.stream(),
+            config.upload_dir,
+            f"{upload_id}.json",
+            compress=config.compress_storage,
+            limit_mb=config.max_upload_mb,
+        )
+    except artifacts.UploadTooLarge as exc:
+        raise HTTPException(413, str(exc)) from exc
+
+    if not stored.original_bytes:
+        stored.path.unlink(missing_ok=True)
+        raise HTTPException(400, "빈 파일입니다.")
 
     return {
         "upload_id": upload_id,
-        "filename": file.filename or f"{upload_id}.json",
-        "format": fmt,
-        "component_count": len(packages),
-        "sha256": digest,
-        "size": size,
+        "filename": filename or f"{upload_id}.json",
+        "format": info.format,
+        "component_count": info.component_count,
+        "sha256": info.sha256,
+        "size": info.size,
+        "stored_bytes": stored.stored_bytes,
+        "compressed": stored.compressed,
     }
 
 
@@ -166,8 +191,8 @@ def start_scan(
     nvd_budget: int = Query(40, ge=0, le=500),
 ) -> dict[str, Any]:
     """업로드된 SBOM에 대해 스캔을 시작한다. 진행 상황은 /api/scan/{job_id}."""
-    path = config.upload_dir / f"{upload_id}.json"
-    if not path.is_file():
+    path = _find_upload(upload_id)
+    if path is None:
         raise HTTPException(404, "업로드를 찾을 수 없습니다. 다시 업로드해 주세요.")
 
     job = registry.create()
@@ -211,6 +236,50 @@ def get_scan(scan_id: str) -> dict[str, Any]:
     scan["selection"] = {"keys": store.get_selection(scan_id)}
     scan["narratives"] = store.narrative_meta(scan_id)
     return scan
+
+
+@app.get("/api/scans/{scan_id}/findings")
+def list_findings(
+    scan_id: str,
+    sort: str = Query("priority"),
+    order: str = Query("asc", pattern="^(asc|desc)$"),
+    priority: str = Query("", pattern="^(P0|P1|P2|P3|)$"),
+    package_type: str = Query(""),
+    status: str = Query(""),
+    q: str = Query(""),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+) -> dict[str, Any]:
+    """탐지 결과를 정렬·필터해 한 페이지만 돌려준다.
+
+    서버 한 대가 수천 건을 내므로 전체를 내려보내지 않는다. 정렬에서
+    **미확인 값은 방향과 무관하게 항상 뒤로** 간다 — 데이터가 없는 것을
+    "낮음"으로 줄 세우면 거짓말이 된다.
+    """
+    if sort not in findingview.SORT_KEYS:
+        raise HTTPException(400, f"정렬 키가 올바르지 않습니다: {sort}")
+    if status and status not in findingview.FILTER_KEYS:
+        raise HTTPException(400, f"상태 필터가 올바르지 않습니다: {status}")
+
+    if _store().get_scan(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    result = _load_scan_result(scan_id, config)
+    page = findingview.apply(
+        result.findings,
+        sort=sort, order=order, priority=priority, package_type=package_type,
+        status=status, query=q, offset=offset, limit=limit,
+    )
+    return {
+        "scan_id": scan_id,
+        "total": page.total,
+        "scan_total": page.scan_total,
+        "offset": page.offset,
+        "limit": page.limit,
+        "has_more": page.has_more,
+        "package_types": findingview.package_types(result.findings),
+        "findings": [to_jsonable(f) for f in page.findings],
+    }
 
 
 @app.put("/api/scans/{scan_id}/selection")
