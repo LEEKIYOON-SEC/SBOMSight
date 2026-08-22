@@ -22,10 +22,12 @@ from fastapi.staticfiles import StaticFiles
 from core import (
     artifacts, findingview, grype_runner, selection as selection_mod, syft_runner,
 )
+from core.accounts import AccountError, VIEWER
 from core.ai_narrative import narrative_from_dict, narrative_to_dict, run_narratives
 from core.cli import _load_scan_result
 from core.config import get_config
 from core.models import ScanResult, to_jsonable
+from core.netacl import Allowlist
 from core.policy import load as load_policy
 from core.audit import AuditLog
 from core.prompt import build_full_text
@@ -38,6 +40,9 @@ from core.vulnfact import build_batch
 
 from .jobs import JobRegistry
 from .pipeline import run_scan
+from .security import (
+    AccessControl, AccessMiddleware, clear_session_cookie, client_ip, set_session_cookie,
+)
 
 config = get_config()
 config.ensure_dirs()
@@ -50,6 +55,23 @@ app = FastAPI(
 
 registry = JobRegistry()
 WEB_DIR = config.repo_root / "web"
+
+access = AccessControl(config)
+app.add_middleware(AccessMiddleware, access=access)
+
+
+def _require_admin(request: Request) -> None:
+    """미들웨어가 이미 쓰기 요청을 걸러 주지만, 여기서 한 번 더 본다.
+
+    권한 판단이 미들웨어 한 곳에만 있으면, 나중에 누군가 경로 예외를 하나
+    추가하는 순간 그 경로 전체가 조용히 열린다. 계정 관리처럼 되돌리기 어려운
+    것은 라우트에서도 확인한다.
+    """
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(401, "로그인이 필요합니다.")
+    if user.role != "admin":
+        raise HTTPException(403, "관리자만 할 수 있습니다.")
 
 
 def _store() -> Store:
@@ -84,17 +106,205 @@ def _scoped(scan_id: str, select: list[str] | None) -> tuple[ScanResult, selecti
 
 
 # ---------------------------------------------------------------------------
+# 로그인 · 계정 · 접근 IP
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/auth/state")
+def auth_state(request: Request) -> dict[str, Any]:
+    """로그인 화면이 시작할 때 묻는 것. 인증 없이 닿는 유일한 조회다."""
+    user = getattr(request.state, "user", None)
+    return {
+        "needs_setup": access.needs_setup(),
+        "authenticated": user is not None,
+        "username": user.username if user else "",
+        "role": user.role if user else "",
+        "client_ip": client_ip(request),
+    }
+
+
+@app.post("/api/auth/setup")
+def auth_setup(request: Request, body: dict[str, Any] = Body(default={})) -> Any:
+    """최초 관리자 하나를 만든다. 계정이 이미 있으면 거부한다.
+
+    미들웨어가 이 경로를 본 PC(loopback)에서만 열어 두므로, 네트워크의 누군가가
+    먼저 와서 관리자를 차지할 수는 없다.
+    """
+    if not access.needs_setup():
+        raise HTTPException(409, "이미 계정이 있습니다. 관리자로 로그인해 주세요.")
+
+    try:
+        user = access.accounts.create(
+            str(body.get("username", "")), str(body.get("password", "")), role="admin"
+        )
+    except AccountError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    session = access.accounts.open_session(user.username, ttl_hours=config.session_ttl_hours)
+    response = JSONResponse({"username": user.username, "role": user.role})
+    set_session_cookie(response, session.token, max_age=config.session_ttl_hours * 3600)
+    return response
+
+
+@app.post("/api/auth/login")
+def auth_login(request: Request, body: dict[str, Any] = Body(default={})) -> Any:
+    ip = client_ip(request)
+    wait = access.throttle.blocked_for(ip)
+    if wait:
+        raise HTTPException(429, f"로그인 시도가 너무 많습니다. {wait}초 후 다시 시도하세요.")
+
+    username = str(body.get("username", "")).strip()
+    user = access.accounts.authenticate(username, str(body.get("password", "")))
+    if user is None:
+        access.throttle.fail(ip)
+        # 어느 쪽이 틀렸는지 말하지 않는다. 계정 존재 여부를 알려 주는 셈이 된다.
+        raise HTTPException(401, "계정 또는 비밀번호가 올바르지 않습니다.")
+
+    access.throttle.succeed(ip)
+    session = access.accounts.open_session(user.username, ttl_hours=config.session_ttl_hours)
+    response = JSONResponse({"username": user.username, "role": user.role})
+    set_session_cookie(response, session.token, max_age=config.session_ttl_hours * 3600)
+    return response
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request) -> Any:
+    user = getattr(request.state, "user", None)
+    if user is not None:
+        access.accounts.close_session(user.token)
+    response = JSONResponse({"ok": True})
+    clear_session_cookie(response)
+    return response
+
+
+@app.post("/api/auth/password")
+def auth_change_password(request: Request, body: dict[str, Any] = Body(default={})) -> Any:
+    """자기 비밀번호를 바꾼다. 현재 비밀번호를 확인한다."""
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(401, "로그인이 필요합니다.")
+    if access.accounts.authenticate(user.username, str(body.get("current", ""))) is None:
+        raise HTTPException(403, "현재 비밀번호가 올바르지 않습니다.")
+
+    try:
+        access.accounts.set_password(user.username, str(body.get("password", "")))
+    except AccountError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    # set_password가 기존 세션을 전부 끊었다. 방금 바꾼 본인은 다시 열어 준다.
+    session = access.accounts.open_session(user.username, ttl_hours=config.session_ttl_hours)
+    response = JSONResponse({"ok": True})
+    set_session_cookie(response, session.token, max_age=config.session_ttl_hours * 3600)
+    return response
+
+
+@app.get("/api/users")
+def list_users(request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    return {"users": [u.to_dict() for u in access.accounts.list_users()]}
+
+
+@app.post("/api/users")
+def create_user(request: Request, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    _require_admin(request)
+    try:
+        user = access.accounts.create(
+            str(body.get("username", "")),
+            str(body.get("password", "")),
+            str(body.get("role", VIEWER)),
+        )
+    except AccountError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return user.to_dict()
+
+
+@app.put("/api/users/{username}")
+def update_user(request: Request, username: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """비밀번호 초기화와 권한 변경. 관리자만."""
+    _require_admin(request)
+    if access.accounts.get(username) is None:
+        raise HTTPException(404, f"'{username}' 계정이 없습니다.")
+
+    try:
+        if body.get("password"):
+            access.accounts.set_password(username, str(body["password"]))
+        if body.get("role"):
+            access.accounts.set_role(username, str(body["role"]))
+    except AccountError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    user = access.accounts.get(username)
+    return user.to_dict() if user else {}
+
+
+@app.delete("/api/users/{username}")
+def delete_user(request: Request, username: str) -> dict[str, Any]:
+    _require_admin(request)
+    actor = getattr(request.state, "user", None)
+    if actor is not None and actor.username == username:
+        raise HTTPException(400, "자기 계정은 삭제할 수 없습니다.")
+    try:
+        access.accounts.delete(username)
+    except AccountError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"deleted": username}
+
+
+@app.get("/api/access/ips")
+def get_allowed_ips(request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    allowlist = access.allowlist()
+    return {
+        "entries": list(allowlist.entries),
+        "active": allowlist.active,
+        "client_ip": client_ip(request),
+        "note": (
+            "비워 두면 IP 제한이 없습니다(로그인은 여전히 필요합니다). "
+            "판단은 소켓 상대 주소로만 하며 X-Forwarded-For 헤더는 보지 않습니다."
+        ),
+    }
+
+
+@app.put("/api/access/ips")
+def put_allowed_ips(request: Request, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """허용 목록을 저장한다. **자기 자신을 잠그는 저장은 막는다.**
+
+    목록을 잘못 넣어 스스로 못 들어오게 되면 서버 PC 앞으로 가서 DB를 손봐야
+    한다. 저장 직전에 지금 접속 중인 주소가 새 목록에 들어가는지 확인한다.
+    """
+    _require_admin(request)
+    raw = body.get("entries", "")
+    try:
+        allowlist = Allowlist.parse(raw if isinstance(raw, (list, tuple)) else str(raw))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    ip = client_ip(request)
+    if allowlist.active and not allowlist.permits(ip):
+        raise HTTPException(
+            400,
+            f"지금 접속 중인 주소({ip})가 목록에 없습니다. "
+            f"이대로 저장하면 다시 들어올 수 없습니다.",
+        )
+
+    access.save_allowlist(allowlist)
+    return {"entries": list(allowlist.entries), "active": allowlist.active}
+
+
+# ---------------------------------------------------------------------------
 # 상태
 # ---------------------------------------------------------------------------
 
 
 @app.get("/api/health")
-def health() -> dict[str, Any]:
+def health(request: Request) -> dict[str, Any]:
     """외부 도구와 정책 상태. UI가 시작 시 확인해 안내 문구를 띄운다."""
     grype_version = grype_runner.version(config)
     policy = load_policy(config.rules_dir / "priority.json", config.config_dir / "priority.local.json")
+    user = getattr(request.state, "user", None)
     return {
         "ok": bool(grype_version),
+        "user": {"username": user.username, "role": user.role} if user else None,
         "tools": {
             "syft": syft_runner.version(config),
             "grype": grype_version,

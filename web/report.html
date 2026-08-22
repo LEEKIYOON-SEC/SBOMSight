@@ -21,15 +21,7 @@
 </style>
 </head>
 <body>
-<header class="topbar">
-  <div class="brand"><a href="index.html">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
-  <div class="spacer"></div>
-  <nav>
-    <a href="index.html">개요</a>
-    <a href="scan.html">스캔</a>
-    <a href="about.html">설계</a>
-  </nav>
-</header>
+<header class="topbar"></header>
 
 <main class="wrap">
   <h1>취약점 대응 검토 보고서</h1>
@@ -74,7 +66,9 @@
 import { getProvider } from './js/providers/index.js';
 import { $, esc, priorityPill, renderStats, renderSummaryLine } from './js/core/ui.js';
 import { EXPLOIT_SOURCE_LABEL, FIX_STATE_LABEL, TERNARY_LABEL } from './js/core/model.js';
+import { mountTopbar } from './js/core/nav.js';
 
+await mountTopbar('report.html');
 const provider = await getProvider();
 const params = new URLSearchParams(location.search);
 

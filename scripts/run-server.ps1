@@ -74,6 +74,18 @@ if (-not (Get-Command $GrypeBin -ErrorAction SilentlyContinue)) {
 $IsPublic = $BindHost -ne "127.0.0.1" -and $BindHost -ne "localhost"
 
 if ($IsPublic) {
+    # 계정이 하나도 없는 채로 밖에 열지 않는다. 취약점 목록은 공격자에게 그대로
+    # 지도가 되므로, 로그인이 설 수 있는 상태가 되기 전에는 문을 열지 않는다.
+    $Probe = "import sys; from core.accounts import Accounts; from core.config import get_config; sys.exit(0 if Accounts(get_config().db_path).count() else 1)"
+    & $Python -c $Probe 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[!] 계정이 하나도 없어 $BindHost 로 열지 않습니다."
+        Write-Host "    먼저 관리자 계정을 만드세요:"
+        Write-Host "      $Python -m core.cli user add <이름> --role admin"
+        Write-Host "    또는 이 PC에서 -Listen 없이 띄운 뒤 http://127.0.0.1:$Port 에서 만드세요."
+        exit 1
+    }
+
     Write-Host ""
     Write-Host "[!] $BindHost 로 바인딩합니다 — 이 PC 밖에서 접속할 수 있게 됩니다."
     Write-Host "    스캔 결과에는 어떤 서버에 어떤 취약점이 있는지가 그대로 담깁니다."

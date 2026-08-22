@@ -3,103 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SBOMSight — SBOM 기반 취약점 대응 검토</title>
+<title>SBOMSight</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand"><a href="index.html">SBOMSight</a><small>SBOM 기반 취약점 대응 검토</small></div>
-  <div class="spacer"></div>
-  <nav>
-    <a href="index.html" aria-current="page">개요</a>
-    <a href="scan.html">스캔</a>
-    <a href="about.html">설계</a>
-  </nav>
-</header>
+<header class="topbar"></header>
 
-<main class="wrap">
-  <h1>취약점 대응 여부를 판단할 근거를 정리합니다</h1>
-  <p class="lede">
-    실제 자산에서 생성한 SBOM을 받아 취약점을 식별하고, 공개된 위협정보를 결합해
-    대응 우선순위와 조치 근거를 산출합니다. 판단을 대신하지 않고, 판단할 재료를 갖춰 드립니다.
-  </p>
+<main class="wide">
+  <div class="page-head">
+    <h1>스캔 기록</h1>
+    <a class="btn primary" href="scan.html">SBOM 올리기</a>
+  </div>
 
   <div id="banner"></div>
 
-  <div class="card">
-    <div class="flow" id="flow">
-      <b>SBOM</b><span class="arrow">→</span>
-      <b>취약점 탐지</b><span class="arrow">→</span>
-      <b>위협정보</b><span class="arrow">→</span>
-      <b>대응 우선순위</b><span class="arrow">→</span>
-      <b>대응 검토 근거</b><span class="arrow">→</span>
-      <b>권고사항</b><span class="arrow">→</span>
-      <b>보고서</b>
-    </div>
-    <p style="margin-top:1rem">
-      <a class="btn primary" href="scan.html">SBOM 올리고 시작하기</a>
-    </p>
-  </div>
-
-  <h2>설계 원칙</h2>
-  <div class="grid cols-2">
-    <div class="card">
-      <h3>판정은 룰이, 설명은 AI가</h3>
-      <p class="muted">
-        대응 검토 우선순위는 <code>rules/priority.json</code>의 정책 룰을 공개 데이터에
-        적용한 결정론적 산출물입니다. AI는 이 판정에 관여하지 않습니다 — 입력으로 받지도,
-        산출하지도 않습니다. AI가 하는 일은 왜 이 조치를 검토해야 하는지를 문장으로
-        풀어 쓰는 것뿐이며, AI가 없어도 보고서는 완결됩니다.
-      </p>
-    </div>
-    <div class="card">
-      <h3>내부 정보는 나가지 않습니다</h3>
-      <p class="muted">
-        데이터 모델이 3층으로 갈라져 있습니다. 자산명·호스트명·IP·파일 경로·
-        <b>설치된 실제 버전</b>·SBOM 목록·판정 결과는 외부 전송 객체에 들어갈 자리가
-        아예 없습니다. AI에 전달되는 것은 CVE·CVSS·EPSS·KEV·Exploit 같은
-        공개 취약점 데이터뿐이며, 전송 전에 전문을 확인할 수 있습니다.
-      </p>
-    </div>
-    <div class="card">
-      <h3>판단할 수 없으면 '미확인'</h3>
-      <p class="muted">
-        비표준 버전 문자열을 만났을 때 "취약하지 않음"이라고 답하면 그 취약점은
-        조용히 사라집니다. 비교 불가는 <code>unknown</code>으로 남기고 사유를 적습니다.
-        EPSS를 못 받아왔을 때 0으로 채우지 않고, KEV 조회에 실패했을 때
-        "등재 안 됨"으로 처리하지 않습니다.
-      </p>
-    </div>
-    <div class="card">
-      <h3>패치 절차는 AI가 만들지 않습니다</h3>
-      <p class="muted">
-        생태계별 절차는 <code>rules/playbooks/*.json</code>이 결정론적으로 생성합니다.
-        폐쇄망 RPM 절차는 실제 운영 방식 그대로입니다 —
-        <code>dnf download --resolve --alldeps</code> → 매체 반입 →
-        <code>rpm -K</code> 서명 검증 → <code>dnf localinstall</code> 또는
-        <code>createrepo_c</code> 로컬 저장소 → <code>rpm -q</code> 및 재스캔.
-      </p>
-    </div>
-  </div>
-
-  <h2>최근 스캔</h2>
   <div class="card">
     <div id="recent" class="muted">불러오는 중…</div>
   </div>
 </main>
 
-<footer class="site">
-  SBOMSight · 대응 검토 우선순위는 정책 룰의 산출물이며, 내부 위험도와 최종 패치 여부는 보안담당자가 판단합니다.
-</footer>
-
 <script type="module">
 import { getProvider } from './js/providers/index.js';
-import { $, esc, priorityPill } from './js/core/ui.js';
+import { $, esc } from './js/core/ui.js';
+import { mountTopbar } from './js/core/nav.js';
 
+await mountTopbar('index.html');
 const provider = await getProvider();
 
-// --- 환경 안내 -------------------------------------------------------------
+// --- 도구 상태 --------------------------------------------------------------
 const banner = $('#banner');
 try {
   const health = await provider.health();
@@ -110,46 +42,44 @@ try {
       ${health.exported_at ? `<span class="faint">· 내보낸 시각 ${esc(health.exported_at)}</span>` : ''}</div>`;
   } else if (!health.ok) {
     banner.innerHTML = `<div class="banner warn">
-      <b>Grype를 찾을 수 없습니다.</b> <code>scripts/install-tools.sh</code>
-      (Linux) 또는 <code>scripts/install-tools.ps1</code> (Windows)로 설치한 뒤
+      <b>Grype를 찾을 수 없습니다.</b> <code>scripts/install-tools.ps1</code> (Windows) 또는
+      <code>scripts/install-tools.sh</code> (Linux)로 설치한 뒤
       <code>grype db update</code>로 취약점 DB를 준비하세요.</div>`;
   } else {
     const db = health.tools.grype_db?.built || health.tools.grype_db?.schemaVersion || '';
     banner.innerHTML = `<div class="banner info">
-      grype <b>${esc(health.tools.grype)}</b>
-      ${db ? `· DB ${esc(db)}` : ''}
-      · 적용 정책 <b>${esc(health.policy.label)}</b>
-      · AI ${health.ai.ready ? '<b>사용 가능</b>' : '<b>미사용</b> (기본값)'}</div>`;
+      grype <b>${esc(health.tools.grype)}</b>${db ? ` · DB ${esc(db)}` : ''}
+      · 판정 기준 <b>${esc(health.policy.label)}</b>
+      · AI ${health.ai.ready ? '<b>사용 가능</b>' : '<b>미사용</b>'}</div>`;
   }
 } catch (error) {
   banner.innerHTML = `<div class="banner danger">서버 상태를 확인하지 못했습니다: ${esc(error.message)}</div>`;
 }
 
-// --- 최근 스캔 -------------------------------------------------------------
+// --- 스캔 목록 --------------------------------------------------------------
 const recent = $('#recent');
 try {
   const { scans } = await provider.listScans();
   if (!scans.length) {
     recent.innerHTML = provider.readonly
       ? '<span class="muted">전시할 결과가 아직 없습니다.</span>'
-      : '<span class="muted">아직 스캔 기록이 없습니다.</span>';
+      : '<span class="muted">아직 스캔 기록이 없습니다. <a href="scan.html">SBOM을 올려</a> 시작하세요.</span>';
   } else {
     recent.innerHTML = `<div class="table-scroll"><table>
-      <thead><tr><th>스캔</th><th>시각</th><th>SBOM</th><th class="num">컴포넌트</th>
-        <th class="num">탐지</th><th class="num">선택</th><th></th></tr></thead>
-      <tbody>${scans.slice(0, 10).map((s) => `
+      <thead><tr><th>시각</th><th>SBOM</th><th class="num">컴포넌트</th>
+        <th class="num">탐지</th><th>스캔 ID</th><th></th></tr></thead>
+      <tbody>${scans.map((s) => `
         <tr>
-          <td class="mono">${esc(s.scan_id)}</td>
-          <td class="faint">${esc(s.created_at)}</td>
+          <td>${esc(s.created_at)}</td>
           <td>${esc(s.metadata?.sbom_filename || '—')}</td>
           <td class="num">${s.metadata?.component_count ?? '—'}</td>
           <td class="num">${s.finding_count}</td>
-          <td class="num">${s.selected_count || '—'}</td>
+          <td class="mono faint">${esc(s.scan_id)}</td>
           <td><a href="scan.html?scan=${encodeURIComponent(s.scan_id)}">열기</a></td>
         </tr>`).join('')}</tbody></table></div>`;
   }
 } catch (error) {
-  recent.innerHTML = `<span class="muted">최근 스캔을 불러오지 못했습니다: ${esc(error.message)}</span>`;
+  recent.innerHTML = `<span class="muted">스캔 목록을 불러오지 못했습니다: ${esc(error.message)}</span>`;
 }
 </script>
 </body>

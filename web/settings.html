@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>설정 — SBOMSight</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="topbar"></header>
+
+<main class="wrap">
+  <h1>설정</h1>
+
+  <section id="sec-users" hidden>
+    <h2>계정</h2>
+    <div class="card">
+      <div id="users">불러오는 중…</div>
+      <form id="add-user" class="inline-form">
+        <input name="username" placeholder="계정 이름" required>
+        <input name="password" type="password" placeholder="비밀번호 (8자 이상)" required autocomplete="new-password">
+        <select name="role">
+          <option value="viewer">조회 — 읽기 전용</option>
+          <option value="admin">관리자 — 전체 권한</option>
+        </select>
+        <button class="btn primary" type="submit">계정 추가</button>
+      </form>
+      <div id="user-msg"></div>
+    </div>
+  </section>
+
+  <section id="sec-ips" hidden>
+    <h2>접근 IP</h2>
+    <div class="card">
+      <p class="muted" id="ip-note"></p>
+      <form id="ip-form">
+        <textarea name="entries" rows="5" spellcheck="false"
+          placeholder="192.168.10.0/24&#10;10.0.0.5"></textarea>
+        <button class="btn primary" type="submit">저장</button>
+        <span class="faint" id="ip-status"></span>
+      </form>
+      <div id="ip-msg"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>내 비밀번호</h2>
+    <div class="card">
+      <form id="pw-form" class="inline-form">
+        <input name="current" type="password" placeholder="현재 비밀번호" required autocomplete="current-password">
+        <input name="password" type="password" placeholder="새 비밀번호 (8자 이상)" required autocomplete="new-password">
+        <button class="btn" type="submit">변경</button>
+      </form>
+      <div id="pw-msg"></div>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { $, esc } from './js/core/ui.js';
+import { mountTopbar } from './js/core/nav.js';
+
+const state = await mountTopbar('settings.html');
+if (!state?.authenticated) window.location.replace('login.html?next=settings.html');
+
+// 조회 권한은 자기 비밀번호만 바꿀 수 있다. 없는 권한의 화면을 그려 두고
+// 눌렀을 때 403을 보여 주는 대신, 아예 내보내지 않는다.
+const isAdmin = state?.role === 'admin';
+
+async function call(path, options = {}) {
+  const response = await fetch(path, {
+    headers: options.body ? { 'Content-Type': 'application/json' } : {},
+    ...options,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || `${response.status} ${response.statusText}`);
+  return payload;
+}
+
+function say(target, message, kind = 'info') {
+  $(target).innerHTML = message ? `<div class="banner ${kind}">${esc(message)}</div>` : '';
+}
+
+// --- 계정 -------------------------------------------------------------------
+
+async function renderUsers() {
+  const { users } = await call('api/users');
+  $('#users').innerHTML = `<div class="table-scroll"><table>
+    <thead><tr><th>계정</th><th>권한</th><th>생성</th><th>최근 로그인</th><th></th></tr></thead>
+    <tbody>${users.map((u) => `
+      <tr data-user="${esc(u.username)}">
+        <td><b>${esc(u.username)}</b>${u.username === state.username ? ' <span class="faint">(나)</span>' : ''}</td>
+        <td>
+          <select class="role" ${u.username === state.username ? 'disabled' : ''}>
+            <option value="viewer"${u.role === 'viewer' ? ' selected' : ''}>조회</option>
+            <option value="admin"${u.role === 'admin' ? ' selected' : ''}>관리자</option>
+          </select>
+        </td>
+        <td class="faint">${esc(u.created_at)}</td>
+        <td class="faint">${esc(u.last_login_at || '없음')}</td>
+        <td class="row-actions">
+          <button type="button" class="btn small reset">비밀번호 초기화</button>
+          ${u.username === state.username ? '' : '<button type="button" class="btn small danger remove">삭제</button>'}
+        </td>
+      </tr>`).join('')}</tbody></table></div>`;
+}
+
+$('#users').addEventListener('change', async (event) => {
+  if (!event.target.classList.contains('role')) return;
+  const username = event.target.closest('tr').dataset.user;
+  try {
+    await call(`api/users/${encodeURIComponent(username)}`, {
+      method: 'PUT', body: JSON.stringify({ role: event.target.value }),
+    });
+    say('#user-msg', `${username}의 권한을 바꿨습니다.`);
+  } catch (error) {
+    say('#user-msg', error.message, 'danger');
+  }
+  await renderUsers();
+});
+
+$('#users').addEventListener('click', async (event) => {
+  const row = event.target.closest('tr');
+  if (!row) return;
+  const username = row.dataset.user;
+
+  if (event.target.classList.contains('reset')) {
+    const password = window.prompt(`${username}의 새 비밀번호 (8자 이상)`);
+    if (!password) return;
+    try {
+      await call(`api/users/${encodeURIComponent(username)}`, {
+        method: 'PUT', body: JSON.stringify({ password }),
+      });
+      say('#user-msg', `${username}의 비밀번호를 바꿨습니다. 이 계정의 기존 로그인은 모두 끊겼습니다.`);
+    } catch (error) {
+      say('#user-msg', error.message, 'danger');
+    }
+  }
+
+  if (event.target.classList.contains('remove')) {
+    if (!window.confirm(`${username} 계정을 삭제할까요?`)) return;
+    try {
+      await call(`api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
+      say('#user-msg', `${username} 계정을 삭제했습니다.`);
+      await renderUsers();
+    } catch (error) {
+      say('#user-msg', error.message, 'danger');
+    }
+  }
+});
+
+$('#add-user').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  try {
+    await call('api/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: data.get('username'),
+        password: data.get('password'),
+        role: data.get('role'),
+      }),
+    });
+    event.target.reset();
+    say('#user-msg', `${data.get('username')} 계정을 만들었습니다.`);
+    await renderUsers();
+  } catch (error) {
+    say('#user-msg', error.message, 'danger');
+  }
+});
+
+// --- 접근 IP ----------------------------------------------------------------
+
+async function renderIps() {
+  const info = await call('api/access/ips');
+  $('#ip-note').innerHTML = esc(info.note);
+  $('#ip-form').entries.value = info.entries.join('\n');
+  $('#ip-status').textContent = info.active
+    ? `${info.entries.length}개 대역 허용 중 · 지금 접속 주소 ${info.client_ip}`
+    : `제한 없음 · 지금 접속 주소 ${info.client_ip}`;
+}
+
+$('#ip-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const result = await call('api/access/ips', {
+      method: 'PUT',
+      body: JSON.stringify({ entries: $('#ip-form').entries.value }),
+    });
+    say('#ip-msg', result.active
+      ? `저장했습니다. 이제 ${result.entries.length}개 대역에서만 접속할 수 있습니다.`
+      : '저장했습니다. IP 제한이 없습니다 (로그인은 여전히 필요합니다).');
+    await renderIps();
+  } catch (error) {
+    say('#ip-msg', error.message, 'danger');
+  }
+});
+
+// --- 내 비밀번호 ------------------------------------------------------------
+
+$('#pw-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  try {
+    await call('api/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ current: data.get('current'), password: data.get('password') }),
+    });
+    event.target.reset();
+    say('#pw-msg', '비밀번호를 바꿨습니다. 다른 기기의 로그인은 모두 끊겼습니다.');
+  } catch (error) {
+    say('#pw-msg', error.message, 'danger');
+  }
+});
+
+if (isAdmin) {
+  $('#sec-users').hidden = false;
+  $('#sec-ips').hidden = false;
+  await renderUsers();
+  await renderIps();
+}
+</script>
+</body>
+</html>

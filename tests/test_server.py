@@ -33,21 +33,6 @@ CYCLONEDX = {
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    """데이터 디렉터리를 임시 경로로 돌린 앱 인스턴스."""
-    monkeypatch.setenv("SBOMSIGHT_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("SBOMSIGHT_OFFLINE", "1")
-
-    import core.config
-    core.config.get_config(refresh=True)
-
-    import importlib
-    import server.app
-    importlib.reload(server.app)
-    return TestClient(server.app.app)
-
-
-@pytest.fixture
 def seeded_scan(client):
     """정규화·판정까지 마친 스캔을 저장해 두고 scan_id를 돌려준다."""
     from core.config import get_config
@@ -441,7 +426,7 @@ class TestNarrativeEndpoint:
 
 
 class TestStaticFrontend:
-    @pytest.mark.parametrize("path", ["/", "/scan.html", "/report.html", "/about.html"])
+    @pytest.mark.parametrize("path", ["/", "/scan.html", "/report.html", "/settings.html", "/login.html"])
     def test_pages_are_served(self, client, path):
         response = client.get(path)
         assert response.status_code == 200

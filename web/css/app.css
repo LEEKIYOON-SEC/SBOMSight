@@ -76,6 +76,20 @@ code, .mono { font-family: var(--mono); font-size: .87em; }
 
 .wrap { max-width: 74rem; margin: 0 auto; padding: 1.75rem 1.5rem 5rem; }
 .wrap.narrow { max-width: 52rem; }
+/* 표가 주인공인 화면은 폭을 제한하지 않는다. 열이 여덟 개인 표를 74rem 안에
+   구겨 넣으면 어느 열도 읽을 수 없다. 보고서만 읽기 폭을 유지한다. */
+.wide { margin: 0 auto; padding: 1.75rem 2rem 5rem; }
+.page-head { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
+.page-head h1 { margin: 0; flex: 1; }
+
+/* 지금 누구로 보고 있는지. 권한 때문에 막혔을 때 이유를 알 수 있어야 한다. */
+.whoami { display: flex; align-items: center; gap: .5rem; font-size: .82rem; }
+.whoami .who { font-weight: 600; }
+.whoami .role {
+  padding: .05rem .4rem; border-radius: var(--radius-sm); font-size: .72rem;
+  border: 1px solid var(--line-strong); color: var(--fg-muted); background: var(--bg-soft);
+}
+.whoami .role.admin { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
 h1 { font-size: 1.6rem; margin: 0 0 .35rem; letter-spacing: -.025em; }
 h2 { font-size: 1.15rem; margin: 2rem 0 .75rem; letter-spacing: -.015em; }
@@ -155,12 +169,30 @@ button:hover:not(:disabled), .btn:hover { background: var(--bg-sunken); text-dec
 button:disabled { opacity: .5; cursor: not-allowed; }
 button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.primary:hover:not(:disabled) { filter: brightness(1.08); }
-select, input[type="search"], input[type="text"] {
+select, textarea, input[type="search"], input[type="text"], input[type="password"], input:not([type]) {
   font: inherit; font-size: .85rem; padding: .35rem .55rem;
   border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
   background: var(--bg); color: var(--fg);
 }
+textarea { font-family: var(--mono); width: 100%; resize: vertical; }
 label.check { display: inline-flex; align-items: center; gap: .35rem; font-size: .85rem; color: var(--fg-muted); }
+
+button.small, .btn.small { font-size: .78rem; padding: .25rem .55rem; }
+button.danger, .btn.danger { color: var(--danger); border-color: var(--danger); }
+
+.inline-form { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+.inline-form input { min-width: 12rem; }
+.row-actions { display: flex; gap: .4rem; white-space: nowrap; }
+
+/* ---------- 로그인 화면 ---------- */
+body.gate { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.gate-box { width: min(26rem, 92vw); padding: 1.5rem; }
+.gate-box .brand { justify-content: center; margin-bottom: 1.25rem; }
+.gate-box h1 { font-size: 1.25rem; margin-bottom: .5rem; }
+.gate-box form { display: flex; flex-direction: column; gap: .75rem; margin-top: 1rem; }
+.gate-box label { display: flex; flex-direction: column; gap: .3rem; font-size: .82rem; color: var(--fg-muted); }
+.gate-box .banner { margin: 0; }
+.gate-box #foot { text-align: center; color: var(--fg-faint); font-size: .76rem; margin-top: 1rem; }
 
 .dropzone {
   border: 2px dashed var(--line-strong); border-radius: var(--radius);

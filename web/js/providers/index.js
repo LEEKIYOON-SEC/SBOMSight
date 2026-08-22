@@ -23,7 +23,10 @@ async function detectMode() {
   if (window.SBOMSIGHT_MODE) return window.SBOMSIGHT_MODE;
   try {
     const response = await fetch('api/health', { method: 'GET' });
-    if (response.ok) return 'live';
+    // 401·403 도 "서버가 있다"는 답이다. 로그인이 필요하거나 IP가 막힌 것일
+    // 뿐이므로 정적 모드로 넘어가면 안 된다 — 그러면 로그인해야 할 자리에
+    // 전시용 빈 화면이 뜬다.
+    if (response.ok || response.status === 401 || response.status === 403) return 'live';
   } catch { /* 정적 호스팅이면 여기로 온다 */ }
   return 'static';
 }

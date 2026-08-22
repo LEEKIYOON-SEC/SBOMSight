@@ -83,6 +83,13 @@ class Config:
     # 보관 시 gzip 압축. SBOM JSON은 구조가 반복적이라 실측 25배 이상 줄어든다.
     compress_storage: bool = field(default_factory=lambda: _env_bool("SBOMSIGHT_COMPRESS_STORAGE", True))
 
+    # --- 접근 통제 ----------------------------------------------------------
+    # 접속을 허용할 IP·CIDR (쉼표 구분). **부트스트랩 값이다** — 웹의
+    # `설정 → 접근 IP` 에서 한 번이라도 저장하면 그때부터는 DB 값이 쓰인다.
+    # 비어 있으면 IP 제한 없음(로그인은 여전히 필요하다).
+    allowed_ips: str = field(default_factory=lambda: _env("SBOMSIGHT_ALLOWED_IPS"))
+    session_ttl_hours: int = field(default_factory=lambda: _env_int("SBOMSIGHT_SESSION_TTL_HOURS", 12))
+
     @property
     def db_path(self) -> Path:
         override = _env("SBOMSIGHT_DB_PATH")

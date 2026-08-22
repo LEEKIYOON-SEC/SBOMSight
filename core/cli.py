@@ -363,6 +363,58 @@ def _cmd_scans(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_user(args: argparse.Namespace) -> int:
+    """계정 관리 — 최초 관리자를 만드는 부트스트랩용.
+
+    평상시 계정 관리는 웹의 `설정 → 계정` 에서 한다. 여기 있는 이유는 두 가지다.
+    관리자가 하나도 없는 상태에서 첫 계정을 만들 때, 그리고 비밀번호를 잊어
+    웹으로 들어갈 수 없게 됐을 때.
+    """
+    import getpass
+
+    from .accounts import ADMIN, AccountError, Accounts, VIEWER
+
+    accounts = Accounts(get_config().db_path)
+
+    if args.action == "list":
+        users = accounts.list_users()
+        if not users:
+            print("계정이 없습니다. `python -m core.cli user add <이름> --role admin` 으로 만드세요.")
+            return 0
+        for user in users:
+            last = user.last_login_at or "로그인 기록 없음"
+            print(f"{user.username:<20} {user.role:<7} 생성 {user.created_at}  최근 {last}")
+        return 0
+
+    if args.action == "remove":
+        try:
+            accounts.delete(args.username)
+        except AccountError as exc:
+            print(f"오류: {exc}", file=sys.stderr)
+            return 1
+        print(f"삭제: {args.username}")
+        return 0
+
+    # add · passwd — 비밀번호는 인자로 받지 않는다. 셸 히스토리와 프로세스
+    # 목록에 그대로 남기 때문이다.
+    password = getpass.getpass("비밀번호: ")
+    if password != getpass.getpass("비밀번호 확인: "):
+        print("오류: 두 번 입력한 비밀번호가 다릅니다.", file=sys.stderr)
+        return 1
+
+    try:
+        if args.action == "add":
+            user = accounts.create(args.username, password, ADMIN if args.role == ADMIN else VIEWER)
+            print(f"생성: {user.username} ({user.role})")
+        else:
+            accounts.set_password(args.username, password)
+            print(f"비밀번호 변경: {args.username} (기존 세션은 모두 끊겼습니다)")
+    except AccountError as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sbomsight", description="SBOM 기반 취약점 대응 검토")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -434,6 +486,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_scans = sub.add_parser("scans", help="저장된 스캔 목록")
     p_scans.add_argument("--limit", type=int, default=20)
     p_scans.set_defaults(func=_cmd_scans)
+
+    p_user = sub.add_parser(
+        "user",
+        help="계정 관리 (최초 관리자 생성·비밀번호 복구용. 평소에는 웹 설정 → 계정에서)",
+    )
+    user_sub = p_user.add_subparsers(dest="action", required=True)
+
+    u_add = user_sub.add_parser("add", help="계정 생성")
+    u_add.add_argument("username")
+    u_add.add_argument("--role", choices=("admin", "viewer"), default="viewer")
+
+    u_passwd = user_sub.add_parser("passwd", help="비밀번호 변경 (기존 세션은 모두 끊긴다)")
+    u_passwd.add_argument("username")
+
+    u_remove = user_sub.add_parser("remove", help="계정 삭제")
+    u_remove.add_argument("username")
+
+    user_sub.add_parser("list", help="계정 목록")
+    p_user.set_defaults(func=_cmd_user)
 
     return parser
 

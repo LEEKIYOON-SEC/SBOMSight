@@ -11,9 +11,22 @@
 // 경로(/SBOMSight/)에서 도메인 루트를 가리켜 깨진다.
 const BASE = '';
 
+/** 세션이 만료되면 화면 어디에 있든 로그인으로 보낸다.
+ *
+ * 12시간짜리 세션이라 화면을 열어 둔 채 다음 날 조작하는 일이 흔하다. 그때
+ * "401 Unauthorized" 라는 문자열만 뜨면 무엇을 해야 하는지 알 수 없다.
+ */
+function toLogin() {
+  const here = window.location.pathname.replace(/^\//, '') + window.location.search;
+  window.location.replace(`login.html?next=${encodeURIComponent(here || 'index.html')}`);
+}
+
 async function request(path, options = {}) {
   const response = await fetch(BASE + path, options);
   if (!response.ok) {
+    if (response.status === 401 && !window.location.pathname.endsWith('login.html')) {
+      toLogin();
+    }
     let detail = `${response.status} ${response.statusText}`;
     try {
       const body = await response.json();
