@@ -153,25 +153,27 @@ export const liveApiProvider = {
     return (await request(`api/scans/${encodeURIComponent(scanId)}/package-keys?${query}`)).json();
   },
 
-  /** 묶음 하나에 속한 취약점 목록. 표에서 패키지를 눌렀을 때만 부른다. */
+  /**
+   * 묶음 하나에 속한 취약점 목록. 표에서 패키지를 눌렀을 때만 부른다.
+   *
+   * 패키지 이름은 **쿼리로 보낸다.** 경로에 실으면 이름에 `/` 가 들어가는
+   * 패키지가 404 가 된다 — Go 모듈(`github.com/gogo/protobuf`)과 npm 스코프
+   * (`@babel/core`) 가 전부 그렇다.
+   */
   async packageFindings(scanId, pkg, version = '') {
-    const query = new URLSearchParams({ limit: '500' });
+    const query = new URLSearchParams({ name: pkg, limit: '500' });
     if (version) query.set('version', version);
-    query.set('q', '');
     const page = await (await request(
-      `api/scans/${encodeURIComponent(scanId)}/packages/${encodeURIComponent(pkg)}/findings?${query}`,
+      `api/scans/${encodeURIComponent(scanId)}/package/findings?${query}`,
     )).json();
     return page.findings || [];
   },
 
   /** 묶음 하나의 상세. 펼쳤을 때만 부른다. */
   async packageDetail(scanId, pkg, { version = '', ai = false } = {}) {
-    const query = new URLSearchParams();
+    const query = new URLSearchParams({ name: pkg, ai: String(Boolean(ai)) });
     if (version) query.set('version', version);
-    query.set('ai', String(Boolean(ai)));
-    return (await request(
-      `api/scans/${encodeURIComponent(scanId)}/packages/${encodeURIComponent(pkg)}?${query}`,
-    )).json();
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/package?${query}`)).json();
   },
 
   /** 기록된 선택 키. 되살리려고 스캔 전체를 받지 않는다. */
@@ -303,11 +305,13 @@ export const liveApiProvider = {
    * egressPreview가 보여 준 것과 **같은 조립기·같은 가드**를 통과한 결과이며,
    * 가드가 막으면 호출 자체가 일어나지 않는다.
    */
-  async generateNarratives(scanId, { selection = [], saved = false } = {}) {
+  async generateNarratives(scanId, { package: pkg, version = '' } = {}) {
+    // **패키지 하나씩.** 범위를 넓게 잡으면 분당 토큰 한도를 첫 요청에서 넘겨
+    // 그 뒤가 전부 실패한다 — 생성해도 달라지는 것이 없었던 이유가 그것이다.
     return (await request(`api/scans/${encodeURIComponent(scanId)}/narratives`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(saved ? { saved: true } : { selection }),
+      body: JSON.stringify({ package: pkg, version }),
     })).json();
   },
 };

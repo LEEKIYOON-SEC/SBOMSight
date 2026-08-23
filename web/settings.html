@@ -71,6 +71,7 @@
 <script type="module">
 import { $, esc } from './js/core/ui.js';
 import { mountTopbar } from './js/core/nav.js';
+import { formatWhen } from './js/core/format.js';
 
 const state = await mountTopbar('settings.html');
 if (!state?.authenticated) window.location.replace('login.html?next=settings.html');
@@ -107,7 +108,7 @@ function say(target, message, kind = 'info') {
 async function renderUsers() {
   const { users } = await call('api/users');
   $('#users').innerHTML = `<div class="table-scroll"><table>
-    <thead><tr><th>계정</th><th>권한</th><th>생성</th><th>최근 로그인</th><th></th></tr></thead>
+    <thead><tr><th>계정</th><th>권한</th><th>생성</th><th>최근 로그인</th><th class="actions"></th></tr></thead>
     <tbody>${users.map((u) => `
       <tr data-user="${esc(u.username)}">
         <td><b>${esc(u.username)}</b>${u.username === state.username ? ' <span class="faint">(나)</span>' : ''}</td>
@@ -117,15 +118,15 @@ async function renderUsers() {
             <option value="admin"${u.role === 'admin' ? ' selected' : ''}>관리자</option>
           </select>
         </td>
-        <td class="faint">${esc(u.created_at)}</td>
-        <td class="faint">${esc(u.last_login_at || '없음')}${
+        <td class="faint">${esc(formatWhen(u.created_at))}</td>
+        <td class="faint">${u.last_login_at ? esc(formatWhen(u.last_login_at)) : '없음'}${
           u.must_change ? ' <span class="tag warn">초기화됨</span>' : ''}</td>
-        <td class="row-actions">
+        <td class="actions"><div class="row-actions">
           <button type="button" class="btn small change">비밀번호 변경</button>
           <button type="button" class="btn small reset"
             title="계정 이름과 같은 비밀번호로 되돌리고, 다음 로그인에서 반드시 바꾸게 합니다">초기화</button>
           ${u.username === state.username ? '' : '<button type="button" class="btn small danger remove">삭제</button>'}
-        </td>
+        </div></td>
       </tr>`).join('')}</tbody></table></div>`;
 }
 

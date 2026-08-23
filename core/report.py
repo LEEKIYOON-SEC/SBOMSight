@@ -269,7 +269,7 @@ def _rule_exploitability_note(finding: Finding) -> str:
             f"향후 30일 내 악용 시도가 관측될 확률은 {_percent(intel.epss)}로 추정된다 (EPSS)"
         )
     else:
-        parts.append("악용 예측(EPSS) 값을 확보하지 못했다 (악용 가능성이 낮다는 뜻은 아니다)")
+        parts.append("악용 예측(EPSS) 값을 확보하지 못해 이 신호는 판정에 반영되지 않았다")
 
     if intel.exploit_available is Ternary.TRUE:
         names = sorted({_EXPLOIT_SOURCE_LABEL.get(s.source, s.source) for s in intel.exploit_sources})
@@ -281,7 +281,7 @@ def _rule_exploitability_note(finding: Finding) -> str:
     elif intel.exploit_available is Ternary.FALSE:
         parts.append("조회한 공개 exploit 저장소에서는 exploit/PoC가 확인되지 않았다")
     else:
-        parts.append("공개 exploit 존재 여부를 확인하지 못했다 (없다는 뜻은 아니다)")
+        parts.append("공개 공격코드 여부를 확인하지 못해 이 신호는 판정에 반영되지 않았다")
 
     return ". ".join(parts) + "."
 

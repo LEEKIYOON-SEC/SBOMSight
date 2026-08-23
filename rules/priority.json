@@ -110,13 +110,13 @@
       "field": "epss",
       "op": "is_missing",
       "label": "악용 예측 미확인",
-      "note": "EPSS 데이터를 확보하지 못했다. 악용 가능성이 낮다는 뜻이 아니다"
+      "note": "EPSS 데이터를 확보하지 못해 악용 예측이 판정에 반영되지 않았다"
     },
     "unknown_exploit": {
       "field": "exploit_available",
       "op": "is_unknown",
       "label": "공격코드 공개 여부 미확인",
-      "note": "공개 exploit 존재 여부를 확인하지 못했다. 없다는 뜻이 아니다"
+      "note": "공개 공격코드 여부를 확인하지 못해 판정에 반영되지 않았다"
     },
     "unknown_kev": {
       "field": "kev",

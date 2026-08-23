@@ -64,6 +64,7 @@
       <label>비고 <input name="note" placeholder="용도 · 담당 부서 등" autocomplete="off"></label>
       <div class="form-actions">
         <button class="btn primary" type="submit">저장</button>
+        <button class="btn danger" type="button" id="remove">자산 삭제</button>
       </div>
     </form>
     <div id="edit-msg"></div>
@@ -84,17 +85,20 @@
     </div>
     <div id="diff" class="muted">불러오는 중…</div>
   </div>
-
-  <!-- 삭제는 저장 옆에 두지 않는다. 옆에 있으면 누르려던 것과 다른 것을 누른다. -->
-  <section id="danger-zone" hidden>
-    <h2>자산 삭제</h2>
-    <div class="card danger-card">
-      <p class="muted" id="remove-note"></p>
-      <button class="btn danger" type="button" id="remove">이 자산 삭제</button>
-      <div id="remove-msg"></div>
-    </div>
-  </section>
 </main>
+
+<!-- 삭제는 되돌릴 수 없고 스캔까지 함께 간다. 무엇이 사라지는지 먼저 말한다. -->
+<dialog id="remove-dialog">
+  <h2>자산 삭제</h2>
+  <p id="remove-note"></p>
+  <p class="muted">되돌릴 수 없습니다. 같은 서버를 다시 보려면 자산을 새로
+    등록하고 SBOM 을 다시 올려 스캔해야 합니다.</p>
+  <div id="remove-msg"></div>
+  <div class="dialog-actions">
+    <button type="button" class="btn" id="remove-cancel">취소</button>
+    <button type="button" class="btn danger" id="remove-confirm">삭제</button>
+  </div>
+</dialog>
 
 <script type="module">
 import { getProvider } from './js/providers/index.js';
@@ -289,27 +293,68 @@ async function startScan() {
 }
 
 // --- 변화 -------------------------------------------------------------------
+//
+// 세 갈래로 낸다 — 신규 · 해소 · 유지.
+//
+// "187건에서 184건이 됐다"만으로는 같은 수라도 내용이 완전히 바뀐 경우를
+// 구분할 수 없다. 지난달에 없던 것이 무엇인지가 실제로 봐야 하는 값이다.
+//
+// **갈래마다 쪽을 넘긴다.** 예전에는 세 갈래를 통째로 그렸는데, 스캔 하나가
+// 48,923건이면 유지만 수만 줄이라 스크롤조차 되지 않았다.
 
-/**
- * 세 갈래로 낸다 — 신규 · 해소 · 유지.
- *
- * "187건에서 184건이 됐다"만으로는 같은 수라도 내용이 완전히 바뀐 경우를
- * 구분할 수 없다. 지난달에 없던 것이 무엇인지가 실제로 봐야 하는 값이다.
- */
-function changeTable(rows, { showPrevious = false } = {}) {
-  if (!rows.length) return '<span class="muted">없음</span>';
+const CHANGE_PAGE = 50;
+const KINDS = [
+  { key: 'added', label: '신규', cls: 'added' },
+  { key: 'resolved', label: '해소', cls: 'resolved' },
+  { key: 'remaining', label: '유지', cls: '' },
+];
+const offsets = { added: 0, resolved: 0, remaining: 0 };
+let scope = null;
+
+function changeRows(rows, kind) {
+  if (!rows.length) return '<p class="muted">없음</p>';
+  const previous = kind === 'remaining';
   return `<div class="table-scroll"><table>
     <thead><tr><th>CVE</th><th>패키지</th><th>설치 버전</th>
-      ${showPrevious ? '<th>이전 버전</th>' : ''}<th>수정 버전</th></tr></thead>
+      ${previous ? '<th>이전 버전</th>' : ''}<th>수정 버전</th></tr></thead>
     <tbody>${rows.map((c) => `<tr>
       <td class="mono">${esc(c.cve)}</td>
       <td>${esc(c.package_name)}</td>
       <td class="mono">${esc(c.installed_version || '—')}</td>
-      ${showPrevious ? `<td class="mono ${
+      ${previous ? `<td class="mono ${
         c.previous_version && c.previous_version !== c.installed_version ? 'changed' : 'faint'
       }">${esc(c.previous_version || '—')}</td>` : ''}
-      <td class="mono">${esc(c.fixed_version || '없음')}</td>
+      <td class="mono">${c.fixed_version
+        ? esc(c.fixed_version) : '<span class="none">없음</span>'}</td>
     </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function renderKind(kind) {
+  const host = $(`#changes-${kind}`);
+  if (!host) return;
+  host.innerHTML = '<p class="muted">불러오는 중…</p>';
+
+  const params = new URLSearchParams({
+    kind, base: $('#base').value, head: $('#head').value,
+    offset: String(offsets[kind]), limit: String(CHANGE_PAGE),
+  });
+  let page;
+  try {
+    page = await call(`api/assets/${encodeURIComponent(assetId)}/history/changes?${params}`);
+  } catch (error) {
+    host.innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+    return;
+  }
+
+  const from = page.total ? page.offset + 1 : 0;
+  const to = page.offset + page.changes.length;
+  host.innerHTML = changeRows(page.changes, kind)
+    + (page.total > CHANGE_PAGE ? `
+      <div class="toolbar pager">
+        <button type="button" data-page="${kind}:prev" ${page.offset === 0 ? 'disabled' : ''}>이전</button>
+        <span class="faint">${from.toLocaleString()}–${to.toLocaleString()} / ${page.total.toLocaleString()}건</span>
+        <button type="button" data-page="${kind}:next" ${page.has_more ? '' : 'disabled'}>다음</button>
+      </div>` : '');
 }
 
 function fillSelect(select, scans, selected) {
@@ -335,10 +380,11 @@ async function renderDiff(base = '', head = '') {
   }
 
   if (!result.comparable) {
-    $('#diff').innerHTML = `<span class="muted">${esc(result.detail)}</span>`;
+    $('#diff').innerHTML = `<p class="muted">${esc(result.detail)}</p>`;
     return;
   }
 
+  scope = result;
   $('#compare-bar').hidden = false;
   fillSelect($('#base'), result.scans, result.base_scan_id);
   fillSelect($('#head'), result.scans, result.head_scan_id);
@@ -346,18 +392,25 @@ async function renderDiff(base = '', head = '') {
   $('#diff').innerHTML = `
     <p class="muted">${esc(formatWhen(result.base_created_at))}
       <span class="arrow">→</span> ${esc(formatWhen(result.head_created_at))}</p>
-    <div class="grid cols-4">
-      <div class="stat added"><div class="n">${result.counts.added}</div><div class="k">신규</div></div>
-      <div class="stat resolved"><div class="n">${result.counts.resolved}</div><div class="k">해소</div></div>
-      <div class="stat"><div class="n">${result.counts.remaining}</div><div class="k">유지</div></div>
+    <div class="grid cols-4" style="margin-bottom:1rem">
+      ${KINDS.map((k) => `<div class="stat ${k.cls}">
+        <div class="n">${(result.counts[k.key] ?? 0).toLocaleString()}</div>
+        <div class="k">${k.label}</div></div>`).join('')}
     </div>
-    <h3>신규 ${result.counts.added}건</h3>
-    ${changeTable(result.added)}
-    <h3>해소 ${result.counts.resolved}건</h3>
-    ${changeTable(result.resolved)}
-    <h3>유지 ${result.counts.remaining}건</h3>
-    ${changeTable(result.remaining, { showPrevious: true })}`;
+    ${KINDS.map((k) => `<h3>${k.label} ${(result.counts[k.key] ?? 0).toLocaleString()}건</h3>
+      <div id="changes-${k.key}"></div>`).join('')}`;
+
+  for (const k of KINDS) offsets[k.key] = 0;
+  await Promise.all(KINDS.map((k) => renderKind(k.key)));
 }
+
+$('#diff').addEventListener('click', (event) => {
+  const action = event.target.dataset?.page;
+  if (!action) return;
+  const [kind, direction] = action.split(':');
+  offsets[kind] = Math.max(0, offsets[kind] + (direction === 'next' ? CHANGE_PAGE : -CHANGE_PAGE));
+  renderKind(kind);
+});
 
 $('#compare').addEventListener('click', () => renderDiff($('#base').value, $('#head').value));
 await renderDiff();
@@ -392,19 +445,29 @@ if (isAdmin) {
   });
 
   // --- 삭제 -----------------------------------------------------------------
-  $('#danger-zone').hidden = false;
-  $('#remove-note').textContent = asset.scans.length
-    ? `이 자산의 스캔 ${asset.scans.length}건은 함께 지워지지 않습니다.`
-      + ' 자산 등록만 사라지므로, 이력을 보려면 다시 등록한 뒤 스캔을 배정해야 합니다.'
-    : '이 자산에는 스캔이 없습니다. 지워도 잃는 이력이 없습니다.';
+  //
+  // 되돌릴 수 없고 스캔까지 함께 간다. 무엇이 사라지는지 먼저 말하고, 두 번째
+  // 클릭에서 실제로 지운다.
+  const removeDialog = $('#remove-dialog');
+  $('#remove-note').innerHTML = asset.scans.length
+    ? `<b>${esc(asset.name)}</b> 자산과 이 자산의 스캔
+       <b>${asset.scans.length}건</b>, 보관된 SBOM · Grype 결과 파일이 모두 지워집니다.`
+    : `<b>${esc(asset.name)}</b> 자산을 지웁니다. 이 자산에는 스캔이 없습니다.`;
 
-  $('#remove').addEventListener('click', async () => {
-    if (!window.confirm(`${asset.name} 자산을 삭제할까요?`)) return;
+  $('#remove').addEventListener('click', () => {
+    $('#remove-msg').innerHTML = '';
+    removeDialog.showModal();
+  });
+  $('#remove-cancel').addEventListener('click', () => removeDialog.close());
+
+  $('#remove-confirm').addEventListener('click', async (event) => {
+    event.currentTarget.disabled = true;
     try {
       await call(`api/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
       window.location.href = 'index.html';
     } catch (error) {
       $('#remove-msg').innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
+      event.currentTarget.disabled = false;
     }
   });
 }

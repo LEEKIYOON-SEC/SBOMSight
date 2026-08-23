@@ -33,7 +33,7 @@
 
   <!-- 결과 -->
   <section class="hidden" id="result">
-    <h2>결과 <span class="faint" id="result-note">조치 단위(패키지)로 묶었습니다 — 눌러서 취약점을 봅니다</span></h2>
+    <h2>결과</h2>
     <div class="grid cols-4" id="stats" style="margin-bottom:.75rem"></div>
     <div class="flow" id="summary-line" style="margin-bottom:1rem"></div>
 
@@ -68,7 +68,7 @@
         <button id="select-none">선택 해제</button>
         <div class="spacer"></div>
         <button id="egress-btn" disabled>AI에 전송될 내용 보기</button>
-        <a class="btn primary" id="go-report">보고서</a>
+        <button class="primary" id="go-report" disabled>보고서 생성</button>
       </div>
 
       <div class="table-scroll">
@@ -400,9 +400,11 @@ function syncSelectionUi() {
   $('#selection-count').textContent = n ? `패키지 ${n.toLocaleString()}개 선택` : '선택 없음';
   $('#egress-btn').disabled = !provider.egressPreview || (canSelect && n === 0);
 
-  const link = $('#go-report');
-  link.href = `report.html?scan=${encodeURIComponent(state.scanId || '')}`;
-  link.textContent = n ? `선택 ${n.toLocaleString()}개로 보고서` : '전체 보고서';
+  // 보고서도 AI 전송과 같은 규칙이다 — 고른 것이 있어야 눌린다. 범위를 정하지
+  // 않고 누르면 8,154개짜리 문서가 나오는데, 그것을 원한 사람은 없었다.
+  const report = $('#go-report');
+  report.disabled = canSelect && n === 0;
+  report.textContent = n ? `보고서 생성 (${n.toLocaleString()}개)` : '보고서 생성';
 
   const visible = state.page.map((g) => g.key);
   const all = visible.length > 0 && visible.every((k) => state.selected.has(k));
@@ -458,19 +460,19 @@ $('#select-none').addEventListener('click', () => {
  */
 $('#go-report').addEventListener('click', async (event) => {
   if (!provider.saveSelection || !state.scanId) return;
-  event.preventDefault();
-  const link = event.currentTarget;
-  const href = link.href;
-  const label = link.textContent;
-  link.textContent = '선택을 기록하는 중…';
+  const button = event.currentTarget;
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = '보고서 생성 중…';
   try {
     await provider.saveSelection(state.scanId, { packages: [...state.selected] });
   } catch (error) {
-    link.textContent = label;
-    window.alert(`선택을 기록하지 못했습니다: ${error.message}`);
+    button.textContent = label;
+    button.disabled = false;
+    window.alert(`보고서를 만들지 못했습니다: ${error.message}`);
     return;
   }
-  location.href = href;
+  location.href = `report.html?scan=${encodeURIComponent(state.scanId)}`;
 });
 
 // --- 상세 패널 -------------------------------------------------------------
@@ -673,9 +675,8 @@ function renderEgress(preview) {
 }
 
 function sendButton(preview) {
-  if (!provider.generateNarratives) return '';
   if (!preview.ok) {
-    return `<div class="callout">가드가 막았으므로 전송 버튼을 제공하지 않습니다.</div>`;
+    return '<div class="callout">가드가 막았으므로 전송할 수 없는 상태입니다.</div>';
   }
   if (!preview.would_send) {
     return `<div class="callout">
@@ -684,52 +685,16 @@ function sendButton(preview) {
       다시 시작하세요. <b>AI 없이도 보고서는 룰 기반으로 완결됩니다.</b>
     </div>`;
   }
-  return `
-    <div class="toolbar" style="margin-top:.6rem">
-      <button class="primary" id="egress-send">이 내용을 전송해 서술 생성</button>
-      <div class="spacer"></div>
-      <span class="faint" id="egress-send-status"></span>
-    </div>
-    <div id="egress-send-result"></div>`;
+  // 생성은 보고서에서 **패키지 하나씩** 한다. 한 번에 몰아 보내면 분당 토큰
+  // 한도를 첫 요청에서 넘겨 그 뒤가 전부 실패한다.
+  return `<div class="callout">이 화면은 무엇이 나가는지 확인하는 자리입니다.
+    해설 생성은 보고서에서 패키지마다 <b>AI 해설 생성</b>을 눌러 진행합니다.</div>`;
 }
 
 function wireGenerate() {
-  const button = $('#egress-send');
-  if (!button) return;
-  button.addEventListener('click', async () => {
-    button.disabled = true;
-    $('#egress-send-status').textContent = '전송하고 생성하는 중…';
-    $('#egress-send-result').innerHTML = '';
-    try {
-      const result = await provider.generateNarratives(state.scanId, { saved: true });
-      const rejected = (result.rejected || []).length
-        ? `<div class="callout"><b>표현 정책에 걸린 서술 ${result.rejected.length}건은 반영하지 않았습니다.</b>
-             해당 항목은 룰 기반 문장을 그대로 씁니다.
-             <ul>${result.rejected
-               .map((r) => `<li><code>${esc(r.cve)}</code> — ${esc((r.rules || []).join(', '))}</li>`)
-               .join('')}</ul></div>`
-        : '';
-      const errors = (result.errors || []).length
-        ? `<div class="callout"><b>일부 요청이 실패했습니다.</b>
-             <ul>${result.errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></div>`
-        : '';
-      const params = new URLSearchParams({ scan: state.scanId });
-      $('#egress-send-result').innerHTML = `
-        <div class="banner info" style="margin-top:.6rem">
-          ${result.applied}/${result.requested}건에 AI 서술을 적용했습니다
-          ${result.model ? `<span class="mono">(${esc(result.model)})</span>` : ''}.
-          대응 검토 우선순위는 룰 판정 그대로입니다.
-          <a href="report.html?${params}">보고서 보기 →</a>
-        </div>${rejected}${errors}`;
-      $('#egress-send-status').textContent = '완료';
-    } catch (error) {
-      $('#egress-send-result').innerHTML =
-        `<div class="banner danger" style="margin-top:.6rem">${esc(error.message)}</div>`;
-      $('#egress-send-status').textContent = '실패';
-    } finally {
-      button.disabled = false;
-    }
-  });
+  // 여기서는 보내지 않는다. 이 화면은 **무엇이 나가는지 확인하는 자리**이고,
+  // 생성은 보고서에서 패키지 하나씩 한다 — 한 번에 몰아 보내면 분당 토큰
+  // 한도를 첫 요청에서 넘겨 그 뒤가 전부 실패한다.
 }
 
 function openEgress() {

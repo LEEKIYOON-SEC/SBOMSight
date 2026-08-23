@@ -29,10 +29,9 @@
       </label>
       <div class="spacer"></div>
       <a class="btn" id="back-to-scan">선택 다시 하기</a>
-      <button id="print" title="펼쳐 둔 패키지만 인쇄됩니다. 접힌 것은 나오지 않습니다.">
-        펼친 항목 인쇄 · PDF</button>
+      <button id="print" title="펼쳐 둔 패키지만 인쇄됩니다.">펼친 항목 인쇄 · PDF</button>
       <a class="btn" id="dl-md" download>전체 Markdown</a>
-      <a class="btn primary" id="dl-html" download>전체 HTML</a>
+      <a class="btn" id="dl-html" download>전체 HTML</a>
     </div>
   </section>
 
@@ -59,7 +58,6 @@
       </select>
       <input type="search" id="pkg-search" placeholder="패키지 또는 CVE 검색">
       <div class="spacer"></div>
-      <span class="faint">패키지를 눌러 상세를 펼칩니다</span>
     </div>
 
     <div id="packages"></div>
@@ -121,6 +119,12 @@ let scopedPackages = [];
  * 얹히고, 없으면 생성 버튼이 뜬다.
  */
 let useAi = params.get('ai') === '1';
+
+/** AI 를 실제로 호출할 수 있는가. 못 하면 생성 버튼을 내지 않는다. */
+let aiReady = false;
+try {
+  aiReady = Boolean((await provider.health()).ai?.ready);
+} catch { /* 상태를 모르면 없는 것으로 둔다 */ }
 
 function stepList(items, ordered = false) {
   if (!items?.length) return '';
@@ -355,6 +359,9 @@ async function expandPackage(details) {
         <a class="btn small" data-dl="markdown">Markdown</a>
         <a class="btn small" data-dl="html">HTML</a>
         <button type="button" class="btn small" data-print>인쇄 · PDF</button>
+        <div class="spacer"></div>
+        <span class="faint" data-ai-status></span>
+        <button type="button" class="btn small" data-ai hidden>AI 해설 생성</button>
       </div>
       <p><b>${esc(group.recommendation?.action || '')}</b></p>
       ${group.chained_analysis ? `
@@ -372,12 +379,58 @@ async function expandPackage(details) {
       link.download = `sbomsight-${pkg}.${format === 'markdown' ? 'md' : 'html'}`;
     }
     body.querySelector('[data-print]').addEventListener('click', () => printOnly(details));
+    wireAi(body, details, group);
     renderCveRows(body.querySelector('.cve-host'), group, details.dataset.key);
 
     details.dataset.loaded = '1';
   } catch (error) {
     body.innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
   }
+}
+
+/**
+ * AI 해설은 **패키지 하나씩** 만든다.
+ *
+ * 한 번에 몰아 보내면 분당 토큰(TPM) 한도를 첫 요청에서 넘겨 그 뒤가 전부
+ * 실패한다 — 켜 두고도 달라지는 것이 없었던 이유가 그것이다. 조치 단위가
+ * 패키지이므로 생성 단위도 패키지로 맞춘다. 담당자가 필요한 것부터 하나씩
+ * 누르면 호출 속도도 사람 손에 맞춰진다.
+ */
+function wireAi(body, details, group) {
+  const button = body.querySelector('[data-ai]');
+  const status = body.querySelector('[data-ai-status]');
+  if (!button || !aiReady) return;
+
+  const done = (group.findings || []).filter((f) => f.narrative_source === 'ai').length;
+  const total = (group.findings || []).length;
+  if (done >= total && total > 0) {
+    status.textContent = `AI 해설 ${total}건 적용됨`;
+    return;
+  }
+  button.hidden = false;
+  if (done) status.textContent = `${done}/${total}건 적용됨`;
+
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    status.textContent = `${total}건 생성 중…`;
+    try {
+      const result = await provider.generateNarratives(scanId(), {
+        package: group.package, version: group.installed_version,
+      });
+      status.textContent = `${result.applied}/${result.requested}건 적용했습니다`
+        + (result.model ? ` (${result.model})` : '');
+      // 다시 받아 그린다. 적용된 서술이 화면에 반영되어야 확인할 수 있다.
+      useAi = true;
+      $('#use-ai').checked = true;
+      details.dataset.loaded = '';
+      await expandPackage(details);
+    } catch (error) {
+      status.textContent = '';
+      body.querySelector('.pkg-actions').insertAdjacentHTML('afterend',
+        `<div class="banner danger">${esc(error.message)}</div>`);
+      button.disabled = false;
+    }
+  });
 }
 
 /** `9.4 / Critical (CVSS:3.1/...)` → `9.4`. 벡터는 팝업 안에 그대로 있다. */
@@ -515,6 +568,8 @@ async function load(id) {
 
   // AI 서술이 실제로 저장되어 있을 때만 선택지를 보여 준다. 만들어 둔 것이
   // 없는데 체크박스만 있으면, 켜도 아무것도 달라지지 않아 고장으로 읽힌다.
+  // 만드는 것은 패키지마다 따로 한다 — 한 번에 몰아 보내면 분당 토큰 한도를
+  // 첫 요청에서 넘긴다.
   $('#ai-wrap').hidden = (meta.narratives?.count || 0) === 0 && !useAi;
 
   $('#back-to-scan').href = `scan.html?scan=${encodeURIComponent(id)}`;

@@ -417,8 +417,14 @@ def _cmd_asset(args: argparse.Namespace) -> int:
             if asset is None:
                 print(f"오류: '{args.name}' 자산이 없습니다.", file=sys.stderr)
                 return 1
-            assets.delete(asset.asset_id)
-            print(f"삭제: {asset.name} (스캔 기록은 지우지 않았습니다)")
+            import shutil
+
+            removed = assets.delete(asset.asset_id)
+            for scan_id in removed:
+                directory = config.scan_dir(scan_id)
+                if directory.is_dir():
+                    shutil.rmtree(directory, ignore_errors=True)
+            print(f"삭제: {asset.name} (스캔 {len(removed)}건과 보관 파일도 함께 지웠습니다)")
             return 0
 
         if args.action == "assign":
@@ -605,7 +611,7 @@ def build_parser() -> argparse.ArgumentParser:
     a_assign.add_argument("scan_id")
     a_assign.add_argument("name", help="자산 이름")
 
-    a_remove = asset_sub.add_parser("remove", help="자산 삭제 (스캔 기록은 남는다)")
+    a_remove = asset_sub.add_parser("remove", help="자산 삭제 (그 자산의 스캔도 함께 지운다)")
     a_remove.add_argument("name")
 
     a_history = asset_sub.add_parser("history", help="최근 두 스캔 대조 — 신규·해소·유지")

@@ -762,6 +762,88 @@ class Store:
             ).fetchall()
         return [package_key(r["package_name"], r["installed_version"]) for r in rows]
 
+    # --- 두 스캔의 변화 ----------------------------------------------------
+    #
+    # 비교 축은 `(cve, 설치 패키지명)` 이다. `finding_key` 는 설치 버전을
+    # 포함하므로 패치하면 키가 바뀐다 — 그것으로 비교하면 "패치했더니 하나
+    # 사라지고 하나 생겼다" 가 되어 실제로 무엇이 달라졌는지 알 수 없다.
+    #
+    # **SQL 로 한다.** 예전에는 두 스캔의 payload 를 전부 파이썬 객체로 되살려
+    # 사전 두 개를 만들었다. 48,923건짜리 스캔 둘이면 그 한 번이 20초가 넘고,
+    # 결과 수만 줄을 화면으로 그대로 내려보내 스크롤도 되지 않았다.
+
+    _DIFF_SQL = {
+        # 신규: head 에 있고 base 에 없는 것.
+        "added": (
+            "FROM findings h WHERE h.scan_id = :head AND NOT EXISTS ("
+            "  SELECT 1 FROM findings b WHERE b.scan_id = :base "
+            "    AND b.cve = h.cve AND b.package_name = h.package_name)"
+        ),
+        # 해소: base 에 있었는데 head 에 없는 것.
+        "resolved": (
+            "FROM findings h WHERE h.scan_id = :base AND NOT EXISTS ("
+            "  SELECT 1 FROM findings b WHERE b.scan_id = :head "
+            "    AND b.cve = h.cve AND b.package_name = h.package_name)"
+        ),
+        # 유지: 양쪽에 다 있는 것. 이전 설치 버전을 함께 낸다 — 버전이 올랐는데도
+        # 여전히 취약한 경우(부분 패치)는 신규도 해소도 아니지만 봐야 한다.
+        "remaining": (
+            "FROM findings h WHERE h.scan_id = :head AND EXISTS ("
+            "  SELECT 1 FROM findings b WHERE b.scan_id = :base "
+            "    AND b.cve = h.cve AND b.package_name = h.package_name)"
+        ),
+    }
+
+    DIFF_KINDS = tuple(_DIFF_SQL)
+
+    def diff_counts(self, base: str, head: str) -> dict[str, int]:
+        """세 갈래의 건수만. 화면 머리말은 이것만 있으면 그려진다."""
+        params = {"base": base, "head": head}
+        with self._connect() as conn:
+            return {
+                kind: conn.execute(f"SELECT COUNT(*) AS n {sql}", params).fetchone()["n"]
+                for kind, sql in self._DIFF_SQL.items()
+            }
+
+    def diff_page(
+        self, base: str, head: str, kind: str, *, offset: int = 0, limit: int = 50
+    ) -> dict[str, Any]:
+        """한 갈래의 한 쪽. 수만 줄을 한 번에 그리지 않는다."""
+        sql = self._DIFF_SQL.get(kind)
+        if sql is None:
+            raise ValueError(f"알 수 없는 갈래: {kind}")
+        params = {"base": base, "head": head, "limit": limit, "offset": offset}
+
+        previous = (
+            "(SELECT b.installed_version FROM findings b WHERE b.scan_id = :base "
+            "   AND b.cve = h.cve AND b.package_name = h.package_name LIMIT 1)"
+            if kind == "remaining" else "''"
+        )
+        with self._connect() as conn:
+            total = conn.execute(f"SELECT COUNT(*) AS n {sql}", params).fetchone()["n"]
+            rows = conn.execute(
+                f"SELECT h.cve, h.package_name, h.installed_version, h.fixed_version, "
+                f"       h.priority, {previous} AS previous_version {sql} "
+                "ORDER BY h.package_name COLLATE NOCASE, h.cve LIMIT :limit OFFSET :offset",
+                params,
+            ).fetchall()
+
+        return {
+            "kind": kind,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(rows) < total,
+            "changes": [{
+                "cve": r["cve"],
+                "package_name": r["package_name"],
+                "installed_version": r["installed_version"],
+                "previous_version": r["previous_version"] or "",
+                "fixed_version": r["fixed_version"],
+                "priority": r["priority"],
+            } for r in rows],
+        }
+
     def package_types(self, scan_id: str) -> list[str]:
         """이 스캔에 실제로 있는 패키지 유형. 필터 선택지를 만든다."""
         with self._connect() as conn:

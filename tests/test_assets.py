@@ -110,9 +110,10 @@ class TestAssets:
                 call()
 
 
-class TestAssetDeletionKeepsScans:
-    def test_deleting_an_asset_leaves_its_scans_unassigned(self, tmp_path):
-        """스캔까지 함께 지우면 실수 한 번에 몇 달치 이력이 사라진다."""
+class TestAssetDeletionTakesItsScans:
+    """자산이 사라졌는데 결과만 남으면 어디에도 속하지 않는 데이터가 쌓인다."""
+
+    def test_deleting_an_asset_deletes_its_scans(self, tmp_path):
         db = tmp_path / "test.db"
         store = Store(db)
         assets = Assets(db)
@@ -122,11 +123,31 @@ class TestAssetDeletionKeepsScans:
             json.loads(FIXTURE.read_text(encoding="utf-8")), scan_id="s1", sbom_filename="a.json"
         )
         store.save_scan(result, asset_id=asset.asset_id)
+        store.save_selection("s1", [f.key for f in result.findings][:1])
         assert store.list_scans(asset_id=asset.asset_id)
 
-        assets.delete(asset.asset_id)
-        assert store.get_scan("s1") is not None
-        assert [s["scan_id"] for s in store.list_scans(asset_id="")] == ["s1"]
+        removed = assets.delete(asset.asset_id)
+        assert removed == ["s1"]
+        assert store.get_scan("s1") is None
+        assert store.get_selection("s1") == []
+        assert store.scan_summary("s1")["total"] == 0
+
+    def test_other_assets_scans_survive(self, tmp_path):
+        """지운 자산의 것만 간다. 옆 자산의 몇 달치가 함께 사라지면 안 된다."""
+        db = tmp_path / "test.db"
+        store = Store(db)
+        assets = Assets(db)
+        gone = assets.create("web-01")
+        kept = assets.create("web-02")
+
+        raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        for scan_id, asset in (("s1", gone), ("s2", kept)):
+            result = normalize_grype_report(raw, scan_id=scan_id, sbom_filename="a.json")
+            store.save_scan(result, asset_id=asset.asset_id)
+
+        assets.delete(gone.asset_id)
+        assert store.get_scan("s1") is None
+        assert store.get_scan("s2") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -358,13 +379,17 @@ class TestAssetApi:
         assert response.status_code == 404
         assert "자산" in response.json()["detail"]
 
-    def test_deleting_an_asset_keeps_its_scan(self, client, seeded_scan):
+    def test_deleting_an_asset_takes_its_scans(self, client, seeded_scan):
+        """자산이 사라졌는데 결과만 남으면 어디에도 속하지 않는 데이터가 쌓인다."""
         asset = client.post("/api/assets", json={"name": "web-01"}).json()
         client.put(f"/api/scans/{seeded_scan}/asset", json={"asset_id": asset["asset_id"]})
-        client.delete(f"/api/assets/{asset['asset_id']}")
 
-        assert client.get(f"/api/scans/{seeded_scan}").status_code == 200
-        assert client.get("/api/assets").json()["unassigned_scans"] == 1
+        deleted = client.delete(f"/api/assets/{asset['asset_id']}")
+        assert deleted.status_code == 200
+        assert deleted.json()["scans_deleted"] == 1
+
+        assert client.get(f"/api/scans/{seeded_scan}").status_code == 404
+        assert client.get("/api/scans").json()["scans"] == []
 
 
 class TestHistoryApi:
@@ -402,7 +427,13 @@ class TestHistoryApi:
         assert body["head_scan_id"] == "20260201T000000Z-bbbb"
         assert body["base_scan_id"] == "20260101T000000Z-aaaa"
         assert body["counts"]["resolved"] >= 1
-        assert first in {c["cve"] for c in body["resolved"]}
+        # 줄은 머리말에 싣지 않는다 — 48,923건짜리 스캔 둘이면 수만 줄이 된다.
+        assert "resolved" not in body
+
+        changes = client.get(
+            f"/api/assets/{asset['asset_id']}/history/changes", params={"kind": "resolved"}
+        ).json()
+        assert first in {c["cve"] for c in changes["changes"]}
 
     def test_refuses_a_scan_from_another_asset(self, client, seeded_scan):
         asset = client.post("/api/assets", json={"name": "web-01"}).json()

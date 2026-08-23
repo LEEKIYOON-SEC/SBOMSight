@@ -51,7 +51,7 @@ export const SEVERITY_LABEL = {
   low: 'Low', negligible: 'Negligible', unknown: '미확인',
 };
 
-/** 판정에 쓰인 데이터가 없다는 뜻의 플래그들. 값이 낮다는 뜻이 아니다. */
+/** 판정에 쓸 데이터를 확보하지 못한 항목들. 값이 낮은 것과 구분한다. */
 export const UNKNOWN_FLAGS = new Set([
   'unknown_epss', 'unknown_exploit', 'unknown_kev', 'no_cvss',
 ]);
@@ -64,11 +64,11 @@ export const UNKNOWN_FLAGS = new Set([
 export const FLAG_LABEL = {
   no_fix_available: ['수정 버전 없음', '패치로 해소할 수 없으므로 완화 방안 검토가 필요합니다'],
   update_available: ['업데이트 가능', '상위 버전으로 갱신할 수 있습니다'],
-  unknown_epss: ['EPSS 미확인', 'EPSS 데이터를 확보하지 못했습니다. 악용 가능성이 낮다는 뜻이 아닙니다'],
-  unknown_exploit: ['Exploit 존재 여부 미확인', '공개 exploit 존재 여부를 확인하지 못했습니다. 없다는 뜻이 아닙니다'],
-  unknown_kev: ['KEV 조회 실패', 'CISA KEV 카탈로그를 조회하지 못했습니다'],
-  no_cvss: ['CVSS 미확인', 'CVSS 점수를 확보하지 못해 심각도 기반 판정이 적용되지 않았습니다'],
-  stale_snapshot: ['위협정보 스냅샷 오래됨', 'EPSS/KEV 스냅샷이 기준일보다 오래되었습니다. 최신 데이터로 재판정이 권고됩니다'],
+  unknown_epss: ['악용 예측 미확인', 'EPSS 데이터를 확보하지 못해 악용 예측이 판정에 반영되지 않았습니다'],
+  unknown_exploit: ['공격코드 공개 여부 미확인', '공개 공격코드 여부를 확인하지 못해 판정에 반영되지 않았습니다'],
+  unknown_kev: ['실제 악용 여부 미확인', 'CISA KEV 카탈로그를 조회하지 못해 판정에 반영되지 않았습니다'],
+  no_cvss: ['심각도 미확인', 'CVSS 점수를 확보하지 못해 심각도 기반 판정이 적용되지 않았습니다'],
+  stale_snapshot: ['위협정보 오래됨', 'EPSS · KEV 스냅샷이 기준일보다 오래되어 최신 데이터로 다시 판정하는 편이 좋습니다'],
 };
 
 export function describeFlag(name) {

@@ -293,22 +293,42 @@ class Assets:
         assert updated is not None
         return updated
 
-    def delete(self, asset_id: str) -> None:
-        """자산을 지운다. **스캔은 함께 지우지 않는다.**
+    def scan_ids(self, asset_id: str) -> list[str]:
+        """이 자산에 달린 스캔 ID. 지울 것을 세고 지우는 데 쓴다."""
+        with self._connect() as conn:
+            if not conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='scans'"
+            ).fetchone():
+                return []
+            return [r["scan_id"] for r in conn.execute(
+                "SELECT scan_id FROM scans WHERE asset_id = ?", (asset_id,)
+            )]
 
-        스캔까지 함께 지우면 실수 한 번에 몇 달치 이력이 사라진다. 스캔 삭제는
-        스캔 화면에서 따로 한다.
+    def delete(self, asset_id: str) -> list[str]:
+        """자산을 지운다. **그 자산의 스캔도 함께 지운다.**
+
+        자산이 사라졌는데 그 자산의 결과만 남으면 어디에도 속하지 않는 데이터가
+        쌓이고, 되살릴 길도 없다. 자산을 지운다는 것은 그 서버를 더는 관리하지
+        않는다는 뜻이므로 결과도 함께 정리한다.
+
+        지운 스캔 ID 를 돌려준다. 호출부가 그것으로 디스크에 남은 산출물
+        (Grype 원본 등)까지 지운다.
         """
         if self.get(asset_id) is None:
             raise AssetError("자산을 찾을 수 없습니다.")
+        removed = self.scan_ids(asset_id)
         with self._connect() as conn:
-            # `scans` 는 Store 의 테이블이다. 같은 DB 파일을 쓰지만 Assets 만
-            # 단독으로 열 수도 있으므로, 없으면 없는 대로 지나간다.
-            has_scans = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='scans'"
-            ).fetchone()
-            if has_scans:
-                conn.execute(
-                    "UPDATE scans SET asset_id = '' WHERE asset_id = ?", (asset_id,)
-                )
+            # `scans`·`findings` 는 Store 의 테이블이다. 같은 DB 파일을 쓰지만
+            # Assets 만 단독으로 열 수도 있으므로, 없으면 없는 대로 지나간다.
+            tables = {r["name"] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+            if removed:
+                marks = ",".join("?" * len(removed))
+                for table in ("findings", "narratives", "chains", "selections", "scans"):
+                    if table in tables:
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE scan_id IN ({marks})", removed
+                        )
             conn.execute("DELETE FROM assets WHERE asset_id = ?", (asset_id,))
+        return removed

@@ -448,17 +448,28 @@ def update_asset(request: Request, asset_id: str, body: dict[str, Any] = Body(de
 
 @app.delete("/api/assets/{asset_id}")
 def delete_asset(request: Request, asset_id: str) -> dict[str, Any]:
-    """자산을 지운다. **스캔 기록은 함께 지우지 않는다.**
+    """자산을 지운다. **그 자산의 스캔과 보관 파일도 함께 지운다.**
 
-    함께 지우면 실수 한 번에 몇 달치 이력이 사라진다. 스캔 삭제는 따로 한다.
+    자산이 사라졌는데 결과만 남으면 어디에도 속하지 않는 데이터가 쌓이고,
+    그것을 되살릴 길도 없다. DB 행과 디스크의 Grype 원본을 같이 정리한다.
     """
     _require_admin(request)
-    _asset_or_404(asset_id)
+    asset = _asset_or_404(asset_id)
     try:
-        _assets().delete(asset_id)
+        removed = _assets().delete(asset_id)
     except AssetError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"deleted": asset_id}
+
+    # 디스크에 남은 산출물. 지우지 못해도 자산 삭제 자체는 되돌리지 않는다 —
+    # DB 는 이미 정리됐고, 남은 파일은 고아라 다음에 지워도 된다.
+    import shutil
+
+    for scan_id in removed:
+        directory = config.scan_dir(scan_id)
+        if directory.is_dir():
+            shutil.rmtree(directory, ignore_errors=True)
+
+    return {"deleted": asset_id, "name": asset.name, "scans_deleted": len(removed)}
 
 
 @app.put("/api/scans/{scan_id}/asset")
@@ -476,22 +487,12 @@ def assign_scan(request: Request, scan_id: str, body: dict[str, Any] = Body(defa
     return {"scan_id": scan_id, "asset_id": asset_id}
 
 
-@app.get("/api/assets/{asset_id}/history")
-def asset_history(
-    asset_id: str,
-    base: str = Query(""),
-    head: str = Query(""),
-) -> dict[str, Any]:
-    """같은 자산의 두 스캔을 대조한다. 지정이 없으면 최근 두 건.
-
-    비교 축은 `(cve, 설치 패키지명)` 이다. `Finding.key` 는 설치 버전을 포함하므로
-    패치하면 키가 바뀐다 — 그것으로 비교하면 "패치했더니 하나 사라지고 하나
-    새로 생겼다"는 엉뚱한 답이 나온다.
-    """
-    _asset_or_404(asset_id)
+def _history_scope(asset_id: str, base: str, head: str) -> dict[str, Any]:
+    """비교할 두 스캔을 정한다. 지정이 없으면 최근 두 건."""
     store = _store()
+    _asset_or_404(asset_id)
     scans = store.list_scans(limit=500, asset_id=asset_id)
-    known = {s["scan_id"]: s for s in scans}
+    known = {s["scan_id"] for s in scans}
 
     if not base and not head:
         if len(scans) < 2:
@@ -507,17 +508,54 @@ def asset_history(
         if scan_id not in known:
             raise HTTPException(404, f"이 자산의 스캔이 아닙니다: {scan_id}")
 
-    base_scan = store.get_scan(base)
-    head_scan = store.get_scan(head)
-    if base_scan is None or head_scan is None:
-        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+    at = {s["scan_id"]: s["created_at"] for s in scans}
+    return {
+        "asset_id": asset_id, "comparable": True, "scans": scans,
+        "base_scan_id": base, "head_scan_id": head,
+        "base_created_at": at.get(base, ""), "head_created_at": at.get(head, ""),
+    }
 
-    diff = assets_mod.diff_findings(
-        base_scan["findings"], head_scan["findings"],
-        base_scan_id=base, head_scan_id=head,
-        base_created_at=base_scan["created_at"], head_created_at=head_scan["created_at"],
+
+@app.get("/api/assets/{asset_id}/history")
+def asset_history(
+    asset_id: str,
+    base: str = Query(""),
+    head: str = Query(""),
+) -> dict[str, Any]:
+    """같은 자산의 두 스캔을 대조한다 — **건수만.** 지정이 없으면 최근 두 건.
+
+    비교 축은 `(cve, 설치 패키지명)` 이다. `Finding.key` 는 설치 버전을
+    포함하므로 패치하면 키가 바뀐다 — 그것으로 비교하면 "패치했더니 하나
+    사라지고 하나 생겼다" 가 되어 무엇이 달라졌는지 알 수 없다.
+
+    **줄은 싣지 않는다.** 예전에는 두 스캔의 payload 를 전부 되살려 세 갈래를
+    통째로 내려보냈다. 48,923건짜리 스캔 둘이면 그 한 번이 20초가 넘고, 화면은
+    수만 줄을 그리다 멈췄다. 줄은 `/history/changes` 가 쪽으로 낸다.
+    """
+    scope = _history_scope(asset_id, base, head)
+    if not scope["comparable"]:
+        return scope
+    return {**scope, "counts": _store().diff_counts(scope["base_scan_id"], scope["head_scan_id"])}
+
+
+@app.get("/api/assets/{asset_id}/history/changes")
+def asset_history_changes(
+    asset_id: str,
+    kind: str = Query("added"),
+    base: str = Query(""),
+    head: str = Query(""),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+) -> dict[str, Any]:
+    """변화 한 갈래의 한 쪽 — 신규 · 해소 · 유지."""
+    if kind not in Store.DIFF_KINDS:
+        raise HTTPException(400, f"갈래는 {' · '.join(Store.DIFF_KINDS)} 중 하나여야 합니다.")
+    scope = _history_scope(asset_id, base, head)
+    if not scope["comparable"]:
+        raise HTTPException(400, scope["detail"])
+    return _store().diff_page(
+        scope["base_scan_id"], scope["head_scan_id"], kind, offset=offset, limit=limit
     )
-    return {"asset_id": asset_id, "comparable": True, "scans": scans, **diff.to_dict()}
 
 
 # ---------------------------------------------------------------------------
@@ -915,14 +953,19 @@ def list_package_keys(
     return {"scan_id": scan_id, "keys": keys, "total": len(keys)}
 
 
-@app.get("/api/scans/{scan_id}/packages/{package}/findings")
+@app.get("/api/scans/{scan_id}/package/findings")
 def get_package_findings(
     scan_id: str,
-    package: str,
+    name: str = Query(...),
     version: str = Query(""),
     limit: int = Query(500, ge=1, le=2000),
 ) -> dict[str, Any]:
     """묶음 하나에 속한 취약점 목록. **표에서 패키지를 눌렀을 때만 부른다.**
+
+    패키지 이름은 **경로가 아니라 쿼리로 받는다.** 경로에 두면 이름에 `/` 가
+    들어가는 패키지가 404 가 된다 — Go 모듈(`github.com/gogo/protobuf`), npm
+    스코프(`@babel/core`) 가 전부 그렇다. uvicorn 이 `%2F` 를 실제 슬래시로
+    되돌려 놓기 때문에 `{package}` 세그먼트가 그것을 넘지 못한다.
 
     보고서 절이 아니라 표의 줄들이라 payload 를 그대로 낸다 — 서술을 조립하지
     않으므로 밀리초다. 상세는 그중 하나를 다시 눌렀을 때 따로 가져온다.
@@ -930,26 +973,28 @@ def get_package_findings(
     store = _store()
     if store.get_scan_meta(scan_id) is None:
         raise HTTPException(404, "스캔을 찾을 수 없습니다.")
-    findings = store.package_findings(scan_id, package, version)
+    findings = store.package_findings(scan_id, name, version)
     if not findings:
-        raise HTTPException(404, "패키지를 찾을 수 없습니다.")
+        raise HTTPException(404, f"'{name}' 패키지를 찾을 수 없습니다.")
     return {
         "scan_id": scan_id,
-        "package": package,
+        "package": name,
         "installed_version": version,
         "total": len(findings),
         "findings": findings[:limit],
     }
 
 
-@app.get("/api/scans/{scan_id}/packages/{package}")
+@app.get("/api/scans/{scan_id}/package")
 def get_package_detail(
     scan_id: str,
-    package: str,
+    name: str = Query(...),
     version: str = Query(""),
     ai: bool = Query(False),
 ) -> dict[str, Any]:
     """묶음 하나의 상세. **펼쳤을 때만 부른다.**
+
+    이름은 쿼리로 받는다 — 경로에 두면 `/` 가 든 패키지가 404 가 된다.
 
     보고서 전체를 만들면 48,923건에 20초가 걸리고 JSON 은 수십 MB 다.
     펼친 묶음 하나만 조립하면 밀리초다.
@@ -959,9 +1004,9 @@ def get_package_detail(
     if meta is None:
         raise HTTPException(404, "스캔을 찾을 수 없습니다.")
 
-    payloads = store.package_findings(scan_id, package, version)
+    payloads = store.package_findings(scan_id, name, version)
     if not payloads:
-        raise HTTPException(404, "패키지를 찾을 수 없습니다.")
+        raise HTTPException(404, f"'{name}' 패키지를 찾을 수 없습니다.")
 
     findings = tuple(revive_finding(p) for p in payloads)
     narratives, chains = {}, {}
@@ -1176,34 +1221,37 @@ def egress_preview(
 
 @app.post("/api/scans/{scan_id}/narratives")
 def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-    """선택한 항목에 대해서만 AI 서술을 생성해 저장한다.
+    """**패키지 하나**에 대해 AI 서술과 연계 분석을 생성해 저장한다.
+
+    한 번에 하나만 받는다. 서술은 CVE 한 건마다 모델을 한 번 부르는데,
+    범위를 넓게 잡으면 분당 토큰(TPM) 한도를 첫 요청에서 넘겨 버려 그 뒤가
+    전부 실패한다 — 실제로 그래서 생성해도 달라지는 것이 없었다. 조치 단위가
+    패키지이므로 생성 단위도 패키지로 맞춘다: 담당자가 필요한 것부터 하나씩
+    누르면 호출 속도도 사람 손에 맞춰진다.
 
     키는 서버 환경변수(`GEMINI_API_KEY`)에서 읽으며 브라우저로 내려가지
-    않는다. 전송되는 내용은 같은 선택 키로 egress/preview가 보여 준 것과
-    동일하고, 같은 가드를 통과해야만 호출이 일어난다.
+    않는다. 전송되는 내용은 egress/preview 가 보여 준 것과 동일하고, 같은
+    가드를 통과해야만 호출이 일어난다.
     """
     store = _store()
-    if body.get("saved"):
-        select = store.get_selection(scan_id)
-    else:
-        raw = body.get("selection") or []
-        if not isinstance(raw, list):
-            raise HTTPException(400, "selection은 문자열 배열이어야 합니다.")
-        select = [str(x) for x in raw]
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
 
-    _, picked = _scoped(scan_id, select)
+    name = str(body.get("package", "")).strip()
+    if not name:
+        raise HTTPException(400, "어느 패키지의 해설을 만들지 지정해 주세요.")
+    version = str(body.get("version", ""))
 
-    # **범위 상한.** 서술은 CVE 한 건마다 모델을 한 번 부른다. 8,154개 패키지를
-    # 통째로 고르면 48,923번이고, 그것은 몇 시간이자 토큰 한도를 훨씬 넘는 양이다.
-    # 조용히 잘라 놓고 다 됐다고 하면 보고서에서 빠진 것을 나중에야 알게 되므로,
-    # 여기서 거절하고 몇 건인지 말한다.
-    count = len(picked.findings)
-    if count > config.ai_max_findings:
+    payloads = store.package_findings(scan_id, name, version)
+    if not payloads:
+        raise HTTPException(404, f"'{name}' 패키지를 찾을 수 없습니다.")
+    findings = tuple(revive_finding(p) for p in payloads)
+
+    if len(findings) > config.ai_max_findings:
         raise HTTPException(
             400,
-            f"AI 서술은 한 번에 {config.ai_max_findings:,}건까지 만듭니다. "
-            f"지금 고른 것은 {count:,}건입니다. "
-            "즉시·우선 검토로 좁히거나 패키지를 몇 개만 골라 주세요.",
+            f"이 패키지에는 취약점이 {len(findings):,}건 있습니다. "
+            f"한 번에 {config.ai_max_findings:,}건까지 만듭니다.",
         )
 
     if not config.ai_enabled:
@@ -1219,7 +1267,7 @@ def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> di
         )
 
     try:
-        run = run_narratives(picked.findings, config=config, scan_id=scan_id)
+        run = run_narratives(findings, config=config, scan_id=scan_id)
     except EgressBlocked as blocked:
         # 가드가 막았다면 전송은 일어나지 않았다. 무엇이 걸렸는지 그대로 알린다.
         raise HTTPException(
@@ -1235,13 +1283,33 @@ def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> di
         {cve: narrative_to_dict(n) for cve, n in run.narratives.items()},
         model=run.model,
     )
-    # 실제로 전송한 범위를 남긴다. 이것이 나중에 전시 자료의 근거가 된다.
-    store.save_selection(scan_id, [f.key for f in picked.findings] if picked.requested else [])
+
+    # 연계 분석도 같은 묶음에 대해 한 번. 낮은 등급 여러 건이 서로의 전제를
+    # 충족시키는지는 그 묶음 안에서만 볼 수 있는 판단이다.
+    chains: dict[str, str] = {}
+    if len(findings) > 1:
+        result = ScanResult(
+            metadata=revive_metadata((store.get_scan_meta(scan_id) or {}).get("metadata") or {}),
+            findings=findings,
+            policy={},
+        )
+        report = ReportBuilder(config, engine=RuleEngine.from_config(config)).build(result)
+        try:
+            chain_run = run_chain_analysis(report.packages, config=config, scan_id=scan_id)
+            chains = dict(chain_run.analyses)
+            if chains:
+                store.save_chains(scan_id, chains, model=chain_run.model)
+        except EgressBlocked:
+            # 서술은 이미 저장했다. 연계 분석만 빠진다.
+            chains = {}
 
     return {
         "scan_id": scan_id,
-        "selection": picked.to_dict(),
+        "package": name,
+        "installed_version": version,
+        "requested": len(findings),
         **run.to_dict(),
+        "chained": len(chains),
         "stored": store.narrative_meta(scan_id),
     }
 

@@ -192,7 +192,12 @@ button.danger, .btn.danger { color: var(--danger); border-color: var(--danger); 
 
 .inline-form { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
 .inline-form input { min-width: 12rem; }
-.row-actions { display: flex; gap: .4rem; white-space: nowrap; }
+.row-actions { display: inline-flex; gap: .4rem; }
+/* 마지막 열은 내용만큼만 차지한다. `width:1%` 는 그 표의 관용구다 — 두지 않으면
+   남은 폭을 전부 먹어 앞 열들과 버튼 사이가 텅 빈다. 줄바꿈은 하지 않는다:
+   버튼이 세로로 쌓이면 행 높이가 제각각이 되어 표로 읽히지 않는다. 화면이
+   좁으면 `.table-scroll` 이 가로로 밀어 준다. */
+td.actions, th.actions { width: 1%; white-space: nowrap; text-align: right; }
 
 /* ---------- 로그인 화면 ---------- */
 body.gate { display: flex; align-items: center; justify-content: center; min-height: 100vh; }

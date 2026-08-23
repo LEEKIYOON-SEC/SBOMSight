@@ -6,6 +6,7 @@ Grype 없이도 검증할 수 있는 것들을 다룬다: 업로드 파싱, 파�
 검증했다.
 """
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -375,8 +376,21 @@ class TestNarrativeEndpoint:
         assert "key" not in json.dumps(health["ai"]).lower().replace("key_source", "")
         assert health["ai"]["key_source"] == "server-env"
 
+    @staticmethod
+    def _one_package(client, scan_id):
+        group = client.get(f"/api/scans/{scan_id}/packages").json()["packages"][0]
+        return {"package": group["package"], "version": group["installed_version"]}
+
+    def test_a_package_must_be_named(self, client, seeded_scan):
+        """한 번에 하나씩 만든다 — 범위를 넓게 잡으면 분당 토큰 한도를 넘긴다."""
+        response = client.post(f"/api/scans/{seeded_scan}/narratives", json={})
+        assert response.status_code == 400
+        assert "패키지" in response.json()["detail"]
+
     def test_refused_when_ai_is_disabled(self, client, seeded_scan):
-        response = client.post(f"/api/scans/{seeded_scan}/narratives", json={"selection": []})
+        response = client.post(
+            f"/api/scans/{seeded_scan}/narratives", json=self._one_package(client, seeded_scan)
+        )
         assert response.status_code == 409
         assert "SBOMSIGHT_AI_ENABLED" in response.json()["detail"]
 
@@ -385,7 +399,9 @@ class TestNarrativeEndpoint:
 
         monkeypatch.setattr(server.app.config, "ai_enabled", True)
         monkeypatch.setattr(server.app.config, "gemini_api_key", "")
-        response = client.post(f"/api/scans/{seeded_scan}/narratives", json={"selection": []})
+        response = client.post(
+            f"/api/scans/{seeded_scan}/narratives", json=self._one_package(client, seeded_scan)
+        )
         assert response.status_code == 409
         assert "GEMINI_API_KEY" in response.json()["detail"]
 
@@ -411,26 +427,26 @@ class TestNarrativeEndpoint:
         monkeypatch.setattr(server.app.config, "gemini_api_key", "test-key")
         monkeypatch.setattr(server.app, "run_narratives", fake_run)
 
-    def test_generates_only_for_the_selection(self, client, seeded_scan, monkeypatch):
+    def test_generates_only_for_the_named_package(self, client, seeded_scan, monkeypatch):
         seen = {}
-        keys = TestSelectionScope()._keys(client, seeded_scan)
+        group = client.get(f"/api/scans/{seeded_scan}/packages").json()["packages"][0]
         self._stub_ai(client, monkeypatch, seen, model="gemini-3.5-flash-lite")
 
-        body = client.post(
-            f"/api/scans/{seeded_scan}/narratives", json={"selection": keys[:1]}
-        ).json()
+        body = client.post(f"/api/scans/{seeded_scan}/narratives", json={
+            "package": group["package"], "version": group["installed_version"],
+        }).json()
 
-        assert len(seen["cves"]) == 1
-        assert body["applied"] == 1
+        # 그 묶음에 속한 것만 나간다. 다른 패키지의 CVE 는 섞이지 않는다.
+        assert len(seen["cves"]) == group["cve_count"]
+        assert body["applied"] == group["cve_count"]
+        assert body["package"] == group["package"]
         assert body["model"] == "gemini-3.5-flash-lite"
-        # 실제로 전송한 범위가 기록되어야 export가 그것을 옮길 수 있다.
-        assert body["selection"]["scope"] == "selection"
-        assert client.get(f"/api/scans/{seeded_scan}").json()["selection"]["keys"] == keys[:1]
 
         # 생성한 서술이 보고서에 실제로 얹혀야 한다.
-        report = client.get(
-            f"/api/scans/{seeded_scan}/report", params={"format": "json", "select": keys[:1]}
-        ).json()
+        report = client.get(f"/api/scans/{seeded_scan}/report", params={
+            "format": "json", "package": group["package"],
+            "version": group["installed_version"],
+        }).json()
         assert report["ai_used"] is True
         assert report["findings"][0]["technical_risk"]["narrative"] == "설명"
 
@@ -500,8 +516,8 @@ class TestPackageView:
     def test_package_findings_are_listed_without_building_a_report(self, client, seeded_scan):
         group = client.get(f"/api/scans/{seeded_scan}/packages").json()["packages"][0]
         body = client.get(
-            f"/api/scans/{seeded_scan}/packages/{group['package']}/findings",
-            params={"version": group["installed_version"]},
+            f"/api/scans/{seeded_scan}/package/findings",
+            params={"name": group["package"], "version": group["installed_version"]},
         ).json()
         assert body["total"] == group["cve_count"]
         assert {f["intel"]["cve"] for f in body["findings"]}
@@ -555,8 +571,8 @@ class TestSelectionByPackage:
         이유가 없다."""
         group = client.get(f"/api/scans/{seeded_scan}/packages").json()["packages"][0]
         findings = client.get(
-            f"/api/scans/{seeded_scan}/packages/{group['package']}/findings",
-            params={"version": group["installed_version"]},
+            f"/api/scans/{seeded_scan}/package/findings",
+            params={"name": group["package"], "version": group["installed_version"]},
         ).json()["findings"]
         cve = findings[0]["intel"]["cve"]
 
@@ -565,6 +581,48 @@ class TestSelectionByPackage:
             "version": group["installed_version"], "cve": cve,
         }).json()
         assert [f["cve"] for f in body["findings"]] == [cve]
+
+
+class TestPackageNamesWithSlashes:
+    """이름은 **경로가 아니라 쿼리**로 받는다.
+
+    경로에 두면 `github.com/gogo/protobuf`·`@babel/core` 같은 이름이 404 가
+    된다 — uvicorn 이 `%2F` 를 실제 슬래시로 되돌려 놓아서 한 세그먼트를
+    넘지 못한다. Go 모듈과 npm 스코프 패키지가 전부 여기에 걸렸다.
+    """
+
+    def test_a_package_name_with_a_slash_is_reachable(self, client, tmp_path):
+        from core.config import get_config
+
+        result = normalize_grype_report(
+            json.loads(FIXTURE.read_text()), scan_id="slash-1", sbom_filename="a.json"
+        )
+        engine = RuleEngine.from_config()
+        findings = engine.apply(result.findings)
+        # 첫 항목의 설치 패키지 이름만 Go 모듈처럼 바꾼다.
+        renamed = dataclasses.replace(
+            findings[0],
+            installed=dataclasses.replace(findings[0].installed, name="github.com/gogo/protobuf"),
+        )
+        Store(get_config().db_path).save_scan(ScanResult(
+            metadata=result.metadata, findings=(renamed, *findings[1:]), policy={},
+        ))
+
+        listed = client.get("/api/scans/slash-1/packages").json()["packages"]
+        target = next(p for p in listed if "/" in p["package"])
+        assert target["package"] == "github.com/gogo/protobuf"
+
+        detail = client.get("/api/scans/slash-1/package/findings", params={
+            "name": target["package"], "version": target["installed_version"],
+        })
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["total"] == target["cve_count"]
+
+        report = client.get("/api/scans/slash-1/report", params={
+            "format": "json", "package": target["package"],
+            "version": target["installed_version"],
+        })
+        assert report.status_code == 200, report.text
 
 
 class TestScanNeedsAnAsset:
