@@ -327,13 +327,14 @@ export const liveApiProvider = {
    * egressPreview가 보여 준 것과 **같은 조립기·같은 가드**를 통과한 결과이며,
    * 가드가 막으면 호출 자체가 일어나지 않는다.
    */
-  async generateNarratives(scanId, { package: pkg, version = '' } = {}) {
-    // **패키지 하나씩.** 범위를 넓게 잡으면 분당 토큰 한도를 첫 요청에서 넘겨
-    // 그 뒤가 전부 실패한다 — 생성해도 달라지는 것이 없었던 이유가 그것이다.
+  async generateNarratives(scanId, { package: pkg, version = '', cve = '' } = {}) {
+    // **패키지 하나씩, 또는 CVE 한 건씩.** 범위를 넓게 잡으면 분당 토큰 한도를
+    // 첫 요청에서 넘겨 그 뒤가 전부 실패한다. `cve` 를 주면 그 한 건만 나간다 —
+    // 근거 팝업에서 부르는 길이고, 가장 잘게 부르는 방법이다.
     return (await request(`api/scans/${encodeURIComponent(scanId)}/narratives`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ package: pkg, version }),
+      body: JSON.stringify({ package: pkg, version, cve }),
     })).json();
   },
 };

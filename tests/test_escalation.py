@@ -151,3 +151,98 @@ class TestEscalationApi:
         response = client.post(f"/api/scans/{seeded_scan}/escalation")
         assert response.status_code == 409
         assert "SBOMSIGHT_AI_ENABLED" in response.json()["detail"]
+
+
+@pytest.fixture
+def multi_cve_scan(client):
+    """CVE 가 여럿 달린 패키지 하나를 담은 스캔.
+
+    "한 건만" 과 "묶음 전체" 를 구분하려면 한 묶음에 CVE 가 둘 이상 있어야
+    한다. 기본 픽스처에는 그런 묶음이 없다.
+    """
+    from core.config import get_config
+    from core.models import (
+        AdvisoryPackage, Finding, FixState, InstalledPackage, Priority,
+        RuleVerdict, ScanMetadata, ScanResult, Severity, VulnIntel,
+    )
+    from core.store import Store
+
+    findings = tuple(
+        Finding(
+            installed=InstalledPackage(name="openssl", version="1.0.0", type="rpm",
+                                       purl="pkg:rpm/openssl@1.0.0"),
+            advisory=AdvisoryPackage(advisory_package="openssl", advisory_ecosystem="rpm",
+                                     affected_version_range="< 2.0.0", fixed_version="2.0.0",
+                                     fix_state=FixState.FIXED_AVAILABLE),
+            intel=VulnIntel(cve=f"CVE-2026-2000{i}", severity=Severity.HIGH, cvss_score=7.5,
+                            cvss_vector=FOOTHOLD_VECTOR, cvss_version="3.1"),
+            verdict=RuleVerdict(priority=Priority.P1),
+        )
+        for i in range(3)
+    )
+    Store(get_config().db_path).save_scan(ScanResult(
+        metadata=ScanMetadata(scan_id="multi-1", created_at="2026-08-23T00:00:00+00:00",
+                              sbom_filename="a.json"),
+        findings=findings,
+    ))
+    return "multi-1"
+
+
+class TestNarrativeScope:
+    """생성 범위가 요청한 만큼이어야 한다.
+
+    분당 토큰(TPM)을 사람 손에 맞추려고 단위를 잘게 나눴는데, 한 건을
+    눌렀더니 묶음 전체가 나가면 그 조절이 무의미해진다.
+    """
+
+    @staticmethod
+    def _stub(monkeypatch, seen):
+        import server.app
+        from core.ai_narrative import NarrativeRun
+        from core.report import Narrative
+
+        def fake_run(findings, *, config, scan_id):
+            seen["cves"] = [f.intel.cve for f in findings]
+            return NarrativeRun(
+                narratives={f.intel.cve: Narrative(technical_risk="설명", source="ai")
+                            for f in findings},
+                model="stub", requested=len(findings),
+            )
+
+        monkeypatch.setattr(server.app.config, "ai_enabled", True)
+        monkeypatch.setattr(server.app.config, "gemini_api_key", "test-key")
+        monkeypatch.setattr(server.app, "run_narratives", fake_run)
+
+    def test_one_cve_sends_only_that_cve(self, client, multi_cve_scan, monkeypatch):
+        group = client.get(f"/api/scans/{multi_cve_scan}/packages").json()["packages"][0]
+        assert group["cve_count"] == 3
+
+        seen: dict = {}
+        self._stub(monkeypatch, seen)
+        body = client.post(f"/api/scans/{multi_cve_scan}/narratives", json={
+            "package": group["package"], "version": group["installed_version"],
+            "cve": "CVE-2026-20001",
+        }).json()
+
+        assert seen["cves"] == ["CVE-2026-20001"], "요청한 한 건만 나가야 한다"
+        assert body["requested"] == 1
+        assert body["cve"] == "CVE-2026-20001"
+
+    def test_without_a_cve_the_whole_package_goes(self, client, multi_cve_scan, monkeypatch):
+        group = client.get(f"/api/scans/{multi_cve_scan}/packages").json()["packages"][0]
+        seen: dict = {}
+        self._stub(monkeypatch, seen)
+        body = client.post(f"/api/scans/{multi_cve_scan}/narratives", json={
+            "package": group["package"], "version": group["installed_version"],
+        }).json()
+        assert body["requested"] == 3
+        assert len(seen["cves"]) == 3
+
+    def test_an_unknown_cve_is_refused(self, client, seeded_scan, monkeypatch):
+        group = client.get(f"/api/scans/{seeded_scan}/packages").json()["packages"][0]
+        self._stub(monkeypatch, {})
+        response = client.post(f"/api/scans/{seeded_scan}/narratives", json={
+            "package": group["package"], "version": group["installed_version"],
+            "cve": "CVE-1999-99999",
+        })
+        assert response.status_code == 404

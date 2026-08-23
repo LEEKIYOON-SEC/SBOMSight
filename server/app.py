@@ -1242,8 +1242,15 @@ def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> di
     if not name:
         raise HTTPException(400, "어느 패키지의 해설을 만들지 지정해 주세요.")
     version = str(body.get("version", ""))
+    # **`cve` 를 주면 그 한 건만.** 팝업에서 부를 때 쓰는 길이며, 가장 잘게
+    # 부르는 방법이다. 없으면 그 묶음 전체다.
+    only = str(body.get("cve", "")).strip()
 
     payloads = store.package_findings(scan_id, name, version)
+    if only:
+        payloads = [p for p in payloads if (p.get("intel") or {}).get("cve") == only]
+        if not payloads:
+            raise HTTPException(404, f"'{only}' 항목을 찾을 수 없습니다.")
     if not payloads:
         raise HTTPException(404, f"'{name}' 패키지를 찾을 수 없습니다.")
     findings = tuple(revive_finding(p) for p in payloads)
@@ -1288,7 +1295,7 @@ def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> di
     # 연계 분석도 같은 묶음에 대해 한 번. 낮은 등급 여러 건이 서로의 전제를
     # 충족시키는지는 그 묶음 안에서만 볼 수 있는 판단이다.
     chains: dict[str, str] = {}
-    if len(findings) > 1:
+    if len(findings) > 1 and not only:
         result = ScanResult(
             metadata=revive_metadata((store.get_scan_meta(scan_id) or {}).get("metadata") or {}),
             findings=findings,
@@ -1308,6 +1315,7 @@ def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> di
         "scan_id": scan_id,
         "package": name,
         "installed_version": version,
+        "cve": only,
         "requested": len(findings),
         **run.to_dict(),
         "chained": len(chains),

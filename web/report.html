@@ -486,7 +486,11 @@ async function renderEscalation() {
 
   run.hidden = !state.ai_ready;
   preview.hidden = !pairable;
-  run.disabled = !pairable;
+  // **AI 만 켜져 있으면 누를 수 있다.** 예전에는 후보가 한쪽만 있으면
+  // (`pairable === false`) 버튼을 잠갔는데, 이미 만들어 둔 결과가 있는데도
+  // 다시 만들 길이 없어졌다. 범위를 바꿔 가며 확인하는 것이 이 화면의
+  // 쓰임인데 그것이 막혔다. 엮을 상대가 없으면 서버가 그렇게 답한다.
+  run.disabled = !state.ai_ready;
   run.textContent = state.generated ? '다시 생성' : '연계 분석 생성';
 
   // **이미 만들어 둔 것이 있으면 그것부터 그린다.** 지금 AI 가 꺼져 있어도
@@ -494,6 +498,16 @@ async function renderEscalation() {
   // 흔하고, 그때 빈 화면이 나오면 만든 적이 없는 것처럼 보인다.
   if (state.generated) {
     drawEscalation(state.result, state.candidates);
+    // 저장된 결과가 지금 범위와 다른 후보로 만들어졌으면 그렇게 말한다.
+    // 옛 결과를 새 범위의 답으로 읽으면 그것이 곧 거짓이 된다.
+    const was = state.result?.scope?.counts || {};
+    if (was.foothold !== counts.foothold || was.escalation !== counts.escalation) {
+      body.insertAdjacentHTML('beforeend',
+        `<div class="callout"><b>범위가 바뀌었습니다.</b> 위 분석은 발판
+          ${was.foothold ?? 0}건 · 상승 ${was.escalation ?? 0}건으로 만들어졌고, 지금
+          범위의 후보는 발판 ${counts.foothold ?? 0}건 · 상승 ${counts.escalation ?? 0}건입니다.
+          <b>다시 생성</b>을 눌러 지금 범위로 새로 만들 수 있습니다.</div>`);
+    }
     if (!state.ai_ready) {
       body.insertAdjacentHTML('beforeend',
         '<div class="callout">지금은 AI 사용이 꺼져 있어 다시 생성할 수 없습니다. '
@@ -556,37 +570,59 @@ $('#ai-run').addEventListener('click', async (event) => {
     drawEscalation(result, result.scope);
     button.textContent = '다시 생성';
   } catch (error) {
-    $('#ai-body').insertAdjacentHTML('afterbegin',
-      `<div class="banner danger">${esc(error.message)}</div>`);
+    say(`<div class="banner danger">${esc(error.message)}</div>`);
     button.textContent = label;
   } finally {
     button.disabled = false;
   }
 });
 
-$('#ai-preview').addEventListener('click', async () => {
-  const body = $('#ai-body');
-  body.insertAdjacentHTML('afterbegin', '<p class="muted" id="ai-loading">조립하는 중…</p>');
+/**
+ * 미리보기는 **토글**이다.
+ *
+ * 예전에는 누를 때마다 `insertAdjacentHTML` 로 상자를 하나씩 더 얹어, 세 번
+ * 누르면 세 개가 쌓였다. 같은 것을 여는 버튼은 다시 누르면 닫혀야 한다.
+ */
+$('#ai-preview').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  const open = $('#ai-preview-box');
+  if (open) {
+    open.remove();
+    button.textContent = '전송될 내용 보기';
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = '조립하는 중…';
   try {
     const preview = await provider.escalationPreview(scanId());
-    $('#ai-loading')?.remove();
-    body.insertAdjacentHTML('afterbegin', `
+    $('#ai-body').insertAdjacentHTML('afterbegin', `
       <div class="callout" id="ai-preview-box">
-        <div class="toolbar" style="margin:0 0 .5rem">
-          <b>${preview.ok ? '전송 항목 확인됨' : '전송 차단'}</b>
-          <div class="spacer"></div>
-          <button type="button" class="btn small" id="ai-preview-close">닫기</button>
-        </div>
-        <p class="muted">${esc(preview.note || '')}</p>
+        <p><b>${preview.ok ? '전송 항목 확인됨' : '전송 차단'}</b>
+          — ${esc(preview.note || '')}</p>
         <pre class="step-cmd" style="max-height:22rem;overflow:auto">${esc(preview.prompt || '')}</pre>
       </div>`);
-    $('#ai-preview-close').addEventListener('click', () => $('#ai-preview-box').remove());
+    button.textContent = '전송될 내용 닫기';
   } catch (error) {
-    $('#ai-loading')?.remove();
-    body.insertAdjacentHTML('afterbegin',
-      `<div class="banner danger">${esc(error.message)}</div>`);
+    say(`<div class="banner danger">${esc(error.message)}</div>`);
+    button.textContent = '전송될 내용 보기';
+  } finally {
+    button.disabled = false;
   }
 });
+
+/**
+ * 오류 한 줄. **쌓이지 않는다.**
+ *
+ * 오류도 누를 때마다 하나씩 더 붙던 자리라 자리를 하나로 정해 둔다.
+ */
+function say(html) {
+  const host = $('#ai-body');
+  host.querySelector('#ai-say')?.remove();
+  if (html) host.insertAdjacentHTML('afterbegin', `<div id="ai-say">${html}</div>`);
+}
+
+
 
 /**
  * AI 해설은 **패키지 하나씩** 만든다.
@@ -608,6 +644,7 @@ function wireAi(body, details, group) {
     return;
   }
   button.hidden = false;
+  button.textContent = `AI 해설 생성 (${total - done}건)`;
   if (done) status.textContent = `${done}/${total}건 적용됨`;
 
   button.addEventListener('click', async () => {
@@ -625,9 +662,11 @@ function wireAi(body, details, group) {
       details.dataset.loaded = '';
       await expandPackage(details);
     } catch (error) {
+      // 자리를 하나로 정해 둔다. 누를 때마다 하나씩 더 붙으면 안 된다.
       status.textContent = '';
+      body.querySelector('.pkg-say')?.remove();
       body.querySelector('.pkg-actions').insertAdjacentHTML('afterend',
-        `<div class="banner danger">${esc(error.message)}</div>`);
+        `<div class="banner danger pkg-say">${esc(error.message)}</div>`);
       button.disabled = false;
     }
   });
@@ -720,8 +759,10 @@ function wireCveAi(group, item) {
     fresh.disabled = true;
     status.textContent = '생성 중…';
     try {
+      // **이 한 건만.** 묶음 전체를 만들면 CVE 가 많은 패키지에서 분당 토큰
+      // 한도를 넘긴다. 여기가 가장 잘게 부르는 자리다.
       const result = await provider.generateNarratives(scanId(), {
-        package: group.package, version: group.installed_version,
+        package: group.package, version: group.installed_version, cve: item.cve,
       });
       status.textContent = `${result.applied}/${result.requested}건 적용했습니다`;
       useAi = true;
@@ -737,8 +778,10 @@ function wireCveAi(group, item) {
       }
     } catch (error) {
       status.textContent = '';
-      $('#cve-body').insertAdjacentHTML('afterbegin',
-        `<div class="banner danger">${esc(error.message)}</div>`);
+      const host = $('#cve-body');
+      host.querySelector('.cve-say')?.remove();
+      host.insertAdjacentHTML('afterbegin',
+        `<div class="banner danger cve-say">${esc(error.message)}</div>`);
       fresh.disabled = false;
     }
   });
