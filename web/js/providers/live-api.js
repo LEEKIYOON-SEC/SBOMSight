@@ -144,6 +144,28 @@ export const liveApiProvider = {
     return (await request(`api/scans/${encodeURIComponent(scanId)}/packages?${query}`)).json();
   },
 
+  /**
+   * 연계 상승 — 저위험 조합이 고위험으로 올라서는 경로.
+   *
+   * 이 도구에서 AI 가 실제로 값을 더하는 자리다. CVE 하나를 풀어 설명하는 것은
+   * 룰 문장으로도 되지만, "이 둘이 이어지면 각각일 때와 다른 결과에 도달한다"는
+   * 판단은 벡터를 읽고 관계를 세워야 나온다.
+   */
+  async escalation(scanId) {
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/escalation`)).json();
+  },
+
+  /** 무엇이 나갈지 먼저 본다. 이 호출은 외부로 아무것도 보내지 않는다. */
+  async escalationPreview(scanId) {
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/escalation/preview`)).json();
+  },
+
+  async generateEscalation(scanId) {
+    return (await request(`api/scans/${encodeURIComponent(scanId)}/escalation`, {
+      method: 'POST',
+    })).json();
+  },
+
   /** 지금 조건에 맞는 묶음 키 전부. "전체 선택" 이 쓴다. 상한은 없다. */
   async packageKeys(scanId, params = {}) {
     const query = new URLSearchParams();

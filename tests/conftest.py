@@ -54,3 +54,34 @@ def viewer(client):
         "/api/auth/login", json={"username": "reader", "password": "reader-password"}
     ).status_code == 200
     return other
+
+
+@pytest.fixture
+def seeded_scan(client):
+    """정규화·판정까지 마친 스캔을 저장해 두고 scan_id 를 돌려준다.
+
+    여러 테스트 모듈이 같은 스캔을 쓴다. 픽스처는 모듈을 넘어가지 않으므로
+    여기가 집이다.
+    """
+    import json
+    from pathlib import Path
+
+    from core.config import get_config
+    from core.models import ScanResult
+    from core.normalize import normalize_grype_report
+    from core.ruleengine import RuleEngine
+    from core.store import Store
+
+    fixture = Path(__file__).parent / "fixtures" / "grype-sample.json"
+    result = normalize_grype_report(
+        json.loads(fixture.read_text(encoding="utf-8")), scan_id="seeded-1",
+        sbom_filename="seed.cdx.json", component_count=1204,
+    )
+    engine = RuleEngine.from_config()
+    Store(get_config().db_path).save_scan(ScanResult(
+        metadata=result.metadata,
+        findings=engine.apply(result.findings),
+        policy={"label": engine.policy.label, "version": engine.policy.version,
+                "sha256": engine.policy.sha256, "sources": list(engine.policy.sources)},
+    ))
+    return "seeded-1"

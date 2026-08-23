@@ -16,7 +16,6 @@ from core.netacl import Allowlist, parse_list
 from .conftest import ADMIN
 
 # anon·client·viewer·seeded_scan 픽스처는 conftest.py 와 test_server.py 에 있다.
-from .test_server import seeded_scan  # noqa: F401
 
 
 # ---------------------------------------------------------------------------

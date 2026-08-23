@@ -33,25 +33,6 @@ CYCLONEDX = {
 }
 
 
-@pytest.fixture
-def seeded_scan(client):
-    """정규화·판정까지 마친 스캔을 저장해 두고 scan_id를 돌려준다."""
-    from core.config import get_config
-
-    result = normalize_grype_report(json.loads(FIXTURE.read_text()), scan_id="seeded-1",
-                                    sbom_filename="seed.cdx.json", component_count=1204)
-    engine = RuleEngine.from_config()
-    Store(get_config().db_path).save_scan(
-        ScanResult(
-            metadata=result.metadata,
-            findings=engine.apply(result.findings),
-            policy={"label": engine.policy.label, "version": engine.policy.version,
-                    "sha256": engine.policy.sha256, "sources": list(engine.policy.sources)},
-        )
-    )
-    return "seeded-1"
-
-
 class TestHealthAndPolicy:
     def test_health_reports_tool_and_policy_state(self, client):
         body = client.get("/api/health").json()

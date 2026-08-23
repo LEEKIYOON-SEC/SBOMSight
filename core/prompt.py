@@ -199,3 +199,136 @@ def build_chain_prompt(groups: list[dict[str, Any]]) -> str:
 def build_chain_full_text(groups: list[dict[str, Any]]) -> str:
     """연계 분석에서 "전송될 내용 전체 보기"에 실리는 문자열."""
     return f"=== 시스템 지시 ===\n{SYSTEM_INSTRUCTION}\n\n=== 요청 ===\n{build_chain_prompt(groups)}"
+
+
+# ---------------------------------------------------------------------------
+# 연계 상승 — **패키지를 가로질러** 묻는다
+# ---------------------------------------------------------------------------
+#
+# 앞의 `build_chain_prompt` 는 한 패키지 안의 CVE 들끼리 엮이는지를 물었다.
+# 그런데 같은 라이브러리의 버그 여섯 건은 서로 무관하고 조치도 하나다 — 엮을
+# 것이 없다. 실제로 등급이 뛰는 조합은 패키지를 가로지른다:
+#
+#     정보 노출(PR:N, C:H)  →  권한 상승(PR:L, C:H/I:H/A:H)
+#
+# 앞의 것이 뒤의 것이 요구하는 자격을 만들어 준다. 그래서 여기서는 발판 후보와
+# 상승 후보를 **함께** 싣고, 그 사이의 연쇄를 묻는다.
+
+ESCALATION_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "chains": {
+            "type": "array",
+            "description": "성립 가능한 연쇄. 억지로 만들지 말고, 없으면 빈 배열.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "이 연쇄를 한 줄로. 예: '인증 없는 정보 노출로 얻은 자격을 통한 권한 상승'",
+                    },
+                    "steps": {
+                        "type": "array",
+                        "description": "연쇄의 각 단계. 2~4단계.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "cve": {"type": "string", "description": "요청 데이터에 있는 cve 값 그대로."},
+                                "role": {
+                                    "type": "string",
+                                    "description": "이 단계가 하는 일. 예: '초기 진입', '자격 획득', '권한 상승', '영향 확대'",
+                                },
+                                "why": {
+                                    "type": "string",
+                                    "description": "왜 이 단계가 다음 단계의 전제를 충족시키는지. CVSS 벡터와 CWE 로 읽히는 근거만. 1~2문장.",
+                                },
+                            },
+                            "required": ["cve", "role", "why"],
+                        },
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "description": "연쇄가 성립했을 때 도달하는 상태. 2~3문장.",
+                    },
+                    "escalation": {
+                        "type": "string",
+                        "description": (
+                            "단독으로 볼 때와 이어서 볼 때 무엇이 달라지는지. "
+                            "'각각은 자격을 요구하거나 정보 노출에 그치지만, 이어지면 …' 형태로. 2~3문장."
+                        ),
+                    },
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["높음", "보통", "낮음"],
+                        "description": "공개 데이터만으로 이 연쇄를 얼마나 확신할 수 있는지.",
+                    },
+                    "confidence_reason": {
+                        "type": "string",
+                        "description": "그 확신도의 근거. 벡터가 비어 있거나 CWE 가 없으면 그렇게 쓴다. 1~2문장.",
+                    },
+                },
+                "required": ["title", "steps", "outcome", "escalation", "confidence"],
+            },
+        },
+        "note": {
+            "type": "string",
+            "description": "연쇄가 하나도 보이지 않으면 그 이유. 보이면 전체에 대한 한 줄 총평.",
+        },
+    },
+    "required": ["chains", "note"],
+}
+
+
+def build_escalation_prompt(
+    footholds: list[dict[str, Any]], escalations: list[dict[str, Any]]
+) -> str:
+    """연계 상승 요청.
+
+    전달되는 것은 두 갈래의 VulnFact 뿐이다. 어느 자산의 것인지, 실제로 함께
+    설치되어 있는지는 싣지 않는다 — 그것이 이 도구의 이그레스 원칙이고,
+    이 함수의 반환값 전체를 화면에 그대로 보여 줄 수 있어야 한다.
+    """
+    payload = json.dumps(
+        {"footholds": footholds, "escalations": escalations}, ensure_ascii=False, indent=2
+    )
+    return f"""\
+아래는 공개 취약점 데이터를 두 갈래로 나눈 것입니다.
+
+- `footholds` — 자격 없이 성립하는 취약점(PR:N)들입니다. 성공하면 정보 노출,
+  무결성 훼손, 또는 범위 변경이 일어납니다.
+- `escalations` — 자격을 요구하지만(PR:L 또는 PR:H) 성공하면 기밀성·무결성·
+  가용성에 큰 영향을 주는 취약점들입니다.
+
+**묻는 것은 하나입니다: 앞의 것이 뒤의 것의 전제를 충족시켜 연쇄될 수 있는가.**
+
+단독으로 보면 중간 등급인 취약점도, 하나가 다른 하나가 요구하는 자격을 만들어
+주면 결과적으로 훨씬 큰 영향에 도달합니다. 그 관계가 보이는 조합을 찾아
+서술하십시오.
+
+지켜야 할 것:
+
+- CVSS 벡터(AV/AC/PR/UI/S/C/I/A)와 CWE 로 **읽히는 근거만** 쓰십시오.
+  벡터가 비어 있는 항목은 연쇄 논리의 근거로 삼지 마십시오.
+- 단계마다 **왜 그 단계가 다음 단계의 전제를 충족시키는지**를 적으십시오.
+  "둘 다 심각하다"는 연쇄 논리가 아닙니다.
+- 억지로 엮지 마십시오. 성립하는 조합이 없으면 `chains` 를 빈 배열로 두고
+  `note` 에 그 이유를 쓰십시오. 빈 결과도 유효한 답입니다.
+- 같은 두 CVE 로 만들 수 있는 연쇄는 하나만 쓰십시오.
+- 이 데이터가 어느 환경의 것인지, 실제로 함께 존재하는지는 알 수 없습니다.
+  **공개 데이터 기준의 기술적 가능성**을 쓰는 것이며 단정하지 마십시오.
+
+{payload}
+
+cve 필드에는 위 데이터의 cve 값을 그대로 넣으십시오. 위 데이터에 없는 CVE 를
+연쇄에 넣지 마십시오.
+"""
+
+
+def build_escalation_full_text(
+    footholds: list[dict[str, Any]], escalations: list[dict[str, Any]]
+) -> str:
+    """연계 상승에서 "전송될 내용 전체 보기"에 실리는 문자열."""
+    return (
+        f"=== 시스템 지시 ===\n{SYSTEM_INSTRUCTION}\n\n"
+        f"=== 요청 ===\n{build_escalation_prompt(footholds, escalations)}"
+    )

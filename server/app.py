@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,14 +23,14 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 
 from core import (
-    artifacts, assets as assets_mod, csvexport, findingview, grype_runner,
+    artifacts, assets as assets_mod, csvexport, escalation, findingview, grype_runner,
     selection as selection_mod, syft_runner, versioning,
 )
 from core.accounts import AccountError, VIEWER
 from core.assets import Asset, AssetError, Assets
 from core.ai_narrative import (
-    build_chain_groups, narrative_from_dict, narrative_to_dict,
-    run_chain_analysis, run_narratives,
+    build_chain_groups, build_vuln_fact_from_payload, narrative_from_dict, narrative_to_dict,
+    run_chain_analysis, run_escalation_analysis, run_narratives,
 )
 from core.cli import _load_scan_result, revive_finding, revive_metadata
 from core.config import get_config
@@ -37,7 +38,7 @@ from core.models import Priority, ScanResult, to_jsonable
 from core.netacl import Allowlist
 from core.policy import load as load_policy
 from core.audit import AuditLog
-from core.prompt import build_chain_full_text, build_full_text
+from core.prompt import build_chain_full_text, build_escalation_full_text, build_full_text
 from core.render import to_html, to_markdown
 from core.report import ReportBuilder, _highest_version
 from core.ruleengine import RuleEngine
@@ -1312,6 +1313,147 @@ def make_narratives(scan_id: str, body: dict[str, Any] = Body(default={})) -> di
         "chained": len(chains),
         "stored": store.narrative_meta(scan_id),
     }
+
+
+# ---------------------------------------------------------------------------
+# 연계 상승 — 저위험 조합이 고위험으로 올라서는 경로
+# ---------------------------------------------------------------------------
+#
+# 이 도구에서 AI 가 실제로 값을 더하는 자리다. CVE 하나를 풀어 설명하는 것은
+# 룰 문장으로도 되지만, "이 두 개가 이어지면 각각일 때와 다른 결과에 도달한다"는
+# 판단은 벡터를 읽고 관계를 세워야 나온다.
+#
+# 후보 선정은 **우리가** 한다(core/escalation.py). CVSS 벡터에서 발판(PR:N)과
+# 상승(PR:L/H + 높은 영향)을 갈라 상한만큼 고르고, AI 는 그 사이의 연쇄 논리를
+# 서술한다. 48,923건을 보내는 것이 아니라 40건을 보낸다.
+
+
+def _escalation_payloads(scan_id: str) -> tuple[list[dict[str, Any]], int, bool]:
+    """분석 대상 payload. 고른 범위가 있으면 그 안에서, 없으면 스캔 전체에서.
+
+    상한을 넘으면 우선순위 순으로 앞에서부터 읽는다 — 후보 선정이 다시 한 번
+    거르므로, 여기서는 "볼 만한 것을 충분히 본다" 정도면 된다.
+    """
+    store = _store()
+    keys = store.get_selection(scan_id)
+    cap = config.escalation_scan_limit
+    if keys:
+        payloads = store.findings_by_keys(scan_id, keys[:cap])
+        return payloads, len(keys), True
+    total = store.scan_summary(scan_id)["total"]
+    return store.page_findings(scan_id, limit=cap)["findings"], total, False
+
+
+@app.get("/api/scans/{scan_id}/escalation")
+def get_escalation(scan_id: str) -> dict[str, Any]:
+    """저장된 연계 상승 분석. 없으면 후보만 세어 돌려준다.
+
+    **이 호출은 외부로 아무것도 보내지 않는다.** 후보 선정은 CVSS 벡터를 읽는
+    우리 코드이고, 화면은 생성 전에 "무엇을 보낼 것인가"를 먼저 보여 준다.
+    """
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    saved = store.get_escalation(scan_id)
+    payloads, scoped_total, scoped = _escalation_payloads(scan_id)
+    picked = escalation.pick(payloads, limit=config.escalation_limit)
+    scope = escalation.summarize(picked)
+
+    return {
+        "scan_id": scan_id,
+        "generated": saved is not None,
+        "result": saved,
+        "candidates": scope,
+        "scanned": len(payloads),
+        "scoped": scoped,
+        "scope_total": scoped_total,
+        "ai_ready": config.ai_ready(),
+        "model": config.gemini_model if config.ai_ready() else "",
+    }
+
+
+@app.get("/api/scans/{scan_id}/escalation/preview")
+def preview_escalation(scan_id: str) -> dict[str, Any]:
+    """연계 상승 요청에서 실제로 나갈 내용 전체. 여기서도 아무것도 보내지 않는다."""
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    payloads, _, _ = _escalation_payloads(scan_id)
+    picked = escalation.pick(payloads, limit=config.escalation_limit)
+    by_cve = {(p.get("intel") or {}).get("cve"): p for p in payloads}
+
+    def facts_for(role: str) -> list[dict[str, Any]]:
+        return [build_vuln_fact_from_payload(by_cve[c.cve])
+                for c in picked[role] if c.cve in by_cve]
+
+    footholds, escalations = facts_for(escalation.FOOTHOLD), facts_for(escalation.ESCALATION)
+    guard = EgressGuard.from_config(config)
+    checked = guard.check([*footholds, *escalations])
+
+    return {
+        "scan_id": scan_id,
+        "ok": checked.ok,
+        "violations": [v.to_dict() for v in checked.violations],
+        "candidates": escalation.summarize(picked),
+        "facts": {"footholds": footholds, "escalations": escalations},
+        "prompt": build_escalation_full_text(footholds, escalations),
+        "note": (
+            "이 내용이 AI에게 전달되는 전부입니다. 자산명·호스트명·IP·파일 경로·"
+            "설치 버전·취약 여부 판정·대응 우선순위는 포함되지 않습니다."
+        ),
+    }
+
+
+@app.post("/api/scans/{scan_id}/escalation")
+def make_escalation(scan_id: str) -> dict[str, Any]:
+    """연계 상승 분석을 생성해 저장한다. **스캔당 한 번**이다.
+
+    묻는 것이 "이 취약점들 사이의 관계"라 한 번에 한 묶음으로 물어야 답이
+    나온다 — 쪼개 보내면 모델이 서로를 볼 수 없다. 대신 보내는 양을 후보
+    선정으로 40건 남짓까지 줄여, 분당 토큰 한도 안에서 한 번에 끝낸다.
+    """
+    store = _store()
+    if store.get_scan_meta(scan_id) is None:
+        raise HTTPException(404, "스캔을 찾을 수 없습니다.")
+
+    if not config.ai_enabled:
+        raise HTTPException(
+            409,
+            "AI 사용이 꺼져 있습니다. SBOMSIGHT_AI_ENABLED=1 로 켜 주세요. "
+            "AI 없이도 보고서는 룰 기반으로 완결됩니다.",
+        )
+    if not config.gemini_api_key:
+        raise HTTPException(
+            409,
+            "GEMINI_API_KEY가 설정되어 있지 않습니다. .env 에 키를 넣고 서버를 다시 시작하세요.",
+        )
+
+    payloads, _, _ = _escalation_payloads(scan_id)
+    try:
+        run = run_escalation_analysis(
+            payloads, limit=config.escalation_limit, config=config, scan_id=scan_id
+        )
+    except EgressBlocked as blocked:
+        raise HTTPException(
+            422,
+            {
+                "message": "이그레스 정책 위반으로 전송이 차단되었습니다.",
+                "violations": [v.to_dict() for v in blocked.violations],
+            },
+        ) from blocked
+
+    payload = run.to_dict()
+    payload["created_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    store.save_escalation(scan_id, payload)
+    return {"scan_id": scan_id, **payload}
+
+
+@app.delete("/api/scans/{scan_id}/escalation")
+def drop_escalation(scan_id: str) -> dict[str, Any]:
+    _store().clear_escalation(scan_id)
+    return {"scan_id": scan_id, "cleared": True}
 
 
 @app.post("/api/scans/{scan_id}/chains")

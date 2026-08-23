@@ -44,6 +44,23 @@
     <div class="card" id="snapshot-card"></div>
   </section>
 
+  <!-- AI 분석. **따로 세운다.** 룰 문장과 같은 자리에 같은 모양으로 섞어 두면
+       켜도 달라지는 것이 없어 보인다 — 실제로 그렇게 읽혔다. -->
+  <section id="ai-section" class="hidden">
+    <h2>AI 연계 분석</h2>
+    <div class="card ai-card">
+      <div class="toolbar" style="margin-top:0">
+        <span class="ai-badge">AI</span>
+        <b id="ai-headline">저위험 조합이 고위험으로 올라서는 경로</b>
+        <div class="spacer"></div>
+        <span class="faint" id="ai-model"></span>
+        <button type="button" class="btn small" id="ai-preview">전송될 내용 보기</button>
+        <button type="button" class="btn small primary" id="ai-run">연계 분석 생성</button>
+      </div>
+      <div id="ai-body"></div>
+    </div>
+  </section>
+
   <section id="actions" class="hidden">
     <h2>조치 대상</h2>
     <p id="action-summary" class="muted"></p>
@@ -78,6 +95,8 @@
     <a class="btn small" id="cve-dl-md" download>Markdown</a>
     <a class="btn small" id="cve-dl-html" download>HTML</a>
     <button type="button" class="btn small" id="cve-print">인쇄 · PDF</button>
+    <button type="button" class="btn small primary" id="cve-ai" hidden>AI 해설 생성</button>
+    <span class="faint" id="cve-ai-status"></span>
     <button type="button" class="btn small" id="cve-close">닫기</button>
   </div>
   <div id="cve-body"></div>
@@ -323,6 +342,7 @@ function packageBlock(group) {
 
   return `
   <details class="pkg" data-priority="${esc(group.priority || '')}"
+           data-key="${esc(group.key || '')}"
            data-package="${esc(group.package)}" data-version="${esc(group.installed_version)}">
     <summary>
       <span class="pkg-name"><b>${esc(group.package)}</b>
@@ -351,7 +371,9 @@ async function expandPackage(details) {
   const version = details.dataset.version;
   try {
     const group = await provider.packageDetail(scanId(), pkg, { version, ai: useAi });
-    loaded.set(details.dataset.key, group);
+    // 묶음 상세 응답에는 key 가 없다(보고서 절이라). 표에서 쓰던 키를 얹어 둔다.
+    group.key = details.dataset.key;
+    loaded.set(group.key, group);
 
     body.innerHTML = `
       <div class="toolbar pkg-actions">
@@ -387,6 +409,184 @@ async function expandPackage(details) {
     body.innerHTML = `<div class="banner danger">${esc(error.message)}</div>`;
   }
 }
+
+// --- AI 연계 분석 ------------------------------------------------------------
+//
+// 이 도구에서 AI 가 실제로 값을 더하는 자리다. CVE 하나를 풀어 설명하는 것은
+// 룰 문장으로도 되고, 그래서 켜도 달라지는 것이 없어 보였다. 여기서 묻는 것은
+// 다르다: **각각으로는 중간 등급인 것이 이어지면 어디에 도달하는가.**
+//
+//     정보 노출(PR:N, C:H)  →  권한 상승(PR:L, C:H/I:H/A:H)
+//
+// 앞의 것이 뒤의 것이 요구하는 자격을 만들어 준다. 그 관계는 벡터를 읽고
+// 세워야 나오는 판단이라 룰로는 쓸 수 없다.
+//
+// 후보 선정은 우리가 한다 — CVSS 벡터에서 발판과 상승을 갈라 40건 남짓만
+// 보낸다. 48,923건을 보내지 않으므로 분당 토큰 한도 안에서 한 번에 끝난다.
+
+const CONFIDENCE_CLASS = { '높음': 'ok', '보통': 'warn', '낮음': '' };
+
+function chainCard(chain, index) {
+  const conf = CONFIDENCE_CLASS[chain.confidence] ?? '';
+  return `
+  <article class="chain">
+    <div class="chain-head">
+      <span class="chain-no">${index}</span>
+      <b>${esc(chain.title)}</b>
+      <span class="spacer"></span>
+      <span class="tag ${conf}">확신도 ${esc(chain.confidence)}</span>
+    </div>
+
+    <ol class="chain-steps">${(chain.steps || []).map((step) => `
+      <li>
+        <div class="chain-step-head">
+          <span class="chain-role">${esc(step.role)}</span>
+          <b class="mono">${esc(step.cve)}</b>
+        </div>
+        <p>${esc(step.why)}</p>
+      </li>`).join('')}</ol>
+
+    <dl class="chain-out">
+      <dt>이어졌을 때</dt><dd>${esc(chain.outcome)}</dd>
+      <dt>단독과의 차이</dt><dd>${esc(chain.escalation)}</dd>
+      ${chain.confidence_reason
+        ? `<dt>확신도 근거</dt><dd class="faint">${esc(chain.confidence_reason)}</dd>` : ''}
+    </dl>
+  </article>`;
+}
+
+function candidateNote(candidates) {
+  const counts = candidates?.counts || {};
+  const labels = candidates?.labels || {};
+  return `<p class="muted">CVSS 벡터에서 두 갈래를 갈라 보냈습니다 —
+    <b>발판 ${counts.foothold ?? 0}건</b> (${esc(labels.foothold || '')}),
+    <b>상승 ${counts.escalation ?? 0}건</b> (${esc(labels.escalation || '')}).
+    고르는 기준은 우리 코드이며, AI 는 그 사이의 연쇄 논리만 서술합니다.</p>`;
+}
+
+async function renderEscalation() {
+  const section = $('#ai-section');
+  const body = $('#ai-body');
+  const run = $('#ai-run');
+  const preview = $('#ai-preview');
+
+  let state;
+  try {
+    state = await provider.escalation(scanId());
+  } catch (error) {
+    section.classList.add('hidden');
+    console.warn('연계 분석 상태를 읽지 못했습니다:', error);
+    return;
+  }
+
+  section.classList.remove('hidden');
+  $('#ai-model').textContent = state.model || '';
+  const counts = state.candidates?.counts || {};
+  const pairable = (counts.foothold ?? 0) > 0 && (counts.escalation ?? 0) > 0;
+
+  run.hidden = !state.ai_ready;
+  preview.hidden = !pairable;
+  run.disabled = !pairable;
+  run.textContent = state.generated ? '다시 생성' : '연계 분석 생성';
+
+  // **이미 만들어 둔 것이 있으면 그것부터 그린다.** 지금 AI 가 꺼져 있어도
+  // 그때 만든 분석은 유효한 기록이다 — 키를 내린 뒤 보고서를 다시 여는 일이
+  // 흔하고, 그때 빈 화면이 나오면 만든 적이 없는 것처럼 보인다.
+  if (state.generated) {
+    drawEscalation(state.result, state.candidates);
+    if (!state.ai_ready) {
+      body.insertAdjacentHTML('beforeend',
+        '<div class="callout">지금은 AI 사용이 꺼져 있어 다시 생성할 수 없습니다. '
+        + '위 내용은 이전에 생성해 둔 것입니다.</div>');
+    }
+    return;
+  }
+
+  if (!state.ai_ready) {
+    body.innerHTML = `${candidateNote(state.candidates)}
+      <div class="callout">AI 사용이 꺼져 있거나 키가 설정되지 않았습니다.
+        <code>.env</code> 에 <code>SBOMSIGHT_AI_ENABLED=1</code> 과
+        <code>GEMINI_API_KEY</code> 를 넣고 서버를 다시 시작하면 이 절이 채워집니다.
+        <b>AI 없이도 보고서는 룰 기반으로 완결됩니다.</b></div>`;
+    return;
+  }
+
+  if (!pairable) {
+    body.innerHTML = `${candidateNote(state.candidates)}
+      <div class="callout">연쇄를 이루려면 자격 없이 성립하는 취약점과 자격을
+        요구하는 취약점이 모두 있어야 하는데, 이 범위에서는 한쪽만 확인되었습니다.
+        범위를 넓혀 다시 보시겠습니까?</div>`;
+    return;
+  }
+
+  body.innerHTML = `${candidateNote(state.candidates)}
+    <p class="muted">아직 만들지 않았습니다. <b>연계 분석 생성</b>을 누르면
+      위 ${(counts.foothold ?? 0) + (counts.escalation ?? 0)}건의 공개 데이터를
+      한 번 전송해 연쇄 가능성을 서술합니다.</p>`;
+}
+
+function drawEscalation(result, candidates) {
+  const body = $('#ai-body');
+  const chains = result?.chains || [];
+  $('#ai-model').textContent = result?.model || '';
+
+  body.innerHTML = `
+    ${candidateNote(candidates)}
+    ${result?.note ? `<p class="chain-note">${esc(result.note)}</p>` : ''}
+    ${chains.length
+      ? chains.map((chain, i) => chainCard(chain, i + 1)).join('')
+      : '<div class="callout">제시된 데이터로는 연쇄 가능성이 확인되지 않았습니다.</div>'}
+    ${(result?.rejected || []).length
+      ? `<div class="callout"><b>표현 정책에 걸린 서술 ${result.rejected.length}건은
+           반영하지 않았습니다.</b></div>` : ''}
+    ${(result?.errors || []).length
+      ? `<div class="banner danger">${esc(result.errors.join(' · '))}</div>` : ''}
+    <p class="faint">공개 데이터(CVSS 벡터 · CWE)만으로 세운 기술적 연계 가능성입니다.
+      실제 성립 여부는 노출 경로와 보상 통제를 함께 보아야 합니다.
+      ${result?.created_at ? `생성 ${esc(formatWhen(result.created_at))}` : ''}</p>`;
+}
+
+$('#ai-run').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = '분석 중…';
+  try {
+    const result = await provider.generateEscalation(scanId());
+    drawEscalation(result, result.scope);
+    button.textContent = '다시 생성';
+  } catch (error) {
+    $('#ai-body').insertAdjacentHTML('afterbegin',
+      `<div class="banner danger">${esc(error.message)}</div>`);
+    button.textContent = label;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#ai-preview').addEventListener('click', async () => {
+  const body = $('#ai-body');
+  body.insertAdjacentHTML('afterbegin', '<p class="muted" id="ai-loading">조립하는 중…</p>');
+  try {
+    const preview = await provider.escalationPreview(scanId());
+    $('#ai-loading')?.remove();
+    body.insertAdjacentHTML('afterbegin', `
+      <div class="callout" id="ai-preview-box">
+        <div class="toolbar" style="margin:0 0 .5rem">
+          <b>${preview.ok ? '전송 항목 확인됨' : '전송 차단'}</b>
+          <div class="spacer"></div>
+          <button type="button" class="btn small" id="ai-preview-close">닫기</button>
+        </div>
+        <p class="muted">${esc(preview.note || '')}</p>
+        <pre class="step-cmd" style="max-height:22rem;overflow:auto">${esc(preview.prompt || '')}</pre>
+      </div>`);
+    $('#ai-preview-close').addEventListener('click', () => $('#ai-preview-box').remove());
+  } catch (error) {
+    $('#ai-loading')?.remove();
+    body.insertAdjacentHTML('afterbegin',
+      `<div class="banner danger">${esc(error.message)}</div>`);
+  }
+});
 
 /**
  * AI 해설은 **패키지 하나씩** 만든다.
@@ -472,6 +672,7 @@ function openFinding(key, index) {
   const group = loaded.get(key);
   const item = group?.findings?.[index];
   if (!item) return;
+  group.key = key;
 
   $('#cve-title').textContent = `${item.cve} · ${group.package}`;
   $('#cve-body').innerHTML = renderFinding(item, index + 1);
@@ -484,7 +685,63 @@ function openFinding(key, index) {
     link.href = provider.reportUrl(scanId(), format, params);
     link.download = `sbomsight-${item.cve}.${format === 'markdown' ? 'md' : 'html'}`;
   }
+  wireCveAi(group, item);
   $('#cve-dialog').showModal();
+}
+
+/**
+ * 팝업 안의 **단건** AI 해설 생성.
+ *
+ * 가장 잘게 부르는 길이다. 패키지 단위도 CVE 가 많으면 한 번에 열 건이
+ * 넘는데, 여기서는 한 건이다 — 분당 토큰이 빠듯할 때 이것부터 쓰면 된다.
+ * 서버는 패키지 단위로 받으므로 그 묶음을 만들고, 이미 만들어진 것은
+ * 다시 만들지 않는다.
+ */
+function wireCveAi(group, item) {
+  const button = $('#cve-ai');
+  const status = $('#cve-ai-status');
+  const fresh = button.cloneNode(true);          // 이전 리스너를 떼어 낸다
+  button.replaceWith(fresh);
+
+  if (!aiReady) {
+    fresh.hidden = true;
+    status.textContent = '';
+    return;
+  }
+  if (item.narrative_source === 'ai') {
+    fresh.hidden = true;
+    status.textContent = 'AI 해설 적용됨';
+    return;
+  }
+
+  fresh.hidden = false;
+  status.textContent = '';
+  fresh.addEventListener('click', async () => {
+    fresh.disabled = true;
+    status.textContent = '생성 중…';
+    try {
+      const result = await provider.generateNarratives(scanId(), {
+        package: group.package, version: group.installed_version,
+      });
+      status.textContent = `${result.applied}/${result.requested}건 적용했습니다`;
+      useAi = true;
+      $('#use-ai').checked = true;
+      // 이 묶음을 다시 받아 팝업과 표를 새 서술로 바꾼다.
+      const details = $(`details.pkg[data-key="${CSS.escape(group.key || '')}"]`);
+      if (details) {
+        details.dataset.loaded = '';
+        await expandPackage(details);
+        const refreshed = loaded.get(group.key);
+        const again = (refreshed?.findings || []).findIndex((f) => f.cve === item.cve);
+        if (again >= 0) openFinding(group.key, again);
+      }
+    } catch (error) {
+      status.textContent = '';
+      $('#cve-body').insertAdjacentHTML('afterbegin',
+        `<div class="banner danger">${esc(error.message)}</div>`);
+      fresh.disabled = false;
+    }
+  });
 }
 
 $('#cve-close').addEventListener('click', () => $('#cve-dialog').close());
@@ -600,7 +857,7 @@ async function load(id) {
   }
 
   pkgOffset = Number(params.get('pkg') || 0) || 0;
-  await renderPackages({ pushUrl: false });
+  await Promise.all([renderPackages({ pushUrl: false }), renderEscalation()]);
 
   if (onePackage) {
     const only = $('#packages').querySelector('details.pkg');

@@ -18,7 +18,6 @@ from core.models import ScanResult
 from core.normalize import normalize_grype_report
 from core.store import Store
 
-from .test_server import seeded_scan  # noqa: F401
 
 FIXTURE = Path(__file__).parent / "fixtures" / "grype-sample.json"
 

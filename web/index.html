@@ -131,8 +131,9 @@ async function render() {
 
   $('#assets').innerHTML = `<div class="card"><div class="table-scroll"><table>
     <thead><tr>
-      <th>서버</th><th>그룹</th><th>운영체제</th><th>비고</th>
-      <th>마지막 스캔</th><th class="num">탐지</th><th class="num">스캔</th>
+      <th>서버</th><th>그룹</th><th>운영체제</th>
+      <th class="tight">마지막 스캔</th><th class="num tight">탐지</th><th class="num tight">스캔</th>
+      <th>비고</th>
     </tr></thead>
     <tbody>${assets.map((a) => {
       const age = staleness(a.last_scan_at);
@@ -140,11 +141,11 @@ async function render() {
         <td><a href="asset.html?id=${encodeURIComponent(a.asset_id)}"><b>${esc(a.name)}</b></a></td>
         <td>${esc(a.group_name || '—')}</td>
         <td>${esc(a.os || '—')}</td>
-        <td class="faint">${esc(a.note || '—')}</td>
-        <td class="${age.cls}">${esc(age.text)}
+        <td class="tight ${age.cls}">${esc(age.text)}
           ${a.last_scan_at ? `<span class="faint">${esc(formatWhen(a.last_scan_at))}</span>` : ''}</td>
-        <td class="num">${a.last_scan_at ? a.last_finding_count : '—'}</td>
-        <td class="num">${a.scan_count}</td>
+        <td class="num tight">${a.last_scan_at ? a.last_finding_count.toLocaleString() : '—'}</td>
+        <td class="num tight">${a.scan_count}</td>
+        <td class="faint">${esc(a.note || '—')}</td>
       </tr>`;
     }).join('')}</tbody></table></div></div>`;
 }

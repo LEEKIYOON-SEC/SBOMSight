@@ -84,6 +84,14 @@ class Config:
     # 부르므로, 8,154개 패키지를 통째로 고르면 48,923번이 되고 그것은 몇 시간에
     # 토큰 한도를 훨씬 넘는 양이다. 조용히 자르지 않고 여기서 거절한다.
     ai_max_findings: int = field(default_factory=lambda: _env_int("SBOMSIGHT_AI_MAX_FINDINGS", 300))
+    # 연계 상승 분석. 갈래(발판/상승)마다 이만큼 고른다 — 둘이면 40건 남짓이고
+    # 프롬프트가 12~15K 토큰이라 분당 토큰 한도 안에서 한 번에 끝난다.
+    escalation_limit: int = field(
+        default_factory=lambda: _env_int("SBOMSIGHT_ESCALATION_LIMIT", 20))
+    # 후보를 고르려고 훑는 범위. 48,923건을 전부 파이썬으로 되살리지 않는다 —
+    # 우선순위 순으로 앞에서부터 이만큼만 보아도 발판·상승 후보는 충분히 나온다.
+    escalation_scan_limit: int = field(
+        default_factory=lambda: _env_int("SBOMSIGHT_ESCALATION_SCAN_LIMIT", 4000))
 
     # --- 서버 ---------------------------------------------------------------
     host: str = field(default_factory=lambda: _env("SBOMSIGHT_HOST") or "127.0.0.1")

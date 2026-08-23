@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any
 
+from . import escalation
 from .audit import AuditLog
 from .config import Config, get_config
 from .gemini import GeminiClient, GeminiError, GeminiUnavailable
@@ -23,7 +24,7 @@ from .prompt import NARRATIVE_FIELDS
 from .report import Narrative
 from .sanitizer import EgressBlocked, EgressGuard
 from .tone import ToneGuard
-from .vulnfact import build_batch
+from .vulnfact import build_batch, build_from_finding
 
 logger = logging.getLogger(__name__)
 
@@ -373,3 +374,147 @@ def run_chain_analysis(
         analyses=analyses, rejected=tuple(rejected), errors=tuple(errors),
         model=model, requested=len(groups),
     )
+
+
+# ---------------------------------------------------------------------------
+# 연계 상승 — 패키지를 가로지른다
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class EscalationRun:
+    """연계 상승 분석 1회의 결과와 경위."""
+
+    chains: tuple[dict[str, Any], ...] = ()
+    note: str = ""
+    scope: dict[str, Any] = dataclass_field(default_factory=dict)
+    rejected: tuple[dict[str, Any], ...] = ()
+    errors: tuple[str, ...] = ()
+    model: str = ""
+    requested: int = 0
+    available: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "chains": list(self.chains),
+            "note": self.note,
+            "scope": self.scope,
+            "found": len(self.chains),
+            "requested": self.requested,
+            "rejected": list(self.rejected),
+            "errors": list(self.errors),
+            "model": self.model,
+            "available": self.available,
+        }
+
+
+def run_escalation_analysis(
+    payloads: list[dict[str, Any]],
+    *,
+    limit: int = escalation.DEFAULT_LIMIT,
+    config: Config | None = None,
+    scan_id: str = "",
+) -> EscalationRun:
+    """저위험 조합이 고위험으로 상승하는 경로를 찾는다.
+
+    **후보 선정은 우리가 한다.** CVSS 벡터에서 `PR:N`(발판)과 `PR:L/H` + 높은
+    영향(상승)을 읽어 두 갈래로 나누고, KEV·EPSS·CVSS 순으로 상한만큼 고른다.
+    AI 는 고른 것들 사이의 연쇄 논리를 서술할 뿐이며, 등급을 매기지 않는다.
+
+    나가는 것은 여전히 VulnFact 뿐이다 — 어느 자산의 것인지, 실제로 함께
+    설치되어 있는지는 전달되지 않는다.
+    """
+    config = config or get_config()
+    guard = EgressGuard.from_config(config)
+    audit = AuditLog(config.audit_dir)
+    client = GeminiClient(config, guard=guard, audit=audit)
+    tone = ToneGuard.from_config(config)
+
+    picked = escalation.pick(payloads, limit=limit)
+    scope = escalation.summarize(picked)
+    by_cve = {(p.get("intel") or {}).get("cve"): p for p in payloads}
+
+    def facts_for(role: str) -> list[dict[str, Any]]:
+        out = []
+        for candidate in picked[role]:
+            payload = by_cve.get(candidate.cve)
+            if payload is not None:
+                out.append(build_vuln_fact_from_payload(payload))
+        return out
+
+    footholds = facts_for(escalation.FOOTHOLD)
+    escalations = facts_for(escalation.ESCALATION)
+    requested = len(footholds) + len(escalations)
+
+    if not client.available():
+        return EscalationRun(available=False, scope=scope, requested=requested)
+    if not footholds or not escalations:
+        # 한 갈래만 있으면 엮을 상대가 없다. 모델을 부르지 않는다.
+        return EscalationRun(
+            scope=scope, requested=requested,
+            note="연쇄를 이루려면 자격 없이 성립하는 취약점과 자격을 요구하는 "
+                 "취약점이 모두 있어야 하는데, 한쪽만 확인되었습니다.",
+        )
+
+    try:
+        result = client.analyze_escalation(footholds, escalations, scan_id=scan_id)
+    except EgressBlocked:
+        raise
+    except (GeminiUnavailable, GeminiError) as exc:
+        logger.warning("연계 상승 분석 실패: %s", exc)
+        return EscalationRun(scope=scope, requested=requested, errors=(str(exc),))
+
+    known = {f["cve"] for f in footholds} | {f["cve"] for f in escalations}
+    chains: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+
+    for chain in result.analyses:
+        steps = [s for s in (chain.get("steps") or []) if str(s.get("cve") or "") in known]
+        if len(steps) < 2:
+            # 두 단계가 안 되면 연쇄가 아니다. 보낸 적 없는 CVE 가 섞였으면 버린다.
+            continue
+        text = " ".join(str(chain.get(k) or "") for k in ("title", "outcome", "escalation"))
+        text += " " + " ".join(str(s.get("why") or "") for s in steps)
+        violations = tone.inspect({"escalation": text})
+        if violations:
+            logger.warning("표현 정책 위반 %s — 이 연쇄를 버립니다",
+                           [v.rule for v in violations])
+            rejected.append({
+                "title": str(chain.get("title") or ""),
+                "rules": sorted({v.rule for v in violations}),
+            })
+            continue
+        chains.append({
+            "title": str(chain.get("title") or ""),
+            "steps": [{
+                "cve": str(s.get("cve") or ""),
+                "role": str(s.get("role") or ""),
+                "why": str(s.get("why") or ""),
+            } for s in steps],
+            "outcome": str(chain.get("outcome") or ""),
+            "escalation": str(chain.get("escalation") or ""),
+            "confidence": str(chain.get("confidence") or "보통"),
+            "confidence_reason": str(chain.get("confidence_reason") or ""),
+        })
+
+    return EscalationRun(
+        chains=tuple(chains),
+        note=str(result.extra.get("note") or ""),
+        scope=scope,
+        rejected=tuple(rejected),
+        model=result.model,
+        requested=requested,
+    )
+
+
+def build_vuln_fact_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """저장된 finding payload 에서 VulnFact 를 만든다.
+
+    **직접 조립하지 않는다.** payload 를 Finding 으로 되살린 뒤
+    `core.vulnfact.build_from_finding` 에 넘긴다. 화이트리스트가 두 벌이 되면
+    한쪽만 고쳐지는 날이 오고, 실제로 처음 짤 때 `fix_state`(금칙 필드)를
+    넣어 이그레스 가드에 막혔다. 조립기는 하나여야 한다.
+    """
+    from .cli import revive_finding
+
+    return build_from_finding(revive_finding(payload))

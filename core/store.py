@@ -1102,6 +1102,28 @@ class Store:
             ).fetchall()
         return {r["package"]: r["analysis"] for r in rows}
 
+    # --- 연계 상승 ---------------------------------------------------------
+    #
+    # 스캔 하나에 하나. 패키지 안이 아니라 **패키지를 가로지르는** 분석이라
+    # 붙일 자리가 스캔밖에 없다. `meta` 테이블에 JSON 으로 둔다 — 스키마를
+    # 하나 더 만들 만큼 구조가 굳지 않았고, 지우고 다시 만드는 값이다.
+
+    def save_escalation(self, scan_id: str, payload: dict[str, Any]) -> None:
+        self.meta_set(f"escalation:{scan_id}", json.dumps(payload, ensure_ascii=False))
+
+    def get_escalation(self, scan_id: str) -> dict[str, Any] | None:
+        raw = self.meta_get(f"escalation:{scan_id}", "")
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+
+    def clear_escalation(self, scan_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM meta WHERE key = ?", (f"escalation:{scan_id}",))
+
     # --- 위협정보 캐시 -----------------------------------------------------
 
     def cache_put(self, source: str, key: str, payload: Any) -> None:

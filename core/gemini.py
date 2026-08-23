@@ -13,13 +13,14 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import Any
 
 from .audit import AuditLog
 from .config import Config, get_config
 from .prompt import (
-    CHAIN_RESPONSE_SCHEMA, RESPONSE_SCHEMA, SYSTEM_INSTRUCTION,
-    build_chain_prompt, build_prompt,
+    CHAIN_RESPONSE_SCHEMA, ESCALATION_RESPONSE_SCHEMA, RESPONSE_SCHEMA, SYSTEM_INSTRUCTION,
+    build_chain_prompt, build_escalation_prompt, build_prompt,
 )
 from .sanitizer import EgressBlocked, EgressGuard
 
@@ -38,6 +39,9 @@ class GeminiResult:
     model: str
     attempts: int
     raw_length: int
+    #: 배열 밖의 상위 필드. 연계 상승 분석의 `note` 처럼 목록에 속하지 않는
+    #: 값을 호출부가 읽을 수 있게 남긴다. 응답 전문을 그대로 두지는 않는다.
+    extra: dict[str, Any] = dataclass_field(default_factory=dict)
 
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
@@ -124,6 +128,32 @@ class GeminiClient:
             flat, build_chain_prompt(groups), CHAIN_RESPONSE_SCHEMA, "chains", scan_id=scan_id
         )
 
+    def analyze_escalation(
+        self,
+        footholds: list[dict[str, Any]],
+        escalations: list[dict[str, Any]],
+        *,
+        scan_id: str = "",
+    ) -> GeminiResult:
+        """**패키지를 가로지르는** 연계 상승 분석.
+
+        묻는 것은 하나다: 자격 없이 성립하는 취약점이 자격을 요구하는 취약점의
+        전제를 충족시켜, 각각으로는 중간 등급인 것이 이어지면 훨씬 큰 영향에
+        도달하는가.
+
+        나가는 것은 여전히 가드를 통과한 VulnFact 뿐이다. 두 갈래로 나눈 것은
+        우리 쪽 CVSS 벡터 판정이며, 그 자체가 공개 데이터에서 읽히는 값이다.
+        """
+        flat = [*footholds, *escalations]
+        self._guarded(flat, scan_id=scan_id)
+        return self._request(
+            flat,
+            build_escalation_prompt(footholds, escalations),
+            ESCALATION_RESPONSE_SCHEMA,
+            "chains",
+            scan_id=scan_id,
+        )
+
     def _guarded(self, facts: list[dict[str, Any]], *, scan_id: str) -> list[dict[str, Any]]:
         """마지막 관문. 여기를 통과하지 못한 것은 절대로 나가지 않는다."""
         try:
@@ -181,7 +211,8 @@ class GeminiClient:
                         scan_id=scan_id, model=model,
                     )
                     return GeminiResult(
-                        analyses=analyses, model=model, attempts=attempts, raw_length=len(text)
+                        analyses=analyses, model=model, attempts=attempts, raw_length=len(text),
+                        extra={k: v for k, v in payload.items() if k != key},
                     )
 
                 except Exception as exc:  # noqa: BLE001 - SDK 예외 종류가 다양하다
