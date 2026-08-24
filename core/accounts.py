@@ -41,6 +41,10 @@ _SALT_BYTES = 16
 _KEY_BYTES = 32
 
 SESSION_TTL_HOURS = 12
+# 놀고 있는 세션의 수명. 자리를 비운 화면이 계속 열려 있으면, 그 화면은 "어느
+# 서버에 무엇이 열려 있는가"를 그대로 보여 주는 창이다. 마지막 요청으로부터
+# 이만큼 지나면 끊는다 — 절대 만료(TTL)와는 별개로 먼저 걸린다.
+SESSION_IDLE_MINUTES = 10
 MIN_PASSWORD_LEN = 8
 
 _SCHEMA = """
@@ -59,7 +63,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     username   TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    expires_at TEXT NOT NULL
+    expires_at TEXT NOT NULL,
+    -- 마지막 요청 시각. 유휴 만료의 기준이다. expires_at 만 있으면 "12시간
+    -- 동안 한 번도 안 쓴 세션"과 "12시간 내내 쓴 세션"을 구분할 수 없다.
+    last_seen_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(username);
 """
@@ -97,10 +104,33 @@ class Session:
     username: str
     role: str
     expires_at: str
+    last_seen_at: str = ""
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _minus(minutes: int) -> str:
+    """`minutes` 분 전 시각. 이보다 오래된 `last_seen_at` 은 유휴다."""
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(timespec="seconds")
+
+
+# 유휴 시계를 되감는 최소 간격. 화면 한 장을 여는 데 HTML·CSS·JS 모듈·API 로
+# 스무 번 남짓 요청이 나가는데, 그때마다 UPDATE 를 걸면 페이지 한 장에 쓰기
+# 트랜잭션이 스무 번이다. 30초 간격이면 10분 창을 재는 데 오차가 없다.
+_TOUCH_SECONDS = 30
+
+
+def _stale(seen: str, now: str) -> bool:
+    """마지막으로 기록한 활동 시각이 `_TOUCH_SECONDS` 보다 오래됐는가."""
+    if not seen:
+        return True
+    try:
+        gap = datetime.fromisoformat(now) - datetime.fromisoformat(seen)
+    except ValueError:
+        return True
+    return gap >= timedelta(seconds=_TOUCH_SECONDS)
 
 
 def hash_password(password: str) -> str:
@@ -171,6 +201,14 @@ class Accounts:
             names = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
             if "must_change" not in names:
                 conn.execute("ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0")
+
+            names = {r["name"] for r in conn.execute("PRAGMA table_info(sessions)")}
+            if "last_seen_at" not in names:
+                conn.execute("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''")
+                # 기존 세션은 마지막 요청 시각을 모른다. 시작 시각으로 채운다 —
+                # 빈 값으로 두면 유휴 판정이 "아주 오래됨"이 되어 로그인한 지
+                # 1분 된 사람까지 끊긴다.
+                conn.execute("UPDATE sessions SET last_seen_at = created_at WHERE last_seen_at = ''")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -319,14 +357,31 @@ class Accounts:
 
     # --- 세션 -------------------------------------------------------------
 
-    def open_session(self, username: str, *, ttl_hours: int = SESSION_TTL_HOURS) -> Session:
+    def open_session(
+        self,
+        username: str,
+        *,
+        ttl_hours: int = SESSION_TTL_HOURS,
+        idle_minutes: int = SESSION_IDLE_MINUTES,
+    ) -> Session:
+        """로그인. 이때 죽은 세션도 함께 쓸어 낸다.
+
+        `resolve` 는 물어본 토큰 하나만 지운다. 유휴로 끊긴 세션은 아무도 다시
+        묻지 않으므로 그 줄이 영영 남는다 — 유휴 만료가 10분이면 하루 몇 번의
+        로그인이 그대로 쌓인다. 로그인은 드물게 일어나고 어차피 이 표에 줄을
+        하나 더 넣는 자리라, 여기서 치우는 것이 가장 싸다.
+        """
+        self.purge_expired(idle_minutes=idle_minutes)
+
         token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
         expires = (now + timedelta(hours=ttl_hours)).isoformat(timespec="seconds")
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO sessions (token, username, created_at, expires_at) VALUES (?,?,?,?)",
-                (token, username, now.isoformat(timespec="seconds"), expires),
+                "INSERT INTO sessions (token, username, created_at, expires_at, last_seen_at) "
+                "VALUES (?,?,?,?,?)",
+                (token, username, now.isoformat(timespec="seconds"), expires,
+                 now.isoformat(timespec="seconds")),
             )
             conn.execute(
                 "UPDATE users SET last_login_at = ? WHERE username = ?",
@@ -337,30 +392,59 @@ class Accounts:
             ).fetchone()["role"]
         return Session(token=token, username=username, role=role, expires_at=expires)
 
-    def resolve(self, token: str) -> Session | None:
-        """토큰으로 세션을 찾는다. 만료된 것은 그 자리에서 지운다."""
+    def resolve(self, token: str, *, idle_minutes: int = SESSION_IDLE_MINUTES) -> Session | None:
+        """토큰으로 세션을 찾는다. 만료된 것은 그 자리에서 지운다.
+
+        만료는 두 가지다.
+
+        - **절대 만료**(`expires_at`): 로그인한 지 오래됐다. 계속 쓰고 있어도 끊는다.
+        - **유휴 만료**(`last_seen_at`): 마지막 요청으로부터 오래됐다. 자리를 비운
+          화면을 계속 열어 두지 않기 위한 것이고, 실제로 먼저 걸리는 쪽이다.
+
+        이 호출 자체가 곧 "요청이 하나 왔다"이므로 유휴 시계를 여기서 되감는다.
+        쓰고 있는 동안 창이 밀려 나가면 안 되기 때문이다.
+
+        `idle_minutes <= 0` 이면 유휴 만료를 걸지 않는다(절대 만료만 남는다).
+        """
         if not token:
             return None
+        now = _now()
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT s.token, s.username, s.expires_at, u.role FROM sessions s "
+                "SELECT s.token, s.username, s.expires_at, s.last_seen_at, u.role FROM sessions s "
                 "JOIN users u ON u.username = s.username WHERE s.token = ?",
                 (token,),
             ).fetchone()
             if row is None:
                 return None
-            if row["expires_at"] <= _now():
+
+            idle_cutoff = _minus(idle_minutes) if idle_minutes > 0 else ""
+            seen = row["last_seen_at"] or row["expires_at"]
+            if row["expires_at"] <= now or (idle_cutoff and seen <= idle_cutoff):
                 conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
                 return None
+
+            if _stale(seen, now):
+                conn.execute(
+                    "UPDATE sessions SET last_seen_at = ? WHERE token = ?", (now, token)
+                )
+                seen = now
+
         return Session(
             token=row["token"], username=row["username"],
-            role=row["role"], expires_at=row["expires_at"],
+            role=row["role"], expires_at=row["expires_at"], last_seen_at=seen,
         )
 
     def close_session(self, token: str) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
 
-    def purge_expired(self) -> int:
+    def purge_expired(self, *, idle_minutes: int = SESSION_IDLE_MINUTES) -> int:
         with self._connect() as conn:
+            if idle_minutes > 0:
+                return conn.execute(
+                    "DELETE FROM sessions WHERE expires_at <= ? OR "
+                    "COALESCE(NULLIF(last_seen_at, ''), expires_at) <= ?",
+                    (_now(), _minus(idle_minutes)),
+                ).rowcount
             return conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (_now(),)).rowcount

@@ -193,8 +193,12 @@ class AccessMiddleware(BaseHTTPMiddleware):
 
         path = request.url.path
 
-        # ② 세션 확인.
-        session = self.access.accounts.resolve(request.cookies.get(COOKIE, ""))
+        # ② 세션 확인. 이 호출이 유휴 시계도 되감는다 — 요청이 오고 있다는 것이
+        #    곧 쓰고 있다는 뜻이다. 반대로 아무 요청도 없으면 그대로 만료된다.
+        session = self.access.accounts.resolve(
+            request.cookies.get(COOKIE, ""),
+            idle_minutes=self.access.config.session_idle_minutes,
+        )
         if session is not None:
             request.state.user = session
 

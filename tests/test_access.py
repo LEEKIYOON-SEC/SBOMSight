@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -165,6 +167,132 @@ class TestSessions:
 
 
 # ---------------------------------------------------------------------------
+# 유휴 만료
+#
+# 절대 만료(TTL)만 있으면 "12시간 내내 쓴 세션"과 "로그인만 해 두고 자리를 비운
+# 세션"이 똑같이 살아 있다. 후자가 열어 둔 창은 어느 서버에 무엇이 열려 있는지
+# 그대로 보여 준다.
+# ---------------------------------------------------------------------------
+
+
+def _seen(accounts, token, when):
+    """마지막 활동 시각을 원하는 값으로 되돌린다 — 10분을 실제로 기다릴 수는 없다."""
+    with accounts._connect() as conn:
+        conn.execute("UPDATE sessions SET last_seen_at = ? WHERE token = ?", (when, token))
+
+
+def _ago(minutes):
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(timespec="seconds")
+
+
+class TestIdleExpiry:
+    def test_idle_session_is_rejected_and_removed(self, accounts):
+        accounts.create("alice", "alice-password")
+        session = accounts.open_session("alice")  # TTL 은 12시간, 아직 한참 남았다
+        _seen(accounts, session.token, _ago(11))
+
+        assert accounts.resolve(session.token, idle_minutes=10) is None
+        with accounts._connect() as conn:
+            assert conn.execute("SELECT COUNT(*) AS n FROM sessions").fetchone()["n"] == 0
+
+    def test_recent_activity_keeps_it(self, accounts):
+        accounts.create("alice", "alice-password")
+        session = accounts.open_session("alice")
+        _seen(accounts, session.token, _ago(9))
+        assert accounts.resolve(session.token, idle_minutes=10) is not None
+
+    def test_use_slides_the_window(self, accounts):
+        """쓰고 있는 동안에는 밀려나지 않아야 한다. 요청 하나가 곧 활동이다."""
+        accounts.create("alice", "alice-password")
+        session = accounts.open_session("alice")
+
+        _seen(accounts, session.token, _ago(9))
+        assert accounts.resolve(session.token, idle_minutes=10) is not None  # 시계가 되감긴다
+        _seen(accounts, session.token, _ago(9))  # 그로부터 다시 9분
+        assert accounts.resolve(session.token, idle_minutes=10) is not None
+
+    def test_touch_is_throttled(self, accounts):
+        """화면 한 장에 요청이 스무 번 나간다. 그때마다 쓰기를 걸지 않는다."""
+        accounts.create("alice", "alice-password")
+        session = accounts.open_session("alice")
+        with accounts._connect() as conn:
+            before = conn.execute(
+                "SELECT last_seen_at FROM sessions WHERE token = ?", (session.token,)
+            ).fetchone()["last_seen_at"]
+
+        for _ in range(20):
+            accounts.resolve(session.token, idle_minutes=10)
+
+        with accounts._connect() as conn:
+            after = conn.execute(
+                "SELECT last_seen_at FROM sessions WHERE token = ?", (session.token,)
+            ).fetchone()["last_seen_at"]
+        assert after == before
+
+    def test_absolute_expiry_still_wins(self, accounts):
+        """방금 썼더라도 로그인한 지 오래됐으면 끊는다."""
+        accounts.create("alice", "alice-password")
+        session = accounts.open_session("alice", ttl_hours=-1)
+        _seen(accounts, session.token, _ago(0))
+        assert accounts.resolve(session.token, idle_minutes=10) is None
+
+    def test_zero_disables_idle_expiry(self, accounts):
+        accounts.create("alice", "alice-password")
+        session = accounts.open_session("alice")
+        _seen(accounts, session.token, _ago(600))
+        assert accounts.resolve(session.token, idle_minutes=0) is not None
+
+    def test_purge_sweeps_idle_sessions(self, accounts):
+        accounts.create("alice", "alice-password")
+        stale = accounts.open_session("alice")
+        fresh = accounts.open_session("alice")
+        _seen(accounts, stale.token, _ago(30))
+
+        assert accounts.purge_expired(idle_minutes=10) == 1
+        assert accounts.resolve(fresh.token, idle_minutes=10) is not None
+
+    def test_login_sweeps_the_dead_ones(self, accounts):
+        """유휴로 끊긴 세션은 아무도 다시 묻지 않아 그 줄이 영영 남는다.
+        로그인이 드물게 일어나므로 그때 치운다."""
+        accounts.create("alice", "alice-password")
+        for _ in range(3):
+            _seen(accounts, accounts.open_session("alice").token, _ago(30))
+
+        accounts.open_session("alice", idle_minutes=10)
+        with accounts._connect() as conn:
+            assert conn.execute("SELECT COUNT(*) AS n FROM sessions").fetchone()["n"] == 1
+
+    def test_old_db_without_the_column_keeps_working(self, tmp_path):
+        """`last_seen_at` 이 없던 DB. 컬럼을 붙이면서 로그인해 둔 사람이
+        그 자리에서 튕겨 나가면 안 된다."""
+        import sqlite3
+
+        db = tmp_path / "old.db"
+        conn = sqlite3.connect(db)
+        conn.executescript("""
+            CREATE TABLE users (username TEXT PRIMARY KEY, pw_hash TEXT NOT NULL,
+                role TEXT NOT NULL, created_at TEXT NOT NULL,
+                last_login_at TEXT NOT NULL DEFAULT '');
+            CREATE TABLE sessions (token TEXT PRIMARY KEY, username TEXT NOT NULL,
+                created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+        """)
+        conn.execute(
+            "INSERT INTO users VALUES (?,?,?,?,?)",
+            ("alice", hash_password("alice-password"), "admin", _ago(0), ""),
+        )
+        conn.execute(
+            "INSERT INTO sessions VALUES (?,?,?,?)",
+            ("old-token", "alice", _ago(1), _ago(-600)),
+        )
+        conn.commit()
+        conn.close()
+
+        migrated = Accounts(db)
+        # 시작 시각으로 채워지므로 1분 전 로그인은 그대로 살아 있다.
+        assert migrated.resolve("old-token", idle_minutes=10) is not None
+
+
+# ---------------------------------------------------------------------------
 # IP 허용 목록
 # ---------------------------------------------------------------------------
 
@@ -308,6 +436,32 @@ class TestLoginGate:
             anon.post("/api/auth/login", json={"username": "tester", "password": "nope"})
         blocked = anon.post("/api/auth/login", json=ADMIN)
         assert blocked.status_code == 429
+
+    def test_idle_session_is_logged_out(self, client):
+        """자리를 비운 세션은 문 앞에서 끊긴다. 쿠키가 남아 있어도 마찬가지다."""
+        import server.app
+
+        assert client.get("/api/scans").status_code == 200
+        _seen(server.app.access.accounts, client.cookies["sbomsight_session"], _ago(11))
+
+        assert client.get("/api/scans").status_code == 401
+        page = client.get("/scan.html", headers={"accept": "text/html"}, follow_redirects=False)
+        assert page.status_code == 302
+        assert page.headers["location"].startswith("/login.html?next=/scan.html")
+
+    def test_state_tells_the_browser_the_idle_window(self, client):
+        """화면이 스스로 유휴를 재려면 몇 분인지 알아야 한다."""
+        assert client.get("/api/auth/state").json()["idle_minutes"] == 10
+
+    def test_activity_keeps_the_session(self, client):
+        """계속 쓰는 동안에는 끊기지 않는다 — 요청 하나하나가 활동이다."""
+        import server.app
+
+        token = client.cookies["sbomsight_session"]
+        accounts = server.app.access.accounts
+        for _ in range(3):
+            _seen(accounts, token, _ago(9))  # 9분 놀았다가
+            assert client.get("/api/scans").status_code == 200  # 다시 쓴다
 
 
 class TestRoles:

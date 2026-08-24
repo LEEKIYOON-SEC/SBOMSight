@@ -201,6 +201,31 @@ class TestScanAssignment:
         assert summary["asset-a"]["last_scan_at"] == "2026-06-01T00:00:00+00:00"
         assert summary["asset-b"]["last_scan_id"] == "other"
 
+    def test_summary_carries_the_priority_breakdown(self, store):
+        """목록에서 알고 싶은 것은 "몇 건인가"가 아니라 "급한 게 있나"다.
+
+        48,923건이라는 숫자 하나로는 오늘 어느 서버부터 볼지 못 고른다.
+        """
+        from core.ruleengine import RuleEngine
+
+        result = normalize_grype_report(
+            json.loads(FIXTURE.read_text(encoding="utf-8")),
+            scan_id="judged", sbom_filename="judged.json",
+        )
+        judged = RuleEngine.from_config().apply(result.findings)
+        object.__setattr__(result, "findings", judged)
+        store.save_scan(result, asset_id="asset-a")
+
+        counts = store.asset_summary()["asset-a"]["last_priority_counts"]
+        assert counts  # 판정이 붙은 스캔이면 비어 있지 않다
+        assert sum(counts.values()) == len(judged)
+        assert set(counts) <= {"P0", "P1", "P2", "P3"}
+
+    def test_summary_leaves_the_breakdown_empty_when_nothing_was_judged(self, store):
+        """판정이 없는 건을 임의의 등급에 얹지 않는다 — 없는 판정을 지어내는 것이다."""
+        self._save(store, "raw", "asset-a")
+        assert store.asset_summary()["asset-a"]["last_priority_counts"] == {}
+
 
 class TestMigration:
     def test_existing_database_gains_asset_id_without_losing_scans(self, tmp_path):

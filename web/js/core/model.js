@@ -23,6 +23,20 @@ export const PRIORITY_LABEL = {
   P3: '모니터링',
 };
 
+/**
+ * 네 등급을 한 칸에 나란히 놓을 때 쓴다.
+ *
+ * `즉시 검토 4 · 우선 검토 12 · …` 는 한 칸에 다 넣으면 "검토"만 네 번 읽힌다.
+ * 열 이름이 이미 **대응 검토** 라서 칸 안에서는 앞 두 글자로 충분하다. 열 이름이
+ * 없는 자리에서는 이 짧은 이름을 쓰지 않는다.
+ */
+export const PRIORITY_SHORT = {
+  P0: '즉시',
+  P1: '우선',
+  P2: '계획',
+  P3: '모니터링',
+};
+
 export const TERNARY_LABEL = { true: '예', false: '아니오', unknown: '미확인' };
 
 export const FIX_STATE_LABEL = {

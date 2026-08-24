@@ -109,6 +109,11 @@ class Config:
     # 비어 있으면 IP 제한 없음(로그인은 여전히 필요하다).
     allowed_ips: str = field(default_factory=lambda: _env("SBOMSIGHT_ALLOWED_IPS"))
     session_ttl_hours: int = field(default_factory=lambda: _env_int("SBOMSIGHT_SESSION_TTL_HOURS", 12))
+    # 놀고 있는 세션을 끊는 시간(분). 마지막 요청으로부터 잰다 — 쓰고 있는 동안은
+    # 요청이 계속 나가므로 밀려나지 않는다. 0 이면 유휴 만료 없음(절대 만료만).
+    session_idle_minutes: int = field(
+        default_factory=lambda: _env_int("SBOMSIGHT_SESSION_IDLE_MINUTES", 10)
+    )
 
     @property
     def db_path(self) -> Path:

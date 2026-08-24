@@ -9,6 +9,7 @@
  */
 
 import { esc } from './ui.js';
+import { watchIdle } from './idle.js';
 
 // 스캔은 탭이 아니다. SBOM 은 **자산에 올리는 것**이고, 스캔 결과는 그 자산의
 // 것이다. 탭으로 두면 "어느 서버 것인지 나중에 정하는" 길이 열리고, 실제로
@@ -58,5 +59,10 @@ export async function mountTopbar(currentHref) {
       window.location.href = 'login.html';
     });
   }
+
+  // 자리를 비우면 끊는다. 만료까지 몇 분인지는 서버가 정하고 알려 준다 —
+  // 화면에 숫자를 박아 두면 설정을 바꿨을 때 두 곳이 어긋난다.
+  if (state?.authenticated) watchIdle(state.idle_minutes);
+
   return state;
 }

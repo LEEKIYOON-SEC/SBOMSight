@@ -405,6 +405,8 @@ class Store:
             ).fetchall()
 
         newest = {r["asset_id"]: r for r in latest}
+        breakdown = self._priority_breakdown([r["scan_id"] for r in latest])
+
         summary: dict[str, dict[str, Any]] = {}
         for row in rows:
             last = newest.get(row["asset_id"])
@@ -416,8 +418,35 @@ class Store:
                 "last_sbom_filename": (
                     json.loads(last["metadata"]).get("sbom_filename", "") if last else ""
                 ),
+                # 목록에서 "몇 건인가"보다 먼저 봐야 하는 것은 "그중 급한 게 있나"다.
+                # 48,923건이라는 숫자 하나로는 오늘 손대야 할 서버를 못 고른다.
+                "last_priority_counts": breakdown.get(last["scan_id"], {}) if last else {},
             }
         return summary
+
+    def _priority_breakdown(self, scan_ids: list[str]) -> dict[str, dict[str, int]]:
+        """스캔별 우선순위 건수. 자산 목록 한 화면에 필요한 만큼만 센다.
+
+        스캔마다 질의하면 자산 수만큼 왕복한다. `json_each` 로 한 번에 묶는다 —
+        `IN (?,?,…)` 은 자산이 늘면 SQL 문자열 자체가 길어지고 캐시도 못 탄다.
+        `idx_findings_sort(scan_id, priority, …)` 이 그대로 먹는 집계다.
+        """
+        if not scan_ids:
+            return {}
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT f.scan_id, f.priority, COUNT(*) AS n FROM findings f "
+                "JOIN json_each(?) j ON f.scan_id = j.value "
+                "GROUP BY f.scan_id, f.priority",
+                (json.dumps(scan_ids),),
+            ).fetchall()
+        counts: dict[str, dict[str, int]] = {}
+        for row in rows:
+            # priority 가 NULL 인 건은 판정 기준이 어느 칸에도 넣지 못한 것이다.
+            # 임의로 어느 등급에 얹지 않고 그대로 둔다 — 합계는 finding_count 다.
+            if row["priority"]:
+                counts.setdefault(row["scan_id"], {})[row["priority"]] = row["n"]
+        return counts
 
     def get_scan(self, scan_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:

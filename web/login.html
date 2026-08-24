@@ -110,7 +110,15 @@ if (state.authenticated) {
     }
   });
 } else {
-  const el = form({ title: '로그인', submit: '로그인' });
+  // 왜 로그인 화면으로 돌아왔는지 알려 준다. 이유 없이 튕기면 고장으로 읽힌다.
+  const expired = new URLSearchParams(window.location.search).has('expired');
+  const el = form({
+    title: '로그인',
+    note: expired
+      ? `${esc(String(state.idle_minutes || 10))}분 동안 사용하지 않아 로그아웃되었습니다.`
+      : '',
+    submit: '로그인',
+  });
   foot.textContent = `접속 주소 ${state.client_ip}`;
 
   el.addEventListener('submit', async (event) => {

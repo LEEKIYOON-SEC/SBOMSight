@@ -241,21 +241,30 @@ th.tight, td.tight { width: 1%; white-space: nowrap; }
 /* 열 사이 최소 간격. `width:1%` 로 좁힌 열들이 서로 달라붙지 않게 한다. */
 td.tight + td.tight, th.tight + th.tight { padding-left: 1.25rem; }
 
-/* 자산 목록은 **내용 폭으로 둔다.**
-   `width:100%` 로 늘리면 남는 폭을 어딘가는 먹어야 한다 — 앞쪽 세 열이
-   나눠 먹으면 서버·그룹·운영체제 사이가 과하게 벌어지고, 뒤쪽을 전부
-   `tight` 로 잠그면 이번에는 비고 하나가 통째로 가져간다. 값이 짧은 열만
-   있는 표라 늘리지 않는 편이 가장 고르게 보인다. 길어지면 `.table-scroll`
-   이 가로로 밀어 준다. */
-/* `width:auto` 로는 표가 그대로 컨테이너를 채운다(실측 1332px). 실제로
-   필요한 폭은 543px 이므로 `max-content` 로 명시한다. 내용이 카드보다
-   넓어지면 `max-width` 가 되돌리고 `.table-scroll` 이 가로로 밀어 준다. */
-#assets table { width: max-content; max-width: 100%; }
-/* 카드도 표를 따라 줄인다. 표가 543px 인데 카드가 1332px 이면 행 구분선이
-   카드 한가운데서 끊겨 미완성으로 보인다. */
-#assets .card { width: max-content; max-width: 100%; }
-#assets td, #assets th { padding-right: 1.5rem; }
-#assets td:last-child, #assets th:last-child { padding-right: .6rem; max-width: 26rem; }
+/* 자산 목록은 **카드 폭을 그대로 채운다.**
+
+   표만 내용 폭(`max-content`)으로 줄여 봤더니, 카드는 카드대로 남아 행
+   구분선이 카드 한가운데서 끊겼다 — 만들다 만 화면으로 보인다. 카드까지
+   같이 줄이면 이번엔 넓은 화면에서 왼쪽에 작은 표 하나가 떠 있는 꼴이다.
+
+   그래서 반대로 간다. 값이 짧은 열은 전부 `tight` 로 잠그고, **남는 폭은
+   비고 하나가 끝까지 가져간다.** 앞쪽 세 열이 남는 폭을 나눠 먹어 벌어지던
+   것도 이걸로 없어진다. 폭을 채울 내용도 함께 늘렸다(대응 검토 열) — 열이
+   여섯 개면 표가 화면 중간에서 끊긴 느낌 없이 자연스럽게 찬다. */
+#assets table { width: 100%; }
+/* 비고는 `tight` 가 아니므로 남는 폭이 전부 여기로 온다. 명시해 두는 것은
+   나중에 열을 하나 더 붙일 때 어디가 늘어나는 열인지 보이게 하려는 것이다.
+   `min-width` 는 좁은 화면에서 이 칸이 글자 두어 개 폭까지 눌리는 것을 막는다 —
+   그때는 눌리는 대신 `.table-scroll` 이 가로로 밀어 준다. */
+#assets td:last-child, #assets th:last-child { width: auto; min-width: 11rem; }
+
+/* 우선순위 건수. 색 띠는 표 안의 `td.review` 와 같은 것을 쓴다 — 같은 뜻에
+   다른 색을 주면 두 화면을 오갈 때마다 다시 읽어야 한다. */
+.pcount { display: inline-flex; align-items: center; white-space: nowrap; font-size: .82rem; }
+.pcount + .pcount { margin-left: .75rem; }
+.pcount .mark {
+  display: inline-block; width: .3rem; height: .8rem; border-radius: 1px; margin-right: .35rem;
+}
 
 /* 헤더 클릭 정렬. 지금 어느 열로 정렬 중인지 화살표로 보인다 — 없으면
    눌러 놓고도 뭐가 적용됐는지 알 수 없다. */

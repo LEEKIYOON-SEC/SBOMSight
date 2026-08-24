@@ -50,6 +50,7 @@ import { getProvider } from './js/providers/index.js';
 import { $, esc } from './js/core/ui.js';
 import { mountTopbar } from './js/core/nav.js';
 import { daysSince, formatWhen } from './js/core/format.js';
+import { PRIORITIES, PRIORITY_LABEL, PRIORITY_SHORT } from './js/core/model.js';
 
 const state = await mountTopbar('index.html');
 const provider = await getProvider();
@@ -129,10 +130,11 @@ async function render() {
     return;
   }
 
-  $('#assets').innerHTML = `<div class="card"><div class="table-scroll"><table>
+  $('#assets').innerHTML = `<div class="card"><div class="table-scroll"><table class="asset-table">
     <thead><tr>
-      <th>서버</th><th>그룹</th><th>운영체제</th>
+      <th class="tight">서버</th><th class="tight">그룹</th><th class="tight">운영체제</th>
       <th class="tight">마지막 스캔</th><th class="num tight">탐지</th>
+      <th class="tight">대응 검토</th>
       <th>비고</th>
     </tr></thead>
     <tbody>${assets.map((a) => {
@@ -140,15 +142,32 @@ async function render() {
       // 스캔 횟수는 싣지 않는다. 자산에 들어가면 이력이 그대로 있고, 목록에서
       // 알고 싶은 것은 "언제 마지막으로 봤고 몇 건이 남아 있나" 다.
       return `<tr>
-        <td><a href="asset.html?id=${encodeURIComponent(a.asset_id)}"><b>${esc(a.name)}</b></a></td>
-        <td>${esc(a.group_name || '—')}</td>
-        <td>${esc(a.os || '—')}</td>
+        <td class="tight"><a href="asset.html?id=${encodeURIComponent(a.asset_id)}"><b>${esc(a.name)}</b></a></td>
+        <td class="tight">${esc(a.group_name || '—')}</td>
+        <td class="tight">${esc(a.os || '—')}</td>
         <td class="tight ${age.cls}">${esc(age.text)}
           ${a.last_scan_at ? `<span class="faint">${esc(formatWhen(a.last_scan_at))}</span>` : ''}</td>
         <td class="num tight">${a.last_scan_at ? a.last_finding_count.toLocaleString() : '—'}</td>
+        <td class="tight">${breakdown(a)}</td>
         <td class="faint">${esc(a.note || '—')}</td>
       </tr>`;
     }).join('')}</tbody></table></div></div>`;
+}
+
+/**
+ * 마지막 스캔의 우선순위 분포.
+ *
+ * "탐지 48,923건"만으로는 오늘 어느 서버부터 볼지 못 고른다. 즉시·우선이
+ * 몇 건인지가 그 판단이다. 0건인 등급은 빼서 눈이 급한 쪽으로 가게 둔다.
+ */
+function breakdown(asset) {
+  if (!asset.last_scan_at) return '<span class="faint">—</span>';
+  const counts = asset.last_priority_counts || {};
+  const parts = PRIORITIES
+    .filter((p) => counts[p])
+    .map((p) => `<span class="pcount" title="${esc(PRIORITY_LABEL[p])}">
+      <i class="mark ${p.toLowerCase()}"></i>${esc(PRIORITY_SHORT[p])} ${counts[p].toLocaleString()}</span>`);
+  return parts.length ? parts.join('') : '<span class="faint">해당 없음</span>';
 }
 
 // --- 자산 등록 --------------------------------------------------------------

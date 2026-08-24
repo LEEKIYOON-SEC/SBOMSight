@@ -131,6 +131,9 @@ def auth_state(request: Request) -> dict[str, Any]:
         # 초기화된 계정은 바꾸기 전에는 아무 화면도 열리지 않는다.
         "must_change": bool(account.must_change) if account else False,
         "client_ip": client_ip(request),
+        # 화면이 스스로 유휴를 재려면 서버가 몇 분으로 끊는지 알아야 한다.
+        # 판단은 서버가 하고, 이 값은 "언제쯤 끊길지"를 화면이 맞춰 두는 용도다.
+        "idle_minutes": config.session_idle_minutes,
     }
 
 
@@ -147,7 +150,11 @@ def auth_setup(request: Request, body: dict[str, Any] = Body(default={})) -> Any
     except AccountError as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    session = access.accounts.open_session(user.username, ttl_hours=config.session_ttl_hours)
+    session = access.accounts.open_session(
+        user.username,
+        ttl_hours=config.session_ttl_hours,
+        idle_minutes=config.session_idle_minutes,
+    )
     response = JSONResponse({"username": user.username, "role": user.role})
     set_session_cookie(response, session.token, max_age=config.session_ttl_hours * 3600)
     return response
@@ -168,7 +175,11 @@ def auth_login(request: Request, body: dict[str, Any] = Body(default={})) -> Any
         raise HTTPException(401, "계정 또는 비밀번호가 올바르지 않습니다.")
 
     access.throttle.succeed(ip)
-    session = access.accounts.open_session(user.username, ttl_hours=config.session_ttl_hours)
+    session = access.accounts.open_session(
+        user.username,
+        ttl_hours=config.session_ttl_hours,
+        idle_minutes=config.session_idle_minutes,
+    )
     response = JSONResponse({
         "username": user.username, "role": user.role,
         "must_change": bool(user.must_change),
@@ -204,7 +215,11 @@ def auth_change_password(request: Request, body: dict[str, Any] = Body(default={
         raise HTTPException(400, str(exc)) from exc
 
     # set_password가 기존 세션을 전부 끊었다. 방금 바꾼 본인은 다시 열어 준다.
-    session = access.accounts.open_session(user.username, ttl_hours=config.session_ttl_hours)
+    session = access.accounts.open_session(
+        user.username,
+        ttl_hours=config.session_ttl_hours,
+        idle_minutes=config.session_idle_minutes,
+    )
     response = JSONResponse({"ok": True})
     set_session_cookie(response, session.token, max_age=config.session_ttl_hours * 3600)
     return response
@@ -399,6 +414,7 @@ def list_assets() -> dict[str, Any]:
         row.update(summary.get(asset.asset_id, {
             "scan_count": 0, "last_scan_at": "", "last_scan_id": "",
             "last_finding_count": 0, "last_sbom_filename": "",
+            "last_priority_counts": {},
         }))
         rows.append(row)
 
