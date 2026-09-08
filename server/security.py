@@ -35,6 +35,9 @@ PUBLIC_PATHS = frozenset({
     "/api/auth/state",
     "/api/auth/login",
     "/api/auth/setup",
+    # 로그아웃은 **세션이 없어도 성공해야 한다.** 401 로 막으면 이미 끊긴
+    # 세션의 쿠키를 지울 방법이 없어져, 브라우저가 죽은 토큰을 계속 들고 다닌다.
+    "/api/auth/logout",
     "/favicon.svg",
     "/favicon.ico",
 })
@@ -195,23 +198,33 @@ class AccessMiddleware(BaseHTTPMiddleware):
 
         # ② 세션 확인. 이 호출이 유휴 시계도 되감는다 — 요청이 오고 있다는 것이
         #    곧 쓰고 있다는 뜻이다. 반대로 아무 요청도 없으면 그대로 만료된다.
+        presented = request.cookies.get(COOKIE, "")
         session = self.access.accounts.resolve(
-            request.cookies.get(COOKIE, ""),
-            idle_minutes=self.access.config.session_idle_minutes,
+            presented, idle_minutes=self.access.config.session_idle_minutes,
         )
         if session is not None:
             request.state.user = session
 
+        # 쿠키를 들고 왔는데 그 세션이 없다 — 끊겼거나, 예전 버전이 남긴 것이거나,
+        # 다른 경로로 저장된 중복 쿠키다. **그 자리에서 지운다.**
+        #
+        # 지우지 않으면 브라우저가 죽은 토큰을 쿠키 수명이 다할 때까지(기본 12시간)
+        # 계속 들고 다닌다. 중복 쿠키가 하나라도 섞여 있으면 새로 로그인해도 브라우저가
+        # 죽은 쪽을 먼저 보내, 로그인은 되는데 화면은 안 열리는 상태가 이어진다.
+        stale_cookie = bool(presented) and session is None
+
         if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES):
-            return await call_next(request)
+            return self._with_cookie(await call_next(request), session, stale_cookie)
 
         if session is None:
             if _wants_html(request):
                 nxt = request.url.path
                 if request.url.query:
                     nxt += "?" + request.url.query
-                return RedirectResponse(f"/login.html?next={nxt}", status_code=302)
-            return JSONResponse({"detail": "로그인이 필요합니다."}, status_code=401)
+                response = RedirectResponse(f"/login.html?next={nxt}", status_code=302)
+            else:
+                response = JSONResponse({"detail": "로그인이 필요합니다."}, status_code=401)
+            return self._with_cookie(response, None, stale_cookie)
 
         # ③ 초기화된 계정은 비밀번호를 바꾸기 전에는 설정 화면 밖으로 나가지 못한다.
         if self.access.must_change(session.username):
@@ -230,7 +243,36 @@ class AccessMiddleware(BaseHTTPMiddleware):
                     {"detail": "이 작업은 관리자만 할 수 있습니다."}, status_code=403
                 )
 
-        return await call_next(request)
+        return self._with_cookie(await call_next(request), session, stale_cookie)
+
+    def _with_cookie(self, response, session, stale_cookie: bool):
+        """쿠키 수명을 세션 수명에 맞춘다.
+
+        쿠키가 세션보다 오래 살면, 서버가 지운 토큰을 브라우저가 계속 들고 다닌다.
+        반대로 쿠키가 먼저 죽으면 쓰고 있던 사람이 예고 없이 튕긴다. 둘 다
+        "로그인이 안 된다"로 보인다. 그래서 **같이 살고 같이 죽게** 맞춘다.
+
+        유휴 시계를 되감은 요청에서만 다시 내려보낸다. 매 요청마다 붙이면 정적
+        파일 한 장에도 `Set-Cookie` 가 따라붙어 응답이 캐시되지 않는다.
+        """
+        if stale_cookie:
+            clear_session_cookie(response)
+        elif session is not None and session.touched:
+            set_session_cookie(response, session.token, max_age=self._cookie_age())
+        return response
+
+    def _cookie_age(self) -> int:
+        return session_cookie_age(self.access.config)
+
+
+def session_cookie_age(config) -> int:
+    """쿠키를 몇 초 살릴 것인가 — 세션이 실제로 죽는 시점에 맞춘다.
+
+    유휴 만료가 켜져 있으면 그쪽이 먼저 걸리므로 그 값을 쓴다. 꺼져 있으면
+    남는 것은 절대 만료뿐이다.
+    """
+    idle = config.session_idle_minutes
+    return idle * 60 if idle > 0 else config.session_ttl_hours * 3600
 
 
 def set_session_cookie(response, token: str, *, max_age: int) -> None:

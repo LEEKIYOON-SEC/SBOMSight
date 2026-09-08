@@ -49,7 +49,8 @@ from core.vulnfact import build_batch
 from .jobs import JobRegistry
 from .pipeline import run_scan
 from .security import (
-    AccessControl, AccessMiddleware, clear_session_cookie, client_ip, set_session_cookie,
+    AccessControl, AccessMiddleware, clear_session_cookie, client_ip,
+    session_cookie_age, set_session_cookie,
 )
 
 config = get_config()
@@ -156,7 +157,7 @@ def auth_setup(request: Request, body: dict[str, Any] = Body(default={})) -> Any
         idle_minutes=config.session_idle_minutes,
     )
     response = JSONResponse({"username": user.username, "role": user.role})
-    set_session_cookie(response, session.token, max_age=config.session_ttl_hours * 3600)
+    set_session_cookie(response, session.token, max_age=session_cookie_age(config))
     return response
 
 
@@ -184,7 +185,7 @@ def auth_login(request: Request, body: dict[str, Any] = Body(default={})) -> Any
         "username": user.username, "role": user.role,
         "must_change": bool(user.must_change),
     })
-    set_session_cookie(response, session.token, max_age=config.session_ttl_hours * 3600)
+    set_session_cookie(response, session.token, max_age=session_cookie_age(config))
     return response
 
 
@@ -221,7 +222,7 @@ def auth_change_password(request: Request, body: dict[str, Any] = Body(default={
         idle_minutes=config.session_idle_minutes,
     )
     response = JSONResponse({"ok": True})
-    set_session_cookie(response, session.token, max_age=config.session_ttl_hours * 3600)
+    set_session_cookie(response, session.token, max_age=session_cookie_age(config))
     return response
 
 

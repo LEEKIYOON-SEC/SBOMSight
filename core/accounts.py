@@ -105,6 +105,10 @@ class Session:
     role: str
     expires_at: str
     last_seen_at: str = ""
+    # 이번 조회에서 유휴 시계를 되감았는가. 쿠키 수명을 그때 함께 늘리기 위한
+    # 표시다 — 서버 세션은 살아 있는데 브라우저 쿠키만 먼저 죽으면, 쓰고 있던
+    # 사람이 아무 예고 없이 로그인 화면으로 떨어진다.
+    touched: bool = False
 
 
 def _now() -> str:
@@ -424,7 +428,8 @@ class Accounts:
                 conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
                 return None
 
-            if _stale(seen, now):
+            touched = _stale(seen, now)
+            if touched:
                 conn.execute(
                     "UPDATE sessions SET last_seen_at = ? WHERE token = ?", (now, token)
                 )
@@ -433,6 +438,7 @@ class Accounts:
         return Session(
             token=row["token"], username=row["username"],
             role=row["role"], expires_at=row["expires_at"], last_seen_at=seen,
+            touched=touched,
         )
 
     def close_session(self, token: str) -> None:
