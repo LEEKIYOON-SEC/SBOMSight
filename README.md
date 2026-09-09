@@ -35,7 +35,7 @@ HTTPS 는 필수다(443). 금융권 지침상 http 로는 열지 않는다.
 
 ### 1. 준비물
 
-- JDK 21
+- JDK 21 (Maven 은 필요 없다 — 저장소의 `mvnw` 래퍼가 알아서 받는다)
 - MySQL 8
 - grype (이 서버에)
 - syft (검사할 대상 서버들에)
@@ -81,7 +81,7 @@ GRANT ALL PRIVILEGES ON sbomsight.* TO 'sbomsight'@'localhost';
 Copy-Item scripts\env.example.ps1 config\env.ps1
 notepad config\env.ps1          # 비밀번호 채우기
 
-mvn clean package
+.\mvnw.cmd clean package
 .\scripts\run-server.ps1 -Check     # 준비 상태만 확인
 .\scripts\run-server.ps1 -Listen    # 방화벽까지 열고 기동 (관리자 PowerShell)
 ```
@@ -92,7 +92,7 @@ export SBOMSIGHT_DB_URL='jdbc:mysql://localhost:3306/sbomsight?...'
 export SBOMSIGHT_DB_PASSWORD='<비밀번호>'
 export SBOMSIGHT_KEYSTORE_PASSWORD='<키스토어비밀번호>'
 
-mvn clean package
+./mvnw clean package
 java -jar target/sbomsight-1.0.0.jar
 ```
 
@@ -202,7 +202,7 @@ CVE 가 없으면 지어내지 않는다.
 ## 시험
 
 ```bash
-mvn test
+./mvnw test          # Windows: .\mvnw.cmd test
 ```
 
 `GrypeMapperTest` 는 **실제 grype 0.87 이 낸 98건짜리 출력 전체**를 태운다.
@@ -215,7 +215,7 @@ mvn test
 ## 개발
 
 ```bash
-mvn spring-boot:run        # 8443 · 자체 서명
+./mvnw spring-boot:run     # 8443 · 자체 서명
 ```
 
 `scripts/` 에 인증서 생성과 기동 스크립트가 있다 (Windows `.ps1`, Linux `.sh`).
