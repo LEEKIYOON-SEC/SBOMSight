@@ -111,6 +111,7 @@ public class GrypeMapper {
         finding.setDataSource(trim(vuln.dataSource()));
         finding.setDescription(description(vuln, match.relatedVulnerabilities()));
 
+        finding.setRelatedCve(relatedCve(cve, match.relatedVulnerabilities()));
         applyCvss(finding, vuln, match.relatedVulnerabilities());
         applyExploit(finding, vuln, cve);
         applyArtifact(finding, artifact);
@@ -119,6 +120,31 @@ public class GrypeMapper {
 
         finding.setDetailJson(detailJson(vuln, artifact, match.relatedVulnerabilities()));
         return finding;
+    }
+
+    /**
+     * grype 이 함께 준 CVE 번호를 꺼낸다.
+     *
+     * <p>주 식별자가 이미 CVE 면 그대로 쓴다. GHSA 면
+     * {@code relatedVulnerabilities} 에서 CVE 를 찾는다 — 실측 98건 모두
+     * 거기에 있었다. 찾지 못하면 빈 값으로 두고 화면은 grype 이 준 식별자를
+     * 그대로 보여 준다. <b>없는 번호를 지어내지 않는다.</b>
+     */
+    private String relatedCve(String primaryId, List<GrypeReport.Vulnerability> related) {
+        if (primaryId.startsWith("CVE-")) {
+            return primaryId;
+        }
+        if (related == null) {
+            return "";
+        }
+        return related.stream()
+                .filter(Objects::nonNull)
+                .map(GrypeReport.Vulnerability::id)
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(id -> id.startsWith("CVE-"))
+                .findFirst()
+                .orElse("");
     }
 
     /**

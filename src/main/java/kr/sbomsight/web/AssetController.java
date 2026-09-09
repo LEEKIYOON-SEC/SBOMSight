@@ -135,7 +135,7 @@ public class AssetController {
                        @RequestParam(defaultValue = "0") int page,
                        @RequestParam(defaultValue = "cvss") String sort,
                        Model model) {
-        Scan scan = scans.findById(scanId)
+        Scan scan = scans.findWithAsset(scanId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
 
         Page<Finding> result = findings.search(scanId, blankToNull(severity), fixable, kev,

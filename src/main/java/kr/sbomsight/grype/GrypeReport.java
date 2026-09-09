@@ -55,17 +55,11 @@ public record GrypeReport(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Cvss(
-            String source,
-            String type,
-            String version,
-            String vector,
-            Metrics metrics
-    ) {
+    public record Cvss(String type, String version, String vector, Metrics metrics) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Metrics(Double baseScore, Double exploitabilityScore, Double impactScore) {
+    public record Metrics(Double baseScore) {
     }
 
     /**
@@ -78,18 +72,12 @@ public record GrypeReport(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Epss(String cve, Double epss, Double percentile, String date) {
+    public record Epss(String cve, Double epss) {
     }
 
     /** KEV — 실제로 악용이 확인된 것. 있으면 그 자체가 최우선 근거다. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record KnownExploited(
-            String cve,
-            String knownRansomwareCampaignUse,
-            String dateAdded,
-            String vendorProject,
-            String product
-    ) {
+    public record KnownExploited(String cve, String knownRansomwareCampaignUse) {
         public boolean ransomware() {
             return "known".equalsIgnoreCase(knownRansomwareCampaignUse);
         }
@@ -105,7 +93,7 @@ public record GrypeReport(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record SearchedBy(String namespace, String language, Map<String, Object> pkg) {
+    public record SearchedBy(String namespace, String language) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -114,7 +102,6 @@ public record GrypeReport(
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Artifact(
-            String id,
             String name,
             String version,
             String type,
@@ -122,17 +109,16 @@ public record GrypeReport(
             String language,
             List<String> cpes,
             String purl,
-            String metadataType,
             Map<String, Object> metadata
     ) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Location(String path, String layerID) {
+    public record Location(String path) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Source(String type, Object target) {
+    public record Source(String type) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -140,10 +126,18 @@ public record GrypeReport(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Descriptor(String name, String version, Db db) {
+    public record Descriptor(String version, Db db) {
     }
 
+    /**
+     * 취약점 DB.
+     *
+     * <p>{@code built} 만 선언한다. 쓰지도 않는 필드의 타입을 짐작해 두면,
+     * 그 짐작이 틀리는 순간 <b>결과 전체가 통째로 버려진다.</b> 실제로
+     * {@code location} 을 숫자로 짐작했다가 98건짜리 스캔이 파싱 단계에서
+     * 통째로 실패했다(grype 은 캐시 경로 문자열을 준다).
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Db(String built, Integer schemaVersion, Long location) {
+    public record Db(String built) {
     }
 }

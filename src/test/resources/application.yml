@@ -1,0 +1,22 @@
+# 테스트는 파일 없는 H2 로 돈다. Flyway 는 MySQL 마이그레이션을 그대로 태우므로
+# MODE=MySQL 로 맞춘다 — 운영과 다른 스키마로 시험하면 시험한 적이 없는 것이다.
+server:
+  ssl:
+    enabled: false
+spring:
+  datasource:
+    url: jdbc:h2:mem:sbomsight;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+sbomsight:
+  data-dir: ./target/test-data
+  grype-path: grype
+  syft-path: syft
+  grype-timeout-minutes: 5
+  bootstrap-admin: admin

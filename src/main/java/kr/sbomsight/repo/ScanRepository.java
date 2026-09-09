@@ -13,6 +13,17 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
 
     List<Scan> findByAssetIdOrderByCreatedAtDesc(Long assetId);
 
+    /**
+     * 자산까지 함께 읽는다.
+     *
+     * <p>{@code open-in-view} 를 꺼 두었기 때문에 화면을 그리는 시점에는 이미
+     * 세션이 닫혀 있다. 화면에서 {@code scan.asset.name} 을 쓰려면 여기서
+     * 같이 읽어 와야 한다 — 열어 두는 쪽으로 도망가면 화면이 표를 그리는
+     * 동안 질의를 수십 번 더 날리게 된다.
+     */
+    @Query("SELECT s FROM Scan s JOIN FETCH s.asset WHERE s.id = :id")
+    Optional<Scan> findWithAsset(@Param("id") Long id);
+
     /** 자산의 가장 최근 완료 스캔. 목록과 보고서가 기준으로 삼는 것. */
     Optional<Scan> findFirstByAssetIdAndStatusOrderByCreatedAtDesc(Long assetId, ScanStatus status);
 

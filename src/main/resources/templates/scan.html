@@ -64,7 +64,7 @@
       </select>
     </label>
     <label>검색
-      <input name="q" th:value="${q}" placeholder="패키지 · CVE" autocomplete="off">
+      <input name="q" th:value="${q}" placeholder="패키지 · CVE · GHSA" autocomplete="off">
     </label>
     <button class="btn" type="submit">적용</button>
   </form>
@@ -80,7 +80,7 @@
       <table>
         <thead>
         <tr>
-          <th class="tight">CVE</th>
+          <th class="tight">취약점</th>
           <th class="tight">심각도</th>
           <th class="num tight">CVSS</th>
           <th class="num tight">악용 확률</th>
@@ -91,10 +91,14 @@
         </thead>
         <tbody>
         <tr th:each="f : ${page.content}">
+          <!-- 결재·보고는 CVE 번호로 돈다. grype 이 GHSA 를 주 식별자로 낸
+               경우에도 함께 준 CVE 를 앞에 놓고, grype 의 번호는 아래에 남긴다. -->
           <td class="tight">
-            <a th:href="${f.dataSource}" th:text="${f.cve}" target="_blank" rel="noreferrer"
-               th:if="${!#strings.isEmpty(f.dataSource)}">CVE-0000-0000</a>
-            <span th:if="${#strings.isEmpty(f.dataSource)}" th:text="${f.cve}">CVE-0000-0000</span>
+            <a th:if="${!#strings.isEmpty(f.dataSource)}" th:href="${f.dataSource}"
+               th:text="${f.displayId}" target="_blank" rel="noreferrer">CVE-0000-0000</a>
+            <span th:if="${#strings.isEmpty(f.dataSource)}" th:text="${f.displayId}">CVE-0000-0000</span>
+            <div class="faint" th:if="${!#strings.isEmpty(f.secondaryId)}"
+                 th:text="${f.secondaryId}">GHSA-…</div>
           </td>
           <td class="tight">
             <i class="mark" th:classappend="${#strings.toLowerCase(f.severity)}"></i>

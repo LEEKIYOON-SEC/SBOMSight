@@ -33,7 +33,8 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                   OR (:fixable = FALSE AND f.fixState <> 'fixed'))
              AND (:kev IS NULL OR f.kev = :kev)
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
-                             OR LOWER(f.cve) LIKE LOWER(CONCAT('%', :q, '%')))
+                             OR LOWER(f.cve) LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
            """)
     Page<Finding> search(@Param("scanId") Long scanId,
                          @Param("severity") String severity,

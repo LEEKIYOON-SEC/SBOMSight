@@ -1,6 +1,8 @@
 package kr.sbomsight.domain;
 
 import jakarta.persistence.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 
@@ -20,6 +22,8 @@ import java.math.BigDecimal;
 @Table(name = "findings")
 public class Finding {
 
+    private static final Logger log = LoggerFactory.getLogger(Finding.class);
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -32,19 +36,29 @@ public class Finding {
     @Column(name = "finding_key", nullable = false, length = 512)
     private String findingKey;
 
-    @Column(nullable = false, length = 64)
+    /** grype 의 주 식별자. 언어 생태계에서는 GHSA 번호인 경우가 많다. */
+    @Column(nullable = false, length = 128)
     private String cve;
 
-    @Column(nullable = false, length = 16)
+    /**
+     * grype 이 {@code relatedVulnerabilities} 로 함께 준 CVE 번호.
+     *
+     * <p>주 식별자를 바꾸는 것이 아니라 같은 응답 안에 있던 값을 옆에 놓는
+     * 것이다. 결재·보고가 CVE 번호로 돌기 때문에 표에 함께 있어야 한다.
+     */
+    @Column(name = "related_cve", nullable = false, length = 128)
+    private String relatedCve = "";
+
+    @Column(nullable = false, length = 32)
     private String severity = "";
 
     @Column(name = "cvss_score", precision = 4, scale = 2)
     private BigDecimal cvssScore;
 
-    @Column(name = "cvss_vector", nullable = false, length = 128)
+    @Column(name = "cvss_vector", nullable = false, length = 512)
     private String cvssVector = "";
 
-    @Column(name = "cvss_version", nullable = false, length = 8)
+    @Column(name = "cvss_version", nullable = false, length = 16)
     private String cvssVersion = "";
 
     @Column(precision = 9, scale = 8)
@@ -61,34 +75,34 @@ public class Finding {
     @Column(name = "package_name", nullable = false, length = 255)
     private String packageName;
 
-    @Column(name = "package_version", nullable = false, length = 128)
+    @Column(name = "package_version", nullable = false, length = 255)
     private String packageVersion = "";
 
-    @Column(name = "package_type", nullable = false, length = 32)
+    @Column(name = "package_type", nullable = false, length = 64)
     private String packageType = "";
 
     @Column(name = "package_purl", nullable = false, length = 512)
     private String packagePurl = "";
 
-    @Column(name = "package_language", nullable = false, length = 32)
+    @Column(name = "package_language", nullable = false, length = 64)
     private String packageLanguage = "";
 
-    @Column(name = "fix_state", nullable = false, length = 24)
+    @Column(name = "fix_state", nullable = false, length = 32)
     private String fixState = "";
 
-    @Column(name = "fixed_version", nullable = false, length = 128)
+    @Column(name = "fixed_version", nullable = false, length = 255)
     private String fixedVersion = "";
 
-    @Column(name = "version_constraint", nullable = false, length = 255)
+    @Column(name = "version_constraint", nullable = false, length = 512)
     private String versionConstraint = "";
 
-    @Column(name = "match_type", nullable = false, length = 48)
+    @Column(name = "match_type", nullable = false, length = 64)
     private String matchType = "";
 
-    @Column(nullable = false, length = 48)
+    @Column(nullable = false, length = 64)
     private String matcher = "";
 
-    @Column(nullable = false, length = 96)
+    @Column(nullable = false, length = 255)
     private String namespace = "";
 
     @Column(name = "data_source", nullable = false, length = 500)
@@ -108,9 +122,11 @@ public class Finding {
 
     public Finding(Scan scan, String findingKey, String cve, String packageName) {
         this.scan = scan;
-        this.findingKey = findingKey;
-        this.cve = cve;
-        this.packageName = packageName;
+        // 키·CVE·패키지 이름도 자른다. 이 셋이 없으면 건 자체가 성립하지
+        // 않으므로 GrypeMapper 가 미리 걸러 내지만, 길이는 여기서 지킨다.
+        this.findingKey = clip(findingKey, 512);
+        this.cve = clip(cve, 128);
+        this.packageName = clip(packageName, 255);
     }
 
     /**
@@ -126,6 +142,26 @@ public class Finding {
     /** 수정본이 없다고 grype 이 밝힌 경우. 조치가 아니라 다른 통제가 필요하다. */
     public boolean isNoFix() {
         return "wont-fix".equalsIgnoreCase(fixState) || "not-fixed".equalsIgnoreCase(fixState);
+    }
+
+    /**
+     * 열에 들어갈 만큼만 자른다.
+     *
+     * <p>값 하나가 길다고 <b>스캔 전체를 잃지 않기 위해서다.</b> 실제로 CVSS 4.0
+     * 벡터가 열 폭을 넘겨 98건짜리 스캔이 통째로 실패한 적이 있다. 열은 실측에
+     * 여유를 두어 넓혀 두었으므로 여기까지 오는 일은 드물지만, 오더라도 그 한
+     * 건의 값만 잘리고 나머지는 그대로 남아야 한다.
+     */
+    private static String clip(String value, int max) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() <= max) {
+            return trimmed;
+        }
+        log.warn("값이 열 폭({})을 넘어 잘랐습니다: {}…", max, trimmed.substring(0, Math.min(60, max)));
+        return trimmed.substring(0, max);
     }
 
     public Long getId() {
@@ -144,12 +180,30 @@ public class Finding {
         return cve;
     }
 
+    public String getRelatedCve() {
+        return relatedCve;
+    }
+
+    public void setRelatedCve(String relatedCve) {
+        this.relatedCve = clip(relatedCve, 128);
+    }
+
+    /** 표에 크게 쓸 번호 — CVE 가 있으면 CVE, 없으면 grype 이 준 그대로. */
+    public String getDisplayId() {
+        return relatedCve.isBlank() ? cve : relatedCve;
+    }
+
+    /** 위 번호와 다른 식별자가 있으면 그것. 없으면 빈 문자열. */
+    public String getSecondaryId() {
+        return relatedCve.isBlank() || relatedCve.equals(cve) ? "" : cve;
+    }
+
     public String getSeverity() {
         return severity;
     }
 
     public void setSeverity(String severity) {
-        this.severity = severity == null ? "" : severity;
+        this.severity = clip(severity, 32);
     }
 
     public BigDecimal getCvssScore() {
@@ -165,7 +219,7 @@ public class Finding {
     }
 
     public void setCvssVector(String cvssVector) {
-        this.cvssVector = cvssVector == null ? "" : cvssVector;
+        this.cvssVector = clip(cvssVector, 512);
     }
 
     public String getCvssVersion() {
@@ -173,7 +227,7 @@ public class Finding {
     }
 
     public void setCvssVersion(String cvssVersion) {
-        this.cvssVersion = cvssVersion == null ? "" : cvssVersion;
+        this.cvssVersion = clip(cvssVersion, 16);
     }
 
     public BigDecimal getEpss() {
@@ -217,7 +271,7 @@ public class Finding {
     }
 
     public void setPackageVersion(String packageVersion) {
-        this.packageVersion = packageVersion == null ? "" : packageVersion;
+        this.packageVersion = clip(packageVersion, 255);
     }
 
     public String getPackageType() {
@@ -225,7 +279,7 @@ public class Finding {
     }
 
     public void setPackageType(String packageType) {
-        this.packageType = packageType == null ? "" : packageType;
+        this.packageType = clip(packageType, 64);
     }
 
     public String getPackagePurl() {
@@ -233,7 +287,7 @@ public class Finding {
     }
 
     public void setPackagePurl(String packagePurl) {
-        this.packagePurl = packagePurl == null ? "" : packagePurl;
+        this.packagePurl = clip(packagePurl, 512);
     }
 
     public String getPackageLanguage() {
@@ -241,7 +295,7 @@ public class Finding {
     }
 
     public void setPackageLanguage(String packageLanguage) {
-        this.packageLanguage = packageLanguage == null ? "" : packageLanguage;
+        this.packageLanguage = clip(packageLanguage, 64);
     }
 
     public String getFixState() {
@@ -249,7 +303,7 @@ public class Finding {
     }
 
     public void setFixState(String fixState) {
-        this.fixState = fixState == null ? "" : fixState;
+        this.fixState = clip(fixState, 32);
     }
 
     public String getFixedVersion() {
@@ -257,7 +311,7 @@ public class Finding {
     }
 
     public void setFixedVersion(String fixedVersion) {
-        this.fixedVersion = fixedVersion == null ? "" : fixedVersion;
+        this.fixedVersion = clip(fixedVersion, 255);
     }
 
     public String getVersionConstraint() {
@@ -265,7 +319,7 @@ public class Finding {
     }
 
     public void setVersionConstraint(String versionConstraint) {
-        this.versionConstraint = versionConstraint == null ? "" : versionConstraint;
+        this.versionConstraint = clip(versionConstraint, 512);
     }
 
     public String getMatchType() {
@@ -273,7 +327,7 @@ public class Finding {
     }
 
     public void setMatchType(String matchType) {
-        this.matchType = matchType == null ? "" : matchType;
+        this.matchType = clip(matchType, 64);
     }
 
     public String getMatcher() {
@@ -281,7 +335,7 @@ public class Finding {
     }
 
     public void setMatcher(String matcher) {
-        this.matcher = matcher == null ? "" : matcher;
+        this.matcher = clip(matcher, 64);
     }
 
     public String getNamespace() {
@@ -289,7 +343,7 @@ public class Finding {
     }
 
     public void setNamespace(String namespace) {
-        this.namespace = namespace == null ? "" : namespace;
+        this.namespace = clip(namespace, 255);
     }
 
     public String getDataSource() {
@@ -297,7 +351,7 @@ public class Finding {
     }
 
     public void setDataSource(String dataSource) {
-        this.dataSource = dataSource == null ? "" : dataSource;
+        this.dataSource = clip(dataSource, 500);
     }
 
     public String getDescription() {
