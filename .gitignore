@@ -5,6 +5,7 @@ target/
 # --- 운영 중 생기는 것 ---
 data/
 config/keystore.p12
+config/env.ps1
 config/*.p12
 config/*.pfx
 config/*.jks

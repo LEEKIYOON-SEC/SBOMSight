@@ -1,134 +1,154 @@
-﻿# SBOMSight 웹 서버 기동 (Windows 11 / PowerShell)
-#
-# ⚠ 이 파일은 반드시 **UTF-8 BOM**으로 저장한다. Windows PowerShell 5.1은
-#   BOM이 없는 .ps1을 시스템 ANSI 코드페이지(한국어 Windows에서는 CP949)로
-#   읽는다. 그러면 한글 주석과 문자열의 UTF-8 바이트가 오독되고, CP949에서
-#   유효하지 않은 trail 바이트를 만난 자리에서 **뒤따르는 ASCII 문자가 통째로
-#   먹힌다** — 닫는 따옴표가 사라져 파서가 죽는다.
-#   tests/test_scripts.py 가 BOM 유무를 검사한다.
-#
-# 업로드된 SBOM과 스캔 결과에는 내부 자산 정보가 담긴다. 그래서 기본
-# 바인딩은 127.0.0.1이며, 외부에 노출하려면 -Listen 을 주거나 SBOMSIGHT_HOST를
-# 명시적으로 바꿔야 한다.
-#
-#   .\scripts\run-server.ps1            로컬에서만 (기본)
-#   .\scripts\run-server.ps1 -Listen    내부망에 개방 + 방화벽 규칙 안내
+<#
+.SYNOPSIS
+    SBOMSight 을 띄운다.
+
+.DESCRIPTION
+    운영 값(DB 비밀번호·키스토어 비밀번호)은 config\env.ps1 에서 읽는다.
+    그 파일은 저장소에 올라가지 않는다(.gitignore).
+
+    -Listen 을 주면 방화벽 인바운드 규칙까지 만든다. 이 스위치를 쓸 때만
+    관리자 권한이 필요하다 — 443 으로 여는 것 자체는 관리자가 아니어도 된다
+    (윈도우는 낮은 포트를 제한하지 않는다. 그건 리눅스 얘기다).
+
+.EXAMPLE
+    .\scripts\run-server.ps1                  # 그냥 띄운다
+    .\scripts\run-server.ps1 -Listen          # 방화벽까지 열고 띄운다 (관리자)
+    .\scripts\run-server.ps1 -Check           # 띄우지 않고 준비 상태만 본다
+#>
 [CmdletBinding()]
 param(
-    [switch]$Listen,
-    [string]$BindAddress = "",
-    [int]$BindPort = 0
+    [switch] $Listen,
+    [switch] $Check,
+    [int]    $Port = 0
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
+$root = Split-Path $PSScriptRoot -Parent
+Set-Location $root
 
-Set-Location (Join-Path $PSScriptRoot "..")
-
-$EnvFile = ".env"
-if (Test-Path $EnvFile) {
-    Write-Host "[i] .env 로드"
-    # -Encoding UTF8 이 없으면 PowerShell 5.1이 .env 도 ANSI로 읽는다.
-    Get-Content $EnvFile -Encoding UTF8 | ForEach-Object {
-        if ($_ -match '^\s*([^#=]+)\s*=\s*(.*)$') {
-            [Environment]::SetEnvironmentVariable($Matches[1].Trim(), $Matches[2].Trim(), "Process")
-        }
-    }
+function Test-Line($ok, $label, $detail = '') {
+    $mark  = if ($ok) { '  OK  ' } else { ' 안됨 ' }
+    $color = if ($ok) { 'Green' } else { 'Red' }
+    Write-Host $mark -ForegroundColor $color -NoNewline
+    Write-Host " $label" -NoNewline
+    if ($detail) { Write-Host "  $detail" -ForegroundColor DarkGray } else { Write-Host '' }
+    return $ok
 }
 
-# 우선순위: 명령행 인자 > -Listen > .env / 환경변수 > 기본값
-$BindHost =
-    if ($BindAddress)            { $BindAddress }
-    elseif ($Listen)             { "0.0.0.0" }
-    elseif ($env:SBOMSIGHT_HOST) { $env:SBOMSIGHT_HOST }
-    else                         { "127.0.0.1" }
+# --- 준비 상태 확인 --------------------------------------------------------
+Write-Host ""
+Write-Host "SBOMSight 준비 상태" -ForegroundColor Cyan
+Write-Host ("-" * 60)
 
-$Port =
-    if ($BindPort -gt 0)         { "$BindPort" }
-    elseif ($env:SBOMSIGHT_PORT) { $env:SBOMSIGHT_PORT }
-    else                         { "8000" }
+$ready = $true
 
-# 가상환경이 있으면 활성화 여부와 무관하게 그 python을 쓴다. 활성화를 잊고
-# 실행하면 전역 python에는 의존성이 없어 "먼저 설치하세요"만 반복하게 된다.
-$Python = "python"
-$VenvPython = Join-Path (Get-Location) ".venv\Scripts\python.exe"
-if (Test-Path $VenvPython) {
-    $Python = $VenvPython
-    Write-Host "[i] 가상환경 사용: .venv"
+$java = Get-Command java -ErrorAction SilentlyContinue
+if ($java) {
+    $ver = (& java -version 2>&1 | Select-Object -First 1)
+    # 21 미만이면 Spring Boot 3.3 이 안 뜬다.
+    $major = if ($ver -match '"(\d+)') { [int]$Matches[1] } else { 0 }
+    $ready = (Test-Line ($major -ge 21) "Java 21 이상" $ver) -and $ready
+} else {
+    $ready = (Test-Line $false "Java" "PATH 에 java 가 없습니다") -and $ready
 }
 
-& $Python -c "import fastapi" 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[!] 의존성이 없습니다. 먼저 실행하세요:"
-    Write-Host "    python -m venv .venv"
-    Write-Host "    .\.venv\Scripts\Activate.ps1"
-    Write-Host "    python -m pip install -r requirements.txt"
+$jar = Join-Path $root 'target\sbomsight-1.0.0.jar'
+$ready = (Test-Line (Test-Path $jar) "빌드된 jar" $jar) -and $ready
+
+# env.ps1 이 있으면 읽는다. 없어도 환경변수로 줄 수 있으므로 막지는 않는다.
+$envFile = Join-Path $root 'config\env.ps1'
+if (Test-Path $envFile) {
+    . $envFile
+    Test-Line $true "config\env.ps1" "읽었습니다" | Out-Null
+} else {
+    Test-Line $true "config\env.ps1" "없음 — 환경변수를 직접 주는 것으로 봅니다" | Out-Null
+}
+
+if ($Port -gt 0) { $env:SBOMSIGHT_PORT = "$Port" }
+if (-not $env:SBOMSIGHT_PORT) { $env:SBOMSIGHT_PORT = '443' }
+$listenPort = [int]$env:SBOMSIGHT_PORT
+
+$keystore = if ($env:SBOMSIGHT_KEYSTORE) {
+    $env:SBOMSIGHT_KEYSTORE -replace '^file:', ''
+} else { 'config\keystore.p12' }
+$ready = (Test-Line (Test-Path $keystore) "인증서" $keystore) -and $ready
+
+$grypeCmd = if ($env:SBOMSIGHT_GRYPE) { $env:SBOMSIGHT_GRYPE } else { 'grype' }
+$grype = Get-Command $grypeCmd -ErrorAction SilentlyContinue
+$ready = (Test-Line ($null -ne $grype) "grype" $grypeCmd) -and $ready
+
+# --- 포트가 비어 있는가 ----------------------------------------------------
+# 윈도우에서 443 이 안 열리는 이유는 권한이 아니라 대개 이 둘이다.
+$holder = Get-NetTCPConnection -LocalPort $listenPort -State Listen -ErrorAction SilentlyContinue
+if ($holder) {
+    $names = $holder | ForEach-Object {
+        (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName
+    } | Select-Object -Unique
+    Test-Line $false "$listenPort 포트" "이미 쓰는 중: $($names -join ', ')" | Out-Null
+    Write-Host "        IIS 나 'World Wide Web Publishing Service' 를 끄거나 다른 포트를 쓰세요." -ForegroundColor DarkGray
+    $ready = $false
+} else {
+    Test-Line $true "$listenPort 포트" "비어 있음" | Out-Null
+}
+
+# Hyper-V·WSL 이 잡아 둔 예약 구간에 걸리면 바인딩이 조용히 실패한다.
+$excluded = & netsh interface ipv4 show excludedportrange protocol=tcp 2>$null |
+    Select-String -Pattern '^\s*(\d+)\s+(\d+)' |
+    ForEach-Object {
+        [pscustomobject]@{ Start = [int]$_.Matches[0].Groups[1].Value
+                           End   = [int]$_.Matches[0].Groups[2].Value }
+    } | Where-Object { $listenPort -ge $_.Start -and $listenPort -le $_.End }
+
+if ($excluded) {
+    Test-Line $false "$listenPort 예약 구간" "윈도우가 예약해 둔 범위에 들어갑니다" | Out-Null
+    Write-Host "        netsh interface ipv4 show excludedportrange protocol=tcp 로 확인하세요." -ForegroundColor DarkGray
+    $ready = $false
+}
+
+Write-Host ("-" * 60)
+
+if ($Check) {
+    Write-Host ""
+    if ($ready) { Write-Host "준비되었습니다." -ForegroundColor Green }
+    else { Write-Host "위의 '안됨' 항목을 먼저 해결하세요." -ForegroundColor Red }
+    exit ($(if ($ready) { 0 } else { 1 }))
+}
+
+if (-not $ready) {
+    Write-Host ""
+    Write-Host "위의 '안됨' 항목을 먼저 해결하세요." -ForegroundColor Red
     exit 1
 }
 
-$GrypeBin = if ($env:GRYPE_BIN) { $env:GRYPE_BIN } else { "grype" }
-if (-not (Get-Command $GrypeBin -ErrorAction SilentlyContinue)) {
-    Write-Host "[!] grype를 찾을 수 없습니다. scripts\install-tools.ps1 로 설치하거나"
-    Write-Host "    GRYPE_BIN 환경변수로 경로를 지정하세요. (설치 전에는 스캔이 실패합니다)"
-}
-
-$IsPublic = $BindHost -ne "127.0.0.1" -and $BindHost -ne "localhost"
-
-if ($IsPublic) {
-    # 계정이 하나도 없는 채로 밖에 열지 않는다. 취약점 목록은 공격자에게 그대로
-    # 지도가 되므로, 로그인이 설 수 있는 상태가 되기 전에는 문을 열지 않는다.
-    $Probe = "import sys; from core.accounts import Accounts; from core.config import get_config; sys.exit(0 if Accounts(get_config().db_path).count() else 1)"
-    & $Python -c $Probe 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[!] 계정이 하나도 없어 $BindHost 로 열지 않습니다."
-        Write-Host "    먼저 관리자 계정을 만드세요:"
-        Write-Host "      $Python -m core.cli user add <이름> --role admin"
-        Write-Host "    또는 -Listen 없이 띄운 뒤 http://127.0.0.1:$Port 에서 만드세요."
-        exit 1
+# --- 방화벽 ----------------------------------------------------------------
+if ($Listen) {
+    $admin = ([Security.Principal.WindowsPrincipal] `
+        [Security.Principal.WindowsIdentity]::GetCurrent()
+        ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $admin) {
+        throw "-Listen 은 방화벽 규칙을 만들므로 관리자 권한 PowerShell 에서 실행해야 합니다."
     }
 
-    Write-Host ""
-    Write-Host "[!] $BindHost 로 바인딩합니다 — 이 PC 밖에서 접속할 수 있게 됩니다."
-    Write-Host "    스캔 결과에는 어떤 서버에 어떤 취약점이 있는지가 그대로 담깁니다."
-    Write-Host "    신뢰할 수 있는 내부망에서만 여세요."
-    Write-Host ""
-
-    # 바인딩을 열어도 Windows 방화벽이 두 번째 관문이다. 규칙이 없으면
-    # 다른 PC에서 접속이 조용히 실패하고, 원인을 찾기 어렵다.
-    $RuleName = "SBOMSight ($Port)"
-    $Existing = Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue
-    if ($Existing) {
-        Write-Host "[i] 방화벽 규칙 있음: $RuleName"
+    $ruleName = "SBOMSight ($listenPort)"
+    if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
+        # Private 프로파일만 연다. Public(카페 와이파이 등)에서까지 열 이유가 없다.
+        New-NetFirewallRule -DisplayName $ruleName -Direction Inbound `
+            -LocalPort $listenPort -Protocol TCP -Action Allow -Profile Private | Out-Null
+        Write-Host "방화벽 규칙을 만들었습니다: $ruleName (Private 프로파일)" -ForegroundColor Green
     } else {
-        Write-Host "[!] 방화벽 인바운드 규칙이 없습니다. 관리자 PowerShell에서 한 번 실행하세요:"
-        Write-Host ""
-        Write-Host "    New-NetFirewallRule -DisplayName '$RuleName' -Direction Inbound ``"
-        Write-Host "      -LocalPort $Port -Protocol TCP -Action Allow -Profile Private"
-        Write-Host ""
-        Write-Host "    (규칙이 없으면 다른 PC에서 접속이 되지 않습니다)"
-        Write-Host ""
-    }
-
-    # 접속에 쓸 주소를 알려 준다. 0.0.0.0 은 주소가 아니라 '전부'라는 뜻이라
-    # 그대로 브라우저에 칠 수 없다.
-    $Addresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -ne "127.0.0.1" -and $_.PrefixOrigin -ne "WellKnown" }
-    foreach ($Address in $Addresses) {
-        Write-Host "[i] 접속 주소  http://$($Address.IPAddress):$Port"
+        Write-Host "방화벽 규칙이 이미 있습니다: $ruleName" -ForegroundColor DarkGray
     }
 }
 
-# AI 상태를 미리 알려 준다 — 결과 화면에서 전송 버튼이 안 보이는 이유를
-# 그때 가서 찾게 하지 않기 위한 것이다. 키 값 자체는 출력하지 않는다.
-if ($env:SBOMSIGHT_AI_ENABLED -in @("1", "true", "yes", "on")) {
-    if ($env:GEMINI_API_KEY) {
-        $Model = if ($env:GEMINI_MODEL) { $env:GEMINI_MODEL } else { "gemini-3.5-flash-lite" }
-        Write-Host "[i] AI 사용 가능 · 모델 $Model"
-    } else {
-        Write-Host "[!] SBOMSIGHT_AI_ENABLED=1 이지만 GEMINI_API_KEY 가 없습니다. 룰 기반으로만 동작합니다."
-    }
-} else {
-    Write-Host "[i] AI 미사용 (기본값). 보고서는 룰 기반으로 완결됩니다."
-}
+# --- 기동 ------------------------------------------------------------------
+$ips = (Get-NetIPAddress -AddressFamily IPv4 |
+        Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+        Select-Object -ExpandProperty IPAddress) -join ', '
 
-Write-Host "[i] http://${BindHost}:${Port}"
-& $Python -m uvicorn server.app:app --host $BindHost --port $Port @args
+Write-Host ""
+Write-Host "접속 주소" -ForegroundColor Cyan
+Write-Host "  https://localhost:$listenPort"
+if ($ips) { $ips -split ', ' | ForEach-Object { Write-Host "  https://$_`:$listenPort" } }
+Write-Host ""
+
+& java "-Dfile.encoding=UTF-8" -jar $jar

@@ -59,7 +59,12 @@ GRANT ALL PRIVILEGES ON sbomsight.* TO 'sbomsight'@'localhost';
 
 정식 인증서를 받기 전에는 자체 서명으로 시작한다.
 
+```powershell
+# Windows
+.\scripts\make-keystore.ps1 -HostName sbomsight.example.co.kr -Password '<키스토어비밀번호>'
+```
 ```bash
+# Linux
 ./scripts/make-keystore.sh sbomsight.example.co.kr <키스토어비밀번호>
 ```
 
@@ -71,8 +76,17 @@ GRANT ALL PRIVILEGES ON sbomsight.* TO 'sbomsight'@'localhost';
 
 ### 4. 기동
 
+```powershell
+# Windows — config\env.ps1 에 값을 적어 두고 스크립트가 읽게 한다.
+Copy-Item scripts\env.example.ps1 config\env.ps1
+notepad config\env.ps1          # 비밀번호 채우기
+
+mvn clean package
+.\scripts\run-server.ps1 -Check     # 준비 상태만 확인
+.\scripts\run-server.ps1 -Listen    # 방화벽까지 열고 기동 (관리자 PowerShell)
+```
 ```bash
-# 운영 값은 환경변수로 준다. 저장소에 두지 않는다.
+# Linux — 환경변수로 준다. 저장소에 두지 않는다.
 export SBOMSIGHT_PORT=443
 export SBOMSIGHT_DB_URL='jdbc:mysql://localhost:3306/sbomsight?...'
 export SBOMSIGHT_DB_PASSWORD='<비밀번호>'
@@ -82,8 +96,11 @@ mvn clean package
 java -jar target/sbomsight-1.0.0.jar
 ```
 
-443 은 특권 포트다. Windows 는 관리자 권한으로, Linux 는
-`setcap 'cap_net_bind_service=+ep' $(which java)` 로 연다.
+**Windows 는 443 에 관리자 권한이 필요 없다** — 낮은 포트를 제한하는 것은
+Linux 다(`setcap 'cap_net_bind_service=+ep' $(which java)`). Windows 에서
+443 이 안 열리면 대개 IIS 나 `World Wide Web Publishing Service` 가 이미
+쓰고 있거나, Hyper-V·WSL 이 예약해 둔 포트 구간에 걸린 것이다.
+`scripts\run-server.ps1 -Check` 가 둘 다 확인해 준다.
 
 **첫 기동 때 관리자 계정과 임시 비밀번호가 콘솔에 한 번만 표시된다.**
 로그인하면 곧바로 새 비밀번호를 정해야 한다.
@@ -201,4 +218,4 @@ mvn test
 mvn spring-boot:run        # 8443 · 자체 서명
 ```
 
-`scripts/` 에 인증서 생성 스크립트가 있다.
+`scripts/` 에 인증서 생성과 기동 스크립트가 있다 (Windows `.ps1`, Linux `.sh`).
