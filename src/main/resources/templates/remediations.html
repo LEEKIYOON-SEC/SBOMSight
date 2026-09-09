@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: page(~{::main}, 'remediations', '조치')}">
+<body>
+<main>
+
+  <div class="page-head"><h1>조치</h1></div>
+
+  <div th:if="${!overdue.isEmpty()}" class="banner warn">
+    <b th:text="'기한이 지난 조치 ' + ${overdue.size()} + '건'">기한 경과</b>
+  </div>
+
+  <div class="card" th:if="${remediations.isEmpty()}">
+    <span class="muted">
+      등록된 조치가 없습니다. 취약점 화면에서 패키지를 골라 조치로 올립니다.
+    </span>
+  </div>
+
+  <div class="card" th:unless="${remediations.isEmpty()}">
+    <table>
+      <thead>
+      <tr>
+        <th class="tight">자산</th><th class="tight">패키지</th>
+        <th class="tight">현재 → 목표</th><th class="tight">상태</th>
+        <th class="tight">담당</th><th class="tight">기한</th>
+        <th class="num tight">등록 시 건수</th><th>메모</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr th:each="r : ${remediations}">
+        <td class="tight"><a th:href="@{'/assets/' + ${r.asset.id}}" th:text="${r.asset.name}">web-01</a></td>
+        <td class="tight"><a th:href="@{'/remediations/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td>
+        <td class="tight faint" th:text="${r.fromVersion} + ' → ' + ${r.toVersion}">—</td>
+        <td class="tight" th:text="${r.status.label()}">대기</td>
+        <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
+        <td class="tight" th:classappend="${r.overdue} ? 'overdue' : ''"
+            th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
+        <td class="num tight" th:text="${r.openedCount}">0</td>
+        <td class="faint" th:text="${#strings.isEmpty(r.note)} ? '—' : ${r.note}">—</td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+</body>
+</html>

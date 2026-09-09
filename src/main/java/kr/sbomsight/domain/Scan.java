@@ -118,6 +118,17 @@ public class Scan {
         return createdAt;
     }
 
+    /**
+     * 검사 시각을 정한다.
+     *
+     * <p>기본값은 만들어진 시각이다. 이 setter 는 예전 결과를 옮겨 담을 때와
+     * 시험에서 쓴다 — 이력 비교는 이 시각으로 앞뒤를 가르므로, 값을 손대면
+     * "지난 검사 대비"가 그만큼 달라진다.
+     */
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+
     public Instant getFinishedAt() {
         return finishedAt;
     }

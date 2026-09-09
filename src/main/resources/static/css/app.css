@@ -179,3 +179,44 @@ dialog h2 { margin-top: 0; }
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
 }
+
+/* ---------- 보고서 ----------
+   읽는 문서라 표 화면보다 좁게 잡는다. 한 줄이 너무 길면 눈이 다음 줄
+   첫머리를 놓친다. */
+.report { max-width: 62rem; margin: 0 auto; }
+.report-title { margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid var(--fg); }
+.report-title h1 { font-size: 1.6rem; margin: 0 0 .3rem; }
+
+.report section { margin-bottom: 2.5rem; break-inside: auto; }
+.report h2 {
+  font-size: 1.15rem; margin: 0 0 1rem;
+  padding-bottom: .4rem; border-bottom: 1px solid var(--line);
+}
+/* 기·승·전·결 표시. 장 번호 대신 이 글자가 순서를 말한다. */
+.report h2 .ch {
+  display: inline-block; width: 1.6rem; height: 1.6rem; line-height: 1.6rem;
+  text-align: center; border-radius: 4px; margin-right: .5rem;
+  background: var(--fg); color: var(--bg); font-size: .9rem;
+}
+.report h3 { font-size: .95rem; margin: 1.5rem 0 .5rem; color: var(--fg-muted); }
+
+/* 각 장의 첫 문단은 그 장의 결론이다. 표를 안 읽어도 이 줄만으로 뜻이 통해야 한다. */
+.report .lead { font-size: .95rem; line-height: 1.7; margin: 0 0 1rem; }
+.report .note { font-size: .85rem; color: var(--fg-muted); margin-top: .75rem; }
+.report table { margin-bottom: .5rem; }
+.report .kv th { width: 8rem; background: var(--bg-soft); font-weight: 600; }
+.report ul.residual { font-size: .88rem; line-height: 1.8; }
+
+.bar {
+  display: inline-block; height: .55rem; background: var(--accent);
+  border-radius: 2px; margin-right: .4rem; vertical-align: middle; min-width: 1px;
+}
+.danger-text { color: var(--critical); font-weight: 600; }
+
+.footnote {
+  margin-top: 2rem; padding-top: .75rem; border-top: 1px solid var(--line);
+  font-size: .8rem; color: var(--fg-faint); line-height: 1.6;
+}
+
+.pager { display: flex; gap: 1rem; align-items: center; justify-content: center; margin-top: 1rem; }
+td.overdue { color: var(--critical); font-weight: 600; }
