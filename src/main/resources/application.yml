@@ -1,0 +1,84 @@
+## SBOMSight 기본 설정
+##
+## 여기 적힌 값은 개발 기본값이다. 실제 운영 값(비밀번호·인증서 암호)은
+## application-prod.yml 이나 환경변수로 덮어쓴다 — 저장소에 두지 않는다.
+
+server:
+  # 금융권 지침상 http 로는 열지 않는다. 443 고정.
+  port: ${SBOMSIGHT_PORT:8443}
+  ssl:
+    enabled: true
+    # 자체 서명으로 시작하고, 정식 인증서를 받으면 이 파일만 바꿔 끼운다.
+    # 형식이 PKCS12 라 사내 CA 가 내주는 .pfx 를 그대로 쓸 수 있다.
+    key-store: ${SBOMSIGHT_KEYSTORE:file:./config/keystore.p12}
+    key-store-type: PKCS12
+    key-store-password: ${SBOMSIGHT_KEYSTORE_PASSWORD:changeit}
+    key-alias: ${SBOMSIGHT_KEY_ALIAS:sbomsight}
+    # 구형 프로토콜은 열지 않는다. 점검에서 가장 먼저 지적되는 항목이다.
+    enabled-protocols: TLSv1.3,TLSv1.2
+  servlet:
+    session:
+      # 놀고 있으면 끊는다. 마지막 요청으로부터 잰다 — 쓰고 있는 동안에는
+      # 요청이 계속 나가므로 밀려나지 않는다. 톰캣이 직접 관리한다.
+      timeout: ${SBOMSIGHT_SESSION_TIMEOUT:10m}
+      cookie:
+        http-only: true
+        secure: true
+        same-site: lax
+        name: SBOMSIGHT_SESSION
+  tomcat:
+    # SBOM 은 수백 MB 가 예사다. 업로드는 파일로 흘려보낸다.
+    max-swallow-size: -1
+
+spring:
+  application:
+    name: SBOMSight
+
+  datasource:
+    url: ${SBOMSIGHT_DB_URL:jdbc:mysql://127.0.0.1:13306/sbomsight?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useSSL=false&rewriteBatchedStatements=true}
+    username: ${SBOMSIGHT_DB_USER:sbomsight}
+    password: ${SBOMSIGHT_DB_PASSWORD:devpass}
+    hikari:
+      # grype 한 번에 수만 건이 들어온다. 배치 저장이 커넥션을 오래 쥔다.
+      maximum-pool-size: 10
+      connection-timeout: 10000
+
+  jpa:
+    hibernate:
+      # 스키마는 Flyway 만 건드린다. 운영 DB 를 자동으로 고치게 두지 않는다.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 500
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  servlet:
+    multipart:
+      max-file-size: ${SBOMSIGHT_MAX_UPLOAD:10GB}
+      max-request-size: ${SBOMSIGHT_MAX_UPLOAD:10GB}
+      # 메모리에 올리지 않고 바로 디스크로 흘린다.
+      file-size-threshold: 1MB
+
+  thymeleaf:
+    cache: true
+
+sbomsight:
+  # SBOM 원본과 grype 결과를 보관하는 곳. gzip 으로 저장한다.
+  data-dir: ${SBOMSIGHT_DATA_DIR:./data}
+  grype-path: ${SBOMSIGHT_GRYPE:grype}
+  syft-path: ${SBOMSIGHT_SYFT:syft}
+  # grype 한 번이 오래 걸릴 수 있다. 넉넉히 두고, 넘으면 실패로 남긴다.
+  grype-timeout-minutes: ${SBOMSIGHT_GRYPE_TIMEOUT:60}
+  # 최초 관리자. 계정이 하나도 없을 때만 만들어진다.
+  bootstrap-admin: ${SBOMSIGHT_ADMIN:admin}
+
+logging:
+  level:
+    kr.sbomsight: INFO

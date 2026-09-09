@@ -1,0 +1,181 @@
+/* SBOMSight — 화면 전체가 쓰는 한 장.
+   프레임워크를 들이지 않는다. 폐쇄망 반입 대상이 하나라도 적어야 하고,
+   이 도구가 그리는 것은 표와 카드 몇 가지뿐이다. */
+
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f7f8fa;
+  --fg: #17191c;
+  --fg-muted: #5b6270;
+  --fg-faint: #8a919e;
+  --line: #e4e7ec;
+  --line-strong: #cdd2da;
+  --accent: #1c5fd0;
+  --accent-soft: #eaf1fd;
+  --radius: 8px;
+
+  /* 심각도. grype 이 주는 네 단계를 그대로 쓴다 — 다시 나누지 않는다. */
+  --critical: #b3261e;
+  --high: #d4711a;
+  --medium: #2f6fb0;
+  --low: #737b88;
+  --ok: #1f7a4d;
+  --warn: #b06a12;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 14px/1.55 "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  color: var(--fg);
+  background: var(--bg-soft);
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: .92em; }
+
+/* ---------- 상단 바 ---------- */
+.topbar {
+  display: flex; align-items: center; gap: 1rem;
+  padding: .7rem 1.5rem; background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.topbar .spacer { flex: 1; }
+.brand a { font-weight: 700; font-size: 1.05rem; color: var(--fg); }
+.brand small { margin-left: .5rem; color: var(--fg-faint); font-size: .78rem; }
+.brand.center { display: block; text-align: center; margin-bottom: 1.25rem; }
+
+.topbar nav { display: flex; gap: 1.1rem; }
+.topbar nav a { color: var(--fg-muted); font-size: .9rem; }
+.topbar nav a.current { color: var(--fg); font-weight: 600; }
+
+.whoami { display: flex; align-items: center; gap: .5rem; }
+.whoami .who { font-weight: 600; font-size: .85rem; }
+.whoami .role {
+  font-size: .72rem; padding: .1rem .4rem; border-radius: 3px;
+  background: var(--bg-soft); color: var(--fg-muted); border: 1px solid var(--line);
+}
+.whoami .role.admin { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-soft); }
+form.inline { display: inline; margin: 0; }
+
+/* ---------- 본문 ---------- */
+.page { max-width: 100rem; margin: 0 auto; padding: 1.5rem; }
+.page-head { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.page-head h1 { font-size: 1.4rem; margin: 0; flex: 1; }
+h2 { font-size: 1.05rem; margin: 1.75rem 0 .6rem; }
+h2:first-child { margin-top: 0; }
+
+.card {
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.15rem; margin-bottom: 1.25rem;
+}
+.muted { color: var(--fg-muted); }
+.faint { color: var(--fg-faint); }
+.center { text-align: center; }
+
+.banner {
+  padding: .65rem .9rem; border-radius: var(--radius); margin-bottom: 1rem;
+  border: 1px solid var(--line); background: var(--bg-soft); font-size: .9rem;
+}
+.banner.ok { border-color: #bfe3d0; background: #eefaf3; }
+.banner.warn { border-color: #f0dcb4; background: #fdf6e8; }
+.banner.danger { border-color: #f2c4c1; background: #fdeceb; }
+.banner.info { border-color: #c6d9f5; background: var(--accent-soft); }
+
+/* ---------- 버튼 ---------- */
+.btn {
+  font: inherit; padding: .38rem .8rem; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line-strong); background: var(--bg); color: var(--fg);
+}
+.btn:hover { background: var(--bg-soft); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.small { padding: .2rem .55rem; font-size: .8rem; }
+.btn.danger { border-color: #e4b3b0; color: var(--critical); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---------- 입력 ---------- */
+label { display: block; margin-bottom: .75rem; font-size: .85rem; color: var(--fg-muted); }
+input, select, textarea {
+  font: inherit; width: 100%; margin-top: .25rem;
+  padding: .4rem .55rem; border: 1px solid var(--line-strong);
+  border-radius: 6px; background: var(--bg); color: var(--fg);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.inline-form { display: flex; gap: .5rem; align-items: flex-end; flex-wrap: wrap; }
+.inline-form label { margin-bottom: 0; }
+.inline-form input, .inline-form select { width: auto; min-width: 10rem; }
+
+/* ---------- 표 ---------- */
+table { border-collapse: collapse; width: 100%; font-size: .87rem; }
+th, td {
+  text-align: left; padding: .5rem .6rem;
+  border-bottom: 1px solid var(--line); vertical-align: top;
+}
+th { font-weight: 600; color: var(--fg-muted); font-size: .78rem; white-space: nowrap; }
+tbody tr:hover { background: var(--bg-soft); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 내용만큼만 차지하는 열. 남는 폭은 tight 가 아닌 마지막 열이 가져간다 —
+   두지 않으면 앞쪽 열이 과하게 벌어지고 뒤쪽 숫자들이 서로 붙는다. */
+th.tight, td.tight { width: 1%; white-space: nowrap; }
+td.tight + td.tight, th.tight + th.tight { padding-left: 1.25rem; }
+.asset-table td:last-child, .asset-table th:last-child { width: auto; min-width: 11rem; }
+
+.table-scroll { overflow-x: auto; }
+
+/* 심각도 표시. 색 띠 + 글자. 색만으로 구분하지 않는다. */
+.pcount { display: inline-flex; align-items: center; white-space: nowrap; font-size: .82rem; }
+.pcount + .pcount { margin-left: .75rem; }
+.mark {
+  display: inline-block; width: .3rem; height: .8rem;
+  border-radius: 1px; margin-right: .35rem;
+}
+.mark.critical { background: var(--critical); }
+.mark.high { background: var(--high); }
+.mark.medium { background: var(--medium); }
+.mark.low { background: var(--low); }
+
+.tag {
+  display: inline-block; font-size: .72rem; padding: .05rem .4rem;
+  border-radius: 3px; border: 1px solid var(--line); background: var(--bg-soft);
+  color: var(--fg-muted);
+}
+.tag.kev { border-color: #e4b3b0; background: #fdeceb; color: var(--critical); }
+.tag.fix { border-color: #bfe3d0; background: #eefaf3; color: var(--ok); }
+.tag.nofix { border-color: #f0dcb4; background: #fdf6e8; color: var(--warn); }
+
+/* ---------- 로그인 ---------- */
+body.gate { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.gate-box { width: min(26rem, 92vw); }
+.gate-box h1 { font-size: 1.2rem; margin: 0 0 .75rem; }
+.gate-box form { display: flex; flex-direction: column; gap: .1rem; }
+.gate-box .btn { margin-top: .5rem; }
+
+/* ---------- 팝업 ---------- */
+dialog {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.25rem; width: min(30rem, 92vw); box-shadow: 0 8px 30px rgba(0, 0, 0, .12);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .3); }
+dialog h2 { margin-top: 0; }
+.dialog-actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem; }
+
+/* ---------- 진행 상태 ---------- */
+.status { font-size: .8rem; padding: .1rem .45rem; border-radius: 3px; white-space: nowrap; }
+.status.QUEUED, .status.RUNNING { background: var(--accent-soft); color: var(--accent); }
+.status.DONE { background: #eefaf3; color: var(--ok); }
+.status.FAILED { background: #fdeceb; color: var(--critical); }
+
+/* ---------- 인쇄 ---------- */
+@media print {
+  .topbar, .btn, .no-print { display: none !important; }
+  body { background: #fff; }
+  .page { max-width: none; padding: 0; }
+  .card { border: none; padding: 0; margin-bottom: 1rem; break-inside: avoid; }
+  table { font-size: 10pt; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+}

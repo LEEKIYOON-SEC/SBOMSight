@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      th:replace="~{layout :: page(~{::main}, 'assets', '자산')}">
+<body>
+<main>
+
+  <div class="page-head">
+    <h1>자산</h1>
+    <button type="button" class="btn primary" id="open-add"
+            sec:authorize="hasRole('ADMIN')">자산 등록</button>
+  </div>
+
+  <!-- 기한이 지난 조치는 목록보다 먼저 보여야 한다. 표 어딘가에 섞여 있으면
+       지났다는 사실 자체를 못 보고 지나간다. -->
+  <div th:if="${!overdue.isEmpty()}" class="banner warn">
+    <b th:text="'기한이 지난 조치 ' + ${overdue.size()} + '건'">기한 경과</b>
+    <span th:each="r, i : ${overdue}" th:if="${i.index < 5}">
+      <a th:href="@{'/assets/' + ${r.asset.id}}"
+         th:text="${r.asset.name} + ' · ' + ${r.packageName}">web-01 · openssl</a><th:block
+         th:if="${!i.last && i.index < 4}"> · </th:block>
+    </span>
+    <a href="/remediations">전체 보기</a>
+  </div>
+
+  <div class="card" th:if="${rows.isEmpty()}">
+    <span class="muted" sec:authorize="hasRole('ADMIN')">
+      등록된 자산이 없습니다. <b>자산 등록</b>으로 서버를 먼저 등록한 뒤,
+      그 자산 안에서 SBOM 을 올립니다.
+    </span>
+    <span class="muted" sec:authorize="!hasRole('ADMIN')">
+      등록된 자산이 없습니다. 관리자에게 자산 등록을 요청하세요.
+    </span>
+  </div>
+
+  <div class="card" th:unless="${rows.isEmpty()}">
+    <table class="asset-table">
+      <thead>
+      <tr>
+        <th class="tight">서버</th>
+        <th class="tight">그룹</th>
+        <th class="tight">운영체제</th>
+        <th class="tight">마지막 스캔</th>
+        <th class="num tight">탐지</th>
+        <th class="tight">심각도</th>
+        <th class="num tight">조치</th>
+        <th>비고</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr th:each="row : ${rows}">
+        <td class="tight">
+          <a th:href="@{'/assets/' + ${row.asset.id}}"><b th:text="${row.asset.name}">web-01</b></a>
+        </td>
+        <td class="tight" th:text="${#strings.isEmpty(row.asset.groupName)} ? '—' : ${row.asset.groupName}">DMZ</td>
+        <td class="tight" th:text="${#strings.isEmpty(row.asset.osName)} ? '—' : ${row.asset.osName}">Rocky 9.3</td>
+
+        <td class="tight" th:if="${row.hasScan()}">
+          <span th:text="${#temporals.format(row.latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
+        </td>
+        <td class="tight muted" th:unless="${row.hasScan()}">스캔 없음</td>
+
+        <td class="num tight" th:text="${row.hasScan()} ? ${#numbers.formatInteger(row.latest.findingCount, 0, 'COMMA')} : '—'">—</td>
+
+        <td class="tight">
+          <th:block th:if="${row.hasScan()}">
+            <span class="pcount" th:if="${row.severityCount('critical') > 0}">
+              <i class="mark critical"></i>심각 <span th:text="${row.severityCount('critical')}">0</span></span>
+            <span class="pcount" th:if="${row.severityCount('high') > 0}">
+              <i class="mark high"></i>높음 <span th:text="${row.severityCount('high')}">0</span></span>
+            <span class="pcount" th:if="${row.severityCount('medium') > 0}">
+              <i class="mark medium"></i>보통 <span th:text="${row.severityCount('medium')}">0</span></span>
+            <span class="pcount" th:if="${row.severityCount('low') > 0}">
+              <i class="mark low"></i>낮음 <span th:text="${row.severityCount('low')}">0</span></span>
+          </th:block>
+          <span class="faint" th:unless="${row.hasScan()}">—</span>
+        </td>
+
+        <td class="num tight">
+          <a th:if="${row.openRemediations > 0}" th:href="@{'/assets/' + ${row.asset.id}}"
+             th:text="${row.openRemediations}">0</a>
+          <span class="faint" th:unless="${row.openRemediations > 0}">—</span>
+        </td>
+
+        <td class="faint" th:text="${#strings.isEmpty(row.asset.note)} ? '—' : ${row.asset.note}">—</td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <dialog id="add-dialog" sec:authorize="hasRole('ADMIN')">
+    <form method="post" th:action="@{/assets}" th:object="${newAsset}">
+      <h2>자산 등록</h2>
+      <label>서버 이름
+        <input th:field="*{name}" placeholder="web-01" required autocomplete="off">
+        <span class="faint">영문·숫자로 시작하고 <code>. _ -</code> 를 쓸 수 있습니다.</span>
+      </label>
+      <label>그룹
+        <input th:field="*{groupName}" placeholder="DMZ · 내부업무" autocomplete="off">
+      </label>
+      <label>운영체제
+        <input th:field="*{osName}" placeholder="Rocky Linux 9.3" autocomplete="off">
+      </label>
+      <label>비고
+        <input th:field="*{note}" placeholder="용도 · 담당 부서 등" autocomplete="off">
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn" id="add-cancel">취소</button>
+        <button type="submit" class="btn primary">등록</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const dialog = document.querySelector('#add-dialog');
+    const open = document.querySelector('#open-add');
+    if (open && dialog) {
+      open.addEventListener('click', () => dialog.showModal());
+      document.querySelector('#add-cancel').addEventListener('click', () => dialog.close());
+    }
+  </script>
+
+</main>
+</body>
+</html>

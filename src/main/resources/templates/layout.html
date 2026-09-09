@@ -1,0 +1,53 @@
+<!doctype html>
+<!--/*
+  공통 껍데기. 각 화면은 이 조각을 부르고 자기 내용만 넘긴다.
+
+      <html th:replace="~{layout :: page(~{::main}, 'assets', '자산')}">
+
+  레이아웃 전용 라이브러리를 더하지 않고 타임리프 기본 기능만 쓴다 — 의존성
+  하나가 늘면 폐쇄망에 반입할 것이 하나 더 는다.
+*/-->
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      th:fragment="page(content, active, title)">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${title} + ' — SBOMSight'">SBOMSight</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a href="/">SBOMSight</a>
+    <small>SBOM 기반 취약점 대응 검토</small>
+  </div>
+  <div class="spacer"></div>
+  <nav sec:authorize="isAuthenticated()">
+    <a href="/" th:classappend="${active} == 'assets' ? 'current' : ''">자산</a>
+    <a href="/remediations" th:classappend="${active} == 'remediations' ? 'current' : ''">조치</a>
+    <a href="/settings" sec:authorize="hasRole('ADMIN')"
+       th:classappend="${active} == 'settings' ? 'current' : ''">설정</a>
+  </nav>
+  <div class="whoami" sec:authorize="isAuthenticated()">
+    <span class="who" sec:authentication="name">—</span>
+    <span class="role admin" sec:authorize="hasRole('ADMIN')">관리자</span>
+    <span class="role" sec:authorize="!hasRole('ADMIN')">조회</span>
+    <!-- 로그아웃은 POST 다. GET 이면 링크를 미리 읽는 도구가 세션을 끊는다.
+         CSRF 토큰은 타임리프가 폼에 자동으로 넣는다. -->
+    <form th:action="@{/logout}" method="post" class="inline">
+      <button type="submit" class="btn small">로그아웃</button>
+    </form>
+  </div>
+</header>
+
+<div class="page">
+  <div th:if="${message}" class="banner ok" th:text="${message}"></div>
+  <div th:if="${error}" class="banner danger" th:text="${error}"></div>
+  <th:block th:replace="${content}"></th:block>
+</div>
+
+</body>
+</html>
