@@ -11,6 +11,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * grype 실행.
@@ -26,6 +28,9 @@ import java.util.concurrent.TimeUnit;
 public class GrypeRunner {
 
     private static final Logger log = LoggerFactory.getLogger(GrypeRunner.class);
+
+    /** `grype version -o json` 출력에서 판만 뽑는다. */
+    private static final Pattern VERSION = Pattern.compile("\"version\"\\s*:\\s*\"([^\"]+)\"");
 
     private final SbomSightProperties properties;
 
@@ -91,19 +96,41 @@ public class GrypeRunner {
         }
     }
 
-    /** grype 판. 도구 상태 화면에서 "설치되어 있는가"를 이걸로 답한다. */
-    public String version() {
+    /**
+     * grype 이 실제로 실행되는가, 어느 판인가.
+     *
+     * <p>"설치되어 있습니다"라는 말 대신 <b>실제로 불러 본다.</b> PATH 에 있는데
+     * 실행 권한이 없거나, 다른 아키텍처 바이너리이거나 하는 경우를 말로는
+     * 구분할 수 없다.
+     *
+     * @param available 실행에 성공했는가
+     * @param version   판 (예: 0.87.0). 못 읽으면 빈 문자열
+     * @param message   실패했을 때 화면에 그대로 보여 줄 사유
+     */
+    public record Status(boolean available, String version, String message) {
+    }
+
+    public Status status() {
         try {
             Process process = new ProcessBuilder(properties.grypePath(), "version", "-o", "json")
                     .redirectErrorStream(true)
                     .start();
             String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            return process.waitFor(30, TimeUnit.SECONDS) && process.exitValue() == 0 ? out.trim() : "";
+            boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+            if (!finished || process.exitValue() != 0) {
+                process.destroyForcibly();
+                return new Status(false, "", "grype 을 실행했지만 정상 종료하지 않았습니다.");
+            }
+            // JSON 전체를 화면에 쏟지 않는다 — 필요한 것은 판 하나다.
+            Matcher m = VERSION.matcher(out);
+            return new Status(true, m.find() ? m.group(1) : "", "");
         } catch (IOException e) {
-            return "";
+            return new Status(false, "",
+                    "grype 을 찾을 수 없습니다 (" + properties.grypePath() + "). "
+                    + "설치되어 있고 PATH 에 있는지 확인하세요.");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "";
+            return new Status(false, "", "확인이 중단되었습니다.");
         }
     }
 

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: page(~{::main}, 'settings', '설정')}">
+<body>
+<main>
+
+  <div class="page-head"><h1>설정</h1></div>
+
+  <h2>계정</h2>
+  <div class="card">
+    <table>
+      <thead>
+      <tr>
+        <th class="tight">계정</th><th class="tight">권한</th>
+        <th class="tight">마지막 로그인</th><th class="tight">상태</th>
+        <th class="actions"></th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr th:each="u : ${users}">
+        <td class="tight">
+          <b th:text="${u.username}">admin</b>
+          <span class="faint" th:if="${!#strings.isEmpty(u.displayName)}"
+                th:text="${u.displayName}">최초 관리자</span>
+        </td>
+        <td class="tight">
+          <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/role'}" class="inline">
+            <select name="role" onchange="this.form.submit()">
+              <option th:each="r : ${roles}" th:value="${r}" th:text="${r.label()}"
+                      th:selected="${r == u.role}">관리자</option>
+            </select>
+          </form>
+        </td>
+        <td class="tight faint"
+            th:text="${u.lastLoginAt != null} ? ${#temporals.format(u.lastLoginAt, 'yyyy-MM-dd HH:mm')} : '없음'">없음</td>
+        <td class="tight">
+          <span th:if="${u.mustChange}" class="tag nofix">초기화됨</span>
+          <span th:unless="${u.mustChange}" class="faint">—</span>
+        </td>
+        <td class="actions">
+          <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/reset'}" class="inline"
+                onsubmit="return confirm('비밀번호를 계정 이름과 같게 되돌립니다.\n본인이 로그인해 새 비밀번호를 정해야 합니다.\n\n계속할까요?')">
+            <button type="submit" class="btn small">비밀번호 초기화</button>
+          </form>
+          <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/delete'}" class="inline"
+                onsubmit="return confirm('이 계정을 지웁니다. 되돌릴 수 없습니다.\n\n계속할까요?')">
+            <button type="submit" class="btn small danger">삭제</button>
+          </form>
+        </td>
+      </tr>
+      </tbody>
+    </table>
+
+    <form method="post" th:action="@{/settings/users}" class="inline-form" style="margin-top:1rem">
+      <label>계정 이름
+        <input name="username" required autocomplete="off" placeholder="hong.gildong">
+      </label>
+      <label>이름
+        <input name="displayName" autocomplete="off" placeholder="홍길동 · 인프라운영팀">
+      </label>
+      <label>비밀번호
+        <input name="password" type="password" required minlength="8" autocomplete="new-password">
+      </label>
+      <label>권한
+        <select name="role">
+          <option value="VIEWER">조회 — 읽기 전용</option>
+          <option value="ADMIN">관리자 — 전체 권한</option>
+        </select>
+      </label>
+      <button class="btn primary" type="submit">계정 추가</button>
+    </form>
+  </div>
+
+  <h2>접근 IP</h2>
+  <div class="card">
+    <form method="post" th:action="@{/settings/ips}">
+      <label>접속을 허용할 IP · 대역
+        <textarea name="allowedIps" rows="4" th:text="${allowedIps}"
+                  placeholder="192.168.10.0/24&#10;10.0.0.5"></textarea>
+      </label>
+      <p class="faint">
+        한 줄에 하나씩, 또는 쉼표로 구분합니다. <code>10.0.0.5</code> 처럼 접두 길이가
+        없으면 그 한 대를 뜻합니다. <b>비워 두면 제한하지 않습니다</b>(로그인은 여전히 필요합니다).
+      </p>
+      <p class="faint">
+        판단은 <b>소켓 상대 주소로만</b> 하고 <code>X-Forwarded-For</code> 같은 헤더는 보지
+        않습니다 — 누구든 채워 보낼 수 있어서, 그것을 믿으면 목록이 헤더 한 줄로 우회됩니다.
+        지금 접속 중인 주소가 빠진 목록은 저장되지 않습니다.
+      </p>
+      <p>
+        현재 상태:
+        <b th:if="${unrestricted}">제한 없음</b>
+        <b th:unless="${unrestricted}">제한 중</b>
+        · 지금 접속 주소 <code th:text="${clientIp}">127.0.0.1</code>
+      </p>
+      <button class="btn primary" type="submit">저장</button>
+    </form>
+  </div>
+
+  <h2>도구 상태</h2>
+  <div class="card">
+    <table class="kv">
+      <tr>
+        <th>grype</th>
+        <td>
+          <th:block th:if="${grype.available()}">
+            <span class="tag fix">실행됨</span>
+            <b th:if="${!#strings.isEmpty(grype.version())}" th:text="${grype.version()}">0.87.0</b>
+          </th:block>
+          <th:block th:unless="${grype.available()}">
+            <span class="tag nofix">실행할 수 없습니다</span>
+            <span class="faint" th:text="${grype.message()}"></span>
+          </th:block>
+        </td>
+      </tr>
+      <tr><th>실행 경로</th><td><code th:text="${grypePath}">grype</code></td></tr>
+    </table>
+    <p class="faint" th:unless="${grype.available()}">
+      grype 이 없으면 SBOM 을 올려도 검사가 실패합니다. 설치한 뒤
+      <code>grype db update</code> 로 취약점 DB 를 받고, 경로가 다르면
+      <code>SBOMSIGHT_GRYPE</code> 로 알려 주세요.
+    </p>
+  </div>
+
+</main>
+</body>
+</html>

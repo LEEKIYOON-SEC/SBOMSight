@@ -73,6 +73,11 @@
         </td>
         <td class="tight">
           <a th:if="${s.status.name() == 'DONE'}" th:href="@{'/scans/' + ${s.id}}">열기</a>
+          <form method="post" th:action="@{'/scans/' + ${s.id} + '/delete'}" class="inline"
+                sec:authorize="hasRole('ADMIN')"
+                onsubmit="return confirm('이 스캔과 보관된 SBOM·검사 결과를 지웁니다.\n되돌릴 수 없습니다.\n\n계속할까요?')">
+            <button type="submit" class="btn small danger">삭제</button>
+          </form>
         </td>
       </tr>
       </tbody>
@@ -104,6 +109,25 @@
       </tr>
       </tbody>
     </table>
+  </div>
+
+  <h2 sec:authorize="hasRole('ADMIN')">자산 삭제</h2>
+  <div class="card danger-zone" sec:authorize="hasRole('ADMIN')">
+    <p>
+      <b th:text="${asset.name}">web-01</b> 을 지우면
+      <b th:text="'스캔 ' + ${impact.scanCount()} + '건'">스캔 0건</b> ·
+      <b th:text="'탐지 ' + ${#numbers.formatInteger(impact.findingCount(), 0, 'COMMA')} + '건'">탐지 0건</b> ·
+      <b th:text="'조치 ' + ${impact.remediationCount()} + '건'">조치 0건</b>
+      과 <b>보관된 SBOM·검사 결과 파일</b>이 함께 사라집니다. 되돌릴 수 없고,
+      다시 보려면 SBOM 을 다시 올려 검사해야 합니다.
+    </p>
+    <form method="post" th:action="@{'/assets/' + ${asset.id} + '/delete'}" class="inline-form">
+      <label>확인 — 자산 이름을 입력하세요
+        <input name="confirm" required autocomplete="off"
+               th:placeholder="${asset.name}">
+      </label>
+      <button type="submit" class="btn danger">삭제</button>
+    </form>
   </div>
 
 </main>

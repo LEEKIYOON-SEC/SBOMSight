@@ -78,6 +78,10 @@ sbomsight:
   grype-timeout-minutes: ${SBOMSIGHT_GRYPE_TIMEOUT:60}
   # 최초 관리자. 계정이 하나도 없을 때만 만들어진다.
   bootstrap-admin: ${SBOMSIGHT_ADMIN:admin}
+  # 접속 허용 IP·CIDR (쉼표·줄바꿈 구분). **부트스트랩 값이다** — 웹의
+  # `설정 → 접근 IP` 에서 한 번이라도 저장하면 그때부터 DB 값이 쓰인다.
+  # 비어 있으면 IP 제한 없음이며, 로그인은 여전히 필요하다.
+  allowed-ips: ${SBOMSIGHT_ALLOWED_IPS:}
 
 logging:
   level:

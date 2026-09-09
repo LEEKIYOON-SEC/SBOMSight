@@ -2,6 +2,8 @@ package kr.sbomsight.web;
 
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
+import jakarta.servlet.http.HttpServletResponse;
+import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.RemediationService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -56,6 +58,13 @@ public class RemediationController {
                                                principal.getName());
         flash.addFlashAttribute("message", packageName + " 조치를 등록했습니다.");
         return "redirect:/remediations/" + remediation.getId();
+    }
+
+    @GetMapping("/remediations/export.csv")
+    public void export(HttpServletResponse response) throws java.io.IOException {
+        response.setContentType("text/csv; charset=UTF-8");
+        response.setHeader("Content-Disposition", "attachment; filename=remediations.csv");
+        CsvWriter.writeRemediations(response.getOutputStream(), service.all());
     }
 
     @GetMapping("/remediations/{id}")

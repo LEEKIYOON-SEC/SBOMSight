@@ -3,6 +3,9 @@ package kr.sbomsight.web;
 import jakarta.validation.Valid;
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
+import jakarta.servlet.http.HttpServletResponse;
+import kr.sbomsight.service.AssetService;
+import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.ScanService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,14 +39,17 @@ public class AssetController {
     private final FindingRepository findings;
     private final RemediationRepository remediations;
     private final ScanService scanService;
+    private final AssetService assetService;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
-                           RemediationRepository remediations, ScanService scanService) {
+                           RemediationRepository remediations, ScanService scanService,
+                           AssetService assetService) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
         this.remediations = remediations;
         this.scanService = scanService;
+        this.assetService = assetService;
     }
 
     /** 자산 목록. 한 화면에서 "어느 서버부터 볼 것인가"에 답해야 한다. */
@@ -100,7 +106,78 @@ public class AssetController {
         model.addAttribute("severity", latest == null ? Map.of() : severityMap(latest.getId()));
         model.addAttribute("remediations",
                 remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id));
+        // 지우면 무엇이 함께 사라지는지 확인 문구에 그대로 쓴다.
+        model.addAttribute("impact", assetService.impactOf(asset));
         return "asset-detail";
+    }
+
+    /**
+     * 자산을 지운다. <b>스캔·탐지·조치와 보관 파일까지 함께 사라진다.</b>
+     *
+     * <p>화면에서 무엇이 지워지는지 숫자로 보여 주고 확인을 받는다. "정말
+     * 지울까요?" 만으로는 그 안에 스캔 이력이 얼마나 쌓여 있었는지 모른다.
+     */
+    @PostMapping("assets/{id}/delete")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String delete(@PathVariable Long id, @RequestParam String confirm,
+                         Principal principal, RedirectAttributes flash) {
+        Asset asset = asset(id);
+        if (!asset.getName().equals(confirm)) {
+            flash.addFlashAttribute("error",
+                    "확인란에 자산 이름(" + asset.getName() + ")을 정확히 입력해야 지워집니다.");
+            return "redirect:/assets/" + id;
+        }
+        AssetService.Impact impact = assetService.delete(asset, principal.getName());
+        flash.addFlashAttribute("message",
+                asset.getName() + " 자산을 지웠습니다 — 스캔 " + impact.scanCount() + "건 · 탐지 "
+                + impact.findingCount() + "건 · 조치 " + impact.remediationCount()
+                + "건과 보관된 SBOM·검사 결과가 함께 삭제되었습니다.");
+        return "redirect:/";
+    }
+
+    @PostMapping("scans/{scanId}/delete")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String deleteScan(@PathVariable Long scanId, RedirectAttributes flash) {
+        Scan scan = scans.findWithAsset(scanId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
+        Long assetId = scan.getAsset().getId();
+        scanService.delete(scan);
+        flash.addFlashAttribute("message", "스캔을 지웠습니다. 보관된 파일도 함께 삭제되었습니다.");
+        return "redirect:/assets/" + assetId;
+    }
+
+    /**
+     * 지금 화면의 필터가 그대로 적용된 결과를 CSV 로.
+     *
+     * <p>화면에서 걸러 놓고 내려받으면 전체가 나오는 것이 가장 흔한 불만이다.
+     * 같은 조건을 같은 질의에 넘긴다.
+     */
+    @GetMapping("scans/{scanId}/export.csv")
+    public void exportFindings(@PathVariable Long scanId,
+                               @RequestParam(required = false) String severity,
+                               @RequestParam(required = false) Boolean fixable,
+                               @RequestParam(required = false) Boolean kev,
+                               @RequestParam(required = false) String q,
+                               @RequestParam(defaultValue = "cvss") String sort,
+                               HttpServletResponse response) throws java.io.IOException {
+        Scan scan = scans.findWithAsset(scanId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
+
+        // 내려받기는 화면과 달리 전부 담는다. 5만 건이면 파일이 크지만, 잘린
+        // 파일로 결재를 올리는 것보다 낫다.
+        List<Finding> all = findings.search(scanId, blankToNull(severity), fixable, kev,
+                                            blankToNull(q),
+                                            PageRequest.of(0, 200_000, order(sort))).getContent();
+
+        String name = scan.getAsset().getName() + "-"
+                + scan.getCreatedAt().atZone(java.time.ZoneId.systemDefault())
+                      .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
+                + ".csv";
+        response.setContentType("text/csv; charset=UTF-8");
+        response.setHeader("Content-Disposition",
+                "attachment; filename*=UTF-8''" + java.net.URLEncoder.encode(
+                        name, java.nio.charset.StandardCharsets.UTF_8));
+        CsvWriter.writeFindings(response.getOutputStream(), all);
     }
 
     /** SBOM 업로드. 저장까지만 하고 grype 은 뒤에서 돌린다. */

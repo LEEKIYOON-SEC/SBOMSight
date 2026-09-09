@@ -220,3 +220,12 @@ dialog h2 { margin-top: 0; }
 
 .pager { display: flex; gap: 1rem; align-items: center; justify-content: center; margin-top: 1rem; }
 td.overdue { color: var(--critical); font-weight: 600; }
+
+/* 되돌릴 수 없는 동작. 다른 카드와 눈에 띄게 다르게 둔다 — 실수로 누르는
+   자리가 아니라 마음먹고 찾아오는 자리여야 한다. */
+.danger-zone { border-color: #e4b3b0; background: #fffafa; }
+.danger-zone p { margin-top: 0; }
+
+/* 표 안의 작은 폼(권한 바꾸기 등). 기본값으로 두면 칸 폭까지 눌려 화살표만
+   남는다. */
+td form.inline select, td form.inline input { width: auto; min-width: 8rem; margin-top: 0; }

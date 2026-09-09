@@ -9,6 +9,8 @@
       <a th:href="@{'/assets/' + ${scan.asset.id}}" th:text="${scan.asset.name}">web-01</a>
       <span class="faint" th:text="' · ' + ${#temporals.format(scan.createdAt, 'yyyy-MM-dd HH:mm')}"></span>
     </h1>
+    <a class="btn" th:href="@{'/scans/' + ${scan.id} + '/export.csv'(severity=${severity},
+       fixable=${fixable}, kev=${kev}, q=${q}, sort=${sort})}">CSV 내려받기</a>
     <a class="btn" th:href="@{'/report/' + ${scan.id}}">보고서</a>
   </div>
 

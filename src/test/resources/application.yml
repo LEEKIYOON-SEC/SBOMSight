@@ -20,3 +20,4 @@ sbomsight:
   syft-path: syft
   grype-timeout-minutes: 5
   bootstrap-admin: admin
+  allowed-ips: ""
