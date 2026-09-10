@@ -39,6 +39,29 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root
 
+# 네이티브 명령의 출력을 안전하게 받는다.
+#
+# java -version 은 버전을 **stderr 로** 낸다. 오류라서가 아니라 처음부터 그렇다.
+# 그런데 $ErrorActionPreference = 'Stop' 인 상태에서 2>&1 로 합치면, PowerShell
+# 5.1 은 stderr 한 줄 한 줄을 ErrorRecord 로 감싸고 그것을 **종료 오류**로
+# 취급한다. 자바가 멀쩡히 깔려 있어도 확인하다가 죽는다:
+#
+#     java.exe : openjdk version "21.0.12.1" 2026-08-18 LTS
+#     + FullyQualifiedErrorId : NativeCommandError
+#
+# 그래서 그 구간에서만 기본 설정으로 되돌려 실행한다. 아래 대입은 함수
+# 스코프에만 적용되므로 바깥의 'Stop' 은 그대로 남는다. 받은 것은 문자열로
+# 바꿔 돌려준다 — ErrorRecord 인 채로 두면 -match 나 Select-String 에서
+# 예상과 다르게 움직인다.
+function Invoke-Native {
+    param(
+        [Parameter(Mandatory = $true)][string] $Command,
+        [string[]] $Arguments = @()
+    )
+    $ErrorActionPreference = 'Continue'
+    & $Command @Arguments 2>&1 | ForEach-Object { "$_" }
+}
+
 function Test-Line($ok, $label, $detail = '') {
     $mark  = if ($ok) { '  OK  ' } else { ' 안됨 ' }
     $color = if ($ok) { 'Green' } else { 'Red' }
@@ -57,7 +80,7 @@ $ready = $true
 
 $java = Get-Command java -ErrorAction SilentlyContinue
 if ($java) {
-    $ver = (& java -version 2>&1 | Select-Object -First 1)
+    $ver = Invoke-Native 'java' @('-version') | Select-Object -First 1
     # 21 미만이면 Spring Boot 3.3 이 안 뜬다.
     $major = if ($ver -match '"(\d+)') { [int]$Matches[1] } else { 0 }
     $ready = (Test-Line ($major -ge 21) "Java 21 이상" $ver) -and $ready
@@ -105,12 +128,20 @@ if ($holder) {
 }
 
 # Hyper-V·WSL 이 잡아 둔 예약 구간에 걸리면 바인딩이 조용히 실패한다.
-$excluded = & netsh interface ipv4 show excludedportrange protocol=tcp 2>$null |
-    Select-String -Pattern '^\s*(\d+)\s+(\d+)' |
-    ForEach-Object {
-        [pscustomobject]@{ Start = [int]$_.Matches[0].Groups[1].Value
-                           End   = [int]$_.Matches[0].Groups[2].Value }
-    } | Where-Object { $listenPort -ge $_.Start -and $listenPort -le $_.End }
+#
+# 이건 참고용 확인이다. netsh 가 없거나 출력 형식이 달라도 기동을 막을 이유는
+# 없으므로, 실패하면 이 항목만 건너뛴다.
+$excluded = $null
+try {
+    $excluded = Invoke-Native 'netsh' @('interface', 'ipv4', 'show', 'excludedportrange', 'protocol=tcp') |
+        Select-String -Pattern '^\s*(\d+)\s+(\d+)' |
+        ForEach-Object {
+            [pscustomobject]@{ Start = [int]$_.Matches[0].Groups[1].Value
+                               End   = [int]$_.Matches[0].Groups[2].Value }
+        } | Where-Object { $listenPort -ge $_.Start -and $listenPort -le $_.End }
+} catch {
+    Write-Host "        (예약 포트 구간은 확인하지 못했습니다: $($_.Exception.Message))" -ForegroundColor DarkGray
+}
 
 if ($excluded) {
     Test-Line $false "$listenPort 예약 구간" "윈도우가 예약해 둔 범위에 들어갑니다" | Out-Null
