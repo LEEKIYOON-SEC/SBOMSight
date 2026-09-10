@@ -9,6 +9,10 @@
 # 문자가 먹혀 닫는 따옴표가 사라지고 파서가 죽는다.
 *.ps1 text eol=crlf
 
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
 # 셸 스크립트에 CRLF가 섞이면 셔뱅(#!)이 깨져 실행되지 않는다.
 # Windows에서 체크아웃해 WSL·Git Bash로 돌리는 경우를 위해 LF를 강제한다.
 *.sh text eol=lf
+mvnw text eol=lf

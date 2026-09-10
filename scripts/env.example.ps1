@@ -1,3 +1,16 @@
+﻿# ⚠ 이 파일은 반드시 **UTF-8 BOM** 으로 저장한다.
+#
+#   Windows PowerShell 5.1(= 윈도우 기본 powershell.exe)은 BOM 이 없는 파일을
+#   시스템 ANSI 코드페이지(한국어 윈도우면 CP949)로 읽는다. 그러면 한글이
+#   깨지는 데서 끝나지 않고 **닫는 따옴표까지 먹혀** 파서가 죽는다:
+#
+#       식에 닫는 ')' 가 없습니다.
+#       ParserError: MissingEndParenthesisInExpression
+#
+#   BOM 이 있으면 5.1 도 UTF-8 로 읽는다. PowerShell 7(pwsh)은 BOM 없이도
+#   UTF-8 로 읽지만, 이 도구는 기본 powershell.exe 로도 돌아야 한다.
+#   ScriptEncodingTest 가 매 빌드마다 BOM 을 확인한다.
+
 # SBOMSight 운영 값 — config\env.ps1 로 복사해서 채운다.
 #
 # **이 파일을 채운 것은 저장소에 올리지 않는다** (.gitignore 에 있다).
