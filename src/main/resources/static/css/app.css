@@ -52,7 +52,10 @@ code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-siz
 .topbar nav a.current { color: var(--fg); font-weight: 600; }
 
 .whoami { display: flex; align-items: center; gap: .5rem; }
-.whoami .who { font-weight: 600; font-size: .85rem; }
+/* 계정 이름은 내 계정으로 가는 링크다. 파랗게 칠하면 메뉴처럼 보여 시선을
+   끌지만 자주 가는 자리가 아니다 — 본문 색으로 두고 밑줄로만 알린다. */
+.whoami .who { font-weight: 600; font-size: .85rem; color: var(--fg); }
+.whoami .who:hover { text-decoration: underline; }
 .whoami .role {
   font-size: .72rem; padding: .1rem .4rem; border-radius: 3px;
   background: var(--bg-soft); color: var(--fg-muted); border: 1px solid var(--line);

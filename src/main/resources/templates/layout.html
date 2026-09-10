@@ -25,14 +25,18 @@
     <small>SBOM 기반 취약점 대응 검토</small>
   </div>
   <div class="spacer"></div>
-  <nav sec:authorize="isAuthenticated()">
+  <!-- 초기 비밀번호에 붙잡혀 있으면 메뉴를 감춘다. 어차피 눌러도 비밀번호
+       화면으로 되돌아온다 — 되돌아오는 링크를 보여 주면 고장으로 읽힌다. -->
+  <nav sec:authorize="isAuthenticated()" th:unless="${passwordLocked}">
     <a href="/" th:classappend="${active} == 'assets' ? 'current' : ''">자산</a>
     <a href="/remediations" th:classappend="${active} == 'remediations' ? 'current' : ''">조치</a>
     <a href="/settings" sec:authorize="hasRole('ADMIN')"
        th:classappend="${active} == 'settings' ? 'current' : ''">설정</a>
   </nav>
   <div class="whoami" sec:authorize="isAuthenticated()">
-    <span class="who" sec:authentication="name">—</span>
+    <!-- 계정 이름이 곧 내 계정으로 가는 문이다. 앞서는 그냥 글자였고, 그래서
+         비밀번호를 바꾸려면 주소창에 /password 를 직접 쳐야 했다. -->
+    <a class="who" href="/password" title="비밀번호 변경" sec:authentication="name">—</a>
     <span class="role admin" sec:authorize="hasRole('ADMIN')">관리자</span>
     <span class="role" sec:authorize="!hasRole('ADMIN')">조회</span>
     <!-- 로그아웃은 POST 다. GET 이면 링크를 미리 읽는 도구가 세션을 끊는다.
