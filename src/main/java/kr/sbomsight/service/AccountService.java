@@ -103,6 +103,14 @@ public class AccountService {
         AppUser user = require(username);
         user.setPasswordHash(encoder.encode(username));
         user.setMustChange(true);
+        // 주기 기준도 지금으로 옮긴다. 옛 시각을 남겨 두면 mustChange 와
+        // 만료가 동시에 참이 되어, 바꾼 직후에도 "주기가 지났습니다" 로
+        // 다시 붙잡힐 수 있다.
+        user.setPasswordChangedAt(java.time.Instant.now());
+        // 잠긴 계정을 초기화하면 잠금도 함께 풀린다 — 초기화의 목적이
+        // 들어오게 해 주는 것인데 잠금이 남아 있으면 아무 효과가 없다.
+        user.setFailedAttempts(0);
+        user.setLockedAt(null);
         users.save(user);
         log.info("{} 의 비밀번호를 초기화했습니다 ({})", username, actor);
     }

@@ -2,6 +2,8 @@ package kr.sbomsight.web;
 
 import kr.sbomsight.domain.AppUser;
 import kr.sbomsight.domain.AuditEvent;
+import kr.sbomsight.domain.PasswordChangeReason;
+import kr.sbomsight.service.PasswordPolicy;
 import kr.sbomsight.service.AuditService;
 import kr.sbomsight.repo.AppUserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,11 +26,14 @@ public class AuthController {
     private final AppUserRepository users;
     private final PasswordEncoder encoder;
     private final AuditService audit;
+    private final PasswordPolicy policy;
 
-    public AuthController(AppUserRepository users, PasswordEncoder encoder, AuditService audit) {
+    public AuthController(AppUserRepository users, PasswordEncoder encoder, AuditService audit,
+                          PasswordPolicy policy) {
         this.users = users;
         this.encoder = encoder;
         this.audit = audit;
+        this.policy = policy;
     }
 
     /**
@@ -56,8 +61,14 @@ public class AuthController {
 
     @GetMapping("/password")
     public String passwordForm(Principal principal, Model model) {
-        users.findByUsername(principal.getName())
-             .ifPresent(user -> model.addAttribute("mustChange", user.isMustChange()));
+        users.findByUsername(principal.getName()).ifPresent(user -> {
+            // 온 이유에 따라 할 말과 첫 칸의 이름이 달라진다.
+            PasswordChangeReason reason = policy.reasonFor(user);
+            model.addAttribute("reason", reason);
+            model.addAttribute("mustChange", reason.isForced());
+            model.addAttribute("daysSinceChange", policy.daysSinceChange(user));
+            model.addAttribute("maxAgeDays", policy.maxAgeDays());
+        });
         return "password";
     }
 
@@ -88,6 +99,9 @@ public class AuthController {
 
         user.setPasswordHash(encoder.encode(password));
         user.setMustChange(false);
+        // 주기 계산의 기준을 지금으로 옮긴다. 이걸 빼먹으면 바꿔도 계속
+        // 만료 상태라 변경 화면에서 나올 수 없다.
+        user.setPasswordChangedAt(java.time.Instant.now());
         users.save(user);
         // 비밀번호 자체는 절대 기록하지 않는다. 바꿨다는 사실만 남긴다.
         audit.record(AuditEvent.PASSWORD_CHANGED, user.getUsername(), "");

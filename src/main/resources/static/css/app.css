@@ -74,6 +74,8 @@ h2:first-child { margin-top: 0; }
   background: var(--bg); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 1rem 1.15rem; margin-bottom: 1.25rem;
 }
+/* 화면 머리의 한 줄. 상태를 알려 주는 문장이지 설명문이 아니다. */
+.lede { font-size: .95rem; color: var(--fg-muted); margin: -.4rem 0 1rem; }
 .muted { color: var(--fg-muted); }
 .faint { color: var(--fg-faint); }
 .center { text-align: center; }

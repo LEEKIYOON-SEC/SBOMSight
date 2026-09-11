@@ -1,6 +1,7 @@
 package kr.sbomsight.web;
 
 import kr.sbomsight.repo.AppUserRepository;
+import kr.sbomsight.service.PasswordPolicy;
 import org.springframework.security.core.Authentication;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -17,9 +18,11 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 public class LayoutAdvice {
 
     private final AppUserRepository users;
+    private final PasswordPolicy policy;
 
-    public LayoutAdvice(AppUserRepository users) {
+    public LayoutAdvice(AppUserRepository users, PasswordPolicy policy) {
         this.users = users;
+        this.policy = policy;
     }
 
     @ModelAttribute
@@ -27,7 +30,7 @@ public class LayoutAdvice {
         boolean locked = auth != null
                 && auth.isAuthenticated()
                 && !auth.getPrincipal().equals("anonymousUser")
-                && users.findByUsername(auth.getName()).map(u -> u.isMustChange()).orElse(false);
+                && users.findByUsername(auth.getName()).map(policy::mustChange).orElse(false);
         model.addAttribute("passwordLocked", locked);
     }
 }

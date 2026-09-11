@@ -3,13 +3,17 @@ package kr.sbomsight.config;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.repo.AppUserRepository;
+import kr.sbomsight.service.PasswordPolicy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
- * 초기 비밀번호를 쓰는 계정을 비밀번호 변경 화면에 붙잡아 둔다.
+ * 비밀번호를 바꿔야 하는 계정을 변경 화면에 붙잡아 둔다.
+ *
+ * <p>붙잡는 경우는 셋이다 — 최초 로그인, 관리자 초기화, 변경 주기 도래.
+ * 어느 경우인지는 {@link PasswordPolicy} 가 판단한다.
  *
  * <p><b>왜 필요한가.</b> {@code password.html} 은 "새 비밀번호를 정하기 전에는
  * 다른 화면이 열리지 않습니다" 라고 적어 두었는데, 정작 그렇게 만드는 코드가
@@ -41,9 +45,11 @@ public class MustChangePasswordInterceptor implements HandlerInterceptor {
     }
 
     private final AppUserRepository users;
+    private final PasswordPolicy policy;
 
-    public MustChangePasswordInterceptor(AppUserRepository users) {
+    public MustChangePasswordInterceptor(AppUserRepository users, PasswordPolicy policy) {
         this.users = users;
+        this.policy = policy;
     }
 
     @Override
@@ -59,8 +65,11 @@ public class MustChangePasswordInterceptor implements HandlerInterceptor {
             return true;  // 로그인 여부는 스프링 시큐리티가 판단한다.
         }
 
+        // 판단은 PasswordPolicy 한 곳에서 한다. 화면과 인터셉터가 각자
+        // 판단하면 "바꾸라는데 다른 화면이 열린다" 거나 반대로 "바꿀 것이
+        // 없는데 갇힌다" 가 된다.
         boolean mustChange = users.findByUsername(auth.getName())
-                                  .map(user -> user.isMustChange())
+                                  .map(policy::mustChange)
                                   .orElse(false);
         if (!mustChange) {
             return true;
