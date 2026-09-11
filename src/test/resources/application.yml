@@ -14,6 +14,9 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+    # 운영과 같아야 한다. 켜 두면 화면을 그리는 동안에도 지연 로딩이 되어,
+    # 운영에서 LazyInitializationException 으로 터질 코드가 시험에서는 통과한다.
+    open-in-view: false
 sbomsight:
   data-dir: ./target/test-data
   grype-path: grype

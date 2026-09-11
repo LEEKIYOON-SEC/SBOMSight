@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: page(~{::main}, 'assets', '자산 일괄 등록')}">
+<body>
+<main>
+
+  <div class="page-head">
+    <h1>자산 일괄 등록</h1>
+    <a class="btn" th:href="@{/assets/import/template.csv}">서식 내려받기</a>
+  </div>
+
+  <div class="card">
+    <form method="post" th:action="@{/assets/import/preview}"
+          enctype="multipart/form-data" class="inline-form">
+      <label>CSV 파일
+        <input type="file" name="file" accept=".csv,text/csv" required>
+      </label>
+      <button class="btn primary" type="submit">미리 보기</button>
+    </form>
+  </div>
+
+  <th:block th:if="${preview != null}">
+
+    <div class="card" th:if="${preview.isEmpty()}">
+      <span class="muted">읽을 줄이 없습니다.</span>
+    </div>
+
+    <th:block th:unless="${preview.isEmpty()}">
+      <div class="card">
+        <p style="margin-top:0">
+          <b class="num" th:text="${preview.importable()}">0</b>대를 등록합니다.
+          <span th:if="${preview.skipped() > 0}" class="danger-text"
+                th:text="${preview.skipped()} + '줄은 건너뜁니다.'"></span>
+        </p>
+        <p class="faint" style="margin-bottom:0">
+          <span th:text="${filename}">assets.csv</span> ·
+          <!-- 어떤 인코딩으로 읽었는지 밝힌다. 한글이 깨져 보이면 여기부터 본다. -->
+          <span th:text="${preview.charsetName()} + ' 로 읽음'">UTF-8 로 읽음</span>
+          <span th:if="${preview.headerSkipped()}"> · 첫 줄은 제목으로 보고 건너뜀</span>
+        </p>
+        <p th:if="${!preview.newZones().isEmpty()}" class="faint" style="margin-bottom:0">
+          새로 만들 구역:
+          <b th:each="z, i : ${preview.newZones()}"
+             th:text="${z} + (${i.last} ? '' : ', ')">DMZ</b>
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="table-scroll">
+          <table>
+            <thead>
+            <tr>
+              <th class="num tight">줄</th>
+              <th class="tight">서버 이름</th>
+              <th class="tight">구역</th>
+              <th class="tight">운영체제</th>
+              <th>비고</th>
+              <th class="tight">판정</th>
+            </tr>
+            </thead>
+            <tbody>
+            <!-- 걸러진 줄을 감추지 않는다. "30줄 중 24줄 등록" 만 말하면
+                 나머지 여섯이 무엇이었는지 알 수 없다. -->
+            <tr th:each="r : ${preview.rows()}"
+                th:style="${r.state().importable()} ? '' : 'opacity:.6'">
+              <td class="num tight" th:text="${r.line()}">1</td>
+              <td class="tight" th:text="${#strings.isEmpty(r.name())} ? '—' : ${r.name()}">web-01</td>
+              <td class="tight" th:text="${#strings.isEmpty(r.zone())} ? '미분류' : ${r.zone()}">DMZ</td>
+              <td class="tight faint" th:text="${#strings.isEmpty(r.os())} ? '—' : ${r.os()}">—</td>
+              <td class="faint" th:text="${#strings.isEmpty(r.note())} ? '—' : ${r.note()}">—</td>
+              <td class="tight">
+                <span th:class="${r.state().importable()} ? 'tag fix' : 'tag nofix'"
+                      th:text="${r.state().label()}">등록</span>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <form method="post" th:action="@{/assets/import/apply}" style="margin-top:1rem"
+              th:if="${preview.importable() > 0}">
+          <button class="btn primary" type="submit"
+                  th:text="${preview.importable()} + '대 등록'">등록</button>
+        </form>
+      </div>
+    </th:block>
+  </th:block>
+
+</main>
+</body>
+</html>
