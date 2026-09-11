@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
       th:replace="~{layout :: page(~{::main}, 'assets', '취약점')}">
 <body>
 <main>
@@ -131,10 +132,20 @@
             <span th:if="${f.noFix}" class="tag nofix">수정본 없음</span>
             <span th:if="${!f.fixAvailable && !f.noFix}" class="faint">확인 필요</span>
           </td>
-          <td>
+          <td th:with="key=${f.displayId + '|' + f.packageName},
+                       accepted=${acceptedKeys.contains(f.cve + '|' + f.packageName)}">
             <span th:if="${f.kev != null && f.kev}" class="tag kev">실제 악용 확인</span>
             <span th:if="${f.kevRansomware != null && f.kevRansomware}" class="tag kev">랜섬웨어</span>
+            <!-- 수용은 건수를 줄이지 않는다. 표시만 붙는다 — 줄이면 보고서가
+                 실제보다 안전해 보이는 숫자를 말하게 된다. -->
+            <span th:if="${accepted}" class="tag">위험 수용됨</span>
             <span class="faint" th:text="${f.matchType}">exact-direct-match</span>
+
+            <!-- 고칠 수 없는 건에만 수용 버튼을 둔다. 올리면 사라지는 건은
+                 수용할 일이 아니라 올릴 일이다. -->
+            <a th:if="${f.noFix && !accepted}" sec:authorize="hasRole('ADMIN')"
+               class="accept-link" href="#"
+               th:attr="data-cve=${f.cve}, data-pkg=${f.packageName}, data-label=${f.displayId}">위험 수용</a>
           </td>
         </tr>
         </tbody>
@@ -151,6 +162,54 @@
                     fixable=${fixable}, kev=${kev}, q=${q}, sort=${sort})}">다음</a>
     </div>
   </div>
+
+  <dialog id="accept-dialog" sec:authorize="hasRole('ADMIN')">
+    <form method="post" th:action="@{/acceptances}">
+      <h2>위험 수용</h2>
+      <input type="hidden" name="assetId" th:value="${scan.asset.id}">
+      <input type="hidden" name="cve" id="accept-cve">
+      <input type="hidden" name="packageName" id="accept-pkg">
+      <input type="hidden" name="back" th:value="${'/scans/' + scan.id}">
+
+      <p class="lede" id="accept-what">—</p>
+
+      <label>수용 사유</label>
+      <textarea name="reason" rows="3" required
+                placeholder="업스트림에 수정본이 없고, 해당 기능을 쓰지 않음"></textarea>
+
+      <label>대신하는 통제</label>
+      <input name="compensating" placeholder="내부망에서만 접근 · WAF 규칙 적용">
+
+      <label>승인한 사람</label>
+      <input name="approvedBy" required placeholder="홍길동 팀장">
+
+      <label>다시 볼 날</label>
+      <input type="date" name="reviewBy" required>
+
+      <div class="dialog-actions">
+        <button type="button" class="btn" id="accept-cancel">취소</button>
+        <button type="submit" class="btn primary">수용 기록</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    (function () {
+      const dialog = document.querySelector('#accept-dialog');
+      if (!dialog) return;
+      document.querySelectorAll('.accept-link').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+          e.preventDefault();
+          document.querySelector('#accept-cve').value = link.dataset.cve;
+          document.querySelector('#accept-pkg').value = link.dataset.pkg;
+          document.querySelector('#accept-what').textContent =
+              link.dataset.label + ' · ' + link.dataset.pkg;
+          dialog.showModal();
+        });
+      });
+      document.querySelector('#accept-cancel').addEventListener('click', () => dialog.close());
+    })();
+  </script>
 
 </main>
 </body>

@@ -9,6 +9,7 @@ import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.ScanService;
 import kr.sbomsight.service.ZoneService;
 import kr.sbomsight.service.AuditService;
+import kr.sbomsight.service.RiskAcceptanceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -44,10 +45,12 @@ public class AssetController {
     private final AssetService assetService;
     private final ZoneService zoneService;
     private final AuditService audit;
+    private final RiskAcceptanceService acceptances;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
-                           AssetService assetService, ZoneService zoneService, AuditService audit) {
+                           AssetService assetService, ZoneService zoneService, AuditService audit,
+                           RiskAcceptanceService acceptances) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
@@ -56,6 +59,7 @@ public class AssetController {
         this.assetService = assetService;
         this.zoneService = zoneService;
         this.audit = audit;
+        this.acceptances = acceptances;
     }
 
     /** 자산 목록. 구역별로 묶어 "어느 구역의 어느 서버부터 볼 것인가"에 답한다. */
@@ -300,6 +304,10 @@ public class AssetController {
         model.addAttribute("q", q);
         model.addAttribute("sort", sort);
         model.addAttribute("severityCounts", severityMap(scanId));
+        // 수용된 건에 표시를 붙이기 위한 키 집합. 건마다 질의하면 목록 한
+        // 장에 수백 번 왕복한다.
+        model.addAttribute("acceptedKeys",
+                acceptances.activeKeys(scan.getAsset().getId()));
         return "scan";
     }
 

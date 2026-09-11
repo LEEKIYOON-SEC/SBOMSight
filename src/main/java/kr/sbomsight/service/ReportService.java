@@ -38,12 +38,15 @@ public class ReportService {
     private final FindingRepository findings;
     private final ScanRepository scans;
     private final RemediationRepository remediations;
+    private final RiskAcceptanceService acceptances;
 
     public ReportService(FindingRepository findings, ScanRepository scans,
-                         RemediationRepository remediations) {
+                         RemediationRepository remediations,
+                         RiskAcceptanceService acceptances) {
         this.findings = findings;
         this.scans = scans;
         this.remediations = remediations;
+        this.acceptances = acceptances;
     }
 
     @Transactional(readOnly = true)
@@ -232,7 +235,14 @@ public class ReportService {
         long overdue = rows.stream()
                 .filter(r -> r.remediation() != null && r.remediation().isOverdue()).count();
 
-        return new Chapter4(rows, tracked, rows.size() - tracked, overdue, ch3.blocked());
+        // 고칠 수 없는 건에 "왜 그대로 두는가" 가 적혀 있는지. 점검에서
+        // 반드시 묻는 것이고, 답이 없으면 방치로 읽힌다.
+        List<RiskAcceptance> accepted =
+                acceptances.list(false, null).stream()
+                           .filter(a -> a.getAsset().getId().equals(scan.getAsset().getId()))
+                           .toList();
+
+        return new Chapter4(rows, tracked, rows.size() - tracked, overdue, ch3.blocked(), accepted);
     }
 
     private String key(String value) {
@@ -330,7 +340,22 @@ public class ReportService {
 
     /** 결 — 무엇을 언제까지 누가 하는가. */
     public record Chapter4(List<ActionRow> rows, long tracked, long untracked, long overdue,
-                           List<PackageAction> residual) {
+                           List<PackageAction> residual, List<RiskAcceptance> accepted) {
+
+        /** 이 패키지에 수용 기록이 있는가. */
+        public boolean isAccepted(String packageName) {
+            return accepted.stream().anyMatch(a -> a.getPackageName().equals(packageName));
+        }
+
+        /** 다시 볼 날이 지난 수용. 수용은 기한이 있어야 방치와 구분된다. */
+        public long acceptanceReviewOverdue() {
+            return accepted.stream().filter(RiskAcceptance::isReviewOverdue).count();
+        }
+
+        /** 손댈 수 없는데 수용 기록도 없는 패키지 — 설명이 비어 있는 자리다. */
+        public long unexplained() {
+            return residual.stream().filter(r -> !isAccepted(r.packageName())).count();
+        }
     }
 
     /** 패키지 하나에 대한 조치 후보. */

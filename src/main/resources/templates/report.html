@@ -358,8 +358,28 @@
         <span th:text="${b.currentVersion}">2.34</span> ·
         <span th:text="${b.total} + '건'">0건</span>
         <span th:if="${b.maxCvss != null}" th:text="' · 최고 CVSS ' + ${b.maxCvss}"></span>
+        <span th:if="${b.hasReachable()}" class="danger-text"
+              th:text="' · 밖에서 바로 ' + ${b.reachableCount()} + '건'"></span>
+        <!-- 수용 기록이 있으면 그렇다고 적는다. 점검에서 "이건 왜 안 고쳤냐"
+             를 묻고, 답이 없으면 방치로 읽힌다. -->
+        <span th:if="${report.action.isAccepted(b.packageName)}" class="tag">수용됨</span>
       </li>
     </ul>
+
+    <p class="note" th:if="${!report.action.residual.isEmpty()}">
+      <th:block th:if="${report.action.unexplained() > 0}">
+        이 가운데 <b class="danger-text"
+                   th:text="${report.action.unexplained()}">0</b>개는 수용 기록이 없습니다 —
+        판단을 남겨야 합니다.
+      </th:block>
+      <th:block th:if="${report.action.unexplained() == 0}">
+        모두 수용 기록이 있습니다.
+      </th:block>
+      <th:block th:if="${report.action.acceptanceReviewOverdue() > 0}">
+        수용 <b class="danger-text"
+               th:text="${report.action.acceptanceReviewOverdue()}">0</b>건은 다시 볼 날이 지났습니다.
+      </th:block>
+    </p>
 
     <p class="footnote">
       이 보고서의 판정은 전부 grype

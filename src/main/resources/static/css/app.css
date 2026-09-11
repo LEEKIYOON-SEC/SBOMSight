@@ -131,6 +131,12 @@ td.tight + td.tight, th.tight + th.tight { padding-left: 1.25rem; }
 
 .table-scroll { overflow-x: auto; }
 
+.mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+
+/* 수용 링크. 버튼처럼 크게 두면 '올리기' 보다 눈에 띈다 — 고치는 것이
+   먼저이고 수용은 마지막 수단이다. */
+.accept-link { font-size: .78rem; margin-left: .4rem; white-space: nowrap; }
+
 /* 설치 경로. 길어서 한 줄로 자르고 전체는 title 로 본다. */
 .path {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -196,6 +202,7 @@ dialog {
 }
 dialog::backdrop { background: rgba(0, 0, 0, .3); }
 dialog h2 { margin-top: 0; }
+dialog textarea { min-height: 4rem; }
 .dialog-actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem; }
 
 /* ---------- 진행 상태 ---------- */
