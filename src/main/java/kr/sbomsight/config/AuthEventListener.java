@@ -2,6 +2,7 @@ package kr.sbomsight.config;
 
 import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.service.AuditService;
+import kr.sbomsight.service.LoginAttemptService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.event.EventListener;
@@ -28,15 +29,18 @@ import org.springframework.stereotype.Component;
 public class AuthEventListener implements LogoutHandler {
 
     private final AuditService audit;
+    private final LoginAttemptService attempts;
 
-    public AuthEventListener(AuditService audit) {
+    public AuthEventListener(AuditService audit, LoginAttemptService attempts) {
         this.audit = audit;
+        this.attempts = attempts;
     }
 
     @EventListener
     public void onSuccess(AuthenticationSuccessEvent event) {
-        audit.recordAs(event.getAuthentication().getName(),
-                       AuditEvent.LOGIN_SUCCESS, "", "");
+        String name = event.getAuthentication().getName();
+        audit.recordAs(name, AuditEvent.LOGIN_SUCCESS, "", "");
+        attempts.onSuccess(name);
     }
 
     @EventListener
@@ -52,6 +56,13 @@ public class AuthEventListener implements LogoutHandler {
                 : AuditEvent.LOGIN_FAILURE;
 
         audit.recordAs(attempted, action, "", reasonOf(cause));
+
+        // 이미 잠겨서 막힌 것은 새 실패로 세지 않는다. 그러면 잠긴 계정에
+        // 계속 시도하는 것만으로 잠금 시각이 계속 미뤄져, 자동 해제가
+        // 영원히 오지 않는다.
+        if (action == AuditEvent.LOGIN_FAILURE) {
+            attempts.onFailure(attempted);
+        }
     }
 
     /**

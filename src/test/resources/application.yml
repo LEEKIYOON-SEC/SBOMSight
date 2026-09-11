@@ -21,3 +21,6 @@ sbomsight:
   grype-timeout-minutes: 5
   bootstrap-admin: admin
   allowed-ips: ""
+  max-login-failures: 5
+  lock-minutes: 30
+  password-max-age-days: 90

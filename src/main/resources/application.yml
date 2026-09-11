@@ -82,6 +82,14 @@ sbomsight:
   # `설정 → 접근 IP` 에서 한 번이라도 저장하면 그때부터 DB 값이 쓰인다.
   # 비어 있으면 IP 제한 없음이며, 로그인은 여전히 필요하다.
   allowed-ips: ${SBOMSIGHT_ALLOWED_IPS:}
+  # 연속 로그인 실패 이 횟수에 이르면 계정을 잠근다. 0 이면 잠그지 않는다.
+  max-login-failures: ${SBOMSIGHT_MAX_LOGIN_FAILURES:5}
+  # 잠금이 스스로 풀리기까지(분). 0 이면 관리자가 풀어 줄 때까지 잠긴다.
+  # 영구 잠금이 점검 기준에는 더 맞지만, 이름만 알면 누구든 남의 계정을
+  # 잠글 수 있고 새벽에 본인이 잠기면 손쓸 데가 없다.
+  lock-minutes: ${SBOMSIGHT_LOCK_MINUTES:30}
+  # 비밀번호를 이 기간 이상 안 바꾸면 다음 로그인에서 변경을 강제한다.
+  password-max-age-days: ${SBOMSIGHT_PASSWORD_MAX_AGE_DAYS:90}
 
 logging:
   level:

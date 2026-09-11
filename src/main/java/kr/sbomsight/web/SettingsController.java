@@ -1,9 +1,11 @@
 package kr.sbomsight.web;
 
 import kr.sbomsight.config.SbomSightProperties;
+import kr.sbomsight.domain.AppUser;
 import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.Role;
 import kr.sbomsight.service.AuditService;
+import kr.sbomsight.service.LoginAttemptService;
 import kr.sbomsight.domain.Zone;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.service.ZoneService;
@@ -32,10 +34,12 @@ public class SettingsController {
     private final ZoneService zones;
     private final AssetRepository assets;
     private final AuditService audit;
+    private final LoginAttemptService attempts;
 
     public SettingsController(AccountService accounts, SettingsService settings,
                               GrypeRunner grype, SbomSightProperties properties,
-                              ZoneService zones, AssetRepository assets, AuditService audit) {
+                              ZoneService zones, AssetRepository assets, AuditService audit,
+                              LoginAttemptService attempts) {
         this.accounts = accounts;
         this.settings = settings;
         this.grype = grype;
@@ -43,11 +47,18 @@ public class SettingsController {
         this.zones = zones;
         this.assets = assets;
         this.audit = audit;
+        this.attempts = attempts;
     }
 
     @GetMapping
     public String index(HttpServletRequest request, Model model) {
-        model.addAttribute("users", accounts.list());
+        model.addAttribute("users", accounts.list().stream()
+                .map(u -> new UserRow(u, attempts.isLocked(u), attempts.minutesRemaining(u)))
+                .toList());
+        model.addAttribute("lockoutEnabled", properties.lockoutEnabled());
+        model.addAttribute("maxLoginFailures", properties.maxLoginFailures());
+        model.addAttribute("lockMinutes", properties.lockMinutes());
+        model.addAttribute("passwordMaxAgeDays", properties.passwordMaxAgeDays());
         model.addAttribute("roles", Role.values());
         model.addAttribute("allowedIps", settings.allowedIpsText());
         model.addAttribute("unrestricted", settings.allowlist().isEmpty());
@@ -62,6 +73,15 @@ public class SettingsController {
                 .map(z -> new ZoneRow(z, assets.countByZoneId(z.getId())))
                 .toList());
         return "settings";
+    }
+
+    /** 계정 한 줄 — 계정과 잠금 상태. */
+    public record UserRow(AppUser user, boolean locked, long minutesRemaining) {
+
+        /** 자동 해제를 쓰면 남은 시간을, 안 쓰면 빈 문자열을. */
+        public String remainingText() {
+            return minutesRemaining < 0 ? "" : minutesRemaining + "분 남음";
+        }
     }
 
     /** 구역 한 줄 — 구역과 그 안의 자산 수. */
@@ -128,6 +148,13 @@ public class SettingsController {
         } catch (AccountService.AccountException e) {
             flash.addFlashAttribute("error", e.getMessage());
         }
+        return "redirect:/settings";
+    }
+
+    @PostMapping("/users/{username}/unlock")
+    public String unlockUser(@PathVariable String username, RedirectAttributes flash) {
+        attempts.unlock(username);
+        flash.addFlashAttribute("message", username + " 의 잠금을 풀었습니다.");
         return "redirect:/settings";
     }
 

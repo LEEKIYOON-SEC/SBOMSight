@@ -32,6 +32,24 @@ public class AppUser {
     @Column(name = "must_change", nullable = false)
     private boolean mustChange = false;
 
+    /** 연속 로그인 실패 횟수. 성공하면 0 으로 돌아간다. */
+    @Column(name = "failed_attempts", nullable = false)
+    private int failedAttempts = 0;
+
+    /** 잠긴 시각. NULL 이면 잠겨 있지 않다. */
+    @Column(name = "locked_at")
+    private Instant lockedAt;
+
+    /**
+     * 비밀번호를 마지막으로 바꾼 시각 — 변경 주기의 기준.
+     *
+     * <p>NULL 은 "모른다" 다. 그것을 "아주 오래됐다" 로 읽으면 판을 올린
+     * 직후 전원이 변경 화면에 걸리고, "방금 바꿨다" 로 읽으면 주기가 한 번
+     * 통째로 건너뛰어진다. 마이그레이션이 기존 계정에 값을 채워 둔다.
+     */
+    @Column(name = "password_changed_at")
+    private Instant passwordChangedAt = Instant.now();
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -93,6 +111,46 @@ public class AppUser {
 
     public void setMustChange(boolean mustChange) {
         this.mustChange = mustChange;
+    }
+
+    public int getFailedAttempts() {
+        return failedAttempts;
+    }
+
+    public void setFailedAttempts(int failedAttempts) {
+        this.failedAttempts = failedAttempts;
+    }
+
+    public Instant getLockedAt() {
+        return lockedAt;
+    }
+
+    public void setLockedAt(Instant lockedAt) {
+        this.lockedAt = lockedAt;
+    }
+
+    public Instant getPasswordChangedAt() {
+        return passwordChangedAt;
+    }
+
+    public void setPasswordChangedAt(Instant passwordChangedAt) {
+        this.passwordChangedAt = passwordChangedAt;
+    }
+
+    /**
+     * 지금 잠겨 있는가.
+     *
+     * @param autoUnlockAfter 이만큼 지나면 스스로 풀린다. {@code null} 이면
+     *                        관리자가 풀어 줄 때까지 잠긴 채로 있다.
+     */
+    public boolean isLocked(java.time.Duration autoUnlockAfter) {
+        if (lockedAt == null) {
+            return false;
+        }
+        if (autoUnlockAfter == null) {
+            return true;
+        }
+        return lockedAt.plus(autoUnlockAfter).isAfter(Instant.now());
     }
 
     public Instant getCreatedAt() {

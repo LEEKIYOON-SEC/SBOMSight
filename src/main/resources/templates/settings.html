@@ -17,7 +17,7 @@
       </tr>
       </thead>
       <tbody>
-      <tr th:each="u : ${users}">
+      <tr th:each="row : ${users}" th:with="u=${row.user}">
         <td class="tight">
           <b th:text="${u.username}">admin</b>
           <span class="faint" th:if="${!#strings.isEmpty(u.displayName)}"
@@ -34,10 +34,18 @@
         <td class="tight faint"
             th:text="${u.lastLoginAt != null} ? ${#temporals.format(u.lastLoginAt, 'yyyy-MM-dd HH:mm')} : '없음'">없음</td>
         <td class="tight">
+          <span th:if="${row.locked}" class="tag kev"
+                th:text="'잠김 ' + ${row.remainingText()}">잠김</span>
           <span th:if="${u.mustChange}" class="tag nofix">초기화됨</span>
-          <span th:unless="${u.mustChange}" class="faint">—</span>
+          <span th:if="${!row.locked && !u.mustChange && u.failedAttempts > 0}" class="faint"
+                th:text="'실패 ' + ${u.failedAttempts} + '회'">실패 0회</span>
+          <span th:if="${!row.locked && !u.mustChange && u.failedAttempts == 0}" class="faint">—</span>
         </td>
         <td class="actions">
+          <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/unlock'}" class="inline"
+                th:if="${row.locked}">
+            <button type="submit" class="btn small">잠금 해제</button>
+          </form>
           <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/reset'}" class="inline"
                 onsubmit="return confirm('비밀번호를 계정 이름과 같게 되돌립니다.\n본인이 로그인해 새 비밀번호를 정해야 합니다.\n\n계속할까요?')">
             <button type="submit" class="btn small">비밀번호 초기화</button>
