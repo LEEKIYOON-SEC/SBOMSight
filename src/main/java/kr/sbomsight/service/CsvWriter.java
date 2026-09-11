@@ -102,6 +102,34 @@ public final class CsvWriter {
         }
     }
 
+    /**
+     * 전사 조회 결과.
+     *
+     * <p>자산과 구역이 앞에 온다. 이 파일로 답해야 하는 질문이 "어느 서버냐"
+     * 이기 때문이다.
+     */
+    public static void writeLookup(OutputStream out, List<Finding> findings) throws IOException {
+        try (Writer writer = start(out)) {
+            row(writer, "자산", "구역", "CVE", "grype 식별자", "심각도", "CVSS",
+                        "패키지", "설치 버전", "수정 버전", "수정 상태", "검사 시각");
+            for (Finding f : findings) {
+                var asset = f.getScan().getAsset();
+                row(writer,
+                    asset.getName(),
+                    asset.getZone().getName(),
+                    f.getDisplayId(),
+                    f.getSecondaryId(),
+                    f.getSeverity(),
+                    f.getCvssScore() == null ? "" : f.getCvssScore().toPlainString(),
+                    f.getPackageName(),
+                    f.getPackageVersion(),
+                    f.getFixedVersion(),
+                    f.getFixState(),
+                    WHEN.format(f.getScan().getCreatedAt()));
+            }
+        }
+    }
+
     private static Writer start(OutputStream out) throws IOException {
         Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
         writer.write('﻿');   // BOM — 엑셀이 UTF-8 로 읽게 하는 유일한 방법

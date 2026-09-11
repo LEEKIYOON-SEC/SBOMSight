@@ -106,6 +106,63 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
            """)
     List<ExposureRow> exposureRows(@Param("scanId") Long scanId);
 
+    /**
+     * 전사 조회 — "이 취약점이 어느 서버에 있나".
+     *
+     * <p>보안팀이 긴급 상황에서 가장 먼저 하는 질문이고, 자산을 하나씩 열어
+     * 보는 것으로는 답이 나오지 않는다.
+     *
+     * <p><b>각 자산의 최신 완료 스캔만 본다.</b> 이력 전체에서 찾으면 이미
+     * 조치가 끝난 옛 스캔이 섞여 나와 "아직 있다" 고 말하게 된다 — 그 답을
+     * 믿고 서버에 들어가면 없다. 시각이 같은 스캔이 둘일 때는 id 로 갈라
+     * 자산 하나당 한 스캔만 남긴다.
+     */
+    @Query(value = """
+           SELECT f FROM Finding f
+             JOIN FETCH f.scan s
+             JOIN FETCH s.asset a
+             JOIN FETCH a.zone z
+           WHERE s.status = 'DONE'
+             AND NOT EXISTS (SELECT 1 FROM Scan x
+                             WHERE x.asset.id = s.asset.id AND x.status = 'DONE'
+                               AND (x.createdAt > s.createdAt
+                                    OR (x.createdAt = s.createdAt AND x.id > s.id)))
+             AND (:zoneId IS NULL OR z.id = :zoneId)
+             AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
+             AND (:fixable IS NULL
+                  OR (:fixable = TRUE  AND f.fixState = 'fixed')
+                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+             AND (LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                  OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                  OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+           ORDER BY CASE LOWER(f.severity)
+                      WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                      WHEN 'medium'   THEN 2 WHEN 'low'  THEN 3 ELSE 4 END,
+                    f.packageName ASC, a.name ASC, f.cve ASC
+           """,
+           countQuery = """
+           SELECT COUNT(f) FROM Finding f
+             JOIN f.scan s JOIN s.asset a JOIN a.zone z
+           WHERE s.status = 'DONE'
+             AND NOT EXISTS (SELECT 1 FROM Scan x
+                             WHERE x.asset.id = s.asset.id AND x.status = 'DONE'
+                               AND (x.createdAt > s.createdAt
+                                    OR (x.createdAt = s.createdAt AND x.id > s.id)))
+             AND (:zoneId IS NULL OR z.id = :zoneId)
+             AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
+             AND (:fixable IS NULL
+                  OR (:fixable = TRUE  AND f.fixState = 'fixed')
+                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+             AND (LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                  OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                  OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+           """)
+    Page<Finding> lookup(@Param("q") String q,
+                         @Param("zoneId") Long zoneId,
+                         @Param("severity") String severity,
+                         @Param("fixable") Boolean fixable,
+                         Pageable pageable);
+
     /** 이력 대조용. 버전이 바뀌면 키도 바뀌므로 (CVE, 패키지명) 으로 본다. */
     @Query("SELECT CONCAT(f.cve, '|', f.packageName) FROM Finding f WHERE f.scan.id = :scanId")
     List<String> findCvePackagePairs(@Param("scanId") Long scanId);

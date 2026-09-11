@@ -29,6 +29,7 @@
        화면으로 되돌아온다 — 되돌아오는 링크를 보여 주면 고장으로 읽힌다. -->
   <nav sec:authorize="isAuthenticated()" th:unless="${passwordLocked}">
     <a href="/" th:classappend="${active} == 'assets' ? 'current' : ''">자산</a>
+    <a href="/lookup" th:classappend="${active} == 'lookup' ? 'current' : ''">전사 조회</a>
     <a href="/remediations" th:classappend="${active} == 'remediations' ? 'current' : ''">조치</a>
     <a href="/audit" sec:authorize="hasRole('ADMIN')"
        th:classappend="${active} == 'audit' ? 'current' : ''">감사 로그</a>

@@ -39,12 +39,19 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
      *
      * <p>자산마다 질의를 돌리면 자산 수만큼 왕복한다. 목록 화면 한 장에 그러면
      * 서른 대에 서른 번이다.
+     *
+     * <p><b>자산 하나당 정확히 한 행이 나와야 한다.</b> 앞서는
+     * {@code createdAt = MAX(createdAt)} 로 잡았는데, 같은 시각에 완료된
+     * 스캔이 둘이면 두 행이 나온다. 목록에서는 둘 중 아무거나 골라 쓰게 되고
+     * 조회에서는 같은 자산이 두 번 보인다. 시각이 같으면 id 로 가른다.
      */
     @Query("""
            SELECT s FROM Scan s
            WHERE s.status = 'DONE'
-             AND s.createdAt = (SELECT MAX(x.createdAt) FROM Scan x
-                                WHERE x.asset.id = s.asset.id AND x.status = 'DONE')
+             AND NOT EXISTS (SELECT 1 FROM Scan x
+                             WHERE x.asset.id = s.asset.id AND x.status = 'DONE'
+                               AND (x.createdAt > s.createdAt
+                                    OR (x.createdAt = s.createdAt AND x.id > s.id)))
            """)
     List<Scan> findLatestDonePerAsset();
 
