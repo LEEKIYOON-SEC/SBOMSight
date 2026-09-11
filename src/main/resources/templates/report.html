@@ -21,8 +21,7 @@
 
     <p class="lead">
       <b th:text="${report.status.asset.name}">web-01</b>
-      <th:block th:if="${!#strings.isEmpty(report.status.asset.groupName)}">
-        (<span th:text="${report.status.asset.groupName}">DMZ</span>)</th:block>
+      (<span th:text="${report.status.asset.zone.name}">DMZ</span>)
       에서 뽑은 SBOM <code th:text="${report.status.sbomFilename}">sbom.json</code> 을
       <th:block th:if="${report.status.componentCount > 0}">
         — 컴포넌트 <b th:text="${#numbers.formatInteger(report.status.componentCount, 0, 'COMMA')}">0</b>개 —

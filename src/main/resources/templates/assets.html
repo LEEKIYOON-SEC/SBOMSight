@@ -23,69 +23,96 @@
     <a href="/remediations">전체 보기</a>
   </div>
 
-  <div class="card" th:if="${rows.isEmpty()}">
-    <span class="muted" sec:authorize="hasRole('ADMIN')">
-      등록된 자산이 없습니다. <b>자산 등록</b>으로 서버를 먼저 등록한 뒤,
-      그 자산 안에서 SBOM 을 올립니다.
-    </span>
-    <span class="muted" sec:authorize="!hasRole('ADMIN')">
-      등록된 자산이 없습니다. 관리자에게 자산 등록을 요청하세요.
-    </span>
+  <!-- 구역 고르기. 누르면 그 구역만 남는다. -->
+  <div class="zone-filter">
+    <a th:href="@{/}" th:classappend="${selectedZone == null} ? 'current' : ''">전체
+      <span class="num" th:text="${assetCount}">0</span></a>
+    <a th:each="z : ${zones}" th:href="@{/(zone=${z.id})}"
+       th:classappend="${selectedZone != null && selectedZone == z.id} ? 'current' : ''">
+      <i class="zrail" th:style="'background:' + (${#strings.isEmpty(z.color)} ? '#6f7e8d' : ${z.color})"></i>
+      <span th:text="${z.name}">DMZ</span>
+    </a>
   </div>
 
-  <div class="card" th:unless="${rows.isEmpty()}">
-    <table class="asset-table">
-      <thead>
-      <tr>
-        <th class="tight">서버</th>
-        <th class="tight">그룹</th>
-        <th class="tight">운영체제</th>
-        <th class="tight">마지막 스캔</th>
-        <th class="num tight">탐지</th>
-        <th class="tight">심각도</th>
-        <th class="num tight">조치</th>
-        <th>비고</th>
-      </tr>
-      </thead>
-      <tbody>
-      <tr th:each="row : ${rows}">
-        <td class="tight">
-          <a th:href="@{'/assets/' + ${row.asset.id}}"><b th:text="${row.asset.name}">web-01</b></a>
-        </td>
-        <td class="tight" th:text="${#strings.isEmpty(row.asset.groupName)} ? '—' : ${row.asset.groupName}">DMZ</td>
-        <td class="tight" th:text="${#strings.isEmpty(row.asset.osName)} ? '—' : ${row.asset.osName}">Rocky 9.3</td>
+  <div class="card" th:if="${assetCount == 0}">
+    <span class="muted">등록된 자산이 없습니다.</span>
+  </div>
 
-        <td class="tight" th:if="${row.hasScan()}">
-          <span th:text="${#temporals.format(row.latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
-        </td>
-        <td class="tight muted" th:unless="${row.hasScan()}">스캔 없음</td>
+  <!-- 구역별로 묶는다. 비어 있는 구역도 보여 준다 — 없는 것처럼 보이면
+       "왜 안 보이지" 부터 물어야 한다. -->
+  <div th:each="g : ${groups}" th:unless="${assetCount == 0}">
+    <div class="zone-head">
+      <i class="zrail" th:style="'background:' + (${#strings.isEmpty(g.zone.color)} ? '#6f7e8d' : ${g.zone.color})"></i>
+      <b th:text="${g.zone.name}">DMZ</b>
+      <span class="faint num" th:text="${g.serverCount()} + '대'">0대</span>
+      <span class="spacer"></span>
+      <th:block th:unless="${g.isEmpty()}">
+        <span class="pcount" th:if="${g.severityCount('critical') > 0}">
+          <i class="mark critical"></i>심각 <span class="num" th:text="${g.severityCount('critical')}">0</span></span>
+        <span class="pcount" th:if="${g.severityCount('high') > 0}">
+          <i class="mark high"></i>높음 <span class="num" th:text="${g.severityCount('high')}">0</span></span>
+        <span class="faint num" th:text="'탐지 ' + ${#numbers.formatInteger(g.findingCount(), 0, 'COMMA')}">탐지 0</span>
+        <span class="num" th:if="${g.openRemediations() > 0}"
+              th:text="'조치 ' + ${g.openRemediations()}">조치 0</span>
+      </th:block>
+    </div>
 
-        <td class="num tight" th:text="${row.hasScan()} ? ${#numbers.formatInteger(row.latest.findingCount, 0, 'COMMA')} : '—'">—</td>
+    <div class="card" th:if="${g.isEmpty()}">
+      <span class="faint">이 구역에는 아직 자산이 없습니다.</span>
+    </div>
 
-        <td class="tight">
-          <th:block th:if="${row.hasScan()}">
-            <span class="pcount" th:if="${row.severityCount('critical') > 0}">
-              <i class="mark critical"></i>심각 <span th:text="${row.severityCount('critical')}">0</span></span>
-            <span class="pcount" th:if="${row.severityCount('high') > 0}">
-              <i class="mark high"></i>높음 <span th:text="${row.severityCount('high')}">0</span></span>
-            <span class="pcount" th:if="${row.severityCount('medium') > 0}">
-              <i class="mark medium"></i>보통 <span th:text="${row.severityCount('medium')}">0</span></span>
-            <span class="pcount" th:if="${row.severityCount('low') > 0}">
-              <i class="mark low"></i>낮음 <span th:text="${row.severityCount('low')}">0</span></span>
-          </th:block>
-          <span class="faint" th:unless="${row.hasScan()}">—</span>
-        </td>
+    <div class="card" th:unless="${g.isEmpty()}">
+      <table class="asset-table">
+        <thead>
+        <tr>
+          <th class="tight">서버</th>
+          <th class="tight">운영체제</th>
+          <th class="tight">마지막 스캔</th>
+          <th class="num tight">탐지</th>
+          <th class="tight">심각도</th>
+          <th class="num tight">조치</th>
+          <th>비고</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${g.rows}">
+          <td class="tight">
+            <a th:href="@{'/assets/' + ${row.asset.id}}"><b th:text="${row.asset.name}">web-01</b></a>
+          </td>
+          <td class="tight" th:text="${#strings.isEmpty(row.asset.osName)} ? '—' : ${row.asset.osName}">Rocky 9.3</td>
 
-        <td class="num tight">
-          <a th:if="${row.openRemediations > 0}" th:href="@{'/assets/' + ${row.asset.id}}"
-             th:text="${row.openRemediations}">0</a>
-          <span class="faint" th:unless="${row.openRemediations > 0}">—</span>
-        </td>
+          <td class="tight" th:if="${row.hasScan()}">
+            <span th:text="${#temporals.format(row.latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
+          </td>
+          <td class="tight muted" th:unless="${row.hasScan()}">스캔 없음</td>
 
-        <td class="faint" th:text="${#strings.isEmpty(row.asset.note)} ? '—' : ${row.asset.note}">—</td>
-      </tr>
-      </tbody>
-    </table>
+          <td class="num tight" th:text="${row.hasScan()} ? ${#numbers.formatInteger(row.latest.findingCount, 0, 'COMMA')} : '—'">—</td>
+
+          <td class="tight">
+            <th:block th:if="${row.hasScan()}">
+              <span class="pcount" th:if="${row.severityCount('critical') > 0}">
+                <i class="mark critical"></i>심각 <span th:text="${row.severityCount('critical')}">0</span></span>
+              <span class="pcount" th:if="${row.severityCount('high') > 0}">
+                <i class="mark high"></i>높음 <span th:text="${row.severityCount('high')}">0</span></span>
+              <span class="pcount" th:if="${row.severityCount('medium') > 0}">
+                <i class="mark medium"></i>보통 <span th:text="${row.severityCount('medium')}">0</span></span>
+              <span class="pcount" th:if="${row.severityCount('low') > 0}">
+                <i class="mark low"></i>낮음 <span th:text="${row.severityCount('low')}">0</span></span>
+            </th:block>
+            <span class="faint" th:unless="${row.hasScan()}">—</span>
+          </td>
+
+          <td class="num tight">
+            <a th:if="${row.openRemediations > 0}" th:href="@{'/assets/' + ${row.asset.id}}"
+               th:text="${row.openRemediations}">0</a>
+            <span class="faint" th:unless="${row.openRemediations > 0}">—</span>
+          </td>
+
+          <td class="faint" th:text="${#strings.isEmpty(row.asset.note)} ? '—' : ${row.asset.note}">—</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <dialog id="add-dialog" sec:authorize="hasRole('ADMIN')">
@@ -93,10 +120,11 @@
       <h2>자산 등록</h2>
       <label>서버 이름
         <input th:field="*{name}" placeholder="web-01" required autocomplete="off">
-        <span class="faint">영문·숫자로 시작하고 <code>. _ -</code> 를 쓸 수 있습니다.</span>
       </label>
-      <label>그룹
-        <input th:field="*{groupName}" placeholder="DMZ · 내부업무" autocomplete="off">
+      <label>구역
+        <select name="zoneId">
+          <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}">DMZ</option>
+        </select>
       </label>
       <label>운영체제
         <input th:field="*{osName}" placeholder="Rocky Linux 9.3" autocomplete="off">

@@ -3,6 +3,7 @@ package kr.sbomsight;
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
 import kr.sbomsight.service.ReportService;
+import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,7 @@ class ReportServiceTest {
     @Autowired ScanRepository scans;
     @Autowired FindingRepository findings;
     @Autowired RemediationRepository remediations;
+    @Autowired ZoneService zoneService;
 
     private Asset asset;
 
@@ -39,7 +41,7 @@ class ReportServiceTest {
     void setUp() {
         asset = new Asset();
         asset.setName("web-" + System.nanoTime());
-        asset.setGroupName("DMZ");
+        asset.setZone(zoneService.unassigned());
         asset.setOsName("Rocky Linux 9.3");
         assets.save(asset);
     }

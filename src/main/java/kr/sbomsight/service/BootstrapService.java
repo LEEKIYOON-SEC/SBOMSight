@@ -31,19 +31,26 @@ public class BootstrapService implements ApplicationRunner {
     private final PasswordEncoder encoder;
     private final SbomSightProperties properties;
     private final ScanService scans;
+    private final ZoneService zones;
 
     public BootstrapService(AppUserRepository users, PasswordEncoder encoder,
-                            SbomSightProperties properties, ScanService scans) {
+                            SbomSightProperties properties, ScanService scans,
+                            ZoneService zones) {
         this.users = users;
         this.encoder = encoder;
         this.properties = properties;
         this.scans = scans;
+        this.zones = zones;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) throws Exception {
         Files.createDirectories(properties.dataDir());
+
+        // 자산이 갈 곳은 언제나 하나는 있어야 한다. 마이그레이션이 만들어
+        // 두지만, 새 스키마로 시작한 설치에는 없다.
+        zones.unassigned();
 
         if (users.count() == 0) {
             String password = randomPassword();

@@ -32,9 +32,13 @@ public class Asset {
     @Column(nullable = false, unique = true, length = 128)
     private String name;
 
-    @Size(max = 128)
-    @Column(name = "group_name", nullable = false, length = 128)
-    private String groupName = "";
+    /**
+     * 속한 구역. 비워 둘 수 없다 — 어디에도 속하지 않는 자산이 생기면 구역별
+     * 합계가 전체와 어긋난다. 갈 곳이 마땅찮으면 {@link Zone#UNASSIGNED} 로 간다.
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "zone_id", nullable = false)
+    private Zone zone;
 
     @Size(max = 128)
     @Column(name = "os_name", nullable = false, length = 128)
@@ -62,12 +66,12 @@ public class Asset {
         this.name = name;
     }
 
-    public String getGroupName() {
-        return groupName;
+    public Zone getZone() {
+        return zone;
     }
 
-    public void setGroupName(String groupName) {
-        this.groupName = groupName == null ? "" : groupName.trim();
+    public void setZone(Zone zone) {
+        this.zone = zone;
     }
 
     public String getOsName() {

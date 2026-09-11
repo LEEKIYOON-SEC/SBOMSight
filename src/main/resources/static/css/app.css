@@ -129,6 +129,29 @@ td.tight + td.tight, th.tight + th.tight { padding-left: 1.25rem; }
 
 .table-scroll { overflow-x: auto; }
 
+/* ---------- 구역 ---------- */
+.zone-filter { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.zone-filter a {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .35rem .7rem; border-radius: 7px; font-size: .88rem;
+  color: var(--fg-muted); border: 1px solid var(--line); background: var(--bg);
+}
+.zone-filter a:hover { text-decoration: none; background: var(--bg-soft); }
+.zone-filter a.current { color: var(--fg); font-weight: 600; border-color: var(--line-strong); background: var(--bg-soft); }
+.zone-filter .num { color: var(--fg-faint); }
+
+/* 구역 머리줄 — 그 구역의 현황이 한 줄로. */
+.zone-head {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .5rem .15rem; margin-top: 1.25rem; margin-bottom: .4rem;
+  font-size: .95rem;
+}
+.zone-head .spacer { flex: 1; }
+.zone-head .faint, .zone-head .pcount { font-size: .85rem; }
+
+/* 구역 색 띠. 색만으로 구분하지 않고 언제나 이름이 옆에 붙는다. */
+.zrail { display: inline-block; width: .25rem; height: .9rem; border-radius: 2px; flex-shrink: 0; }
+
 /* 심각도 표시. 색 띠 + 글자. 색만으로 구분하지 않는다. */
 .pcount { display: inline-flex; align-items: center; white-space: nowrap; font-size: .82rem; }
 .pcount + .pcount { margin-left: .75rem; }

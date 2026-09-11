@@ -21,7 +21,12 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
      * 같이 읽어 와야 한다 — 열어 두는 쪽으로 도망가면 화면이 표를 그리는
      * 동안 질의를 수십 번 더 날리게 된다.
      */
-    @Query("SELECT s FROM Scan s JOIN FETCH s.asset WHERE s.id = :id")
+    /**
+     * 구역까지 함께 끌어온다. 보고서 머리에 자산의 구역이 찍히는데,
+     * {@code open-in-view} 가 꺼져 있어 여기서 안 가져오면 그 자리에서
+     * {@code LazyInitializationException} 이 난다.
+     */
+    @Query("SELECT s FROM Scan s JOIN FETCH s.asset a JOIN FETCH a.zone WHERE s.id = :id")
     Optional<Scan> findWithAsset(@Param("id") Long id);
 
     /** 자산의 가장 최근 완료 스캔. 목록과 보고서가 기준으로 삼는 것. */

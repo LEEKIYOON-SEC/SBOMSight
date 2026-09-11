@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.service.AssetService;
 import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.ScanService;
+import kr.sbomsight.service.ZoneService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -40,22 +41,24 @@ public class AssetController {
     private final RemediationRepository remediations;
     private final ScanService scanService;
     private final AssetService assetService;
+    private final ZoneService zoneService;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
-                           AssetService assetService) {
+                           AssetService assetService, ZoneService zoneService) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
         this.remediations = remediations;
         this.scanService = scanService;
         this.assetService = assetService;
+        this.zoneService = zoneService;
     }
 
-    /** 자산 목록. 한 화면에서 "어느 서버부터 볼 것인가"에 답해야 한다. */
+    /** 자산 목록. 구역별로 묶어 "어느 구역의 어느 서버부터 볼 것인가"에 답한다. */
     @GetMapping
-    public String index(Model model) {
-        List<Asset> list = assets.findByArchivedAtIsNullOrderByGroupNameAscNameAsc();
+    public String index(@RequestParam(required = false) Long zone, Model model) {
+        List<Asset> list = assets.findLiveWithZone();
 
         // 자산마다 질의하면 자산 수만큼 왕복한다. 한 번에 가져와 맞춘다.
         Map<Long, Scan> latest = scans.findLatestDonePerAsset().stream()
@@ -69,7 +72,19 @@ public class AssetController {
             return new AssetRow(asset, scan, severity, open);
         }).toList();
 
-        model.addAttribute("rows", rows);
+        // 구역 순서는 구역 목록이 정한다. 자산이 한 대도 없는 구역도 보여
+        // 준다 — 없는 것처럼 보이면 "왜 안 보이지" 부터 물어야 한다.
+        List<ZoneGroup> groups = zoneService.all().stream()
+                .filter(z -> zone == null || z.getId().equals(zone))
+                .map(z -> new ZoneGroup(z, rows.stream()
+                        .filter(r -> r.asset().getZone().getId().equals(z.getId()))
+                        .toList()))
+                .toList();
+
+        model.addAttribute("groups", groups);
+        model.addAttribute("zones", zoneService.all());
+        model.addAttribute("selectedZone", zone);
+        model.addAttribute("assetCount", rows.size());
         model.addAttribute("newAsset", new Asset());
         model.addAttribute("overdue", remediations.findOverdue(java.time.LocalDate.now()));
         return "assets";
@@ -78,7 +93,9 @@ public class AssetController {
     @PostMapping("assets")
     @PreAuthorize("hasRole('ADMIN')")
     public String create(@Valid @ModelAttribute("newAsset") Asset asset,
-                         BindingResult binding, RedirectAttributes flash) {
+                         BindingResult binding,
+                         @RequestParam(required = false) Long zoneId,
+                         RedirectAttributes flash) {
         if (assets.existsByName(asset.getName())) {
             binding.rejectValue("name", "duplicate", "같은 이름의 자산이 이미 있습니다.");
         }
@@ -86,9 +103,24 @@ public class AssetController {
             flash.addFlashAttribute("error", binding.getAllErrors().get(0).getDefaultMessage());
             return "redirect:/";
         }
+        // 구역을 고르지 않았으면 미분류로. 어디에도 속하지 않는 자산은 만들지 않는다.
+        asset.setZone(zoneId == null ? zoneService.unassigned() : zoneService.require(zoneId));
         assets.save(asset);
         flash.addFlashAttribute("message", asset.getName() + " 자산을 등록했습니다.");
         return "redirect:/assets/" + asset.getId();
+    }
+
+    /** 자산을 다른 구역으로 옮긴다. */
+    @PostMapping("assets/{id}/zone")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String moveZone(@PathVariable Long id, @RequestParam Long zoneId,
+                           RedirectAttributes flash) {
+        Asset asset = asset(id);
+        Zone target = zoneService.require(zoneId);
+        asset.setZone(target);
+        assets.save(asset);
+        flash.addFlashAttribute("message", asset.getName() + " 을 " + target.getName() + " 으로 옮겼습니다.");
+        return "redirect:/assets/" + id;
     }
 
     /** 자산 상세 — 스캔 이력과 조치가 한 화면에 있다. */
@@ -101,6 +133,7 @@ public class AssetController {
                 .findFirst().orElse(null);
 
         model.addAttribute("asset", asset);
+        model.addAttribute("zones", zoneService.all());
         model.addAttribute("history", history);
         model.addAttribute("latest", latest);
         model.addAttribute("severity", latest == null ? Map.of() : severityMap(latest.getId()));
@@ -255,7 +288,9 @@ public class AssetController {
     }
 
     private Asset asset(Long id) {
-        return assets.findById(id)
+        // 구역을 함께 가져온다. open-in-view 가 꺼져 있어 화면에서 asset.zone
+        // 을 읽는 순간 세션이 없으면 LazyInitializationException 이 난다.
+        return assets.findWithZone(id)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "자산을 찾을 수 없습니다."));
     }
 
@@ -272,6 +307,31 @@ public class AssetController {
 
         public boolean hasScan() {
             return latest != null;
+        }
+    }
+
+    /** 구역 하나와 그 안의 자산들. 머리줄에 쓸 합계를 함께 낸다. */
+    public record ZoneGroup(Zone zone, List<AssetRow> rows) {
+
+        public int serverCount() {
+            return rows.size();
+        }
+
+        public long findingCount() {
+            return rows.stream().filter(AssetRow::hasScan)
+                       .mapToLong(r -> r.latest().getFindingCount()).sum();
+        }
+
+        public long severityCount(String key) {
+            return rows.stream().mapToLong(r -> r.severityCount(key)).sum();
+        }
+
+        public long openRemediations() {
+            return rows.stream().mapToLong(AssetRow::openRemediations).sum();
+        }
+
+        public boolean isEmpty() {
+            return rows.isEmpty();
         }
     }
 }

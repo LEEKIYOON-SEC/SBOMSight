@@ -15,7 +15,17 @@
 
   <div class="card">
     <table class="kv">
-      <tr><th>그룹</th><td th:text="${#strings.isEmpty(asset.groupName)} ? '—' : ${asset.groupName}">—</td>
+      <tr><th>구역</th>
+          <td>
+            <form method="post" th:action="@{'/assets/' + ${asset.id} + '/zone'}" class="inline"
+                  sec:authorize="hasRole('ADMIN')">
+              <select name="zoneId" onchange="this.form.submit()">
+                <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
+                        th:selected="${z.id == asset.zone.id}">DMZ</option>
+              </select>
+            </form>
+            <span sec:authorize="!hasRole('ADMIN')" th:text="${asset.zone.name}">DMZ</span>
+          </td>
           <th>운영체제</th><td th:text="${#strings.isEmpty(asset.osName)} ? '—' : ${asset.osName}">—</td></tr>
       <tr><th>비고</th><td colspan="3" th:text="${#strings.isEmpty(asset.note)} ? '—' : ${asset.note}">—</td></tr>
     </table>

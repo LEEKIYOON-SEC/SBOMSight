@@ -2,6 +2,7 @@ package kr.sbomsight;
 
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
+import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,11 +35,12 @@ class ReportRenderTest {
     @Autowired AssetRepository assets;
     @Autowired ScanRepository scans;
     @Autowired FindingRepository findings;
+    @Autowired ZoneService zoneService;
 
     private Scan seed(boolean withVectors) {
         Asset asset = new Asset();
         asset.setName("render-" + System.nanoTime());
-        asset.setGroupName("DMZ");
+        asset.setZone(zoneService.unassigned());
         assets.save(asset);
 
         Scan scan = new Scan(asset, "tester");
@@ -108,6 +110,7 @@ class ReportRenderTest {
     void rendersAnEmptyScan() throws Exception {
         Asset asset = new Asset();
         asset.setName("empty-" + System.nanoTime());
+        asset.setZone(zoneService.unassigned());
         assets.save(asset);
         Scan scan = new Scan(asset, "tester");
         scan.setStatus(ScanStatus.DONE);
