@@ -182,6 +182,28 @@ public class AssetController {
         return "redirect:/";
     }
 
+    /** 보관된 SBOM 을 갱신된 grype DB 로 다시 돌린다. */
+    @PostMapping("scans/{scanId}/rescan")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String rescan(@PathVariable Long scanId, Principal principal,
+                         RedirectAttributes flash) {
+        Scan source = scans.findWithAsset(scanId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
+        Long assetId = source.getAsset().getId();
+        try {
+            Scan copy = scanService.rescan(source, principal.getName());
+            audit.record(AuditEvent.SCAN_RESCANNED, source.getAsset().getName(),
+                         source.getSbomFilename() + " (원본 스캔 " + scanId + ")");
+            scanService.runAsync(copy.getId());
+            flash.addFlashAttribute("message",
+                    "같은 SBOM 을 다시 검사합니다. 끝나면 아래 이력에 새 줄로 나타납니다.");
+        } catch (Exception e) {
+            log.error("재검사 실패 scan={}", scanId, e);
+            flash.addFlashAttribute("error", "다시 검사하지 못했습니다: " + e.getMessage());
+        }
+        return "redirect:/assets/" + assetId;
+    }
+
     @PostMapping("scans/{scanId}/delete")
     @PreAuthorize("hasRole('ADMIN')")
     public String deleteScan(@PathVariable Long scanId, RedirectAttributes flash) {

@@ -474,4 +474,67 @@ class GrypeMapperTest {
                 .filter(f -> f.getEpss() != null || f.getKev() != null).toList();
         assertThat(withExploitData).isEmpty();
     }
+
+    // --- 설치 경로 ----------------------------------------------------------
+
+    /**
+     * grype 이 {@code artifact.locations} 로 주는 설치 경로를 열로 담는가.
+     *
+     * <p>실 픽스처(98건)는 {@code source: unknown} 인 합성 SBOM 이라 경로가
+     * 전부 비어 있다 — 그것으로는 이 매핑을 확인할 수 없다. 실제
+     * {@code syft dir:/} 출력에는 들어오므로, 그 모양을 직접 만들어 고정한다.
+     */
+    @Test
+    @DisplayName("설치 경로를 열로 담는다")
+    void mapsTheInstallPath() throws Exception {
+        String body = """
+            {"matches":[{
+              "vulnerability":{"id":"CVE-2021-44228","severity":"Critical"},
+              "artifact":{"name":"log4j-core","version":"2.14.1","type":"java-archive",
+                          "locations":[{"path":"/opt/app/WEB-INF/lib/log4j-core-2.14.1.jar"}]}
+            }]}
+            """;
+        GrypeReport report = json.readValue(body, GrypeReport.class);
+        GrypeMapper.Result result = mapper.map(scan(), report);
+
+        assertThat(result.findings()).singleElement()
+                .extracting(Finding::getInstallPath)
+                .isEqualTo("/opt/app/WEB-INF/lib/log4j-core-2.14.1.jar");
+    }
+
+    @Test
+    @DisplayName("여러 곳에 있으면 첫 번째와 남은 수를 담는다")
+    void summarisesMultipleLocations() throws Exception {
+        // 같은 jar 가 열 군데 풀려 있는 일이 흔하다. 전부 담으면 한 칸이
+        // 화면을 밀어내고, "여러 곳" 이라고만 쓰면 어디부터 볼지 알 수 없다.
+        String body = """
+            {"matches":[{
+              "vulnerability":{"id":"CVE-2021-44228","severity":"Critical"},
+              "artifact":{"name":"log4j-core","version":"2.14.1","type":"java-archive",
+                          "locations":[{"path":"/opt/a/log4j.jar"},
+                                       {"path":"/opt/b/log4j.jar"},
+                                       {"path":"/opt/c/log4j.jar"}]}
+            }]}
+            """;
+        GrypeReport report = json.readValue(body, GrypeReport.class);
+
+        assertThat(mapper.map(scan(), report).findings()).singleElement()
+                .extracting(Finding::getInstallPath)
+                .isEqualTo("/opt/a/log4j.jar 외 2곳");
+    }
+
+    @Test
+    @DisplayName("경로가 없으면 빈 칸이지 지어내지 않는다")
+    void leavesThePathEmptyWhenGrypeGivesNone() throws Exception {
+        String body = """
+            {"matches":[{
+              "vulnerability":{"id":"CVE-2021-44228","severity":"Critical"},
+              "artifact":{"name":"log4j-core","version":"2.14.1","locations":[]}
+            }]}
+            """;
+        GrypeReport report = json.readValue(body, GrypeReport.class);
+
+        assertThat(mapper.map(scan(), report).findings()).singleElement()
+                .extracting(Finding::getInstallPath).isEqualTo("");
+    }
 }

@@ -87,6 +87,17 @@ public class Finding {
     @Column(name = "package_language", nullable = false, length = 64)
     private String packageLanguage = "";
 
+    /**
+     * 이 패키지가 실제로 놓여 있는 곳.
+     *
+     * <p>grype 이 {@code artifact.locations} 로 준다. "어느 파일이냐" 는 조치할
+     * 때 반드시 묻는 것인데, 앞서는 {@code detail_json} 안에만 있어 조회도
+     * 정렬도 CSV 도 되지 않았다. 여러 곳에 있으면 첫 번째만 담고 남은 수를
+     * 덧붙인다 — 전부 담으면 한 칸이 화면을 밀어낸다.
+     */
+    @Column(name = "install_path", nullable = false, length = 1024)
+    private String installPath = "";
+
     @Column(name = "fix_state", nullable = false, length = 32)
     private String fixState = "";
 
@@ -296,6 +307,14 @@ public class Finding {
 
     public void setPackageLanguage(String packageLanguage) {
         this.packageLanguage = clip(packageLanguage, 64);
+    }
+
+    public String getInstallPath() {
+        return installPath;
+    }
+
+    public void setInstallPath(String installPath) {
+        this.installPath = clip(installPath, 1024);
     }
 
     public String getFixState() {

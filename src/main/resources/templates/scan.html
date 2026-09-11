@@ -120,6 +120,10 @@
           <td class="tight">
             <span th:text="${f.packageName}">openssl</span>
             <span class="faint" th:text="${f.packageType}">rpm</span>
+            <!-- 경로는 grype 이 줄 때만 나온다. 빈 칸을 만들어 두면 "경로가
+                 없는 패키지" 처럼 읽힌다 — 실제로는 SBOM 이 안 담은 것이다. -->
+            <div class="faint path" th:if="${!#strings.isEmpty(f.installPath)}"
+                 th:text="${f.installPath}" th:title="${f.installPath}">/opt/…</div>
           </td>
           <td class="tight">
             <span th:text="${f.packageVersion}">1.0.0</span> →

@@ -53,6 +53,26 @@ public class SbomStorage {
         return target;
     }
 
+    /**
+     * 보관된 SBOM 을 새 스캔 자리로 복사한다 — 재검사용.
+     *
+     * <p>이미 압축된 것을 그대로 복사한다. 풀었다 다시 압축하면 시간만 들고,
+     * 그 과정에서 바이트가 달라지면 "같은 SBOM 을 다시 돌렸다" 는 말이
+     * 정확하지 않게 된다.
+     *
+     * <p>경로를 함께 가리키게 하지 않는 이유: 둘 중 하나를 지우면
+     * {@link #deleteScanDir} 이 디렉터리를 통째로 지우므로 나머지가 파일을
+     * 잃는다.
+     */
+    public Path copySbom(Path storedGzip, long assetId, long newScanId) throws IOException {
+        Path dir = properties.scanDir(assetId, newScanId);
+        Files.createDirectories(dir);
+        Path target = dir.resolve("sbom.json.gz");
+        Files.copy(storedGzip, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        log.info("재검사용 SBOM 복사: {} → {}", storedGzip, target);
+        return target;
+    }
+
     /** grype 이 읽을 수 있도록 압축을 임시 파일로 푼다. 끝나면 지운다. */
     public Path inflate(Path gzipped, Path dir, String name) throws IOException {
         Path plain = dir.resolve(name);

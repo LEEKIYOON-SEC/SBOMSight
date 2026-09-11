@@ -67,7 +67,12 @@
       </thead>
       <tbody>
       <tr th:each="s : ${history}">
-        <td class="tight" th:text="${#temporals.format(s.createdAt, 'yyyy-MM-dd HH:mm')}">—</td>
+        <td class="tight">
+          <span th:text="${#temporals.format(s.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
+          <!-- 서버가 바뀐 것과 취약점 DB 가 바뀐 것은 완전히 다른 이야기다. -->
+          <div class="faint" th:if="${s.isRescan()}"
+               th:text="'재검사 (원본 ' + ${s.rescanOf} + ')'">재검사</div>
+        </td>
         <td class="tight">
           <span class="status" th:classappend="${s.status}" th:text="${s.status.label()}">완료</span>
         </td>
@@ -83,6 +88,10 @@
         </td>
         <td class="tight">
           <a th:if="${s.status.name() == 'DONE'}" th:href="@{'/scans/' + ${s.id}}">열기</a>
+          <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
+                th:if="${s.status.name() == 'DONE'}" sec:authorize="hasRole('ADMIN')">
+            <button type="submit" class="btn small" title="보관된 SBOM 을 갱신된 취약점 DB 로 다시 검사합니다">다시 검사</button>
+          </form>
           <form method="post" th:action="@{'/scans/' + ${s.id} + '/delete'}" class="inline"
                 sec:authorize="hasRole('ADMIN')"
                 onsubmit="return confirm('이 스캔과 보관된 SBOM·검사 결과를 지웁니다.\n되돌릴 수 없습니다.\n\n계속할까요?')">

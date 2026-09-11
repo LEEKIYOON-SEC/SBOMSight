@@ -35,8 +35,8 @@ public final class CsvWriter {
     public static void writeFindings(OutputStream out, List<Finding> findings) throws IOException {
         try (Writer writer = start(out)) {
             row(writer, "CVE", "grype 식별자", "심각도", "CVSS", "CVSS 벡터", "악용 확률",
-                        "실제 악용", "패키지", "설치 버전", "유형", "수정 상태", "수정 버전",
-                        "영향 범위", "매칭 방식", "출처");
+                        "실제 악용", "패키지", "설치 버전", "유형", "설치 경로",
+                        "수정 상태", "수정 버전", "영향 범위", "매칭 방식", "출처");
             for (Finding f : findings) {
                 row(writer,
                     f.getDisplayId(),
@@ -50,6 +50,7 @@ public final class CsvWriter {
                     f.getPackageName(),
                     f.getPackageVersion(),
                     f.getPackageType(),
+                    f.getInstallPath(),
                     f.getFixState(),
                     f.getFixedVersion(),
                     f.getVersionConstraint(),

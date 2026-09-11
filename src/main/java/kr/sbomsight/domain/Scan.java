@@ -36,6 +36,16 @@ public class Scan {
     @Column(name = "created_by", nullable = false, length = 64)
     private String createdBy = "";
 
+    /**
+     * 어느 스캔을 다시 돌린 것인가. 처음 올린 스캔이면 비어 있다.
+     *
+     * <p>같은 SBOM 을 갱신된 취약점 DB 로 다시 돌린 결과라는 표시다. 이것이
+     * 없으면 이력에서 "서버가 바뀐 것" 과 "DB 가 바뀐 것" 을 구분할 수 없다 —
+     * 둘은 완전히 다른 이야기다.
+     */
+    @Column(name = "rescan_of")
+    private Long rescanOf;
+
     @Column(name = "sbom_filename", nullable = false, length = 255)
     private String sbomFilename = "";
 
@@ -260,5 +270,18 @@ public class Scan {
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage == null ? ""
                 : errorMessage.substring(0, Math.min(errorMessage.length(), 1000));
+    }
+
+    public Long getRescanOf() {
+        return rescanOf;
+    }
+
+    public void setRescanOf(Long rescanOf) {
+        this.rescanOf = rescanOf;
+    }
+
+    /** 다시 돌린 결과인가. */
+    public boolean isRescan() {
+        return rescanOf != null;
     }
 }

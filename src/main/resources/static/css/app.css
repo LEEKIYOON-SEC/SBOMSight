@@ -131,6 +131,13 @@ td.tight + td.tight, th.tight + th.tight { padding-left: 1.25rem; }
 
 .table-scroll { overflow-x: auto; }
 
+/* 설치 경로. 길어서 한 줄로 자르고 전체는 title 로 본다. */
+.path {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: .78rem; max-width: 22rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* ---------- 구역 ---------- */
 .zone-filter { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .zone-filter a {

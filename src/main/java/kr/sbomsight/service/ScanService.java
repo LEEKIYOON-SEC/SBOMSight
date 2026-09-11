@@ -71,6 +71,45 @@ public class ScanService {
     }
 
     /**
+     * 보관된 SBOM 을 갱신된 grype DB 로 다시 돌린다.
+     *
+     * <p><b>왜 필요한가.</b> 어제 없던 취약점이 오늘 생긴다 — SBOM 이 아니라
+     * 취약점 DB 가 바뀌기 때문이다. syft 와 grype 을 나눠 둔 구조의 가장 큰
+     * 이점이 여기에 있는데 지금까지 쓰지 않고 있었다. 대상 서버에 다시 갈
+     * 필요가 없다.
+     *
+     * <p><b>덮어쓰지 않고 새 스캔으로 쌓는다.</b> 원래 스캔의 결과를 갈아
+     * 끼우면 "그때 무엇을 봤는지" 가 사라진다 — 그 결과로 이미 결재가
+     * 올라갔을 수도 있다. 새 스캔으로 쌓으면 이력 비교가 그대로 돌아가
+     * "같은 SBOM 인데 무엇이 늘었나" 를 바로 읽을 수 있다.
+     *
+     * @return 새로 만들어진 스캔. 상태는 QUEUED 다.
+     */
+    @Transactional
+    public Scan rescan(Scan source, String actor) throws IOException {
+        if (source.getSbomPath() == null || source.getSbomPath().isBlank()) {
+            throw new IllegalStateException("이 스캔에는 보관된 SBOM 이 없어 다시 돌릴 수 없습니다.");
+        }
+        Path stored = Path.of(source.getSbomPath());
+        if (!Files.exists(stored)) {
+            throw new IllegalStateException("보관된 SBOM 파일을 찾을 수 없습니다: " + stored);
+        }
+
+        Scan copy = new Scan(source.getAsset(), actor);
+        copy.setSbomFilename(source.getSbomFilename());
+        copy.setSbomBytes(source.getSbomBytes());
+        copy.setSbomFormat(source.getSbomFormat());
+        copy.setRescanOf(source.getId());
+        scans.saveAndFlush(copy);   // 파일 경로에 스캔 번호가 필요하다
+
+        // 원본을 복사한다. 경로를 함께 가리키게 하면 둘 중 하나를 지울 때
+        // 나머지가 파일을 잃는다.
+        Path target = storage.copySbom(stored, source.getAsset().getId(), copy.getId());
+        copy.setSbomPath(target.toString());
+        return scans.save(copy);
+    }
+
+    /**
      * grype 을 돌리고 결과를 저장한다. 별도 스레드에서 실행된다.
      *
      * <p>실패해도 스캔 자체는 남긴다. 실패한 스캔이 사라지면 "안 돌렸다"와

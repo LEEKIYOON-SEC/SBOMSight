@@ -233,6 +233,31 @@ public class GrypeMapper {
         finding.setPackageType(trim(artifact.type()));
         finding.setPackagePurl(trim(artifact.purl()));
         finding.setPackageLanguage(trim(artifact.language()));
+        finding.setInstallPath(firstLocation(artifact.locations()));
+    }
+
+    /**
+     * 설치 경로. 여러 곳에 있으면 첫 번째만 담고 남은 수를 덧붙인다.
+     *
+     * <p>같은 jar 가 열 군데 풀려 있는 일이 흔하다. 전부 담으면 한 칸이 화면을
+     * 밀어내고, 그렇다고 "여러 곳" 이라고만 쓰면 어디부터 봐야 할지 알 수 없다.
+     */
+    private String firstLocation(List<GrypeReport.Location> locations) {
+        if (locations == null || locations.isEmpty()) {
+            return "";
+        }
+        List<String> paths = locations.stream()
+                .filter(Objects::nonNull)
+                .map(GrypeReport.Location::path)
+                .filter(p -> p != null && !p.isBlank())
+                .map(String::trim)
+                .toList();
+        if (paths.isEmpty()) {
+            return "";
+        }
+        return paths.size() == 1
+                ? paths.get(0)
+                : paths.get(0) + " 외 " + (paths.size() - 1) + "곳";
     }
 
     private void applyFix(Finding finding, GrypeReport.Vulnerability vuln) {
