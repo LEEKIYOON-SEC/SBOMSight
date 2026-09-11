@@ -89,6 +89,23 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
            """)
     List<PackageGroup> groupByPackage(@Param("scanId") Long scanId);
 
+    /**
+     * 노출면 집계용 원재료.
+     *
+     * <p>벡터 해석을 SQL 로 흉내 내지 않는다({@code LIKE '%AV:N%'}). 그렇게 하면
+     * {@link kr.sbomsight.domain.CvssVector} 와 규칙이 두 벌이 되고, 둘이
+     * 갈라지는 순간 화면과 보고서가 서로 다른 수를 말한다. 필요한 네 칸만
+     * 꺼내 와서 해석은 한 곳에서 한다.
+     */
+    @Query("""
+           SELECT f.cvssVector      AS vector,
+                  f.fixState        AS fixState,
+                  LOWER(f.severity) AS severity,
+                  f.packageName     AS packageName
+           FROM Finding f WHERE f.scan.id = :scanId
+           """)
+    List<ExposureRow> exposureRows(@Param("scanId") Long scanId);
+
     /** 이력 대조용. 버전이 바뀌면 키도 바뀌므로 (CVE, 패키지명) 으로 본다. */
     @Query("SELECT CONCAT(f.cve, '|', f.packageName) FROM Finding f WHERE f.scan.id = :scanId")
     List<String> findCvePackagePairs(@Param("scanId") Long scanId);
@@ -96,6 +113,17 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
     List<Finding> findByScanIdAndPackageNameOrderByCvssScoreDesc(Long scanId, String packageName);
 
     void deleteByScanId(Long scanId);
+
+    /** 노출면 계산에 쓰는 네 칸. */
+    interface ExposureRow {
+        String getVector();
+
+        String getFixState();
+
+        String getSeverity();
+
+        String getPackageName();
+    }
 
     interface SeverityCount {
         String getSeverity();

@@ -224,6 +224,107 @@ class ReportServiceTest {
                                  .containsExactly("glibc");
     }
 
+    // --- 노출면 -------------------------------------------------------------
+
+    /** 벡터까지 지정해 한 건을 만든다. */
+    private Finding withVector(Scan scan, String cve, String pkg, String severity,
+                               String fixState, String vector) {
+        Finding f = finding(scan, cve, pkg, "1.0.0", severity, fixState,
+                            "fixed".equals(fixState) ? "2.0.0" : "", 9.8);
+        f.setCvssVector(vector);
+        return findings.save(f);
+    }
+
+    private Scan seedVectorScan() {
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scans.saveAndFlush(scan);
+
+        // 밖에서 바로 · 수정본 있음 — 실제 log4j-core 가 받은 벡터
+        withVector(scan, "CVE-A", "log4j-core", "Critical", "fixed",
+                   "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H");
+        withVector(scan, "CVE-B", "log4j-core", "High", "fixed",
+                   "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H");
+        // 밖에서 바로 · 수정본 없음
+        withVector(scan, "CVE-C", "spring-core", "High", "not-fixed",
+                   "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H");
+        // 사용자 개입 필요 — 바로 닿는 것이 아니다
+        withVector(scan, "CVE-D", "lodash", "High", "fixed",
+                   "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N");
+        // 로컬
+        withVector(scan, "CVE-E", "glibc", "Medium", "fixed",
+                   "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N");
+        // 벡터 없음 → 판단 불가
+        withVector(scan, "CVE-F", "zlib", "Medium", "fixed", "");
+        // CVSS 2.0 → 판단 불가 (Au 를 PR 로 오독하면 안 된다)
+        withVector(scan, "CVE-G", "openssl", "High", "fixed", "AV:N/AC:L/Au:N/C:P/I:P/A:P");
+
+        scan.setMatchCount(7);
+        scan.setFindingCount(7);
+        scans.saveAndFlush(scan);
+        return scan;
+    }
+
+    @Test
+    @DisplayName("승 — 벡터를 풀어 '밖에서 바로 닿는 것'을 센다")
+    void countsTheDirectlyReachable() {
+        ReportService.Exposure e = reports.build(seedVectorScan()).analysis().exposure();
+
+        // AV:N + PR:N + UI:N 인 셋만.
+        assertThat(e.reachable()).isEqualTo(3);
+        assertThat(e.reachableFixable()).isEqualTo(2);
+        assertThat(e.reachableWithoutFix()).isEqualTo(1);   // spring-core
+        assertThat(e.scopeChanged()).isEqualTo(1);          // S:C 하나
+    }
+
+    /**
+     * 이 시험이 이 기능의 핵심이다. 읽지 못한 벡터를 "원격에서 닿지 않는다"로
+     * 밀어 넣으면 보고서가 아무도 확인하지 않은 판정을 말하게 된다.
+     */
+    @Test
+    @DisplayName("읽지 못한 벡터는 '아니오'가 아니라 '판단 불가'로 센다")
+    void unreadableVectorsAreCountedApart() {
+        ReportService.Exposure e = reports.build(seedVectorScan()).analysis().exposure();
+
+        // 벡터 없음 1건 + CVSS 2.0 1건.
+        assertThat(e.unreadable()).isEqualTo(2);
+        // 그 둘은 '닿는다' 에도 '안 닿는다' 에도 들어가지 않았다.
+        assertThat(e.reachable() + e.unreadable()).isLessThanOrEqualTo(7);
+    }
+
+    @Test
+    @DisplayName("전 — 바로 닿는 건이 많은 패키지가 먼저 온다")
+    void actionsAreOrderedByReach() {
+        ReportService.Chapter3 ch = reports.build(seedVectorScan()).judgement();
+
+        // log4j-core 가 2건으로 가장 많다.
+        assertThat(ch.actions().get(0).packageName()).isEqualTo("log4j-core");
+        assertThat(ch.actions().get(0).reachableCount()).isEqualTo(2);
+        // 바로 닿는 건이 하나도 없는 패키지는 뒤로 간다.
+        assertThat(ch.actions()).last()
+                .extracting(ReportService.PackageAction::reachableCount).isEqualTo(0L);
+        assertThat(ch.reachablePackages()).isEqualTo(1);   // 수정 가능한 것 중에는 log4j-core 뿐
+    }
+
+    @Test
+    @DisplayName("벡터가 하나도 없으면 노출면을 0 이라 말하지 않는다")
+    void doesNotClaimZeroWhenNothingWasReadable() {
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scans.saveAndFlush(scan);
+        withVector(scan, "CVE-X", "zlib", "High", "fixed", "");
+        withVector(scan, "CVE-Y", "curl", "High", "fixed", "");
+        scan.setFindingCount(2);
+        scan.setMatchCount(2);
+        scans.saveAndFlush(scan);
+
+        ReportService.Exposure e = reports.build(scan).analysis().exposure();
+        assertThat(e.reachable()).isZero();
+        assertThat(e.unreadable()).isEqualTo(2);
+        // 한 건도 읽지 못했다 — 화면은 이 문단을 싣지 않는다.
+        assertThat(e.measured()).isFalse();
+    }
+
     @Test
     @DisplayName("탐지가 없는 스캔도 보고서가 나온다")
     void emptyScanStillReports() {

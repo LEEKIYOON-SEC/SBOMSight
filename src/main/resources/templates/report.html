@@ -87,6 +87,43 @@
       </th:block>
     </p>
 
+    <!-- 노출면 — grype 이 준 CVSS 벡터를 풀어 센 것. 심각도만으로는 대응
+         순서가 정해지지 않는다. 같은 '높음'이라도 밖에서 인증 없이 닿는
+         것과 서버에 이미 들어와야 쓸 수 있는 것은 먼저 할 일이 다르다. -->
+    <h3>어떻게 닿을 수 있는가</h3>
+    <table>
+      <thead><tr><th class="tight">구분</th><th class="num tight">건수</th><th>뜻</th></tr></thead>
+      <tbody>
+      <tr>
+        <td class="tight"><b>밖에서 바로</b></td>
+        <td class="num tight">
+          <b th:text="${#numbers.formatInteger(report.analysis.exposure.reachable, 0, 'COMMA')}">0</b>
+        </td>
+        <td class="faint">네트워크에서 · 인증 없이 · 사용자 개입 없이 (AV:N / PR:N / UI:N)</td>
+      </tr>
+      <tr th:if="${report.analysis.exposure.reachableWithoutFix() > 0}">
+        <td class="tight">└ 수정본 없음</td>
+        <td class="num tight danger-text"
+            th:text="${#numbers.formatInteger(report.analysis.exposure.reachableWithoutFix(), 0, 'COMMA')}">0</td>
+        <td class="faint">바로 닿는데 올릴 판이 없습니다. 다른 통제가 필요한 자리입니다.</td>
+      </tr>
+      <tr th:if="${report.analysis.exposure.scopeChanged > 0}">
+        <td class="tight">권한 경계를 넘음</td>
+        <td class="num tight"
+            th:text="${#numbers.formatInteger(report.analysis.exposure.scopeChanged, 0, 'COMMA')}">0</td>
+        <td class="faint">취약한 구성 요소 너머로 영향이 번집니다 (S:C).</td>
+      </tr>
+      <!-- 읽지 못한 것을 '아니오'로 세면 "원격에서 닿지 않습니다" 라는,
+           아무도 확인하지 않은 판정이 된다. 따로 세어 밝힌다. -->
+      <tr th:if="${report.analysis.exposure.unreadable > 0}">
+        <td class="tight">판단 불가</td>
+        <td class="num tight"
+            th:text="${#numbers.formatInteger(report.analysis.exposure.unreadable, 0, 'COMMA')}">0</td>
+        <td class="faint">grype 이 CVSS 3.x 벡터를 주지 않아 셋 중 어디에도 넣지 않았습니다.</td>
+      </tr>
+      </tbody>
+    </table>
+
     <h3>심각도 분포</h3>
     <table>
       <thead><tr><th class="tight">심각도</th><th class="num tight">건수</th><th>비중</th></tr></thead>
@@ -157,6 +194,20 @@
       해소됩니다 — 건별로 대응할 일이 아니라 패키지 업데이트로 대응할 일입니다.
     </p>
 
+    <!-- 먼저 손댈 것. 표의 순서 자체가 이 기준으로 서 있다. -->
+    <p class="lead" th:if="${report.judgement.exposure.reachable > 0}">
+      먼저 볼 것은 <b>밖에서 인증 없이 바로 닿는
+      <span th:text="${#numbers.formatInteger(report.judgement.exposure.reachable, 0, 'COMMA')}">0</span>건</b>이고,
+      이것은 <b th:text="${report.judgement.reachablePackages()}">0</b>개 패키지에 몰려 있습니다.
+      <th:block th:if="${report.judgement.exposure.reachableWithoutFix() > 0}">
+        그 가운데
+        <b class="danger-text"
+           th:text="${#numbers.formatInteger(report.judgement.exposure.reachableWithoutFix(), 0, 'COMMA')}">0</b>건은
+        올릴 판이 없어 접근 제한·모니터링으로 막아야 합니다.
+      </th:block>
+      아래 표는 이 기준으로 줄 세웠습니다.
+    </p>
+
     <h3>조치 대상 — 패키지를 올리면 해소되는 것</h3>
     <table th:if="${!report.judgement.actions.isEmpty()}">
       <thead>
@@ -164,6 +215,7 @@
         <th class="tight">패키지</th>
         <th class="tight">현재 → 목표</th>
         <th class="num tight">해소 건수</th>
+        <th class="num tight">바로 닿음</th>
         <th class="num tight">심각</th>
         <th class="num tight">높음</th>
         <th class="num tight">최고 CVSS</th>
@@ -182,6 +234,8 @@
           → <b th:text="${a.hasTarget()} ? ${a.targetVersion} : '확인 필요'">2.0.0</b>
         </td>
         <td class="num tight" th:text="${a.fixableCount}">0</td>
+        <td class="num tight" th:classappend="${a.hasReachable()} ? 'danger-text' : ''"
+            th:text="${a.hasReachable()} ? ${a.reachableCount} : '—'">—</td>
         <td class="num tight" th:text="${a.criticalCount > 0} ? ${a.criticalCount} : '—'">—</td>
         <td class="num tight" th:text="${a.highCount > 0} ? ${a.highCount} : '—'">—</td>
         <td class="num tight" th:text="${a.maxCvss != null} ? ${a.maxCvss} : '—'">—</td>
