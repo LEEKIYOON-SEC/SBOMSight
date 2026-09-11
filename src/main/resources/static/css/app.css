@@ -283,9 +283,37 @@ th.tight, td.tight { width: 1%; white-space: nowrap; }
 .path { font-size: 12.5px; max-width: 22rem;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* 도움말 — 접어 둔다.
+   화면 자체에 설명을 늘어놓으면 매일 보는 사람에게는 전부 군더더기이고,
+   그 군더더기 때문에 실제로 봐야 하는 값이 묻힌다. 처음 한 번 필요한
+   내용은 그 동작 옆에 접어 두고, 필요한 사람만 펼친다. */
+details.help { margin: 10px 0 0; font-size: 13.5px; }
+details.help > summary {
+  cursor: pointer; color: var(--fg-faint); width: fit-content;
+  list-style: none; display: flex; align-items: center; gap: 5px;
+}
+details.help > summary::-webkit-details-marker { display: none; }
+details.help > summary::before { content: "?";
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border-radius: 8px; flex-shrink: 0;
+  border: 1px solid var(--line-strong); font-size: 10.5px; font-weight: 700;
+}
+details.help > summary:hover { color: var(--fg); }
+details.help[open] > summary { margin-bottom: 8px; }
+details.help .inner {
+  color: var(--fg-muted); line-height: 1.75; max-width: 44rem;
+  padding: 11px 14px; border-radius: 8px; background: var(--sunken);
+  border: 1px solid var(--line);
+}
+details.help .inner > :first-child { margin-top: 0; }
+details.help .inner > :last-child { margin-bottom: 0; }
+
 /* 아무것도 없을 때. 빈 표를 그리는 대신 왜 비었는지 말한다. */
 .empty { padding: 56px var(--gutter); text-align: center; color: var(--fg-muted); }
 .empty b { display: block; font-size: 15px; font-weight: 600; color: var(--fg); margin-bottom: 6px; }
+/* 화면 한가운데가 아니라 제목 바로 아래 붙는 것. 가운데로 몰면 어느 제목에
+   딸린 말인지 흐려진다. */
+.empty.inline { padding: 14px 0; text-align: left; font-size: 14px; }
 
 /* ============================================================
    구역
