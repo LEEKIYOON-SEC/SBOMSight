@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -171,6 +172,89 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
 
     void deleteByScanId(Long scanId);
 
+    // --- 구역·기간 보고서: 여러 스캔을 한 번에 --------------------------------
+    //
+    // 자산마다 질의를 돌리면 서른 대에 백스무 번 왕복한다. 보고서 한 장에
+    // 그럴 이유가 없다. 빈 목록으로 부르면 안 된다 — 부르는 쪽에서 막는다.
+
+    @Query("""
+           SELECT LOWER(f.severity) AS severity, COUNT(f) AS total
+           FROM Finding f WHERE f.scan.id IN :scanIds
+           GROUP BY LOWER(f.severity)
+           """)
+    List<SeverityCount> countBySeverityIn(@Param("scanIds") Collection<Long> scanIds);
+
+    @Query("""
+           SELECT LOWER(f.fixState) AS fixState, COUNT(f) AS total
+           FROM Finding f WHERE f.scan.id IN :scanIds
+           GROUP BY LOWER(f.fixState)
+           """)
+    List<FixStateCount> countByFixStateIn(@Param("scanIds") Collection<Long> scanIds);
+
+    /** 노출면 원재료. 자산 id 가 붙어 있어 구역 합계와 자산별 수를 한 번에 낸다. */
+    @Query("""
+           SELECT f.cvssVector      AS vector,
+                  f.fixState        AS fixState,
+                  LOWER(f.severity) AS severity,
+                  f.packageName     AS packageName,
+                  s.asset.id        AS assetId
+           FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds
+           """)
+    List<ZoneExposureRow> exposureRowsIn(@Param("scanIds") Collection<Long> scanIds);
+
+    /** 자산별 심각도 분포 — 구역 보고서의 자산 표. */
+    @Query("""
+           SELECT s.asset.id AS assetId, LOWER(f.severity) AS severity, COUNT(f) AS total
+           FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds
+           GROUP BY s.asset.id, LOWER(f.severity)
+           """)
+    List<AssetSeverityCount> countBySeverityPerAsset(@Param("scanIds") Collection<Long> scanIds);
+
+    /**
+     * 구역 전체를 패키지로 묶는다 — <b>구역 보고서의 핵심 표.</b>
+     *
+     * <p>"openssl 을 올리면 12대에서 47건이 사라진다" 는 그대로 작업 지시가
+     * 된다. 자산 하나짜리 보고서에는 없는 값(몇 대에 걸쳐 있는가)이 여기서
+     * 나오고, 그것이 구역 단위로 보는 이유다.
+     *
+     * <p>버전은 묶음 축에서 뺀다 — 같은 openssl 이라도 자산마다 판이 다르다.
+     * 대신 몇 가지 판이 섞여 있는지를 세어, 하나가 아니면 화면에서 목표
+     * 버전을 단정하지 않는다.
+     */
+    @Query("""
+           SELECT f.packageName    AS packageName,
+                  f.packageType    AS packageType,
+                  COUNT(f)         AS total,
+                  COUNT(DISTINCT s.asset.id)     AS assetCount,
+                  COUNT(DISTINCT f.packageVersion) AS versionCount,
+                  MIN(f.packageVersion)          AS anyVersion,
+                  SUM(CASE WHEN f.fixState = 'fixed' THEN 1 ELSE 0 END)          AS fixable,
+                  SUM(CASE WHEN f.kev = TRUE THEN 1 ELSE 0 END)                  AS kevCount,
+                  SUM(CASE WHEN LOWER(f.severity) = 'critical' THEN 1 ELSE 0 END) AS criticalCount,
+                  SUM(CASE WHEN LOWER(f.severity) = 'high' THEN 1 ELSE 0 END)     AS highCount,
+                  MAX(f.cvssScore)               AS maxCvss,
+                  MAX(f.epss)                    AS maxEpss,
+                  MAX(f.fixedVersion)            AS targetVersion,
+                  COUNT(DISTINCT f.fixedVersion) AS targetCount
+           FROM Finding f JOIN f.scan s
+           WHERE s.id IN :scanIds
+           GROUP BY f.packageName, f.packageType
+           """)
+    List<ZonePackageGroup> groupByPackageIn(@Param("scanIds") Collection<Long> scanIds);
+
+    /**
+     * 증감 대조용 키. {@code (자산, CVE, 패키지명)} 세 축이다.
+     *
+     * <p>문자열로 이어 붙여 돌려주지 않는다 — {@code CAST(id AS string)} 은
+     * DB 마다 다르게 굴고, 시험은 H2 로 도는데 운영은 MySQL 이다. 이어 붙이는
+     * 일은 자바에서 한다.
+     */
+    @Query("""
+           SELECT s.asset.id AS assetId, f.cve AS cve, f.packageName AS packageName
+           FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds
+           """)
+    List<AssetFindingKey> findKeysIn(@Param("scanIds") Collection<Long> scanIds);
+
     /** 노출면 계산에 쓰는 네 칸. */
     interface ExposureRow {
         String getVector();
@@ -216,5 +300,66 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         java.math.BigDecimal getMaxEpss();
 
         String getTargetVersion();
+    }
+
+    /** 노출면 원재료에 자산 id 를 얹은 것. */
+    interface ZoneExposureRow extends ExposureRow {
+        Long getAssetId();
+    }
+
+    interface AssetSeverityCount {
+        Long getAssetId();
+
+        String getSeverity();
+
+        long getTotal();
+    }
+
+    interface AssetFindingKey {
+        Long getAssetId();
+
+        String getCve();
+
+        String getPackageName();
+    }
+
+    /**
+     * 구역 전체를 패키지로 묶은 한 줄.
+     *
+     * <p>{@link PackageGroup} 과 달리 버전이 묶음 축에 없다. 대신 몇 대에
+     * 걸쳐 있는지({@code assetCount}), 판이 몇 가지인지({@code versionCount})
+     * 가 붙는다.
+     */
+    interface ZonePackageGroup {
+        String getPackageName();
+
+        String getPackageType();
+
+        long getTotal();
+
+        /** 이 패키지가 걸린 자산 수. 구역 보고서에만 있는 값이다. */
+        long getAssetCount();
+
+        /** 자산마다 설치된 판이 몇 가지인가. 1 이 아니면 목표 버전을 단정하지 않는다. */
+        long getVersionCount();
+
+        String getAnyVersion();
+
+        long getFixable();
+
+        long getKevCount();
+
+        long getCriticalCount();
+
+        long getHighCount();
+
+        java.math.BigDecimal getMaxCvss();
+
+        java.math.BigDecimal getMaxEpss();
+
+        String getTargetVersion();
+
+        /** grype 이 제시한 수정 버전이 몇 가지인가. 1 이 아니면 "자산별 확인" 이다. */
+        long getTargetCount();
     }
 }

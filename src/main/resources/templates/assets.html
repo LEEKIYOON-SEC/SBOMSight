@@ -56,6 +56,8 @@
         <span class="num" th:if="${g.openRemediations() > 0}"
               th:text="'조치 ' + ${g.openRemediations()}">조치 0</span>
       </th:block>
+      <a class="btn small" th:unless="${g.isEmpty()}"
+         th:href="@{/report/zone(zone=${g.zone.id})}">보고서</a>
     </div>
 
     <div class="card" th:if="${g.isEmpty()}">

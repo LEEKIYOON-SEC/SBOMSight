@@ -56,4 +56,68 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
     List<Scan> findLatestDonePerAsset();
 
     long countByAssetId(Long assetId);
+
+    /**
+     * 구역 보고서의 기준 스캔 — 자산마다 <b>기간 안에서</b> 가장 나중에 끝난 하나.
+     *
+     * <p>기간 밖의 스캔을 끌어오면 "9월 현황" 에 8월 상태가 섞인다. 반대로
+     * 기간 안에 검사가 없는 자산은 <b>여기에 나오지 않는다</b> — 그 자산이
+     * 조용히 빠지지 않도록, 부르는 쪽에서 대상 자산 목록과 대조해 빠진 것을
+     * 따로 센다.
+     *
+     * <p>{@code createdAt < :to} 로 끝을 연다. 종료일의 23:59:59 를 쓰면
+     * 그 1초 사이의 스캔이 사라진다.
+     */
+    @Query("""
+           SELECT s FROM Scan s
+             JOIN FETCH s.asset a
+             JOIN FETCH a.zone z
+           WHERE s.status = 'DONE'
+             AND a.archivedAt IS NULL
+             AND s.createdAt >= :from AND s.createdAt < :to
+             AND (:zoneId IS NULL OR z.id = :zoneId)
+             AND NOT EXISTS (SELECT 1 FROM Scan x
+                             WHERE x.asset.id = s.asset.id AND x.status = 'DONE'
+                               AND x.createdAt >= :from AND x.createdAt < :to
+                               AND (x.createdAt > s.createdAt
+                                    OR (x.createdAt = s.createdAt AND x.id > s.id)))
+           """)
+    List<Scan> findLatestDonePerAssetBetween(@Param("zoneId") Long zoneId,
+                                             @Param("from") java.time.Instant from,
+                                             @Param("to") java.time.Instant to);
+
+    /**
+     * 기간이 시작되기 <b>직전</b>의 상태 — 증감을 재는 기준선.
+     *
+     * <p>이 스캔이 없는 자산은 기간 중에 처음 들어온 자산이다. 그 자산의
+     * 탐지를 전부 "신규" 로 세면 증감이 부풀려진다 — 새로 본 것이지 새로
+     * 생긴 것이 아니다. 부르는 쪽에서 대조 대상에서 빼고 그 수를 밝힌다.
+     */
+    @Query("""
+           SELECT s FROM Scan s
+             JOIN FETCH s.asset a
+             JOIN FETCH a.zone z
+           WHERE s.status = 'DONE'
+             AND a.archivedAt IS NULL
+             AND s.createdAt < :before
+             AND (:zoneId IS NULL OR z.id = :zoneId)
+             AND NOT EXISTS (SELECT 1 FROM Scan x
+                             WHERE x.asset.id = s.asset.id AND x.status = 'DONE'
+                               AND x.createdAt < :before
+                               AND (x.createdAt > s.createdAt
+                                    OR (x.createdAt = s.createdAt AND x.id > s.id)))
+           """)
+    List<Scan> findLatestDonePerAssetBefore(@Param("zoneId") Long zoneId,
+                                            @Param("before") java.time.Instant before);
+
+    /** 기간 중 실제로 돌린 검사 횟수. 자산 수와 다르다 — 한 자산을 여러 번 돌린다. */
+    @Query("""
+           SELECT COUNT(s) FROM Scan s JOIN s.asset a JOIN a.zone z
+           WHERE s.status = 'DONE' AND a.archivedAt IS NULL
+             AND s.createdAt >= :from AND s.createdAt < :to
+             AND (:zoneId IS NULL OR z.id = :zoneId)
+           """)
+    long countDoneBetween(@Param("zoneId") Long zoneId,
+                          @Param("from") java.time.Instant from,
+                          @Param("to") java.time.Instant to);
 }

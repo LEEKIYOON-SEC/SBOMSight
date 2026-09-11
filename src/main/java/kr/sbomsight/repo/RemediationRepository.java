@@ -49,4 +49,13 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
     List<Remediation> findOverdue(@Param("today") LocalDate today);
 
     long countByAssetIdAndStatusIn(Long assetId, List<RemediationStatus> statuses);
+
+    /** 구역 보고서용 — 한 구역(또는 전체)의 조치 전부. 닫힌 것도 함께 센다. */
+    @Query("""
+           SELECT r FROM Remediation r JOIN FETCH r.asset a JOIN FETCH a.zone z
+           WHERE a.archivedAt IS NULL
+             AND (:zoneId IS NULL OR z.id = :zoneId)
+           ORDER BY a.name ASC, r.packageName ASC
+           """)
+    List<Remediation> findByZone(@Param("zoneId") Long zoneId);
 }

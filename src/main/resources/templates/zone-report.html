@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: page(~{::main}, 'zonereport', '구역 보고서')}">
+<body>
+<main class="report">
+
+  <div class="page-head no-print">
+    <h1>구역 현황 보고서</h1>
+    <button type="button" class="btn" onclick="window.print()">인쇄 · PDF</button>
+  </div>
+
+  <form method="get" th:action="@{/report/zone}" class="report-picker no-print">
+    <label>구역
+      <select name="zone">
+        <option value="" th:selected="${selectedZone == null}">전체</option>
+        <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
+                th:selected="${selectedZone != null && selectedZone == z.id}">DMZ</option>
+      </select>
+    </label>
+    <label>시작 <input type="date" name="from" th:value="${from}"></label>
+    <label>종료 <input type="date" name="to" th:value="${to}"></label>
+    <button class="btn primary" type="submit">보기</button>
+    <span class="spacer"></span>
+    <a class="btn small" th:href="@{/report/zone(zone=${selectedZone}, from=${thisMonth}, to=${today})}">이번 달</a>
+    <a class="btn small" th:href="@{/report/zone(zone=${selectedZone}, from=${lastMonthFrom}, to=${lastMonthTo})}">지난 달</a>
+    <a class="btn small" th:href="@{/report/zone(zone=${selectedZone}, from=${quarterFrom}, to=${today})}">최근 3개월</a>
+  </form>
+
+  <div class="report-title">
+    <h1 th:text="${report.scope.zoneName()} + ' 취약점 현황'">DMZ 취약점 현황</h1>
+    <p class="faint">
+      <span th:text="${#temporals.format(report.scope.from, 'yyyy년 M월 d일')}">—</span> ~
+      <span th:text="${#temporals.format(report.scope.to, 'yyyy년 M월 d일')}">—</span>
+    </p>
+  </div>
+
+  <!-- ================= 기 · 현황 ================= -->
+  <section>
+    <h2><span class="ch">기</span> 무엇을, 언제, 얼마나 보았는가</h2>
+
+    <p class="lead" th:if="${report.scope.assetsInScope == 0}">
+      이 구역에 등록된 자산이 없습니다.
+    </p>
+
+    <th:block th:if="${report.scope.assetsInScope > 0}">
+      <p class="lead">
+        <b th:text="${report.scope.zoneName()}">DMZ</b> 의 자산
+        <b th:text="${report.scope.assetsInScope}">0</b>대 가운데
+        <b th:text="${report.scope.assetsScanned}">0</b>대를 이 기간에 검사해
+        <b th:text="${#numbers.formatInteger(report.scope.totalFindings, 0, 'COMMA')}">0</b>건을
+        탐지했습니다.
+      </p>
+
+      <!-- 검사되지 않은 자산을 맨 앞에 세운다. 서른 대 중 열 대만 검사하고
+           "탐지 1,200건" 이라고 쓰면 그것은 구역의 현황이 아니라 열 대의
+           현황이고, 보고서를 받는 사람은 그 차이를 알 수 없다. -->
+      <p class="note warn" th:unless="${report.scope.fullyCovered()}">
+        <b th:text="${report.scope.notScanned.size()} + '대는 이 기간에 검사 기록이 없습니다.'">—</b>
+        아래 숫자는 검사한
+        <span th:text="${report.scope.assetsScanned}">0</span>대
+        (<span th:text="${report.scope.coveragePercent()}">0</span>%)에 대한 것입니다.
+        <br>
+        <span th:each="a, i : ${report.scope.notScanned}">
+          <a class="no-print" th:href="@{'/assets/' + ${a.id}}" th:text="${a.name}">web-01</a>
+          <span class="print-only" th:text="${a.name}">web-01</span><th:block
+            th:if="${!i.last}"> · </th:block>
+        </span>
+      </p>
+
+      <table class="kv">
+        <tr>
+          <th>대상</th>
+          <td>
+            <span th:text="${report.scope.zoneName()}">DMZ</span>
+            · 자산 <span th:text="${report.scope.assetsInScope}">0</span>대
+            <span class="faint" th:text="'(검사됨 ' + ${report.scope.assetsScanned} + '대)'"></span>
+          </td>
+        </tr>
+        <tr>
+          <th>기간</th>
+          <td>
+            <span th:text="${#temporals.format(report.scope.from, 'yyyy-MM-dd')}">—</span> ~
+            <span th:text="${#temporals.format(report.scope.to, 'yyyy-MM-dd')}">—</span>
+            <span class="faint" th:text="'· 검사 ' + ${report.scope.scanRuns} + '회'"></span>
+          </td>
+        </tr>
+        <tr th:if="${report.scope.newestScan != null}">
+          <th>기준 검사</th>
+          <td>
+            자산마다 이 기간의 <b>마지막 검사</b>를 기준으로 삼았습니다
+            (<span th:text="${#temporals.format(report.scope.oldestScan, 'MM-dd HH:mm')}">—</span>
+            ~ <span th:text="${#temporals.format(report.scope.newestScan, 'MM-dd HH:mm')}">—</span>).
+          </td>
+        </tr>
+        <tr th:if="${!report.scope.grypeVersions.isEmpty()}">
+          <th>검사 도구</th>
+          <td>
+            grype
+            <span th:each="v, i : ${report.scope.grypeVersions}"
+                  th:text="${v} + (${i.last} ? '' : ', ')">0.87.0</span>
+            <span class="faint" th:if="${!report.scope.dbDates.isEmpty()}">
+              · 취약점 DB
+              <span th:each="d, i : ${report.scope.dbDates}"
+                    th:text="${#temporals.format(d, 'yyyy-MM-dd')} + (${i.last} ? '' : ', ')">—</span>
+              기준
+            </span>
+          </td>
+        </tr>
+      </table>
+
+      <!-- 기간 동안 grype 이 바뀌었으면 증감의 일부는 서버가 아니라 도구가
+           움직인 것이다. 그 사실을 적지 않으면 "9월에 40건 늘었다" 가
+           서버가 나빠진 것으로만 읽힌다. -->
+      <p class="note" th:if="${report.scope.toolChanged()}">
+        이 기간의 검사가 서로 다른 grype 판 또는 서로 다른 취약점 DB 기준일로
+        돌았습니다. 새 판이 규칙을 더 가지면 같은 서버에서도 탐지가 늘어나므로,
+        아래 증감의 일부는 서버 상태가 아니라 도구 변화일 수 있습니다.
+      </p>
+    </th:block>
+  </section>
+
+  <th:block th:if="${report.scope.assetsScanned > 0}">
+
+  <!-- ================= 승 · 분석 ================= -->
+  <section>
+    <h2><span class="ch">승</span> 그 안이 어떻게 생겼는가</h2>
+
+    <p class="lead">
+      심각·높음이 <b th:text="${#numbers.formatInteger(report.aggregate.urgent(), 0, 'COMMA')}">0</b>건이고
+      <b th:text="${report.aggregate.assetsWithUrgent()}">0</b>대에 걸쳐 있습니다.
+      전체의 <b th:text="${#numbers.formatInteger(report.aggregate.fixable, 0, 'COMMA')}">0</b>건은
+      <b>패키지를 올리면 사라집니다.</b>
+      <th:block th:if="${report.aggregate.noFix > 0}">
+        나머지 <b th:text="${#numbers.formatInteger(report.aggregate.noFix, 0, 'COMMA')}">0</b>건은
+        아직 수정본이 없습니다.
+      </th:block>
+    </p>
+
+    <h3>어떻게 닿을 수 있는가</h3>
+    <table>
+      <thead><tr><th class="tight">구분</th><th class="num tight">건수</th><th>뜻</th></tr></thead>
+      <tbody>
+      <tr>
+        <td class="tight"><b>밖에서 바로</b></td>
+        <td class="num tight">
+          <b th:text="${#numbers.formatInteger(report.aggregate.exposure.reachable, 0, 'COMMA')}">0</b>
+        </td>
+        <td class="faint">네트워크에서 · 인증 없이 · 사용자 개입 없이 (AV:N / PR:N / UI:N)</td>
+      </tr>
+      <tr th:if="${report.aggregate.exposure.reachableWithoutFix() > 0}">
+        <td class="tight">└ 수정본 없음</td>
+        <td class="num tight danger-text"
+            th:text="${#numbers.formatInteger(report.aggregate.exposure.reachableWithoutFix(), 0, 'COMMA')}">0</td>
+        <td class="faint">바로 닿는데 올릴 판이 없습니다. 다른 통제가 필요한 자리입니다.</td>
+      </tr>
+      <tr th:if="${report.aggregate.exposure.scopeChanged > 0}">
+        <td class="tight">권한 경계를 넘음</td>
+        <td class="num tight"
+            th:text="${#numbers.formatInteger(report.aggregate.exposure.scopeChanged, 0, 'COMMA')}">0</td>
+        <td class="faint">취약한 구성 요소 너머로 영향이 번집니다 (S:C).</td>
+      </tr>
+      <tr th:if="${report.aggregate.exposure.unreadable > 0}">
+        <td class="tight">판단 불가</td>
+        <td class="num tight"
+            th:text="${#numbers.formatInteger(report.aggregate.exposure.unreadable, 0, 'COMMA')}">0</td>
+        <td class="faint">grype 이 CVSS 3.x 벡터를 주지 않아 셋 중 어디에도 넣지 않았습니다.</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>심각도 분포</h3>
+    <table>
+      <thead><tr><th class="tight">심각도</th><th class="num tight">건수</th><th>비중</th></tr></thead>
+      <tbody>
+      <tr th:each="key : ${ {'critical','high','medium','low','negligible','unknown'} }"
+          th:if="${report.aggregate.severityOf(key) > 0}">
+        <td class="tight">
+          <i class="mark" th:classappend="${key}"></i>
+          <span th:switch="${key}">
+            <th:block th:case="'critical'">심각</th:block>
+            <th:block th:case="'high'">높음</th:block>
+            <th:block th:case="'medium'">보통</th:block>
+            <th:block th:case="'low'">낮음</th:block>
+            <th:block th:case="'negligible'">무시 가능</th:block>
+            <th:block th:case="*">미확인</th:block>
+          </span>
+        </td>
+        <td class="num tight" th:text="${#numbers.formatInteger(report.aggregate.severityOf(key), 0, 'COMMA')}">0</td>
+        <td>
+          <span class="bar" th:style="'width:' + ${report.aggregate.severityOf(key) * 100 / report.aggregate.total} + '%'"></span>
+          <span class="faint" th:text="${#numbers.formatDecimal(report.aggregate.severityOf(key) * 100.0 / report.aggregate.total, 1, 1)} + '%'">0%</span>
+        </td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>조치 가능 여부</h3>
+    <table>
+      <thead><tr><th class="tight">구분</th><th class="num tight">건수</th><th>뜻</th></tr></thead>
+      <tbody>
+      <tr>
+        <td class="tight">수정본 있음</td>
+        <td class="num tight" th:text="${#numbers.formatInteger(report.aggregate.fixable, 0, 'COMMA')}">0</td>
+        <td class="faint">패키지를 올리면 해소됩니다.</td>
+      </tr>
+      <tr th:if="${report.aggregate.noFix > 0}">
+        <td class="tight">수정본 없음</td>
+        <td class="num tight" th:text="${#numbers.formatInteger(report.aggregate.noFix, 0, 'COMMA')}">0</td>
+        <td class="faint">업스트림에 아직 수정본이 없습니다. 접근 제한·모니터링 등 다른 통제가 필요합니다.</td>
+      </tr>
+      <tr th:if="${report.aggregate.unknownFix > 0}">
+        <td class="tight">확인 필요</td>
+        <td class="num tight" th:text="${#numbers.formatInteger(report.aggregate.unknownFix, 0, 'COMMA')}">0</td>
+        <td class="faint">grype 이 수정 상태를 밝히지 않았습니다. 개별 확인이 필요합니다.</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>자산별</h3>
+    <div class="table-scroll">
+      <table>
+        <thead>
+        <tr>
+          <th class="tight">서버</th>
+          <th class="tight" th:if="${report.scope.wholeSite()}">구역</th>
+          <th class="tight">마지막 검사</th>
+          <th class="num tight">탐지</th>
+          <th class="num tight">심각</th>
+          <th class="num tight">높음</th>
+          <th class="num tight">바로 닿음</th>
+        </tr>
+        </thead>
+        <tbody>
+        <!-- 검사되지 않은 자산도 줄을 차지한다. 목록에서 빠지면 "안 본 것"과
+             "문제가 없는 것"을 구분할 수 없다. -->
+        <tr th:each="r : ${report.aggregate.rows}"
+            th:style="${r.scanned()} ? '' : 'opacity:.6'">
+          <td class="tight">
+            <a class="no-print" th:href="@{'/assets/' + ${r.asset.id}}"
+               th:text="${r.asset.name}">web-01</a>
+            <span class="print-only" th:text="${r.asset.name}">web-01</span>
+          </td>
+          <td class="tight faint" th:if="${report.scope.wholeSite()}"
+              th:text="${r.asset.zone.name}">DMZ</td>
+          <td class="tight" th:if="${r.scanned()}"
+              th:text="${#temporals.format(r.scan.createdAt, 'MM-dd HH:mm')}">—</td>
+          <td class="tight muted" th:unless="${r.scanned()}" colspan="5">이 기간에 검사 없음</td>
+          <th:block th:if="${r.scanned()}">
+            <td class="num tight" th:text="${#numbers.formatInteger(r.findingCount(), 0, 'COMMA')}">0</td>
+            <td class="num tight" th:text="${r.critical > 0} ? ${r.critical} : '—'">—</td>
+            <td class="num tight" th:text="${r.high > 0} ? ${r.high} : '—'">—</td>
+            <td class="num tight" th:classappend="${r.reachable > 0} ? 'danger-text' : ''"
+                th:text="${r.reachable > 0} ? ${r.reachable} : '—'">—</td>
+          </th:block>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= 전 · 판단 ================= -->
+  <section>
+    <h2><span class="ch">전</span> 그래서 무엇을 해야 하는가</h2>
+
+    <p class="lead" th:if="${!report.judgement.actions.isEmpty()}">
+      탐지 <b th:text="${#numbers.formatInteger(report.aggregate.total, 0, 'COMMA')}">0</b>건은
+      <b th:text="${report.judgement.actions.size()}">0</b>개 패키지에서 나왔습니다.
+      그중 <b>상위 다섯 개만 올려도
+      <span th:text="${#numbers.formatInteger(report.judgement.topFiveCoverage(), 0, 'COMMA')}">0</span>건</b>이
+      해소됩니다.
+      <th:block th:if="${!report.judgement.shared().isEmpty()}">
+        <b th:text="${report.judgement.shared().size()}">0</b>개 패키지는
+        <b>두 대 이상에 공통</b>으로 걸려 있어 한 번의 판단으로 여러 대를 함께
+        정리할 수 있습니다 — 구역 단위로 보는 이유입니다.
+      </th:block>
+    </p>
+
+    <p class="lead" th:if="${report.judgement.exposure.reachable > 0}">
+      먼저 볼 것은 <b>밖에서 인증 없이 바로 닿는
+      <span th:text="${#numbers.formatInteger(report.judgement.exposure.reachable, 0, 'COMMA')}">0</span>건</b>이고,
+      이것은 <b th:text="${report.judgement.reachablePackages()}">0</b>개 패키지에 몰려 있습니다.
+      아래 표는 이 기준으로 줄 세웠습니다.
+    </p>
+
+    <h3>조치 대상 — 패키지를 올리면 해소되는 것</h3>
+    <div class="table-scroll" th:if="${!report.judgement.actions.isEmpty()}">
+      <table>
+        <thead>
+        <tr>
+          <th class="tight">패키지</th>
+          <th class="num tight">자산</th>
+          <th class="tight">현재 → 목표</th>
+          <th class="num tight">해소 건수</th>
+          <th class="num tight">바로 닿음</th>
+          <th class="num tight">심각</th>
+          <th class="num tight">높음</th>
+          <th class="num tight">최고 CVSS</th>
+          <th>비고</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="a : ${report.judgement.actions}">
+          <td class="tight">
+            <b th:text="${a.packageName}">openssl</b>
+            <span class="faint" th:text="${a.packageType}">rpm</span>
+          </td>
+          <td class="num tight">
+            <b th:if="${a.assetCount > 1}" th:text="${a.assetCount} + '대'">12대</b>
+            <span th:unless="${a.assetCount > 1}" class="faint">1대</span>
+          </td>
+          <td class="tight">
+            <span th:if="${a.oneVersion()}" th:text="${a.anyVersion}">1.0.0</span>
+            <!-- 자산마다 설치된 판이 다르면 하나를 골라 적지 않는다. -->
+            <span th:unless="${a.oneVersion()}" class="faint"
+                  th:text="${a.versionCount} + '종'">3종</span>
+            →
+            <b th:if="${a.oneTarget()}" th:text="${a.targetVersion}">2.0.0</b>
+            <!-- 배포판이 섞이면 grype 이 주는 수정 버전도 다르다. 그중 하나를
+                 골라 "이걸로 올리세요" 라고 쓰면 나머지 자산에는 틀린 지시다. -->
+            <b th:unless="${a.oneTarget()}" class="faint">자산별 확인</b>
+          </td>
+          <td class="num tight" th:text="${a.fixableCount}">0</td>
+          <td class="num tight" th:classappend="${a.hasReachable()} ? 'danger-text' : ''"
+              th:text="${a.hasReachable()} ? ${a.reachableCount} : '—'">—</td>
+          <td class="num tight" th:text="${a.criticalCount > 0} ? ${a.criticalCount} : '—'">—</td>
+          <td class="num tight" th:text="${a.highCount > 0} ? ${a.highCount} : '—'">—</td>
+          <td class="num tight" th:text="${a.maxCvss != null} ? ${a.maxCvss} : '—'">—</td>
+          <td>
+            <span th:if="${a.kevCount > 0}" class="tag kev"
+                  th:text="'실제 악용 ' + ${a.kevCount} + '건'">실제 악용</span>
+            <span th:if="${a.total > a.fixableCount}" class="faint"
+                  th:text="'나머지 ' + (${a.total} - ${a.fixableCount}) + '건은 수정본 없음'"></span>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" th:if="${report.judgement.actions.isEmpty()}">
+      패키지 업데이트로 해소되는 건이 없습니다.
+    </p>
+
+    <h3 th:if="${!report.judgement.blocked.isEmpty()}">지금은 손댈 수 없는 것</h3>
+    <table th:if="${!report.judgement.blocked.isEmpty()}">
+      <thead>
+      <tr><th class="tight">패키지</th><th class="num tight">자산</th>
+          <th class="num tight">건수</th><th class="num tight">바로 닿음</th>
+          <th class="num tight">최고 CVSS</th></tr>
+      </thead>
+      <tbody>
+      <tr th:each="b : ${report.judgement.blocked}">
+        <td class="tight"><b th:text="${b.packageName}">glibc</b>
+          <span class="faint" th:text="${b.packageType}">rpm</span></td>
+        <td class="num tight" th:text="${b.assetCount} + '대'">1대</td>
+        <td class="num tight" th:text="${b.total}">0</td>
+        <td class="num tight" th:classappend="${b.hasReachable()} ? 'danger-text' : ''"
+            th:text="${b.hasReachable()} ? ${b.reachableCount} : '—'">—</td>
+        <td class="num tight" th:text="${b.maxCvss != null} ? ${b.maxCvss} : '—'">—</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>기간 시작 대비</h3>
+    <p th:unless="${report.judgement.movement.comparable()}" class="muted">
+      이 기간 이전의 검사 기록이 없어 증감을 대조하지 못했습니다.
+    </p>
+    <th:block th:if="${report.judgement.movement.comparable()}">
+      <p class="lead">
+        <b th:text="${report.judgement.movement.assetsCompared}">0</b>대를 기간 시작 직전
+        검사와 대조한 결과
+        <b th:text="${report.judgement.movement.added}">0</b>건이 새로 생기고,
+        <b th:text="${report.judgement.movement.resolved}">0</b>건이 해소되었으며,
+        <b th:text="${report.judgement.movement.kept}">0</b>건이 그대로입니다.
+        <th:block th:if="${report.judgement.movement.net() > 0}">
+          <b class="danger-text" th:text="'순증 ' + ${report.judgement.movement.net()} + '건'">—</b>
+        </th:block>
+        <th:block th:if="${report.judgement.movement.net() < 0}">
+          <b th:text="'순감 ' + ${-report.judgement.movement.net()} + '건'">—</b>
+        </th:block>
+      </p>
+      <!-- 기준선이 없는 자산을 대조에 넣으면 "새로 본 것"이 "새로 생긴 것"이
+           되어 증감이 부풀려진다. 뺐다는 사실과 몇 대인지를 밝힌다. -->
+      <p class="faint" th:if="${report.judgement.movement.assetsWithoutBase > 0}">
+        <b th:text="${report.judgement.movement.assetsWithoutBase}">0</b>대는 이 기간에 처음
+        검사되어 대조에서 제외했습니다 — 새로 본 것이지 새로 생긴 것이 아닙니다.
+      </p>
+      <p class="faint">
+        대조 축은 (자산, 취약점, 패키지) 입니다. 버전은 넣지 않는데, 넣으면
+        패치한 건이 "해소 1건 + 신규 1건" 으로 갈라져 보입니다.
+      </p>
+    </th:block>
+  </section>
+
+  <!-- ================= 결 · 조치 ================= -->
+  <section>
+    <h2><span class="ch">결</span> 무엇을 언제까지 누가 하는가</h2>
+
+    <p class="lead">
+      이 구역에 등록된 조치는 <b th:text="${report.action.total}">0</b>건이고
+      그중 <b th:text="${report.action.open}">0</b>건이 아직 열려 있습니다.
+      기간 중 <b th:text="${report.action.openedInPeriod}">0</b>건을 등록하고
+      <b th:text="${report.action.closedInPeriod}">0</b>건을 닫았습니다.
+      <th:block th:if="${report.action.overdue > 0}">
+        <b class="danger-text" th:text="${report.action.overdue}">0</b>건은 기한이 지났습니다.
+      </th:block>
+    </p>
+
+    <h3 th:if="${!report.action.overdueRows.isEmpty()}">기한이 지난 조치</h3>
+    <table th:if="${!report.action.overdueRows.isEmpty()}">
+      <thead>
+      <tr><th class="tight">서버</th><th class="tight">패키지</th>
+          <th class="tight">기한</th><th class="tight">상태</th><th class="tight">담당</th></tr>
+      </thead>
+      <tbody>
+      <tr th:each="r : ${report.action.overdueRows}">
+        <td class="tight" th:text="${r.asset.name}">web-01</td>
+        <td class="tight"><b th:text="${r.packageName}">openssl</b></td>
+        <td class="tight danger-text"
+            th:text="${#temporals.format(r.dueDate, 'yyyy-MM-dd')}">—</td>
+        <td class="tight" th:text="${r.status.label()}">대기</td>
+        <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3 th:if="${!report.action.residual.isEmpty()}">잔여 위험</h3>
+    <p th:if="${!report.action.residual.isEmpty()}">
+      아래 <b th:text="${report.action.residual.size()}">0</b>개 패키지는 업데이트로 해소되지
+      않습니다. 조치 계획이 아니라 <b>수용 여부에 대한 판단</b>이 필요한 항목입니다.
+    </p>
+    <ul th:if="${!report.action.residual.isEmpty()}" class="residual">
+      <li th:each="b : ${report.action.residual}">
+        <b th:text="${b.packageName}">glibc</b>
+        <span th:text="${b.assetCount} + '대'">1대</span> ·
+        <span th:text="${b.total} + '건'">0건</span>
+        <span th:if="${b.maxCvss != null}" th:text="' · 최고 CVSS ' + ${b.maxCvss}"></span>
+        <span th:if="${b.hasReachable()}" class="danger-text"
+              th:text="' · 밖에서 바로 ' + ${b.reachableCount()} + '건'"></span>
+        <span th:if="${report.action.isAccepted(b.packageName)}" class="tag">수용됨</span>
+      </li>
+    </ul>
+
+    <p class="note" th:if="${!report.action.residual.isEmpty()}">
+      <th:block th:if="${report.action.unexplained() > 0}">
+        이 가운데 <b class="danger-text"
+                   th:text="${report.action.unexplained()}">0</b>개는 수용 기록이 없습니다 —
+        판단을 남겨야 합니다.
+      </th:block>
+      <th:block th:if="${report.action.unexplained() == 0}">
+        모두 수용 기록이 있습니다.
+      </th:block>
+      <th:block th:if="${report.action.acceptanceReviewOverdue() > 0}">
+        수용 <b class="danger-text"
+               th:text="${report.action.acceptanceReviewOverdue()}">0</b>건은 다시 볼 날이 지났습니다.
+      </th:block>
+    </p>
+  </section>
+
+  </th:block>
+
+  <p class="footnote" th:if="${report.scope.assetsInScope > 0}">
+    이 보고서의 판정은 전부 grype 이 낸 것을 그대로 옮긴 것입니다. 심각도 ·
+    CVSS · 수정 버전을 다시 계산하거나 조정하지 않았습니다. 자산마다 이 기간의
+    마지막 검사를 기준으로 삼았으며, 기간 안에 검사되지 않은 자산은 위에
+    따로 밝혔습니다. 자산의 실제 노출도와 업무 영향은 이 도구가 판단하지
+    않으며, 담당자의 검토가 필요합니다.
+  </p>
+
+</main>
+</body>
+</html>

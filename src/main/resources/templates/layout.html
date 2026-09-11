@@ -30,6 +30,7 @@
   <nav sec:authorize="isAuthenticated()" th:unless="${passwordLocked}">
     <a href="/" th:classappend="${active} == 'assets' ? 'current' : ''">자산</a>
     <a href="/lookup" th:classappend="${active} == 'lookup' ? 'current' : ''">전사 조회</a>
+    <a href="/report/zone" th:classappend="${active} == 'zonereport' ? 'current' : ''">구역 보고서</a>
     <a href="/remediations" th:classappend="${active} == 'remediations' ? 'current' : ''">조치</a>
     <a href="/acceptances" th:classappend="${active} == 'acceptances' ? 'current' : ''">위험 수용</a>
     <a href="/audit" sec:authorize="hasRole('ADMIN')"

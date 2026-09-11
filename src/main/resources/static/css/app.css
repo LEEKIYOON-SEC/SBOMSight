@@ -212,8 +212,12 @@ dialog textarea { min-height: 4rem; }
 .status.FAILED { background: #fdeceb; color: var(--critical); }
 
 /* ---------- 인쇄 ---------- */
+/* 화면에서는 링크로, 종이에서는 글자로. 인쇄물의 파란 밑줄은 누를 수 없다. */
+.print-only { display: none; }
+
 @media print {
   .topbar, .btn, .no-print { display: none !important; }
+  .print-only { display: inline; }
   body { background: #fff; }
   .page { max-width: none; padding: 0; }
   .card { border: none; padding: 0; margin-bottom: 1rem; break-inside: avoid; }
@@ -245,6 +249,21 @@ dialog textarea { min-height: 4rem; }
 /* 각 장의 첫 문단은 그 장의 결론이다. 표를 안 읽어도 이 줄만으로 뜻이 통해야 한다. */
 .report .lead { font-size: .95rem; line-height: 1.7; margin: 0 0 1rem; }
 .report .note { font-size: .85rem; color: var(--fg-muted); margin-top: .75rem; }
+/* 몇 대를 안 봤는가. 이 보고서에서 가장 먼저 읽혀야 하는 문장이라 각주가
+   아니라 눈에 걸리는 상자로 둔다 — 놓치면 나머지 숫자를 잘못 읽는다. */
+.report .note.warn {
+  border: 1px solid #f0dcb4; background: #fdf6e8; color: var(--fg);
+  padding: .7rem .9rem; border-radius: 5px; line-height: 1.7;
+}
+
+/* 구역·기간 고르기. 보고서 위에 얹히는 줄이라 가볍게 둔다. */
+.report-picker {
+  display: flex; gap: .6rem; align-items: flex-end; flex-wrap: wrap;
+  margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--line);
+}
+.report-picker label { margin-bottom: 0; font-size: .8rem; color: var(--fg-muted); }
+.report-picker input, .report-picker select { width: auto; min-width: 8rem; }
+.report-picker .spacer { flex: 1; }
 .report table { margin-bottom: .5rem; }
 .report .kv th { width: 8rem; background: var(--bg-soft); font-weight: 600; }
 .report ul.residual { font-size: .88rem; line-height: 1.8; }
