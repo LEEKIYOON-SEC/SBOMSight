@@ -1,5 +1,6 @@
 package kr.sbomsight.service;
 
+import kr.sbomsight.domain.AuditLog;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.Remediation;
 
@@ -25,6 +26,8 @@ public final class CsvWriter {
     private static final DateTimeFormatter WHEN =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter SECONDS =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private CsvWriter() {
     }
@@ -74,6 +77,27 @@ public final class CsvWriter {
                     r.getNote(),
                     WHEN.format(r.getCreatedAt()),
                     WHEN.format(r.getUpdatedAt()));
+            }
+        }
+    }
+
+    /**
+     * 감사 로그.
+     *
+     * <p>시각은 <b>초까지</b> 적는다. 같은 분 안에 여러 일이 일어나는 것이
+     * 흔하고, 점검에서 순서를 묻는다.
+     */
+    public static void writeAuditLog(OutputStream out, List<AuditLog> rows) throws IOException {
+        try (Writer writer = start(out)) {
+            row(writer, "시각", "계정", "한 일", "대상", "내용", "접속 IP");
+            for (AuditLog a : rows) {
+                row(writer,
+                    SECONDS.format(a.getAt()),
+                    a.getActor(),
+                    a.getAction().label(),
+                    a.getTarget(),
+                    a.getDetail(),
+                    a.getClientIp());
             }
         }
     }

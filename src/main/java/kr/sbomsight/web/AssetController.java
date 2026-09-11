@@ -8,6 +8,7 @@ import kr.sbomsight.service.AssetService;
 import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.ScanService;
 import kr.sbomsight.service.ZoneService;
+import kr.sbomsight.service.AuditService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -42,10 +43,11 @@ public class AssetController {
     private final ScanService scanService;
     private final AssetService assetService;
     private final ZoneService zoneService;
+    private final AuditService audit;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
-                           AssetService assetService, ZoneService zoneService) {
+                           AssetService assetService, ZoneService zoneService, AuditService audit) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
@@ -53,6 +55,7 @@ public class AssetController {
         this.scanService = scanService;
         this.assetService = assetService;
         this.zoneService = zoneService;
+        this.audit = audit;
     }
 
     /** 자산 목록. 구역별로 묶어 "어느 구역의 어느 서버부터 볼 것인가"에 답한다. */
@@ -106,6 +109,8 @@ public class AssetController {
         // 구역을 고르지 않았으면 미분류로. 어디에도 속하지 않는 자산은 만들지 않는다.
         asset.setZone(zoneId == null ? zoneService.unassigned() : zoneService.require(zoneId));
         assets.save(asset);
+        audit.record(AuditEvent.ASSET_CREATED, asset.getName(),
+                     "구역 " + asset.getZone().getName());
         flash.addFlashAttribute("message", asset.getName() + " 자산을 등록했습니다.");
         return "redirect:/assets/" + asset.getId();
     }
@@ -117,8 +122,11 @@ public class AssetController {
                            RedirectAttributes flash) {
         Asset asset = asset(id);
         Zone target = zoneService.require(zoneId);
+        String before = asset.getZone().getName();
         asset.setZone(target);
         assets.save(asset);
+        audit.record(AuditEvent.ASSET_ZONE_CHANGED, asset.getName(),
+                     before + " → " + target.getName());
         flash.addFlashAttribute("message", asset.getName() + " 을 " + target.getName() + " 으로 옮겼습니다.");
         return "redirect:/assets/" + id;
     }
@@ -160,7 +168,13 @@ public class AssetController {
                     "확인란에 자산 이름(" + asset.getName() + ")을 정확히 입력해야 지워집니다.");
             return "redirect:/assets/" + id;
         }
+        String name = asset.getName();
+        String zoneName = asset.getZone().getName();
         AssetService.Impact impact = assetService.delete(asset, principal.getName());
+        audit.record(AuditEvent.ASSET_DELETED, name,
+                     "구역 " + zoneName + " · 스캔 " + impact.scanCount()
+                     + "건 · 탐지 " + impact.findingCount()
+                     + "건 · 조치 " + impact.remediationCount() + "건 함께 삭제");
         flash.addFlashAttribute("message",
                 asset.getName() + " 자산을 지웠습니다 — 스캔 " + impact.scanCount() + "건 · 탐지 "
                 + impact.findingCount() + "건 · 조치 " + impact.remediationCount()
@@ -174,7 +188,10 @@ public class AssetController {
         Scan scan = scans.findWithAsset(scanId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
         Long assetId = scan.getAsset().getId();
+        String detail = scan.getSbomFilename() + " · 탐지 " + scan.getFindingCount() + "건";
+        String assetName = scan.getAsset().getName();
         scanService.delete(scan);
+        audit.record(AuditEvent.SCAN_DELETED, assetName, detail);
         flash.addFlashAttribute("message", "스캔을 지웠습니다. 보관된 파일도 함께 삭제되었습니다.");
         return "redirect:/assets/" + assetId;
     }
@@ -225,6 +242,8 @@ public class AssetController {
         }
         try {
             Scan scan = scanService.submit(asset, file, principal.getName());
+            audit.record(AuditEvent.SBOM_UPLOADED, asset.getName(),
+                         file.getOriginalFilename() + " · " + file.getSize() + "바이트");
             scanService.runAsync(scan.getId());
             flash.addFlashAttribute("message",
                     "SBOM 을 올렸습니다. grype 검사가 진행 중이며, 끝나면 이력에 나타납니다.");

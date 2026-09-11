@@ -1,7 +1,9 @@
 package kr.sbomsight.web;
 
 import kr.sbomsight.config.SbomSightProperties;
+import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.Role;
+import kr.sbomsight.service.AuditService;
 import kr.sbomsight.domain.Zone;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.service.ZoneService;
@@ -29,16 +31,18 @@ public class SettingsController {
     private final SbomSightProperties properties;
     private final ZoneService zones;
     private final AssetRepository assets;
+    private final AuditService audit;
 
     public SettingsController(AccountService accounts, SettingsService settings,
                               GrypeRunner grype, SbomSightProperties properties,
-                              ZoneService zones, AssetRepository assets) {
+                              ZoneService zones, AssetRepository assets, AuditService audit) {
         this.accounts = accounts;
         this.settings = settings;
         this.grype = grype;
         this.properties = properties;
         this.zones = zones;
         this.assets = assets;
+        this.audit = audit;
     }
 
     @GetMapping
@@ -78,6 +82,7 @@ public class SettingsController {
                              RedirectAttributes flash) {
         try {
             accounts.create(username, password, role, displayName);
+            audit.record(AuditEvent.USER_CREATED, username, "권한 " + role.label());
             flash.addFlashAttribute("message", username + " 계정을 만들었습니다.");
         } catch (AccountService.AccountException e) {
             flash.addFlashAttribute("error", e.getMessage());
@@ -90,6 +95,7 @@ public class SettingsController {
                              Principal principal, RedirectAttributes flash) {
         try {
             accounts.changeRole(username, role, principal.getName());
+            audit.record(AuditEvent.USER_ROLE_CHANGED, username, "권한 " + role.label());
             flash.addFlashAttribute("message", username + " 의 권한을 바꿨습니다.");
         } catch (AccountService.AccountException e) {
             flash.addFlashAttribute("error", e.getMessage());
@@ -102,6 +108,7 @@ public class SettingsController {
                                 RedirectAttributes flash) {
         try {
             accounts.resetPassword(username, principal.getName());
+            audit.record(AuditEvent.USER_PASSWORD_RESET, username, "");
             flash.addFlashAttribute("message",
                     username + " 의 비밀번호를 계정 이름과 같게 되돌렸습니다. "
                     + "본인이 로그인해 새 비밀번호를 정해야 합니다.");
@@ -116,6 +123,7 @@ public class SettingsController {
                              RedirectAttributes flash) {
         try {
             accounts.delete(username, principal.getName());
+            audit.record(AuditEvent.USER_DELETED, username, "");
             flash.addFlashAttribute("message", username + " 계정을 지웠습니다.");
         } catch (AccountService.AccountException e) {
             flash.addFlashAttribute("error", e.getMessage());
@@ -132,7 +140,11 @@ public class SettingsController {
         settings.saveAllowedIps(allowedIps, request.getRemoteAddr(), principal.getName())
                 .ifPresentOrElse(
                         reason -> flash.addFlashAttribute("error", reason),
-                        () -> flash.addFlashAttribute("message", "접근 허용 IP 를 저장했습니다."));
+                        () -> {
+                            audit.record(AuditEvent.IP_ALLOWLIST_CHANGED, "",
+                                         settings.allowedIpsText());
+                            flash.addFlashAttribute("message", "접근 허용 IP 를 저장했습니다.");
+                        });
         return "redirect:/settings";
     }
 
@@ -145,6 +157,7 @@ public class SettingsController {
                              RedirectAttributes flash) {
         return zoneAction(flash, () -> {
             Zone zone = zones.create(name, color, note);
+            audit.record(AuditEvent.ZONE_CREATED, zone.getName(), "");
             return zone.getName() + " 구역을 만들었습니다.";
         });
     }
@@ -153,7 +166,9 @@ public class SettingsController {
     public String renameZone(@PathVariable Long id, @RequestParam String name,
                              RedirectAttributes flash) {
         return zoneAction(flash, () -> {
+            String before = zones.require(id).getName();
             zones.rename(id, name);
+            audit.record(AuditEvent.ZONE_RENAMED, name, before + " → " + name);
             return "구역 이름을 바꿨습니다.";
         });
     }
@@ -163,6 +178,7 @@ public class SettingsController {
                               RedirectAttributes flash) {
         return zoneAction(flash, () -> {
             zones.recolor(id, color);
+            audit.record(AuditEvent.ZONE_RECOLORED, zones.require(id).getName(), color);
             return "구역 색을 바꿨습니다.";
         });
     }
@@ -170,8 +186,11 @@ public class SettingsController {
     @PostMapping("/zones/{id}/delete")
     public String deleteZone(@PathVariable Long id, RedirectAttributes flash) {
         return zoneAction(flash, () -> {
+            // 지우기 전에 이름을 읽어 둔다 — 지운 뒤에는 남지 않는다.
+            String name = zones.require(id).getName();
             zones.delete(id);
-            return "구역을 지웠습니다.";
+            audit.record(AuditEvent.ZONE_DELETED, name, "");
+            return name + " 구역을 지웠습니다.";
         });
     }
 

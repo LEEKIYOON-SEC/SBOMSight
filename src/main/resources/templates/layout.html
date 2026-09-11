@@ -30,6 +30,8 @@
   <nav sec:authorize="isAuthenticated()" th:unless="${passwordLocked}">
     <a href="/" th:classappend="${active} == 'assets' ? 'current' : ''">자산</a>
     <a href="/remediations" th:classappend="${active} == 'remediations' ? 'current' : ''">조치</a>
+    <a href="/audit" sec:authorize="hasRole('ADMIN')"
+       th:classappend="${active} == 'audit' ? 'current' : ''">감사 로그</a>
     <a href="/settings" sec:authorize="hasRole('ADMIN')"
        th:classappend="${active} == 'settings' ? 'current' : ''">설정</a>
   </nav>

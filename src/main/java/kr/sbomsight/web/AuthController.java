@@ -1,6 +1,8 @@
 package kr.sbomsight.web;
 
 import kr.sbomsight.domain.AppUser;
+import kr.sbomsight.domain.AuditEvent;
+import kr.sbomsight.service.AuditService;
 import kr.sbomsight.repo.AppUserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
@@ -21,10 +23,12 @@ public class AuthController {
 
     private final AppUserRepository users;
     private final PasswordEncoder encoder;
+    private final AuditService audit;
 
-    public AuthController(AppUserRepository users, PasswordEncoder encoder) {
+    public AuthController(AppUserRepository users, PasswordEncoder encoder, AuditService audit) {
         this.users = users;
         this.encoder = encoder;
+        this.audit = audit;
     }
 
     /**
@@ -85,6 +89,8 @@ public class AuthController {
         user.setPasswordHash(encoder.encode(password));
         user.setMustChange(false);
         users.save(user);
+        // 비밀번호 자체는 절대 기록하지 않는다. 바꿨다는 사실만 남긴다.
+        audit.record(AuditEvent.PASSWORD_CHANGED, user.getUsername(), "");
 
         flash.addFlashAttribute("message", "비밀번호를 바꿨습니다.");
         return "redirect:/";

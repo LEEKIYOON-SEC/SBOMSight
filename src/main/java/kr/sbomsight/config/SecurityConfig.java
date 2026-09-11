@@ -29,12 +29,13 @@ public class SecurityConfig {
     };
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, AppUserDetailsService users) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, AppUserDetailsService users,
+                                    AuthEventListener authEvents) throws Exception {
         http
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC).permitAll()
                 // 조회 권한은 읽기 전용이다. 쓰기는 전부 관리자.
-                .requestMatchers("/settings/**", "/assets/*/delete").hasRole("ADMIN")
+                .requestMatchers("/settings/**", "/audit/**", "/assets/*/delete").hasRole("ADMIN")
                 .anyRequest().authenticated())
 
             .formLogin(form -> form
@@ -47,6 +48,9 @@ public class SecurityConfig {
                 // 로그아웃은 **언제나 성공해야 한다.** 세션이 이미 끊긴 뒤에도
                 // 눌리는 자리이고, 여기서 막히면 죽은 쿠키를 지울 길이 없어진다.
                 .logoutRequestMatcher(new AntPathRequestMatcher("/logout"))
+                // 감사 로그에 남긴다. LogoutSuccessEvent 는 필터 체인에서
+                // 발행되지 않으므로 핸들러로 직접 받는다.
+                .addLogoutHandler(authEvents)
                 .logoutSuccessUrl("/login?logout")
                 .invalidateHttpSession(true)
                 .deleteCookies("SBOMSIGHT_SESSION")

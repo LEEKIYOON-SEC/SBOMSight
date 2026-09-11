@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: page(~{::main}, 'audit', '감사 로그')}">
+<body>
+<main>
+
+  <div class="page-head">
+    <h1>감사 로그</h1>
+    <a class="btn" th:href="@{/audit/export.csv(actor=${actor}, action=${action},
+       from=${from}, to=${to}, q=${q})}">CSV 내려받기</a>
+  </div>
+
+  <form method="get" class="card inline-form">
+    <label>계정
+      <input name="actor" th:value="${actor}" autocomplete="off" placeholder="hong.gildong">
+    </label>
+    <label>한 일
+      <select name="action">
+        <option value="">전체</option>
+        <option th:each="e : ${events}" th:value="${e}" th:text="${e.label()}"
+                th:selected="${action != null && action == e}">로그인</option>
+      </select>
+    </label>
+    <label>부터
+      <input type="date" name="from" th:value="${from}">
+    </label>
+    <label>까지
+      <input type="date" name="to" th:value="${to}">
+    </label>
+    <label>검색
+      <input name="q" th:value="${q}" autocomplete="off" placeholder="대상 · 내용">
+    </label>
+    <button class="btn" type="submit">적용</button>
+  </form>
+
+  <div class="card">
+    <p class="muted" style="margin-top:0">
+      <span th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</span>건
+    </p>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+        <tr>
+          <th class="tight">시각</th>
+          <th class="tight">계정</th>
+          <th class="tight">한 일</th>
+          <th class="tight">대상</th>
+          <th>내용</th>
+          <th class="tight">접속 IP</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="a : ${page.content}">
+          <!-- 초까지 찍는다. 같은 분 안에 여러 일이 일어나고, 점검에서 순서를 묻는다. -->
+          <td class="tight num" th:text="${#temporals.format(a.at, 'yyyy-MM-dd HH:mm:ss')}">—</td>
+          <td class="tight" th:text="${#strings.isEmpty(a.actor)} ? '—' : ${a.actor}">—</td>
+          <td class="tight">
+            <span class="tag" th:classappend="${a.action.name() == 'LOGIN_FAILURE'
+                  or a.action.name() == 'LOGIN_BLOCKED'} ? 'kev' : ''"
+                  th:text="${a.action.label()}">로그인</span>
+          </td>
+          <td class="tight" th:text="${#strings.isEmpty(a.target)} ? '—' : ${a.target}">—</td>
+          <td class="faint" th:text="${#strings.isEmpty(a.detail)} ? '—' : ${a.detail}">—</td>
+          <td class="tight faint num" th:text="${#strings.isEmpty(a.clientIp)} ? '—' : ${a.clientIp}">—</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pager" th:if="${page.totalPages > 1}">
+      <a th:if="${page.hasPrevious()}"
+         th:href="@{/audit(page=${page.number - 1}, actor=${actor}, action=${action},
+                    from=${from}, to=${to}, q=${q})}">이전</a>
+      <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
+      <a th:if="${page.hasNext()}"
+         th:href="@{/audit(page=${page.number + 1}, actor=${actor}, action=${action},
+                    from=${from}, to=${to}, q=${q})}">다음</a>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>
