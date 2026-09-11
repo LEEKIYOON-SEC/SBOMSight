@@ -52,4 +52,11 @@ public interface RiskAcceptanceRepository extends JpaRepository<RiskAcceptance, 
     List<RiskAcceptance> findReviewOverdue(@Param("today") LocalDate today);
 
     long countByAssetIdAndRevokedAtIsNull(Long assetId);
+
+    /** 사이드바 숫자 — 다시 볼 날이 지난 수용. 수용은 기한이 있어야 방치와 구분된다. */
+    @Query("""
+           SELECT COUNT(r) FROM RiskAcceptance r
+           WHERE r.revokedAt IS NULL AND r.reviewBy < :today
+           """)
+    long countReviewOverdue(@Param("today") LocalDate today);
 }

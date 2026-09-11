@@ -5,15 +5,26 @@
 <body>
 <main>
 
+  <div class="crumb">
+    <i class="zrail" th:style="'background:' + (${#strings.isEmpty(asset.zone.color)}
+                               ? '#6f7e8d' : ${asset.zone.color})"></i>
+    <a th:href="@{/(zone=${asset.zone.id})}" th:text="${asset.zone.name}">DMZ</a>
+  </div>
+
   <div class="page-head">
     <h1 th:text="${asset.name}">web-01</h1>
+    <span class="meta" th:if="${!#strings.isEmpty(asset.osName)}"
+          th:text="${asset.osName}">Rocky Linux 9.3</span>
+    <span class="spacer"></span>
     <a th:if="${latest != null}" class="btn"
        th:href="@{'/report/' + ${latest.id}}">보고서</a>
     <a th:if="${latest != null}" class="btn primary"
        th:href="@{'/scans/' + ${latest.id}}">취약점 보기</a>
   </div>
 
-  <div class="card">
+  <div class="body">
+
+  <div>
     <table class="kv">
       <tr><th>구역</th>
           <td>
@@ -52,10 +63,10 @@
   </div>
 
   <h2>스캔 이력</h2>
-  <div class="card" th:if="${history.isEmpty()}">
+  <div class="empty" th:if="${history.isEmpty()}" style="padding:24px 0">
     <span class="muted">아직 스캔이 없습니다. SBOM 을 올리면 여기에 쌓입니다.</span>
   </div>
-  <div class="card" th:unless="${history.isEmpty()}">
+  <div class="table-scroll" th:unless="${history.isEmpty()}">
     <table>
       <thead>
       <tr>
@@ -104,10 +115,10 @@
   </div>
 
   <h2>조치</h2>
-  <div class="card" th:if="${remediations.isEmpty()}">
+  <div class="empty" th:if="${remediations.isEmpty()}" style="padding:24px 0">
     <span class="muted">등록된 조치가 없습니다. 취약점 화면의 패키지에서 조치를 만듭니다.</span>
   </div>
-  <div class="card" th:unless="${remediations.isEmpty()}">
+  <div class="table-scroll" th:unless="${remediations.isEmpty()}">
     <table>
       <thead>
       <tr>
@@ -147,6 +158,7 @@
       </label>
       <button type="submit" class="btn danger">삭제</button>
     </form>
+  </div>
   </div>
 
 </main>

@@ -6,7 +6,9 @@
 
   <div class="page-head"><h1>설정</h1></div>
 
-  <h2>계정</h2>
+  <div class="body">
+
+  <h2 id="accounts">계정</h2>
   <div class="card">
     <table>
       <thead>
@@ -79,7 +81,7 @@
     </form>
   </div>
 
-  <h2>구역</h2>
+  <h2 id="zones">구역</h2>
   <div class="card">
     <table>
       <thead>
@@ -135,7 +137,7 @@
     </form>
   </div>
 
-  <h2>접근 IP</h2>
+  <h2 id="ips">접근 IP</h2>
   <div class="card">
     <form method="post" th:action="@{/settings/ips}">
       <label>접속을 허용할 IP · 대역
@@ -161,7 +163,7 @@
     </form>
   </div>
 
-  <h2>도구 상태</h2>
+  <h2 id="tools">도구 상태</h2>
   <div class="card">
     <table class="kv">
       <tr>
@@ -184,6 +186,7 @@
       <code>grype db update</code> 로 취약점 DB 를 받고, 경로가 다르면
       <code>SBOMSIGHT_GRYPE</code> 로 알려 주세요.
     </p>
+  </div>
   </div>
 
 </main>

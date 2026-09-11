@@ -9,6 +9,8 @@
     <a class="btn" th:href="@{/assets/import/template.csv}">서식 내려받기</a>
   </div>
 
+  <div class="body">
+
   <div class="card">
     <form method="post" th:action="@{/assets/import/preview}"
           enctype="multipart/form-data" class="inline-form">
@@ -21,9 +23,7 @@
 
   <th:block th:if="${preview != null}">
 
-    <div class="card" th:if="${preview.isEmpty()}">
-      <span class="muted">읽을 줄이 없습니다.</span>
-    </div>
+    <div class="empty" th:if="${preview.isEmpty()}">읽을 줄이 없습니다.</div>
 
     <th:block th:unless="${preview.isEmpty()}">
       <div class="card">
@@ -85,6 +85,7 @@
       </div>
     </th:block>
   </th:block>
+  </div>
 
 </main>
 </body>

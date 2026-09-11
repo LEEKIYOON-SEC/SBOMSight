@@ -10,7 +10,7 @@
        from=${from}, to=${to}, q=${q})}">CSV 내려받기</a>
   </div>
 
-  <form method="get" class="card inline-form">
+  <form method="get" class="filters">
     <label>계정
       <input name="actor" th:value="${actor}" autocomplete="off" placeholder="hong.gildong">
     </label>
@@ -33,10 +33,10 @@
     <button class="btn" type="submit">적용</button>
   </form>
 
-  <div class="card">
-    <p class="muted" style="margin-top:0">
-      <span th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</span>건
-    </p>
+  <div class="body flush">
+    <div class="resultcount">
+      <b th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b><span>건</span>
+    </div>
 
     <div class="table-scroll">
       <table>
@@ -77,6 +77,7 @@
          th:href="@{/audit(page=${page.number + 1}, actor=${actor}, action=${action},
                     from=${from}, to=${to}, q=${q})}">다음</a>
     </div>
+  </div>
   </div>
 
 </main>

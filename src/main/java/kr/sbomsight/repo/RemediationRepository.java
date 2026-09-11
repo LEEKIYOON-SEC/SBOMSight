@@ -50,6 +50,17 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
 
     long countByAssetIdAndStatusIn(Long assetId, List<RemediationStatus> statuses);
 
+    /** 사이드바 숫자 — 아직 안 닫힌 조치. */
+    long countByStatusIn(List<RemediationStatus> statuses);
+
+    /** 사이드바 숫자 — 기한이 지난 채 안 닫힌 것. 붉게 띄우는 근거다. */
+    @Query("""
+           SELECT COUNT(r) FROM Remediation r
+           WHERE r.dueDate < :today AND r.status IN ('OPEN', 'IN_PROGRESS')
+           """)
+    long countOverdue(@Param("today") LocalDate today);
+
+
     /** 구역 보고서용 — 한 구역(또는 전체)의 조치 전부. 닫힌 것도 함께 센다. */
     @Query("""
            SELECT r FROM Remediation r JOIN FETCH r.asset a JOIN FETCH a.zone z

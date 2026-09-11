@@ -5,81 +5,111 @@
 <body>
 <main>
 
-  <div class="page-head">
-    <h1>
-      <a th:href="@{'/assets/' + ${scan.asset.id}}" th:text="${scan.asset.name}">web-01</a>
-      <span class="faint" th:text="' · ' + ${#temporals.format(scan.createdAt, 'yyyy-MM-dd HH:mm')}"></span>
-    </h1>
-    <a class="btn" th:href="@{'/scans/' + ${scan.id} + '/export.csv'(severity=${severity},
-       fixable=${fixable}, kev=${kev}, q=${q}, sort=${sort})}">CSV 내려받기</a>
-    <a class="btn" th:href="@{'/report/' + ${scan.id}}">보고서</a>
+  <div class="crumb">
+    <i class="zrail" th:style="'background:' + (${#strings.isEmpty(scan.asset.zone.color)}
+                               ? '#6f7e8d' : ${scan.asset.zone.color})"></i>
+    <span th:text="${scan.asset.zone.name}">DMZ</span>
+    <span>/</span>
+    <a th:href="@{'/assets/' + ${scan.asset.id}}" th:text="${scan.asset.name}">web-01</a>
   </div>
 
-  <!-- 무엇으로 판정했는지. 이 줄이 없으면 몇 달 뒤 같은 SBOM 의 결과가 달라진
-       이유를 설명할 수 없다. -->
-  <div class="card">
-    <span class="faint">
+  <div class="page-head">
+    <h1>취약점</h1>
+    <!-- 무엇으로 판정했는지. 이 줄이 없으면 몇 달 뒤 같은 SBOM 의 결과가
+         달라진 이유를 설명할 수 없다. -->
+    <span class="meta">
       grype <span th:text="${#strings.isEmpty(scan.grypeVersion)} ? '판 미상' : ${scan.grypeVersion}">—</span>
-      · 취약점 DB
-      <span th:text="${scan.grypeDbBuilt != null} ? ${#temporals.format(scan.grypeDbBuilt, 'yyyy-MM-dd')} + ' 기준' : '기준일 미상'">—</span>
+      · DB <span th:text="${scan.grypeDbBuilt != null} ? ${#temporals.format(scan.grypeDbBuilt, 'yyyy-MM-dd')} : '기준일 미상'">—</span>
       <th:block th:if="${!#strings.isEmpty(scan.distroName)}">
         · <span th:text="${scan.distroName} + ' ' + ${scan.distroVersion}">rocky 9.3</span>
       </th:block>
-      · 컴포넌트 <span th:text="${#numbers.formatInteger(scan.componentCount, 0, 'COMMA')}">0</span>개
-      · 탐지 <span th:text="${#numbers.formatInteger(scan.findingCount, 0, 'COMMA')}">0</span>건
+      · 컴포넌트 <span th:text="${#numbers.formatInteger(scan.componentCount, 0, 'COMMA')}">0</span>
+      · <span th:text="${#temporals.format(scan.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
       <th:block th:if="${scan.mergedCount > 0 || scan.droppedCount > 0}">
-        (grype match <span th:text="${scan.matchCount}">0</span>건 중
+        · grype match <span th:text="${scan.matchCount}">0</span>건 중
         중복 <span th:text="${scan.mergedCount}">0</span> ·
-        제외 <span th:text="${scan.droppedCount}">0</span>)
+        제외 <span th:text="${scan.droppedCount}">0</span>
       </th:block>
     </span>
+    <span class="spacer"></span>
+    <a class="btn" th:href="@{'/scans/' + ${scan.id} + '/export.csv'(severity=${severity},
+       fixable=${fixable}, kev=${kev}, q=${q}, sort=${sort})}">CSV</a>
+    <a class="btn" th:href="@{'/report/' + ${scan.id}}">보고서</a>
   </div>
 
-  <form method="get" class="card inline-form">
-    <label>심각도
-      <select name="severity">
-        <option value="">전체</option>
-        <option value="Critical" th:selected="${severity == 'Critical'}">심각</option>
-        <option value="High" th:selected="${severity == 'High'}">높음</option>
-        <option value="Medium" th:selected="${severity == 'Medium'}">보통</option>
-        <option value="Low" th:selected="${severity == 'Low'}">낮음</option>
-      </select>
-    </label>
-    <label>수정본
-      <select name="fixable">
-        <option value="">전체</option>
-        <option value="true" th:selected="${fixable != null && fixable}">있음</option>
-        <option value="false" th:selected="${fixable != null && !fixable}">없음</option>
-      </select>
-    </label>
-    <label>실제 악용(KEV)
-      <select name="kev">
-        <option value="">전체</option>
-        <option value="true" th:selected="${kev != null && kev}">확인됨</option>
-      </select>
-    </label>
-    <label>정렬
-      <select name="sort">
+  <!-- 거르개. '적용' 버튼을 두지 않는다 — 누르면 바로 걸린다. 한 번 고르고
+       또 눌러야 하면 두 번 중 한 번은 안 누른 채로 표를 잘못 읽는다. -->
+  <form method="get" class="filters" id="filters">
+    <div class="segmented">
+      <a th:href="@{'/scans/' + ${scan.id}(fixable=${fixable}, kev=${kev}, q=${q}, sort=${sort})}"
+         th:classappend="${#strings.isEmpty(severity)} ? 'current' : ''">전체
+        <span class="num" th:text="${#numbers.formatInteger(scan.findingCount, 0, 'COMMA')}">0</span></a>
+      <a th:each="s : ${ {'critical','high','medium','low'} }"
+         th:if="${severityCounts.getOrDefault(s, 0L) > 0}"
+         th:href="@{'/scans/' + ${scan.id}(severity=${s}, fixable=${fixable}, kev=${kev},
+                    q=${q}, sort=${sort})}"
+         th:classappend="${#strings.toLowerCase(severity)} == ${s} ? 'current' : ''">
+        <i class="mark" th:classappend="${s}"></i>
+        <span th:switch="${s}">
+          <th:block th:case="'critical'">심각</th:block>
+          <th:block th:case="'high'">높음</th:block>
+          <th:block th:case="'medium'">보통</th:block>
+          <th:block th:case="*">낮음</th:block>
+        </span>
+        <span class="num" th:text="${severityCounts.get(s)}">0</span>
+      </a>
+    </div>
+
+    <a class="chip" th:classappend="${fixable != null && fixable} ? 'on' : ''"
+       th:href="@{'/scans/' + ${scan.id}(severity=${severity},
+                  fixable=${fixable != null && fixable} ? null : true, kev=${kev},
+                  q=${q}, sort=${sort})}">수정본 있음</a>
+    <a class="chip" th:classappend="${kev != null && kev} ? 'on' : ''"
+       th:href="@{'/scans/' + ${scan.id}(severity=${severity}, fixable=${fixable},
+                  kev=${kev != null && kev} ? null : true, q=${q}, sort=${sort})}">실제 악용</a>
+
+    <label style="margin:0">
+      <select name="sort" onchange="this.form.submit()" style="min-width:9rem">
         <option value="cvss" th:selected="${sort == 'cvss'}">CVSS 높은 순</option>
         <option value="epss" th:selected="${sort == 'epss'}">악용 확률 높은 순</option>
         <option value="package" th:selected="${sort == 'package'}">패키지 이름</option>
         <option value="cve" th:selected="${sort == 'cve'}">CVE 번호</option>
       </select>
     </label>
-    <label>검색
+
+    <span class="spacer"></span>
+
+    <a class="btn link"
+       th:if="${!#strings.isEmpty(severity) || fixable != null || kev != null || !#strings.isEmpty(q)}"
+       th:href="@{'/scans/' + ${scan.id}(sort=${sort})}">지우기</a>
+
+    <div class="search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8a919b"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
+      </svg>
       <input name="q" th:value="${q}" placeholder="패키지 · CVE · GHSA" autocomplete="off">
-    </label>
-    <button class="btn" type="submit">적용</button>
+    </div>
+    <input type="hidden" name="severity" th:value="${severity}">
+    <input type="hidden" name="fixable" th:if="${fixable != null}" th:value="${fixable}">
+    <input type="hidden" name="kev" th:if="${kev != null}" th:value="${kev}">
   </form>
 
-  <div class="card">
-    <p class="muted" style="margin-top:0">
-      <span th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</span>건 중
-      <span th:text="${page.number * page.size + 1}">1</span>–<span
-        th:text="${page.number * page.size + page.numberOfElements}">100</span>번째
-    </p>
+  <div class="body flush">
 
-    <div class="table-scroll">
+    <div class="resultcount">
+      <b th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>
+      <span>건</span>
+      <span class="faint" th:if="${page.totalPages > 1}"
+            th:text="${page.number * page.size + 1} + '–' + ${page.number * page.size + page.numberOfElements} + '번째'"></span>
+    </div>
+
+    <div class="empty" th:if="${page.totalElements == 0}">
+      <b>걸리는 것이 없습니다</b>
+      <a th:href="@{'/scans/' + ${scan.id}}">거르개 지우기</a>
+    </div>
+
+    <div class="table-scroll" th:if="${page.totalElements > 0}">
       <table>
         <thead>
         <tr>
@@ -96,7 +126,7 @@
         <tr th:each="f : ${page.content}">
           <!-- 결재·보고는 CVE 번호로 돈다. grype 이 GHSA 를 주 식별자로 낸
                경우에도 함께 준 CVE 를 앞에 놓고, grype 의 번호는 아래에 남긴다. -->
-          <td class="tight">
+          <td class="tight mono">
             <a th:if="${!#strings.isEmpty(f.dataSource)}" th:href="${f.dataSource}"
                th:text="${f.displayId}" target="_blank" rel="noreferrer">CVE-0000-0000</a>
             <span th:if="${#strings.isEmpty(f.dataSource)}" th:text="${f.displayId}">CVE-0000-0000</span>
@@ -104,13 +134,15 @@
                  th:text="${f.secondaryId}">GHSA-…</div>
           </td>
           <td class="tight">
-            <i class="mark" th:classappend="${#strings.toLowerCase(f.severity)}"></i>
-            <span th:switch="${#strings.toLowerCase(f.severity)}">
-              <th:block th:case="'critical'">심각</th:block>
-              <th:block th:case="'high'">높음</th:block>
-              <th:block th:case="'medium'">보통</th:block>
-              <th:block th:case="'low'">낮음</th:block>
-              <th:block th:case="*" th:text="${#strings.isEmpty(f.severity)} ? '미확인' : ${f.severity}">미확인</th:block>
+            <span class="sev" th:classappend="${#strings.toLowerCase(f.severity)}">
+              <i></i>
+              <span th:switch="${#strings.toLowerCase(f.severity)}">
+                <th:block th:case="'critical'">심각</th:block>
+                <th:block th:case="'high'">높음</th:block>
+                <th:block th:case="'medium'">보통</th:block>
+                <th:block th:case="'low'">낮음</th:block>
+                <th:block th:case="*" th:text="${#strings.isEmpty(f.severity)} ? '미확인' : ${f.severity}">미확인</th:block>
+              </span>
             </span>
           </td>
           <!-- 값이 없으면 0 이 아니라 — 로 둔다. 없는 것을 낮은 것으로 보이게
@@ -126,7 +158,7 @@
             <div class="faint path" th:if="${!#strings.isEmpty(f.installPath)}"
                  th:text="${f.installPath}" th:title="${f.installPath}">/opt/…</div>
           </td>
-          <td class="tight">
+          <td class="tight mono">
             <span th:text="${f.packageVersion}">1.0.0</span> →
             <b th:if="${f.fixAvailable}" th:text="${f.fixedVersion}">2.0.0</b>
             <span th:if="${f.noFix}" class="tag nofix">수정본 없음</span>
@@ -210,6 +242,7 @@
       document.querySelector('#accept-cancel').addEventListener('click', () => dialog.close());
     })();
   </script>
+  </div>
 
 </main>
 </body>

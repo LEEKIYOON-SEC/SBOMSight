@@ -10,27 +10,20 @@
 <body class="gate">
 
 <main class="gate-box">
-  <div class="brand center">
-    <a href="/">SBOMSight</a>
-    <small>SBOM 기반 취약점 대응 검토</small>
-  </div>
+  <div class="brand">SBOMSight</div>
 
-  <div class="card">
-    <h1>로그인</h1>
+  <div th:if="${notice}" th:classappend="'banner ' + ${noticeKind}"
+       th:text="${notice}" class="banner" style="margin:0 0 18px"></div>
 
-    <div th:if="${notice}" th:classappend="'banner ' + ${noticeKind}"
-         th:text="${notice}" class="banner"></div>
-
-    <form method="post" th:action="@{/login}">
-      <label>계정 이름
-        <input name="username" required autofocus autocomplete="username">
-      </label>
-      <label>비밀번호
-        <input name="password" type="password" required autocomplete="current-password">
-      </label>
-      <button class="btn primary" type="submit">로그인</button>
-    </form>
-  </div>
+  <form method="post" th:action="@{/login}">
+    <label>계정 이름
+      <input name="username" required autofocus autocomplete="username">
+    </label>
+    <label>비밀번호
+      <input name="password" type="password" required autocomplete="current-password">
+    </label>
+    <button class="btn primary" type="submit">로그인</button>
+  </form>
 </main>
 
 </body>

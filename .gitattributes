@@ -12,6 +12,15 @@
 *.cmd text eol=crlf
 *.bat text eol=crlf
 
+# 글꼴·이미지는 바이너리다. text=auto 의 내용 추정에 맡기지 않고 못 박는다 —
+# 줄바꿈을 한 바이트라도 바꾸면 woff2 는 통째로 읽히지 않고, 화면은 깨지지
+# 않은 채 조용히 기본 글꼴로 떨어져서 아무도 눈치채지 못한다.
+*.woff2 -text
+*.woff  -text
+*.png   -text
+*.jpg   -text
+*.p12   -text
+
 # 셸 스크립트에 CRLF가 섞이면 셔뱅(#!)이 깨져 실행되지 않는다.
 # Windows에서 체크아웃해 WSL·Git Bash로 돌리는 경우를 위해 LF를 강제한다.
 *.sh text eol=lf

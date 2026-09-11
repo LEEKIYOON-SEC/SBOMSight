@@ -11,7 +11,9 @@
                   severity=${severity}, fixable=${fixable})}">CSV 내려받기</a>
   </div>
 
-  <form method="get" class="card inline-form">
+  <div class="body flush">
+
+  <form method="get" class="filters">
     <label style="flex:1; min-width:18rem">CVE · 패키지
       <input name="q" th:value="${q}" autocomplete="off" autofocus
              placeholder="log4j-core · CVE-2021-44228 · GHSA-jfh8">
@@ -42,18 +44,18 @@
     <button class="btn primary" type="submit">찾기</button>
   </form>
 
-  <div class="card" th:unless="${searched}">
-    <span class="muted">찾을 CVE 번호나 패키지 이름을 입력하세요.</span>
+  <div class="empty" th:unless="${searched}">
+    찾을 CVE 번호나 패키지 이름을 입력하세요.
   </div>
 
   <th:block th:if="${searched}">
-    <div class="card" th:if="${page.totalElements == 0}">
-      <span class="muted">걸리는 것이 없습니다.</span>
+    <div class="empty" th:if="${page.totalElements == 0}">
+      <b>걸리는 것이 없습니다</b>
     </div>
 
     <th:block th:if="${page.totalElements > 0}">
       <!-- 이 한 줄이 "어디까지 번졌나" 에 답한다. -->
-      <div class="card">
+      <div class="resultcount">
         <span>
           자산 <b class="num" th:text="${assetCount}">0</b>대 ·
           탐지 <b class="num" th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>건
@@ -65,7 +67,7 @@
         </span>
       </div>
 
-      <div class="card">
+      <div>
         <div class="table-scroll">
           <table>
             <thead>
@@ -133,6 +135,7 @@
       </div>
     </th:block>
   </th:block>
+  </div>
 
 </main>
 </body>
