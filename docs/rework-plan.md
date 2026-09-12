@@ -1,13 +1,18 @@
-# SBOMSight 개편 계획 (N 시리즈) · rev.2
+# SBOMSight 개편 계획 (N 시리즈) · rev.3
 
 지금 문제는 색·글꼴이 아니다. **무엇이 어디에 있어야 하는가를 잘못 정해 놓고,
 그 위에 화면을 그렸다.** 이 문서는 그것을 다시 정한다.
 
-**rev.2 에서 더한 것** — 같은 일을 하는 공개 도구
-[OWASP Dependency-Track](https://dependencytrack.org/) 의 화면 구성을 확인하고,
-가져올 것과 가져오지 않을 것을 §8 에 못 박았다. 그 결과 rev.1 에 없던 것 세 가지가
-들어왔다: **심각도 막대**, **판정(VEX) 어휘**, **패키지 인벤토리**.
-이 때문에 rev.1 의 "DB 스키마 변경 없음" 은 **틀렸다** — V11 · V12 가 필요하다.
+**rev.2** — 같은 일을 하는 공개 도구
+[OWASP Dependency-Track](https://dependencytrack.org/) 의 **기능 구성**을 대조해
+§8 을 넣었다. rev.1 에 없던 것 셋: **심각도 막대** · **판정(VEX) 어휘** ·
+**패키지 인벤토리**. 이 때문에 rev.1 의 "DB 스키마 변경 없음" 은 **틀렸다** —
+V11 · V12 가 필요하다.
+
+**rev.3** — rev.2 까지는 기능만 봤고 **화면 자체는 손대지 않았다.** 라이선스를 확인해
+쓸 수 있는 것을 §9 에 정리했다([Tabler](https://github.com/tabler/tabler) 가 MIT).
+여기서 들어온 것: **계정 메뉴** · **탭 구성** · **공통 조각 다섯**.
+§4 의 공통 규칙이 11개에서 18개로 늘었다.
 
 ---
 
@@ -101,10 +106,10 @@ ZONE  DMZ · 내부업무 · 미분류 …
 검색[          ] 심각도[▾] 수정본[▾] 실제악용[▾] 판정[▾] □ 감춘 것도 보기   [찾기]
 ```
 
-- **범위** `?asset=` · `?zone=` · `?scan=` · 없으면 전체.
-  `asset`/`zone` 은 각 자산의 **가장 최근 완료 검사**. `scan` 은 그 검사 하나
-  (검사 이력의 `열기` 가 여기로 온다). 머리줄에 범위를 못 박는다:
-  `web-01 · 2026-09-10 14:22 검사 · 98건`
+- **범위** `?zone=` · `?scan=` · 없으면 전체. `zone` 은 각 자산의 **가장 최근 완료 검사**,
+  `scan` 은 그 검사 하나. 머리줄에 범위를 못 박는다: `DMZ 8대 · 최근 검사 기준 · 412건`
+  - **한 서버짜리 범위는 여기 없다.** `/vulns?asset=12` 는 `/assets/12?tab=vulns` 로
+    넘긴다 (§2.8). 표를 그리는 조각은 하나를 두 곳에서 재사용한다.
 - **묶기**
 
   | 모드 | 한 줄 | 열 |
@@ -199,27 +204,71 @@ openssl       rpm    12대          3.0.7(8) 3.0.9(4)   ■ 21
 - **구역 표 삭제** (자산 화면으로).
 - **감사 로그** 탭으로. 기둥에서 뺀다.
 
-### 2.7 내 계정 `/me`
+### 2.7 계정 영역과 내 계정 `/me`
 
-| | |
+**기둥 아래 계정 블록은 누르면 메뉴가 열린다.** 지금은 이름이 `/password` 로 바로
+가는 링크라 "왜 비밀번호 변경으로 가지?" 가 된다. 무엇으로 갈지는 **메뉴가 보여 준다**
+— GitHub · GitLab · Dependency-Track · Tabler 가 전부 같은 모양이다 (§9-B).
+
+```
+┌────────────────────┐        ┌────────────────────┐
+│ KL  admin          │  누르면 │ 내 계정            │
+│     관리자      ▴  │  ────→ │ 비밀번호 변경      │
+└────────────────────┘        │ ───────────────── │
+                              │ 로그아웃           │
+                              └────────────────────┘
+```
+
+`<details>` + `<summary>` 로 만든다 — 자바스크립트 없이 열리고 닫히고, `Esc` 와
+키보드 이동이 브라우저 기본으로 동작한다.
+
+**`/me`** — 카드 둘로 쌓는다 (Tabler 의 `Profile Details` / `Password` 배치).
+
+```
+내 계정
+
+┌ 계정 정보 ─────────────────────────────────┐
+│ KL   admin                                 │
+│      관리자                                │
+│ 이름          [홍길동 · 인프라운영팀 ]      │
+│ 마지막 로그인  2026-09-12 09:14            │
+│ 계정 만든 날   2026-01-04                  │
+│                              [이름 저장]   │
+└────────────────────────────────────────────┘
+┌ 비밀번호 ──────────────────────────────────┐
+│ 마지막 변경 2026-06-01 (103일 전 · 기한 90일)│
+│                          [비밀번호 변경]   │
+└────────────────────────────────────────────┘
+```
+
+`/password` 는 남기되 여기서만 들어간다.
+
+### 2.8 자산 상세 `/assets/{id}` — **탭으로 가른다**
+
+지금 한 화면에 `SBOM 올리기` · `검사 이력` · `조치` · `자산 삭제` 가 세로로 이어져
+있어 아래가 안 보인다. Dependency-Track 은 프로젝트 상세를 탭으로 가른다 (§9-C).
+
+```
+DMZ                                            ← pretitle (구역, 누르면 그 구역)
+web-01                    [보고서] [SBOM 올리기]
+Rocky Linux 9.3 · 대외 웹 · 마지막 검사 2026-09-10
+▮▮▮▮▮▮▯▯▯▯▯▯▯▯▯▯▯▯▯▯ 187건
+─────────────────────────────────────────────────
+[개요] [취약점 187] [패키지 1,204] [검사 이력 12] [조치·판정 5]
+```
+
+| 탭 | 내용 |
 |---|---|
-| 계정 | `admin` |
-| 이름 | 홍길동 · 인프라운영팀 `[바꾸기]` |
-| 권한 | 관리자 |
-| 마지막 로그인 | 2026-09-12 09:14 |
-| 비밀번호 변경 | 2026-06-01 (103일 전) `[비밀번호 변경]` |
+| 개요 | 기본 정보(구역·OS·비고 수정) · 검사 진행 카드 · 심각도 요약 · 보관/삭제 |
+| **취약점** | `/vulns` 와 **같은 조각을 재사용**해 이 서버 것만. 나가지 않고 본다 |
+| 패키지 | 설치된 패키지 (N8 이후) |
+| 검사 이력 | 액션 `[열기] [다시 검사] [SBOM 내려받기] [삭제]` **전부 같은 버튼** |
+| 조치·판정 | 이 서버의 조치와 판정 |
 
-기둥 아래 계정 블록 전체가 여기로. `/password` 는 남기되 여기서만 들어간다.
-
-### 2.8 자산 상세 `/assets/{id}`
-
-- 머리: 이름 · 구역 · OS · 비고 + `[취약점 98건] [보고서] [SBOM 올리기]` + **심각도 막대**
-- 검사 진행 카드 — 그대로 (L1).
-- 검사 이력 — 액션을 `[열기] [다시 검사] [SBOM 내려받기] [삭제]` **같은 버튼으로**.
-  (보관해 둔 원본 SBOM 을 못 받는 것도 지금 빠진 것)
-- 설치된 패키지 (N8 이후)
-- 그 서버의 조치 / 판정·수용
-- 보관 / 삭제
+- **탭 선택은 URL 에** (`?tab=vulns`). 새로고침·공유·뒤로가기가 살아야 한다.
+- 탭 이름 옆 숫자는 들어가기 전에 알아야 하는 값이다. 0 이면 안 쓴다.
+- 그래서 `/vulns?asset=12` 는 `/assets/12?tab=vulns` 로 넘긴다 —
+  **한 서버 이야기는 그 서버 안에서 끝난다.** `/vulns` 는 서버를 가로지르는 질문 전용.
 
 ---
 
@@ -230,6 +279,8 @@ openssl       rpm    12대          3.0.7(8) 3.0.9(4)   ■ 21
 | `/` | 그대로 — `?zone=` `?filter=` `?view=table\|zones` `?sort=` `?archived=` |
 | `/lookup`, `/lookup/export.csv` | → `/vulns`, `/vulns/export.csv` (302) |
 | `/scans/{id}` | → `/vulns?scan={id}` (302) |
+| `/vulns?asset={id}` | → `/assets/{id}?tab=vulns` (302) |
+| `/assets/{id}` | `?tab=overview\|vulns\|packages\|history\|actions` 추가 |
 | — | `/vulns/{cve}` 새로 |
 | — | `/packages`, `/packages/export.csv` 새로 |
 | `/remediations` | → `/actions` (302) |
@@ -259,6 +310,16 @@ openssl       rpm    12대          3.0.7(8) 3.0.9(4)   ■ 21
 9. 숫자는 `num` 클래스(탭 정렬), 세 자리 쉼표.
 10. 팝업은 `<dialog>` + `showModal()`. 취소 왼쪽, 실행 오른쪽 `primary`.
 11. **목록 행의 심각도는 막대 하나로** (§8-A).
+12. **페이지 머리는 한 모양**: `상위 라벨(구역·범위)` → `제목` → `부제(값)` → 오른쪽 버튼 묶음.
+    지금 `.crumb`·`.page-head`·`.meta` 가 화면마다 다르게 쓰인다.
+13. **표는 카드 안에.** 카드 머리에 제목과 그 표에만 걸리는 버튼. 맨바닥 표를 두지 않는다.
+14. **탭 선택은 URL 에** (`?tab=`). 탭 이름 옆 숫자는 0 이면 안 쓴다.
+15. **긴 표는 머리가 붙어 있는다** (`position: sticky`). 취약점 수천 건에서 필수.
+16. **빈 화면은 한 모양**: 표시 · 한 줄 · 버튼 하나. 지금은 글자만 있다.
+17. **누르면 무엇이 열리는지 보이게.** 눌러서 갈 곳이 둘 이상이면 링크가 아니라 메뉴다
+    (계정 블록 · 구역 카드의 `⋮`).
+18. 자바스크립트 없이 되는 것은 자바스크립트로 하지 않는다 —
+    메뉴는 `<details>`, 팝업은 `<dialog>`, 탭은 링크. 폐쇄망에 반입할 것을 늘리지 않는다.
 
 ---
 
@@ -266,8 +327,13 @@ openssl       rpm    12대          3.0.7(8) 3.0.9(4)   ■ 21
 
 단계마다 커밋. **띄워서 직접 눌러 본 뒤에만 끝났다고 한다** (CLAUDE.md 1).
 
-### N1 — 기둥과 주소 정리
-- `layout.html` 기둥 7→6, ZONE 목록 제거, 계정 블록 → `/me`
+### N1 — 기둥 · 주소 · 공통 뼈대
+- `layout.html` 기둥 7→6, ZONE 목록 제거, **계정 블록을 `<details>` 메뉴로** (§2.7)
+- **공통 조각을 먼저 만든다** — 뒤 단계가 전부 이것을 쓴다 (§9-D)
+  `fragments/page-header.html` · `fragments/tabs.html` · `fragments/empty.html` ·
+  `fragments/severity-bar.html` · `fragments/menu.html`
+- `app.css` — `.page-header`/`.page-pretitle`/`.page-subtitle`, `.card`+`.card-header`,
+  `.tabs`, `.empty`, `.sevbar`, `.menu`, `thead` sticky
 - `LayoutAdvice` — `navZones` 제거, 대응 배지 하나로
 - 새 `LegacyRedirectController` — §3 의 302 전부
 - `AuditController` → `/settings/audit`
@@ -277,15 +343,18 @@ openssl       rpm    12대          3.0.7(8) 3.0.9(4)   ■ 21
 - `AssetController` — `filter`·`view`·`sort`·`archived`, 요약 줄 계산
 - 새 `ZoneController`(`/zones` CRUD) — `SettingsController` 의 구역 부분 이동
 - `assets.html` — 요약 줄 · 구역 칩 · 보기 전환 · 정렬 · 구역 관리 팝업
-- 새 조각 `fragments/severity-bar.html`, `fragments/zone-cards.html`
-- `app.css` — `.sevbar` (0 아닌 구간은 최소 2px, 안 그러면 심각 1건이 사라진다)
-- `settings.html` 구역 표 삭제 · `asset-detail.html` 이력 액션 버튼 통일 + SBOM 내려받기
+- 새 조각 `fragments/zone-cards.html`
+- `.sevbar` — **0 아닌 구간은 최소 2px**, 안 그러면 심각 1건이 폭 0 으로 사라진다
+- `settings.html` 구역 표 삭제
+- `asset-detail.html` — **탭으로 가르고**(§2.8) 이력 액션 버튼 통일 + SBOM 내려받기
 - **시안(`mock-Zones.png`)과 좌우로 대조** (CLAUDE.md 2)
 
 ### N3 — 취약점 화면 통합
 - 새 `VulnController`(`/vulns`, `/vulns/{cve}`) — 범위·묶기·거르개·정렬·쪽·CSV
 - `FindingRepository` — CVE별/패키지별 집계, 구역 분포, CVE 단건
 - 새 `vulns.html` + 묶기 3조각 + `vuln-detail.html`. `lookup.html`·`scan.html` 삭제
+- **표 조각은 하나**(`fragments/finding-table.html`) — `/vulns` 와
+  `/assets/{id}?tab=vulns` 가 같은 것을 쓴다. 두 벌이 되면 곧 달라진다
 - `LookupController` 삭제
 - 시험: 범위 4 × 묶기 3 = 12조합 200, 정렬에서 빈 값이 뒤인지
 
@@ -302,8 +371,8 @@ openssl       rpm    12대          3.0.7(8) 3.0.9(4)   ■ 21
 ### N5 — 계정
 - `AccountService.update(username, displayName, role, enabled, newPasswordOrNull, actor)`
   — 마지막 관리자 보호는 기존 `requireAnotherAdmin` 재사용
-- 새 `MeController`(`/me`), `me.html`
-- `settings.html` 계정 표 `[수정]` 팝업, 드롭다운 즉시 저장 제거
+- 새 `MeController`(`/me`), `me.html` — 카드 둘 (§2.7)
+- `settings.html` 계정 표 `[수정]` 팝업, 드롭다운 즉시 저장 제거, 탭으로 가르기
 - `AuditEvent.USER_UPDATED` 추가
 - 시험: 이름만·권한만·비밀번호만 · 마지막 관리자 강등 거부 · 8자 미만 거부
 
@@ -316,10 +385,11 @@ openssl       rpm    12대          3.0.7(8) 3.0.9(4)   ■ 21
 - 새 시험 `ReportProseTest` — **생성된 HTML 에 `기`·`승`·`전`·`결` 표시와
   `class="lead"` 가 없고, `<p>` 가 장당 1개 이하인지** 기계로 확인
 
-### N7 — 일관성 정리
-- 전 템플릿 맨 링크/버튼 혼용 제거, `btn small` 통일, 빈 화면, 브레드크럼
-- `app.css` 칩·탭·카드·정렬 머리 추가, 안 쓰는 규칙 제거
-- 라벨·대비·포커스
+### N7 — 일관성 정리 (§4 를 전 화면에 적용)
+- **화면을 하나씩 열어 §4 의 18개를 대조한다.** 표로 적어 두고 지운다
+- 맨 링크/버튼 혼용 제거, `btn small` 통일, 페이지 머리·카드·빈 화면 조각으로 교체
+- `app.css` 정리 — 안 쓰는 규칙 제거, 값(색·간격·모서리)을 CSS 변수로 모으기
+- 라벨·대비·포커스 표시 · 표 머리 sticky
 - `PageRenderTest` 를 새 주소 전부 × 두 권한으로
 
 ### N8 — 패키지 인벤토리  ⚠ **V12 마이그레이션**
@@ -478,3 +548,119 @@ SBOM 관리의 절반이 여기다. N8 에서 만든다.
 - [탐지 항목 개념](https://dependencytrack.github.io/docs/next/concepts/vulnerability-findings/)
 - [CycloneDX VEX 어휘](https://cyclonedx.org/capabilities/vex/)
 </content>
+
+---
+
+## 9. 디자인 참고 — 라이선스와 채택 범위
+
+rev.2 까지는 **기능 구성만** 참고했다. 화면 자체(계정 영역 · 탭 · 카드 · 빈 화면)는
+손대지 않았다. 여기서 정한다.
+
+### 라이선스
+
+| 프로젝트 | 라이선스 | 코드를 가져와도 되나 |
+|---|---|---|
+| **[Tabler](https://github.com/tabler/tabler)** | **MIT** | **된다** — 고지만 남기면 수정·재배포 자유 |
+| [Dependency-Track frontend](https://github.com/DependencyTrack/frontend) | Apache-2.0 | 된다 (고지 + 변경 표시). Vue 3 라 코드는 안 맞고 **구성만** |
+| [DefectDojo](https://github.com/DefectDojo/django-DefectDojo) | BSD-3-Clause | 된다 (고지). Django 템플릿 |
+| [SBOMHub](https://github.com/youichi-uda/sbomhub) | **AGPL-3.0** | **가져오면 우리도 AGPL.** 화면만 본다 |
+| [OpenCVE](https://github.com/opencve/opencve) | **BSL** (상용 제한) | **가져오지 않는다.** 화면만 본다 |
+
+> AGPL 과 BSL 은 코드를 **한 줄도 옮기지 않는다.** 사내 반입 기준에 걸릴 여지를
+> 만들지 않는다. 화면 배치를 눈으로 보는 것은 라이선스와 무관하다.
+
+### A. 전면 채택이 아니라 패턴 차용
+
+Tabler 는 MIT 에 **순수 HTML·CSS 이고 빌드가 필요 없다.** 데모 화면 120장에
+사이드바·탭·카드·표·계정 설정·빈 화면·모달·배지·아바타가 전부 들어 있다.
+그대로 써도 라이선스상 문제가 없다.
+
+그런데 Tabler 는 **Bootstrap 을 통째로 안고 있는 프레임워크**다. 지금 우리
+`app.css` 는 622줄이고, 한글 글꼴을 유니코드 범위로 갈라 자체 호스팅하는 데까지
+손을 봐 뒀다. 전면 채택하면 폐쇄망에 반입할 것이 하나 더 늘고, 만들어 둔 타이포그래피가
+남의 기본값에 덮인다.
+
+**그래서 필요한 컴포넌트의 패턴과 클래스 이름만 가져와 `app.css` 에 직접 쓴다.**
+MIT 이므로 허용되고, `static/css/CREDITS.txt` 에 고지를 남긴다.
+
+> 전면 채택을 원하시면 그것도 됩니다. 화면이 훨씬 빨리 정리되고 다크 모드·인쇄·반응형이
+> 공짜로 따라옵니다. 대신 템플릿 15장을 Tabler 클래스로 다시 쓰고, 반입 목록에
+> CSS·JS 한 벌이 늘어납니다. **결정만 해 주시면 그대로 갑니다.**
+
+### B. 계정 영역 — 지금이 왜 이상한가
+
+| | 지금 | 바꿀 것 |
+|---|---|---|
+| 기둥 아래 이름 | `/password` **로 바로 가는 링크** | **메뉴를 연다** — 내 계정 / 비밀번호 변경 / 로그아웃 |
+| 로그아웃 | 이름 옆에 버튼이 항상 노출 | 메뉴 안으로 |
+| 내 계정 화면 | **없음** | `/me` — 계정 정보 카드 + 비밀번호 카드 |
+| 설정의 계정 수정 | 없음 (권한 드롭다운이 바뀌는 즉시 저장) | `[수정]` 팝업 |
+
+누를 곳 하나에 갈 곳이 셋이면 그건 링크가 아니라 메뉴다. GitHub · GitLab ·
+Dependency-Track · Tabler 가 전부 같은 모양이고, 이 한 가지가 9번 지적의 답이다.
+
+구현은 `<details><summary>` — 자바스크립트 없이 열고 닫히고 `Esc` 가 듣는다.
+
+### C. 탭 구성
+
+Dependency-Track 은 프로젝트 상세를 탭으로 가른다
+(Overview / Components / Audit Vulnerabilities / …). 우리 자산 상세는 지금
+한 화면에 세로로 이어 붙어 있어 아래가 안 보인다.
+
+**탭을 쓸 자리 셋**
+
+| 화면 | 탭 |
+|---|---|
+| 자산 상세 | 개요 · 취약점 · 패키지 · 검사 이력 · 조치·판정 |
+| 대응 | 조치 · 판정·수용 |
+| 설정 | 계정 · 접근 IP · 도구 · 감사 로그 |
+
+**규칙**
+- 탭은 **페이지 머리 아래**(제목·버튼 다음 줄). 카드 안이 아니다 — 탭마다 카드가 여럿이다.
+- **탭 선택은 URL 에** (`?tab=`). Tabler 기본형은 자바스크립트로 감추고 보이므로
+  새로고침하면 첫 탭으로 돌아간다. 우리는 링크로 만든다.
+- 탭 이름 옆 숫자(`취약점 187`)는 들어가기 전에 알아야 하는 값. **0 이면 안 쓴다.**
+- 탭 넷을 넘기면 잘못 가른 것이다.
+
+### D. 공통 조각 다섯 (N1 에서 먼저 만든다)
+
+Tabler 의 구조를 우리 이름으로 옮긴 것. 뒤 단계가 전부 이것을 쓴다.
+
+| 조각 | Tabler | 지금 우리 | 고칠 것 |
+|---|---|---|---|
+| `page-header` | `.page-pretitle` / `.page-title` / `.page-subtitle` / `.btn-list` | `.crumb`·`.page-head`·`.meta` 가 화면마다 다름 | 한 모양으로 |
+| `tabs` | `.nav-tabs` | **없음** | 링크 기반 |
+| `card` | `.card` > `.card-header` > `.card-title` | 일부만 `.card`, 맨바닥 표가 섞임 | 표는 전부 카드 안 |
+| `empty` | 표시 + 제목 + 한 줄 + 버튼 | 글자만 | 버튼을 넣는다 |
+| `menu` | 드롭다운 | **없음** | `<details>` |
+
+### E. 다른 도구에서 눈에 띈 것
+
+- **SBOMHub** (일본, AGPL) — 같은 모양의 문제다. 자국어 UI + 자국 규제(METI) 보고서
+  양식이 제품의 중심이고, "AI 가 초안을 쓰고 사람이 결정한다" 를 원칙으로 박아 뒀다.
+  **보고서가 부속이 아니라 결과물**이라는 우리 판단과 같다. 코드는 안 본다(AGPL).
+- **OpenCVE** (BSL) — CVE 에 태그·상태·담당자를 붙여 추적한다. 우리 판정(§8-B)과
+  겹치므로 더 가져올 것은 없다.
+- **DefectDojo** (BSD-3) — 조치 상태 흐름이 우리보다 잘게 나뉘어 있다
+  (Active / Verified / False Positive / Out of Scope / Risk Accepted / Mitigated).
+  §8-B 의 VEX 어휘와 역할이 겹쳐서 **둘 다 쓰지 않는다.** 하나면 된다.
+
+### 안 가져오는 것
+
+| | 왜 |
+|---|---|
+| 다크 모드 | 쓰는 사람이 사무실 조명 아래 있다. 색 한 벌을 더 관리할 이유가 없다 |
+| 아이콘 세트(수백 개) | 지금 `.mark`·`.zrail` 로 되는 일이다. 반입 목록을 늘리지 않는다 |
+| 애니메이션 · 스켈레톤 | 검사 진행만 움직이면 된다. 나머지는 즉시 그려진다 |
+| Bootstrap JS | 팝업은 `<dialog>`, 메뉴는 `<details>`, 탭은 링크 |
+
+### 출처
+
+- [Tabler (MIT)](https://github.com/tabler/tabler) ·
+  [페이지 머리](https://docs.tabler.io/ui/layout/page-headers) ·
+  [탭](https://docs.tabler.io/ui/components/tabs) ·
+  [계정 설정 화면](https://preview.tabler.io/settings.html)
+- [Dependency-Track frontend (Apache-2.0)](https://github.com/DependencyTrack/frontend)
+- [DefectDojo (BSD-3)](https://github.com/DefectDojo/django-DefectDojo)
+- [SBOMHub (AGPL-3.0)](https://github.com/youichi-uda/sbomhub) ·
+  [OpenCVE (BSL)](https://github.com/opencve/opencve)
