@@ -27,6 +27,16 @@ public class Scan {
     @Column(nullable = false, length = 16)
     private ScanStatus status = ScanStatus.QUEUED;
 
+    /**
+     * 지금 어느 단계인가. 화면이 진행 상태를 그리는 근거다.
+     *
+     * <p>V10 이전에 끝난 검사에는 값이 없다. 그때 무엇을 지나갔는지는 기록이
+     * 없으므로 지어내 채우지 않는다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private ScanStage stage = ScanStage.UPLOADED;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -122,6 +132,19 @@ public class Scan {
 
     public void setStatus(ScanStatus status) {
         this.status = status;
+    }
+
+    public ScanStage getStage() {
+        return stage;
+    }
+
+    public void setStage(ScanStage stage) {
+        this.stage = stage;
+    }
+
+    /** 아직 도는 중인가. 화면이 진행 카드를 띄울지 정하는 값이다. */
+    public boolean isInFlight() {
+        return status == ScanStatus.QUEUED || status == ScanStatus.RUNNING;
     }
 
     public Instant getCreatedAt() {

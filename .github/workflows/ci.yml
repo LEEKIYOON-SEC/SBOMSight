@@ -13,13 +13,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-java@v4
         with:
-          python-version: '3.11'
-          cache: pip
+          java-version: '21'
+          distribution: temurin
+          cache: maven
 
-      - name: 의존성 설치
-        run: python -m pip install -r requirements-dev.txt
+      # H2(MODE=MySQL) 로 돈다. DB 를 띄우지 않는다.
+      - name: 테스트
+        run: ./mvnw -B test
+
+      # 스키마가 진짜 MySQL 에서 서는지, 우리 JPQL 이 MySQL 방언으로
+      # 번역됐을 때 도는지는 H2 로는 확인되지 않는다. 여기서 한 번 더 돈다.
+  mysql:
+    name: 테스트 (MySQL · Flyway 스키마)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: sbomsight_ci
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
 
       - name: 테스트
-        run: python -m pytest
+        env:
+          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/sbomsight_ci?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+          SPRING_DATASOURCE_USERNAME: root
+          SPRING_DATASOURCE_PASSWORD: root
+          SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+          # 스키마는 Flyway 가 만든다 — 운영에서 쓰는 그 파일들이다.
+          SPRING_FLYWAY_ENABLED: 'true'
+          SPRING_JPA_HIBERNATE_DDL_AUTO: none
+        run: ./mvnw -B test

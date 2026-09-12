@@ -80,7 +80,11 @@ $ready = $true
 
 $java = Get-Command java -ErrorAction SilentlyContinue
 if ($java) {
-    $ver = Invoke-Native 'java' @('-version') | Select-Object -First 1
+    # 첫 줄을 그냥 집으면 안 된다 — JAVA_TOOL_OPTIONS 가 설정돼 있으면 JVM 이
+    # "Picked up JAVA_TOOL_OPTIONS: ..." 를 먼저 찍고, 그것을 버전으로 읽어
+    # 자바가 멀쩡한데도 "안됨" 이 된다. 버전이 적힌 줄을 골라 잡는다.
+    $ver = Invoke-Native 'java' @('-version') |
+        Where-Object { $_ -match 'version "' } | Select-Object -First 1
     # 21 미만이면 Spring Boot 3.3 이 안 뜬다.
     $major = if ($ver -match '"(\d+)') { [int]$Matches[1] } else { 0 }
     $ready = (Test-Line ($major -ge 21) "Java 21 이상" $ver) -and $ready

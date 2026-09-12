@@ -1,98 +1,69 @@
 #!/usr/bin/env bash
-# SBOMSight 웹 서버 기동 (Linux / macOS)
+# SBOMSight 을 띄운다 (Linux).
 #
-# 업로드된 SBOM과 스캔 결과에는 내부 자산 정보가 담긴다. 그래서 기본
-# 바인딩은 127.0.0.1이며, 외부에 노출하려면 SBOMSIGHT_HOST를 명시적으로
-# 바꿔야 한다.
+# Windows 는 scripts\run-server.ps1 을 쓴다. 운영 값은 환경변수로 준다 —
+# 저장소에 두지 않는다.
+#
+#   SBOMSIGHT_DB_PASSWORD=... SBOMSIGHT_KEYSTORE_PASSWORD=... ./scripts/run-server.sh
 set -euo pipefail
-
 cd "$(dirname "$0")/.."
 
-# .env 를 먼저 읽어야 한다 — 뒤에서 읽으면 .env 의 SBOMSIGHT_HOST 가 무시된다.
-if [ -f .env ]; then
-  echo "[i] .env 로드"
-  set -a; . ./.env; set +a
+JAR="target/sbomsight-1.0.0.jar"
+PORT="${SBOMSIGHT_PORT:-8443}"
+KEYSTORE="${SBOMSIGHT_KEYSTORE:-file:./config/keystore.p12}"
+GRYPE="${SBOMSIGHT_GRYPE:-grype}"
+
+fail=0
+say() { # 상태 한 줄
+  if [ "$1" = "ok" ]; then printf '  OK   %s\n' "$2"
+  else printf ' 안됨  %s\n' "$2"; fail=1; fi
+}
+
+echo
+echo "SBOMSight 준비 상태"
+printf -- '-%.0s' {1..60}; echo
+
+# java -version 은 버전을 stderr 로 낸다. 오류라서가 아니라 처음부터 그렇다.
+# 첫 줄을 그냥 집으면 안 된다 — JAVA_TOOL_OPTIONS 가 설정돼 있으면 JVM 이
+# "Picked up JAVA_TOOL_OPTIONS: ..." 를 먼저 찍고, 그걸 버전으로 읽게 된다.
+if command -v java >/dev/null 2>&1; then
+  ver=$(java -version 2>&1 | grep -m1 'version "')
+  major=$(printf '%s' "$ver" | sed -n 's/^[^"]*"\([0-9][0-9]*\).*/\1/p')
+  if [ "${major:-0}" -ge 21 ] 2>/dev/null; then say ok "Java 21 이상  $ver"
+  else say no "Java 21 이상  $ver"; fi
+else
+  say no "Java  PATH 에 java 가 없습니다"
 fi
 
-# --listen 은 내부망에 개방한다. 기본은 이 PC에서만 보인다.
-LISTEN=0
-ARGS=()
-for arg in "$@"; do
-  case "$arg" in
-    --listen) LISTEN=1 ;;
-    *) ARGS+=("$arg") ;;
-  esac
+[ -f "$JAR" ] && say ok "빌드된 jar  $JAR" || say no "빌드된 jar  $JAR (./mvnw package)"
+
+ks="${KEYSTORE#file:}"
+[ -f "$ks" ] && say ok "인증서  $ks" || say no "인증서  $ks (scripts/make-keystore.sh)"
+
+command -v "$GRYPE" >/dev/null 2>&1 && say ok "grype  $GRYPE" || say no "grype  $GRYPE"
+
+printf -- '-%.0s' {1..60}; echo
+
+if [ "${1:-}" = "--check" ]; then
+  echo
+  [ "$fail" = 0 ] && { echo "준비되었습니다."; exit 0; } || { echo "위의 '안됨' 을 먼저 해결하세요."; exit 1; }
+fi
+[ "$fail" = 0 ] || { echo; echo "위의 '안됨' 을 먼저 해결하세요."; exit 1; }
+
+# Linux 는 1024 미만 포트에 권한이 필요하다. Windows 는 그렇지 않다.
+if [ "$PORT" -lt 1024 ] && [ "$(id -u)" != 0 ]; then
+  echo
+  echo "[!] $PORT 는 1024 미만이라 권한이 필요합니다. 둘 중 하나를 쓰세요:"
+  echo "      sudo setcap 'cap_net_bind_service=+ep' \$(readlink -f \$(which java))"
+  echo "      SBOMSIGHT_PORT=8443 $0"
+fi
+
+echo
+echo "접속 주소"
+echo "  https://localhost:$PORT"
+hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]' | while read -r ip; do
+  echo "  https://$ip:$PORT"
 done
-set -- "${ARGS[@]+"${ARGS[@]}"}"
+echo
 
-if [ "$LISTEN" = "1" ]; then
-  HOST="0.0.0.0"
-else
-  HOST="${SBOMSIGHT_HOST:-127.0.0.1}"
-fi
-PORT="${SBOMSIGHT_PORT:-8000}"
-
-# 가상환경이 있으면 활성화 여부와 무관하게 그 python을 쓴다. 활성화를 잊고
-# 실행하면 전역 python에는 의존성이 없어 "먼저 설치하세요"만 반복하게 된다.
-PYTHON="python3"
-if [ -x .venv/bin/python ]; then
-  PYTHON=".venv/bin/python"
-  echo "[i] 가상환경 사용: .venv"
-fi
-
-if ! "$PYTHON" -c "import fastapi" 2>/dev/null; then
-  echo "[!] 의존성이 없습니다. 먼저 실행하세요:"
-  echo "    python3 -m venv .venv"
-  echo "    . .venv/bin/activate"
-  echo "    python -m pip install -r requirements.txt"
-  exit 1
-fi
-
-if ! command -v "${GRYPE_BIN:-grype}" >/dev/null 2>&1; then
-  echo "[!] grype를 찾을 수 없습니다. scripts/install-tools.sh 로 설치하거나"
-  echo "    GRYPE_BIN 환경변수로 경로를 지정하세요. (설치 전에는 스캔이 실패합니다)"
-fi
-
-if [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ]; then
-  # 계정이 하나도 없는 채로 밖에 열지 않는다. 취약점 목록은 공격자에게 그대로
-  # 지도가 되므로, 로그인이 설 수 있는 상태가 되기 전에는 문을 열지 않는다.
-  if ! "$PYTHON" -c "
-import sys
-from core.accounts import Accounts
-from core.config import get_config
-sys.exit(0 if Accounts(get_config().db_path).count() else 1)
-" 2>/dev/null; then
-    echo "[!] 계정이 하나도 없어 ${HOST} 로 열지 않습니다."
-    echo "    먼저 관리자 계정을 만드세요:"
-    echo "      $PYTHON -m core.cli user add <이름> --role admin"
-    echo "    또는 --listen 없이 띄운 뒤 http://127.0.0.1:${PORT} 에서 만드세요."
-    exit 1
-  fi
-
-  echo
-  echo "[!] ${HOST} 로 바인딩합니다 — 이 PC 밖에서 접속할 수 있게 됩니다."
-  echo "    스캔 결과에는 어떤 서버에 어떤 취약점이 있는지가 그대로 담깁니다."
-  echo "    신뢰할 수 있는 내부망에서만 여세요."
-  # 0.0.0.0 은 주소가 아니라 '전부'라는 뜻이라 브라우저에 그대로 칠 수 없다.
-  if command -v hostname >/dev/null 2>&1; then
-    for addr in $(hostname -I 2>/dev/null || true); do
-      echo "[i] 접속 주소  http://${addr}:${PORT}"
-    done
-  fi
-  echo
-fi
-
-# AI 상태를 미리 알려 준다 — 결과 화면에서 전송 버튼이 안 보이는 이유를
-# 그때 가서 찾게 하지 않기 위한 것이다. 키 값 자체는 출력하지 않는다.
-if [ "${SBOMSIGHT_AI_ENABLED:-0}" = "1" ] || [ "${SBOMSIGHT_AI_ENABLED:-}" = "true" ]; then
-  if [ -n "${GEMINI_API_KEY:-}" ]; then
-    echo "[i] AI 사용 가능 · 모델 ${GEMINI_MODEL:-gemini-3.5-flash-lite}"
-  else
-    echo "[!] SBOMSIGHT_AI_ENABLED=1 이지만 GEMINI_API_KEY 가 없습니다. 룰 기반으로만 동작합니다."
-  fi
-else
-  echo "[i] AI 미사용 (기본값). 보고서는 룰 기반으로 완결됩니다."
-fi
-
-echo "[i] http://${HOST}:${PORT}"
-exec "$PYTHON" -m uvicorn server.app:app --host "$HOST" --port "$PORT" "$@"
+exec java -Dfile.encoding=UTF-8 -jar "$JAR"

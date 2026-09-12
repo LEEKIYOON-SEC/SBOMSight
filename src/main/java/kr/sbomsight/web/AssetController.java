@@ -144,16 +144,48 @@ public class AssetController {
                 .filter(s -> s.getStatus() == ScanStatus.DONE)
                 .findFirst().orElse(null);
 
+        // 아직 도는 중인 검사. 있으면 화면이 진행 카드를 띄우고 물어본다.
+        Scan running = history.stream().filter(Scan::isInFlight).findFirst().orElse(null);
+
         model.addAttribute("asset", asset);
         model.addAttribute("zones", zoneService.all());
         model.addAttribute("history", history);
         model.addAttribute("latest", latest);
+        model.addAttribute("running", running);
+        // 이력의 '이전 대비' — 바로 앞 완료 검사와 견준 탐지 수 변화.
+        model.addAttribute("delta", deltas(history));
         model.addAttribute("severity", latest == null ? Map.of() : severityMap(latest.getId()));
         model.addAttribute("remediations",
                 remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id));
         // 지우면 무엇이 함께 사라지는지 확인 문구에 그대로 쓴다.
         model.addAttribute("impact", assetService.impactOf(asset));
         return "asset-detail";
+    }
+
+    /**
+     * 이력의 "이전 대비" — 바로 앞 <b>완료</b> 검사와 견준 탐지 수 차이.
+     *
+     * <p>실패한 검사는 건너뛴다. 실패는 0건이 아니라 "모른다" 이고, 그것을
+     * 0 으로 놓고 빼면 다음 검사가 폭증한 것처럼 보인다.
+     *
+     * <p>앞선 완료 검사가 없는 첫 검사는 목록에 넣지 않는다 — 화면이 그 줄에
+     * 아무것도 그리지 않는다. 0 을 찍으면 "변화 없음" 으로 읽힌다.
+     */
+    private Map<Long, Integer> deltas(List<Scan> history) {
+        Map<Long, Integer> out = new LinkedHashMap<>();
+        Scan previous = null;
+        // history 는 최신순이므로 뒤에서부터 훑어 시간 순으로 견준다.
+        for (int i = history.size() - 1; i >= 0; i--) {
+            Scan scan = history.get(i);
+            if (scan.getStatus() != ScanStatus.DONE) {
+                continue;
+            }
+            if (previous != null) {
+                out.put(scan.getId(), scan.getFindingCount() - previous.getFindingCount());
+            }
+            previous = scan;
+        }
+        return out;
     }
 
     /**

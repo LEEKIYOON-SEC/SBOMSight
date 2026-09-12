@@ -33,6 +33,11 @@
 
 * { box-sizing: border-box; }
 
+/* hidden 은 어떤 display 규칙보다 세야 한다. .btn 처럼 display 를 직접 주는
+   클래스가 붙어 있으면 hidden 이 먹지 않아, 숨겨야 할 버튼이 그대로 보인다 —
+   검사가 도는 중에 "결과 보기" 가 눌리는 식으로 드러난다. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -440,6 +445,82 @@ td form.inline select, td form.inline input { width: auto; min-width: 8rem; marg
 /* ============================================================
    진행 상태
    ============================================================ */
+/* 검사가 도는 동안 무엇이 일어나고 있는지. 눈금은 보여 주기 위해 지어낸
+   것이 아니라 ScanService 가 실제로 지나가는 자리와 하나씩 맞물린다. */
+.progress {
+  border: 1px solid var(--accent-line); border-radius: 12px;
+  overflow: hidden; background: var(--bg); margin-bottom: 20px;
+}
+.progress.failed { border-color: var(--critical-line); }
+.progress-head {
+  display: flex; align-items: center; gap: 13px;
+  padding: 16px 20px; background: var(--accent-bg);
+}
+.progress.failed .progress-head { background: var(--critical-bg); }
+.progress-head b { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.progress-head .spacer { flex: 1; }
+
+.spinner {
+  width: 19px; height: 19px; border-radius: 10px; flex-shrink: 0;
+  border: 2.5px solid var(--accent-line); border-top-color: var(--accent);
+  animation: spin .75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.done-mark {
+  width: 19px; height: 19px; border-radius: 10px; flex-shrink: 0;
+  background: var(--ok); position: relative;
+}
+.done-mark::after {
+  content: ""; position: absolute; left: 6px; top: 3px;
+  width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.steps { display: flex; padding: 18px 20px 20px; border-top: 1px solid var(--line); }
+.step { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.step .rail { display: flex; align-items: center; }
+.step .rail i {
+  width: 21px; height: 21px; border-radius: 11px; flex-shrink: 0;
+  border: 2px solid var(--line-strong); background: var(--bg);
+}
+.step .rail span { flex: 1; height: 3px; margin-left: 5px; border-radius: 2px;
+                   background: var(--hover); overflow: hidden; position: relative; }
+.step:last-child .rail span { visibility: hidden; }
+.step .name { font-size: 14px; color: var(--fg-faint); }
+.step .detail { font-size: 12.5px; color: var(--fg-faint); margin-top: 1px; text-align: left; }
+
+.step.done .rail i { background: var(--ok); border-color: var(--ok); }
+.step.done .rail span { background: var(--ok); }
+.step.done .name { color: var(--fg); }
+
+.step.running .rail i { border-color: var(--accent); background: var(--accent-bg); }
+.step.running .name { color: var(--fg); font-weight: 600; }
+/* 지금 도는 칸만 빛이 지나간다. 전부 움직이면 어디가 진행 중인지 안 보인다. */
+.step.running .rail span::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 38%;
+  background: var(--accent); border-radius: 2px;
+  animation: sweep 1.05s ease-in-out infinite;
+}
+@keyframes sweep { from { left: -38%; } to { left: 100%; } }
+
+.step.failed .rail i { border-color: var(--critical); background: var(--critical-bg); }
+.step.failed .name { color: var(--critical); font-weight: 600; }
+/* 실패하면 남은 눈금은 흐려 둔다. 회색으로 흘려보내면 아직 도는 것처럼 읽힌다. */
+.step.skipped { opacity: .4; }
+
+/* 움직임을 줄여 달라고 한 사람에게는 돌리지 않는다. 단계 표시는 색으로도
+   읽히므로 애니메이션이 없어도 뜻이 통한다. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; border-top-color: var(--accent-line); }
+  .step.running .rail span::after { animation: none; left: 0; width: 100%; opacity: .5; }
+}
+
+@media (max-width: 700px) {
+  .steps { flex-direction: column; gap: 14px; }
+  .step .rail span { display: none; }
+}
+
 .status { font-size: 12.5px; font-weight: 600; padding: 2px 8px; border-radius: 5px; white-space: nowrap; }
 .status.QUEUED, .status.RUNNING { background: var(--accent-bg); color: var(--accent); }
 .status.DONE   { background: var(--ok-bg);       color: var(--ok); }

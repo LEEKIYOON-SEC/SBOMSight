@@ -13,13 +13,17 @@
 
   <div class="page-head">
     <h1 th:text="${asset.name}">web-01</h1>
-    <span class="meta" th:if="${!#strings.isEmpty(asset.osName)}"
-          th:text="${asset.osName}">Rocky Linux 9.3</span>
+    <span class="meta">
+      <span th:if="${!#strings.isEmpty(asset.osName)}" th:text="${asset.osName}">Rocky Linux 9.3</span>
+      <span th:if="${!#strings.isEmpty(asset.note)}"
+            th:text="(${#strings.isEmpty(asset.osName)} ? '' : ' · ') + ${asset.note}">대외 웹</span>
+    </span>
     <span class="spacer"></span>
     <a th:if="${latest != null}" class="btn"
        th:href="@{'/report/' + ${latest.id}}">보고서</a>
     <a th:if="${latest != null}" class="btn primary"
-       th:href="@{'/scans/' + ${latest.id}}">취약점 보기</a>
+       th:href="@{'/scans/' + ${latest.id}}"
+       th:text="'취약점 ' + ${#numbers.formatInteger(latest.findingCount, 0, 'COMMA')} + '건'">취약점 98건</a>
   </div>
 
   <div class="body">
@@ -44,6 +48,21 @@
 
   <!-- SBOM 업로드는 자산 안에 있다. 어느 서버 것인지 나중에 정하는 길을
        열어 두면, 어디에도 속하지 않는 결과가 쌓인다. -->
+  <!-- 검사가 도는 동안 무엇이 일어나고 있는지. grype 은 서버 한 대에 몇 분씩
+       걸리는데, "검사 중" 한 마디만 떠 있으면 돌고 있는지 멈춘 것인지 알 수
+       없어 새로고침만 반복하게 된다. -->
+  <div class="progress" th:if="${running != null}" th:attr="data-scan=${running.id}" id="progress">
+    <div class="progress-head">
+      <span class="spinner" data-role="icon"></span>
+      <b data-role="title">검사 중</b>
+      <span class="faint" data-role="subtitle"></span>
+      <span class="spacer"></span>
+      <span class="faint num" data-role="elapsed"></span>
+      <a class="btn primary" data-role="open" hidden>결과 보기</a>
+    </div>
+    <div class="steps" data-role="steps"></div>
+  </div>
+
   <h2 sec:authorize="hasRole('ADMIN')">SBOM 올리기</h2>
   <div sec:authorize="hasRole('ADMIN')">
     <form method="post" th:action="@{'/assets/' + ${asset.id} + '/sbom'}"
@@ -73,7 +92,8 @@
       <thead>
       <tr>
         <th class="tight">시각</th><th class="tight">상태</th>
-        <th class="num tight">탐지</th><th class="num tight">컴포넌트</th>
+        <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
+        <th class="num tight">컴포넌트</th>
         <th class="tight">grype</th><th class="tight">DB 기준일</th>
         <th>SBOM</th><th class="tight"></th>
       </tr>
@@ -90,6 +110,15 @@
           <span class="status" th:classappend="${s.status}" th:text="${s.status.label()}">완료</span>
         </td>
         <td class="num tight" th:text="${s.status.name() == 'DONE'} ? ${#numbers.formatInteger(s.findingCount, 0, 'COMMA')} : '—'">—</td>
+        <!-- 바로 앞 완료 검사와의 차이. 실패한 검사는 건너뛴다 — 실패는
+             0건이 아니라 "모른다" 이고, 0 으로 놓고 빼면 다음 검사가
+             폭증한 것처럼 보인다. 첫 검사는 비워 둔다. -->
+        <td class="num tight" th:with="d=${delta.get(s.id)}">
+          <span th:if="${d != null && d > 0}" class="danger-text" th:text="'+' + ${d}">+0</span>
+          <span th:if="${d != null && d < 0}" style="color:var(--ok);font-weight:600" th:text="${d}">0</span>
+          <span th:if="${d != null && d == 0}" class="faint">0</span>
+          <span th:if="${d == null}" class="faint">—</span>
+        </td>
         <td class="num tight" th:text="${s.componentCount > 0} ? ${#numbers.formatInteger(s.componentCount, 0, 'COMMA')} : '—'">—</td>
         <td class="tight faint" th:text="${#strings.isEmpty(s.grypeVersion)} ? '—' : ${s.grypeVersion}">—</td>
         <td class="tight faint"
@@ -162,6 +191,76 @@
     </form>
   </div>
   </div>
+
+
+  <script>
+    // 검사가 도는 동안만 물어본다. 끝나면 스스로 멈춘다.
+    //
+    // 밀어 주는 방식(SSE·WebSocket)을 쓰지 않는 이유: 연결이 하나 더 생기고
+    // 세션 만료·프록시 설정이 전부 변수가 된다. 몇 분짜리 작업의 진행을
+    // 보여 주는 데 그만한 것을 들일 이유가 없다.
+    (function () {
+      const box = document.querySelector('#progress');
+      if (!box) return;
+      const id = box.dataset.scan;
+      const el = (r) => box.querySelector('[data-role="' + r + '"]');
+
+      function time(sec) {
+        const m = Math.floor(sec / 60), s = sec % 60;
+        return m > 0 ? m + '분 ' + s + '초' : s + '초';
+      }
+
+      function draw(p) {
+        el('title').textContent = p.failed ? '검사 실패'
+                                : p.done   ? '검사 완료'
+                                           : p.stageLabel;
+        el('subtitle').textContent = p.failed ? (p.error || '') : p.stageDetail;
+        el('elapsed').textContent = time(p.elapsedSeconds);
+
+        const icon = el('icon');
+        icon.className = p.failed ? 'mark critical' : p.done ? 'done-mark' : 'spinner';
+
+        if (p.done) {
+          const open = el('open');
+          open.href = '/scans/' + p.scanId;
+          open.hidden = false;
+        }
+        box.classList.toggle('failed', !!p.failed);
+
+        el('steps').innerHTML = p.steps.map(function (s) {
+          return '<div class="step ' + s.state + '">'
+               +   '<div class="rail"><i></i><span></span></div>'
+               +   '<div class="name"></div><div class="detail num"></div>'
+               + '</div>';
+        }).join('');
+        // 값은 textContent 로만 넣는다. 서버가 준 문자열에 자산 이름과 오류
+        // 문구가 섞여 들어오므로 innerHTML 로 붙이면 그 자리가 구멍이 된다.
+        box.querySelectorAll('.step').forEach(function (node, i) {
+          node.querySelector('.name').textContent = p.steps[i].label;
+          node.querySelector('.detail').textContent = p.steps[i].detail || '';
+        });
+      }
+
+      let stop = false;
+      function poll() {
+        if (stop) return;
+        fetch('/scans/' + id + '/status', { headers: { 'Accept': 'application/json' } })
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+          .then(function (p) {
+            draw(p);
+            if (p.running) { setTimeout(poll, 2000); return; }
+            stop = true;
+            // 끝났으면 이력·조치·머리줄이 전부 바뀐다. 통째로 다시 그린다.
+            setTimeout(function () { location.reload(); }, 1200);
+          })
+          .catch(function () {
+            // 서버가 잠깐 대답하지 않아도 포기하지 않는다. 다만 간격을 늘린다.
+            setTimeout(poll, 5000);
+          });
+      }
+      poll();
+    })();
+  </script>
 
 </main>
 </body>

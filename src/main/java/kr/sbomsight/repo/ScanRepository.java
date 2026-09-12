@@ -1,10 +1,14 @@
 package kr.sbomsight.repo;
 
 import kr.sbomsight.domain.Scan;
+import kr.sbomsight.domain.ScanStage;
 import kr.sbomsight.domain.ScanStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -56,6 +60,22 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
     List<Scan> findLatestDonePerAsset();
 
     long countByAssetId(Long assetId);
+
+    /**
+     * 진행 단계를 그 자리에서 바꾼다.
+     *
+     * <p><b>엔티티를 고쳐 저장하지 않고 갱신 질의를 쓰는 이유.</b> 이 값은
+     * 검사가 도는 <i>동안</i> 다른 요청(진행 상태를 묻는 화면)에 보여야 한다.
+     * 바깥 트랜잭션 안에서 필드를 바꾸면 커밋 전까지 아무에게도 안 보이고,
+     * 그러면 단계가 하나씩 뜨는 것이 아니라 끝나는 순간 한꺼번에 뜬다 —
+     * 진행 표시가 있으나 마나가 된다.
+     *
+     * <p>{@code REQUIRES_NEW} 로 제 트랜잭션을 열어 바로 커밋한다.
+     */
+    @Modifying
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Query("UPDATE Scan s SET s.stage = :stage WHERE s.id = :id")
+    void updateStage(@Param("id") Long id, @Param("stage") ScanStage stage);
 
     /**
      * 구역 보고서의 기준 스캔 — 자산마다 <b>기간 안에서</b> 가장 나중에 끝난 하나.

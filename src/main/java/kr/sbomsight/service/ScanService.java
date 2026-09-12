@@ -129,7 +129,9 @@ public class ScanService {
     public void run(Long scanId) throws IOException {
         Scan scan = scans.findById(scanId).orElseThrow();
         scan.setStatus(ScanStatus.RUNNING);
+        scan.setStage(ScanStage.READING);
         scans.saveAndFlush(scan);
+        scans.updateStage(scanId, ScanStage.READING);
 
         Path dir = properties.scanDir(scan.getAsset().getId(), scan.getId());
         Path plainSbom = null;
@@ -143,7 +145,14 @@ public class ScanService {
             scan.setSbomFormat(info.format());
             scan.setComponentCount(info.componentCount());
 
+            // 여기가 대개 가장 길다. 단계를 먼저 커밋해야 도는 동안 화면에 뜬다.
+            scan.setStage(ScanStage.SCANNING);
+            scans.updateStage(scanId, ScanStage.SCANNING);
+
             grype.scan(plainSbom, plainReport);
+
+            scan.setStage(ScanStage.SAVING);
+            scans.updateStage(scanId, ScanStage.SAVING);
 
             GrypeReport report;
             try (InputStream in = Files.newInputStream(plainReport)) {
@@ -170,6 +179,7 @@ public class ScanService {
 
             scan.setGrypePath(storage.storeGrypeReport(plainReport, dir).toString());
             scan.setStatus(ScanStatus.DONE);
+            scan.setStage(ScanStage.DONE);
             scan.setFinishedAt(Instant.now());
             scans.save(scan);
 
