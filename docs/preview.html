@@ -362,6 +362,28 @@ tr.expand > td { background: var(--sunken); padding: 0; border-bottom: 1px solid
 .history { border-top: 1px solid var(--line); padding: 10px var(--gutter) 14px; font-size: 12.5px; color: var(--fg-faint); }
 .history div + div { margin-top: 3px; }
 
+/* ── 패키지 버전 표시 — 새로 더함 ───────────────────────────────
+   버전마다 "이 버전이 취약한가" 를 눈으로 가른다. 색만 쓰지 않는다 —
+   취약한 버전은 채운 네모, 취약점이 없는 버전은 속 빈 동그라미다. */
+.vlist { display: flex; flex-wrap: wrap; gap: 3px 16px; }
+.vitem { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13.5px; }
+.vmark { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+.vmark.critical { background: var(--critical); }
+.vmark.high     { background: var(--high); }
+.vmark.medium   { background: var(--medium); }
+.vmark.low      { background: var(--low); }
+.vmark.none     { border: 1.5px solid var(--line-strong); border-radius: 5px; background: transparent; }
+.vitem .ver { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: 12.5px; }
+.vitem.critical .ver { color: var(--critical); font-weight: 600; }
+.vitem.high     .ver { color: var(--high);     font-weight: 600; }
+.vitem.medium   .ver { color: var(--medium);   font-weight: 600; }
+.vitem.low      .ver { color: var(--low); }
+.vitem.none     .ver { color: var(--fg-muted); }
+.vitem .cnt { color: var(--fg-faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+/* 한 패키지에 취약한 버전과 안전한 버전이 섞여 있는 줄.
+   "이미 올린 서버가 있는데 안 올린 서버가 남았다" 는 뜻이라 따로 표시한다. */
+.tag.mixed { background: var(--accent-bg); color: var(--accent); }
+
 /* ── 진행 상태 ──────────────────────────────────────────────────── */
 .progress { border: 1px solid var(--accent-line); border-radius: 12px; overflow: hidden; margin-bottom: 20px; }
 .progress-head { display: flex; align-items: center; gap: 13px; padding: 15px 18px; background: var(--accent-bg); }
@@ -879,9 +901,11 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     <!-- 취약점 탭 -->
     <div data-pane="vulns" hidden>
       <div class="note-now" style="margin-top:14px">
-        <b>바뀜</b>
+        <b>바뀜 · 판정은 여기입니다</b>
         <span>한 서버의 취약점은 <b>그 서버 안에서 봅니다.</b> 표를 그리는 조각은
-        전체 취약점 화면과 같은 것을 씁니다. 행을 누르면 그 자리에서 판정 칸이 펼쳐집니다.</span>
+        전체 취약점 화면과 같은 것을 씁니다.
+        <b>오른쪽 끝 `판정 ▾` 버튼</b>을 누르면 그 자리에서 판정 칸이 펼쳐집니다
+        (첫 줄은 보이시라고 펼쳐 뒀습니다). 상태를 <b>해당 없음</b> 으로 바꾸면 근거가 열립니다.</span>
       </div>
 
       <div class="filters">
@@ -893,7 +917,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         <span class="grow"><input type="search" id="q-asset" placeholder="CVE · 패키지 이름"></span>
         <select id="sev-asset" aria-label="심각도"><option>심각도 전체</option><option>심각</option><option>높음</option></select>
         <select id="fix-asset" aria-label="수정본"><option>수정본 전체</option><option>있음</option><option>없음</option></select>
-        <select id="an-asset" aria-label="판정"><option>판정 전체</option><option>미판정</option><option>조치 대상</option><option>해당 없음</option></select>
+        <select id="an-asset" aria-label="판정"><option>판정 전체</option><option>미판정</option><option>해당됨</option><option>해당 없음</option></select>
         <label style="color:var(--fg-faint)"><input type="checkbox" id="hidden-asset">감춘 것도</label>
       </div>
 
@@ -917,23 +941,39 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
               <td class="tight"><span class="tag nofix">미판정</span></td>
               <td class="tight actions"><button class="btn small" data-row="r1">판정 ▾</button></td>
             </tr>
-            <tr class="expand" data-expand="r1" hidden><td colspan="8">
+            <!-- 첫 줄은 펼친 채로 둔다 — 판정 칸이 어디 있는지 바로 보이게. -->
+            <tr class="expand" data-expand="r1"><td colspan="8">
               <div class="analysis">
                 <label class="full" style="font-size:13.5px;color:var(--fg)">
                   <b>CVE-2024-3094</b> · xz-libs 5.4.1</label>
                 <label>상태
-                  <select id="a-state"><option>미판정</option><option>검토 중</option>
-                    <option selected>조치 대상</option><option>해당 없음</option><option>오탐</option></select>
-                  <div class="hint">grype 의 탐지를 지우는 것이 아니라 그 탐지에 대한 우리 결정입니다.</div>
+                  <select id="a-state">
+                    <option>미판정</option><option>검토 중</option>
+                    <option selected>해당됨</option><option>해당 없음</option><option>오탐</option></select>
+                  <div class="hint" id="a-state-hint">우리 환경에 영향이 있습니다. 고쳐야 합니다.</div>
                 </label>
                 <label>근거 <span class="faint">— 해당 없음일 때만</span>
-                  <select id="a-just" disabled><option>코드 없음</option><option>실행 경로 아님</option>
-                    <option>특정 설정 필요</option><option>특정 의존성 필요</option><option>특정 환경 필요</option>
-                    <option>컴파일러가 막음</option><option>런타임이 막음</option><option>경계에서 차단</option>
-                    <option>대체 통제 있음</option></select></label>
+                  <select id="a-just" disabled>
+                    <option>취약한 코드가 들어 있지 않음</option>
+                    <option>취약한 코드를 실행하지 않음</option>
+                    <option>특정 설정을 켜야 하는데 안 켜 둠</option>
+                    <option>함께 있어야 할 다른 패키지가 없음</option>
+                    <option>특정 환경에서만 되는데 그 환경이 아님</option>
+                    <option>컴파일 옵션이 막고 있음</option>
+                    <option>실행 환경이 막고 있음</option>
+                    <option>방화벽·WAF 가 막고 있음</option>
+                    <option>다른 통제가 막고 있음</option></select>
+                  <div class="hint" id="a-just-hint">상태가 <b>해당 없음</b> 일 때만 고릅니다.</div>
+                </label>
                 <label>대응
-                  <select id="a-resp"><option selected>업데이트</option><option>고칠 수 없음</option>
-                    <option>고치지 않음</option><option>되돌리기</option><option>우회책 있음</option></select></label>
+                  <select id="a-resp">
+                    <option selected>버전 올려 조치</option>
+                    <option>이전 버전으로 내림</option>
+                    <option>우회 조치 (패치 없이)</option>
+                    <option>조치 불가</option>
+                    <option>조치 안 함 (위험 수용)</option></select>
+                  <div class="hint" id="a-resp-hint">수정본이 나온 버전으로 올립니다.</div>
+                </label>
                 <label>승인한 사람 <input id="a-by" value="김보안 팀장"></label>
                 <label>다시 볼 날 <input id="a-review" type="date" value="2026-12-31"></label>
                 <label class="full">메모
@@ -948,7 +988,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
                 </div>
               </div>
               <div class="history">
-                <div>2026-09-11 09:14 · admin · 상태 미판정 → 조치 대상</div>
+                <div>2026-09-11 09:14 · admin · 상태 미판정 → 해당됨</div>
                 <div>2026-09-10 16:40 · admin · 처음 탐지됨 (grype 0.87.0)</div>
               </div>
             </td></tr>
@@ -960,17 +1000,21 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
               <td class="tight">zlib <span class="faint">rpm</span></td>
               <td class="tight">1.2.11 → <span class="tag nofix">수정본 없음</span></td>
               <td class="tight"><span class="tag fix">해당 없음</span>
-                <div class="faint" style="font-size:12px">실행 경로 아님</div></td>
+                <div class="faint" style="font-size:12px">취약한 코드를 실행하지 않음</div></td>
               <td class="tight actions"><button class="btn small" data-row="r2">판정 ▾</button></td>
             </tr>
             <tr class="expand" data-expand="r2" hidden><td colspan="8">
               <div class="analysis">
                 <label class="full" style="font-size:13.5px;color:var(--fg)"><b>CVE-2023-45853</b> · zlib 1.2.11</label>
                 <label>상태 <select id="a2-state"><option>미판정</option><option>검토 중</option>
-                  <option>조치 대상</option><option selected>해당 없음</option><option>오탐</option></select></label>
-                <label>근거 <select id="a2-just"><option>코드 없음</option>
-                  <option selected>실행 경로 아님</option><option>특정 설정 필요</option></select></label>
-                <label>대응 <select id="a2-resp"><option selected>고칠 수 없음</option><option>업데이트</option></select></label>
+                  <option>해당됨</option><option selected>해당 없음</option><option>오탐</option></select>
+                  <div class="hint">탐지는 맞지만 우리 환경에는 영향이 없습니다.</div></label>
+                <label>근거 <select id="a2-just"><option>취약한 코드가 들어 있지 않음</option>
+                  <option selected>취약한 코드를 실행하지 않음</option>
+                  <option>특정 설정을 켜야 하는데 안 켜 둠</option></select></label>
+                <label>대응 <select id="a2-resp"><option selected>조치 불가</option>
+                  <option>버전 올려 조치</option></select>
+                  <div class="hint">수정본이 없고 우회도 되지 않습니다.</div></label>
                 <label>승인한 사람 <input id="a2-by" value="김보안 팀장"></label>
                 <label>다시 볼 날 <input id="a2-review" type="date" value="2027-03-31"></label>
                 <label class="full">메모 <textarea id="a2-note" rows="2">minizip 기능을 쓰지 않음. 업스트림 수정본 없음.</textarea></label>
@@ -1052,17 +1096,29 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
               <th class="tight">설치 버전</th><th class="num tight">취약점</th><th>설치 경로</th>
             </tr></thead>
             <tbody>
-            <tr><td class="tight"><b>glibc</b></td><td class="tight faint">rpm</td><td class="tight mono">2.34-83.el9</td>
+            <tr><td class="tight"><b>glibc</b></td><td class="tight faint">rpm</td>
+              <td class="tight"><span class="vitem high" title="높음 2 · 보통 5"><i class="vmark high"></i>
+                <span class="ver">2.34-83.el9</span></span></td>
               <td class="num tight"><a href="#asset/vulns">7</a></td><td class="faint mono" style="font-size:12.5px">/usr/lib64</td></tr>
-            <tr><td class="tight"><b>openssl-libs</b></td><td class="tight faint">rpm</td><td class="tight mono">3.0.7-24.el9</td>
+            <tr><td class="tight"><b>openssl-libs</b></td><td class="tight faint">rpm</td>
+              <td class="tight"><span class="vitem high" title="높음 1 · 보통 3"><i class="vmark high"></i>
+                <span class="ver">3.0.7-24.el9</span></span></td>
               <td class="num tight"><a href="#asset/vulns">4</a></td><td class="faint mono" style="font-size:12.5px">/usr/lib64</td></tr>
-            <tr><td class="tight"><b>openssh-server</b></td><td class="tight faint">rpm</td><td class="tight mono">8.7p1-34.el9</td>
+            <tr><td class="tight"><b>openssh-server</b></td><td class="tight faint">rpm</td>
+              <td class="tight"><span class="vitem high" title="높음 2"><i class="vmark high"></i>
+                <span class="ver">8.7p1-34.el9</span></span></td>
               <td class="num tight"><a href="#asset/vulns">2</a></td><td class="faint mono" style="font-size:12.5px">/usr/sbin</td></tr>
-            <tr><td class="tight"><b>nginx</b></td><td class="tight faint">rpm</td><td class="tight mono">1.20.1-14.el9</td>
-              <td class="num tight"><a href="#asset/vulns">3</a></td><td class="faint mono" style="font-size:12.5px">/usr/sbin</td></tr>
-            <tr><td class="tight"><b>python3</b></td><td class="tight faint">rpm</td><td class="tight mono">3.9.18-1.el9</td>
+            <tr><td class="tight"><b>xz-libs</b></td><td class="tight faint">rpm</td>
+              <td class="tight"><span class="vitem critical" title="심각 1"><i class="vmark critical"></i>
+                <span class="ver">5.4.1-1.el9</span></span></td>
+              <td class="num tight"><a href="#asset/vulns">1</a></td><td class="faint mono" style="font-size:12.5px">/usr/lib64</td></tr>
+            <tr><td class="tight"><b>python3</b></td><td class="tight faint">rpm</td>
+              <td class="tight"><span class="vitem none" title="취약점 없음"><i class="vmark none"></i>
+                <span class="ver">3.9.18-1.el9</span></span></td>
               <td class="num tight faint">—</td><td class="faint mono" style="font-size:12.5px">/usr/bin</td></tr>
-            <tr><td class="tight"><b>tzdata</b></td><td class="tight faint">rpm</td><td class="tight mono">2026a-1.el9</td>
+            <tr><td class="tight"><b>tzdata</b></td><td class="tight faint">rpm</td>
+              <td class="tight"><span class="vitem none" title="취약점 없음"><i class="vmark none"></i>
+                <span class="ver">2026a-1.el9</span></span></td>
               <td class="num tight faint">—</td><td class="faint mono" style="font-size:12.5px">/usr/share</td></tr>
             </tbody>
           </table>
@@ -1157,11 +1213,11 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
             <tbody>
             <tr><td class="tight mono">CVE-2023-45853</td><td class="tight">zlib</td>
               <td class="tight"><span class="tag fix">해당 없음</span></td>
-              <td class="tight faint">실행 경로 아님</td><td class="tight">김보안 팀장</td>
+              <td class="tight faint">취약한 코드를 실행하지 않음</td><td class="tight">김보안 팀장</td>
               <td class="tight">2027-03-31</td></tr>
             <tr><td class="tight mono">CVE-2022-37434</td><td class="tight">zlib</td>
               <td class="tight"><span class="tag fix">해당 없음</span></td>
-              <td class="tight faint">코드 없음</td><td class="tight">김보안 팀장</td>
+              <td class="tight faint">취약한 코드가 들어 있지 않음</td><td class="tight">김보안 팀장</td>
               <td class="tight">2027-03-31</td></tr>
             <tr><td class="tight mono">CVE-2021-3712</td><td class="tight">openssl-libs</td>
               <td class="tight"><span class="tag">오탐</span></td>
@@ -1423,12 +1479,14 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     <div class="note-now"><b>새로 생김 · V12 필요</b>
       <span>취약점과 무관하게 <b>"무엇이 어디에 몇 버전으로 깔려 있나"</b> 에 답합니다.
       지금은 <code>Scan.componentCount</code> 숫자 하나만 있어 <b>취약점이 붙은 패키지만</b> 알 수 있습니다.
-      log4j 가 어디 있는지 CVE 가 붙기 전에는 못 찾습니다.</span></div>
+      log4j 가 어디 있는지 CVE 가 붙기 전에는 못 찾습니다.
+      <b>버전마다 취약 여부를 눈으로 가릅니다</b> — 채운 네모는 취약, 속 빈 동그라미는 취약점 없음.</span></div>
     <div class="filters">
       <span class="grow"><input type="search" id="q-pkgs" value="openssl" placeholder="패키지 이름"></span>
       <select id="z-pkgs" aria-label="구역"><option>구역 전체</option><option>DMZ</option></select>
       <select id="t-pkgs" aria-label="유형"><option>유형 전체</option><option>rpm</option><option>java-archive</option></select>
       <label style="color:var(--fg-faint)"><input type="checkbox" id="vuln-only">취약점 있는 것만</label>
+      <label style="color:var(--fg-faint)"><input type="checkbox" id="mixed-only">버전이 갈린 것만</label>
     </div>
     <div class="body flush">
       <div class="table-scroll"><table>
@@ -1437,22 +1495,63 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         <tbody>
         <tr><td class="tight"><b>openssl</b></td><td class="tight faint">rpm</td>
           <td class="num tight">7대</td>
-          <td><span class="mono">3.0.7-24</span> <span class="faint">5대</span> ·
-              <span class="mono">3.0.1-43</span> <span class="faint">2대</span></td>
+          <td><div class="vlist">
+            <span class="vitem high" title="심각 0 · 높음 3 · 보통 5"><i class="vmark high"></i>
+              <span class="ver">3.0.7-24</span><span class="cnt">5대</span></span>
+            <span class="vitem critical" title="심각 1 · 높음 6 · 보통 9"><i class="vmark critical"></i>
+              <span class="ver">3.0.1-43</span><span class="cnt">2대</span></span>
+          </div></td>
           <td class="num tight"><a href="#vulns">28</a></td></tr>
+
         <tr><td class="tight"><b>openssl-libs</b></td><td class="tight faint">rpm</td>
           <td class="num tight">7대</td>
-          <td><span class="mono">3.0.7-24</span> <span class="faint">5대</span> ·
-              <span class="mono">3.0.1-43</span> <span class="faint">2대</span></td>
+          <td><div class="vlist">
+            <span class="vitem high" title="심각 0 · 높음 3 · 보통 5"><i class="vmark high"></i>
+              <span class="ver">3.0.7-24</span><span class="cnt">5대</span></span>
+            <span class="vitem critical" title="심각 1 · 높음 6 · 보통 9"><i class="vmark critical"></i>
+              <span class="ver">3.0.1-43</span><span class="cnt">2대</span></span>
+          </div></td>
           <td class="num tight"><a href="#vulns">28</a></td></tr>
+
+        <!-- 이 줄이 가장 중요한 신호다 — 올린 서버와 안 올린 서버가 섞여 있다. -->
+        <tr><td class="tight"><b>openssh-server</b> <span class="tag mixed">버전 갈림</span></td>
+          <td class="tight faint">rpm</td>
+          <td class="num tight">7대</td>
+          <td><div class="vlist">
+            <span class="vitem none" title="취약점 없음"><i class="vmark none"></i>
+              <span class="ver">8.7p1-38</span><span class="cnt">3대</span></span>
+            <span class="vitem high" title="높음 2"><i class="vmark high"></i>
+              <span class="ver">8.7p1-34</span><span class="cnt">4대</span></span>
+          </div></td>
+          <td class="num tight"><a href="#vulns">8</a></td></tr>
+
         <tr><td class="tight"><b>openssl-pkcs11</b></td><td class="tight faint">rpm</td>
-          <td class="num tight">4대</td><td><span class="mono">0.4.11-7</span> <span class="faint">4대</span></td>
+          <td class="num tight">4대</td>
+          <td><div class="vlist">
+            <span class="vitem none" title="취약점 없음"><i class="vmark none"></i>
+              <span class="ver">0.4.11-7</span><span class="cnt">4대</span></span>
+          </div></td>
           <td class="num tight faint">—</td></tr>
+
         <tr><td class="tight"><b>pyOpenSSL</b></td><td class="tight faint">python</td>
-          <td class="num tight">2대</td><td><span class="mono">21.0.0</span> <span class="faint">2대</span></td>
+          <td class="num tight">2대</td>
+          <td><div class="vlist">
+            <span class="vitem none" title="취약점 없음"><i class="vmark none"></i>
+              <span class="ver">21.0.0</span><span class="cnt">2대</span></span>
+          </div></td>
           <td class="num tight faint">—</td></tr>
         </tbody>
       </table></div>
+
+      <div style="padding:14px var(--gutter);font-size:12.5px;color:var(--fg-faint);
+                  display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line)">
+        <span><i class="vmark critical" style="display:inline-block;vertical-align:-1px"></i> 심각</span>
+        <span><i class="vmark high" style="display:inline-block;vertical-align:-1px"></i> 높음</span>
+        <span><i class="vmark medium" style="display:inline-block;vertical-align:-1px"></i> 보통</span>
+        <span><i class="vmark low" style="display:inline-block;vertical-align:-1px"></i> 낮음</span>
+        <span><i class="vmark none" style="display:inline-block;vertical-align:-1px"></i> 취약점 없음</span>
+        <span>표시는 그 버전에 걸린 <b>최고 심각도</b>입니다. 올리면 건수가 나옵니다.</span>
+      </div>
     </div>
   </section>
 
@@ -1512,7 +1611,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         승인자와 다시 볼 날은 우리 규정상 더한 것입니다.</span></div>
       <div class="filters">
         <select id="z-an" aria-label="구역"><option>구역 전체</option><option>DMZ</option></select>
-        <select id="st-an" aria-label="상태"><option>상태 전체</option><option>조치 대상</option>
+        <select id="st-an" aria-label="상태"><option>상태 전체</option><option>해당됨</option>
           <option>해당 없음</option><option>오탐</option><option>검토 중</option></select>
         <label style="color:var(--fg-faint)"><input type="checkbox" id="rev-an">다시 볼 날 지난 것만</label>
       </div>
@@ -1530,12 +1629,12 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
             <td class="tight overdue">2026-08-31</td><td class="tight faint">예</td></tr>
           <tr><td class="tight"><a href="#asset">web-01</a></td><td class="tight mono">CVE-2023-45853</td>
             <td class="tight">zlib</td><td class="tight"><span class="tag fix">해당 없음</span></td>
-            <td class="tight faint">실행 경로 아님</td><td class="tight faint">고칠 수 없음</td>
+            <td class="tight faint">취약한 코드를 실행하지 않음</td><td class="tight faint">조치 불가</td>
             <td class="tight">김보안 팀장<div class="faint" style="font-size:12px">2026-09-01</div></td>
             <td class="tight">2027-03-31</td><td class="tight faint">예</td></tr>
           <tr><td class="tight"><a href="#asset">db-01</a></td><td class="tight mono">CVE-2022-37434</td>
             <td class="tight">zlib</td><td class="tight"><span class="tag fix">해당 없음</span></td>
-            <td class="tight faint">코드 없음</td><td class="tight faint">고칠 수 없음</td>
+            <td class="tight faint">취약한 코드가 들어 있지 않음</td><td class="tight faint">조치 불가</td>
             <td class="tight">김보안 팀장<div class="faint" style="font-size:12px">2026-09-01</div></td>
             <td class="tight">2027-03-31</td><td class="tight faint">예</td></tr>
           <tr><td class="tight"><a href="#asset">was-01</a></td><td class="tight mono">CVE-2024-2961</td>
@@ -1711,7 +1810,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
           <tbody>
           <tr><td class="tight"><b>zlib</b></td><td class="num tight">2</td>
             <td class="tight"><span class="sev critical"><i></i>심각</span></td>
-            <td class="tight">해당 없음</td><td class="tight faint">실행 경로 아님</td>
+            <td class="tight">해당 없음</td><td class="tight faint">취약한 코드를 실행하지 않음</td>
             <td class="tight">2027-03-31</td></tr>
           <tr><td class="tight"><b>krb5-libs</b></td><td class="num tight">3</td>
             <td class="tight"><span class="sev high"><i></i>높음</span></td>
@@ -2045,14 +2144,45 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     if (e.target.closest('[data-close]')) { e.target.closest('dialog').close(); }
   });
 
-  // 상태가 '해당 없음' 일 때만 근거를 고를 수 있다.
-  var state = document.getElementById('a-state');
-  var just = document.getElementById('a-just');
-  if (state && just) {
-    state.addEventListener('change', function () {
-      just.disabled = state.value !== '해당 없음';
+  // 고른 항목의 뜻을 아래에 한 줄로. 빈 칸은 사용법을 가르쳐 주지 않는다 —
+  // 고르는 항목에 뜻이 붙어야 화면이 스스로 설명한다.
+  var STATE = {
+    '미판정':    '아직 보지 않았습니다.',
+    '검토 중':   '우리 환경에 해당되는지 확인하고 있습니다.',
+    '해당됨':    '우리 환경에 영향이 있습니다. 고쳐야 합니다.',
+    '해당 없음': '탐지는 맞지만 우리 환경에는 영향이 없습니다. 근거를 골라야 합니다.',
+    '오탐':      '탐지 자체가 틀렸습니다(패키지 오인 등).'
+  };
+  var RESP = {
+    '버전 올려 조치':      '수정본이 나온 버전으로 올립니다.',
+    '이전 버전으로 내림':  '올릴 수 없어, 취약하지 않은 예전 버전으로 내립니다.',
+    '우회 조치 (패치 없이)': '설정 변경·접근 제한 등으로 막습니다. 패키지는 그대로 둡니다.',
+    '조치 불가':           '수정본이 없고 우회도 되지 않습니다.',
+    '조치 안 함 (위험 수용)': '고칠 수 있지만 하지 않기로 하고 위험을 감수합니다.'
+  };
+
+  function bind(selectId, hintId, map, after) {
+    var sel = document.getElementById(selectId);
+    var hint = document.getElementById(hintId);
+    if (!sel) return;
+    sel.addEventListener('change', function () {
+      if (hint) { hint.textContent = map[sel.value] || ''; }
+      if (after) { after(sel.value); }
     });
   }
+
+  bind('a-state', 'a-state-hint', STATE, function (value) {
+    // 근거는 '해당 없음' 일 때만 고를 수 있다.
+    var just = document.getElementById('a-just');
+    var hint = document.getElementById('a-just-hint');
+    var on = value === '해당 없음';
+    if (just) { just.disabled = !on; }
+    if (hint) {
+      hint.innerHTML = on ? '왜 영향이 없는지 고릅니다.'
+                          : '상태가 <b>해당 없음</b> 일 때만 고릅니다.';
+    }
+  });
+  bind('a-resp', 'a-resp-hint', RESP);
 
   // 메뉴 밖을 누르면 닫는다.
   document.addEventListener('click', function (e) {
