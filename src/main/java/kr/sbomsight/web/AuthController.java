@@ -45,10 +45,17 @@ public class AuthController {
     public String login(@RequestParam(required = false) String error,
                         @RequestParam(required = false) String logout,
                         @RequestParam(required = false) String expired,
+                        @RequestParam(required = false) String taken,
                         Model model) {
         if (error != null) {
             model.addAttribute("notice", "계정 이름이나 비밀번호가 맞지 않습니다.");
             model.addAttribute("noticeKind", "danger");
+        } else if (taken != null) {
+            // 한 계정은 한 자리에서만 쓴다. 끊긴 쪽에 왜 끊겼는지 말해 주지
+            // 않으면 "가만히 있었는데 튕겼다" 가 된다.
+            model.addAttribute("notice",
+                    "같은 계정으로 다른 곳에서 로그인해 이 자리의 접속이 끊겼습니다.");
+            model.addAttribute("noticeKind", "warn");
         } else if (expired != null) {
             model.addAttribute("notice", "일정 시간 사용하지 않아 로그아웃되었습니다.");
             model.addAttribute("noticeKind", "info");

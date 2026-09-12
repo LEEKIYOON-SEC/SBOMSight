@@ -10,6 +10,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.session.HttpSessionEventPublisher;
 
 /**
  * 로그인·세션·권한.
@@ -23,9 +24,18 @@ import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    /** 로그인 없이 닿아도 되는 것. 로그인 화면 자체와 그 화면이 쓰는 정적 파일뿐이다. */
+    /**
+     * 로그인 없이 닿아도 되는 것. 로그인 화면 자체와 <b>그 화면이 쓰는 정적
+     * 파일 전부</b>다.
+     *
+     * <p>하나라도 빠지면 그 요청이 "로그인 없이 닿은 요청" 으로 기억되고,
+     * 로그인에 성공하면 스프링이 그리로 보낸다 — 브라우저가 글꼴 파일을
+     * 내려받고 화면은 열리지 않는다. 실제로 {@code /fonts/**} 를 빠뜨려
+     * 그렇게 됐다.
+     */
     private static final String[] PUBLIC = {
-            "/login", "/css/**", "/js/**", "/favicon.svg", "/favicon.ico", "/error"
+            "/login", "/css/**", "/js/**", "/fonts/**",
+            "/favicon.svg", "/favicon.ico", "/error"
     };
 
     @Bean
@@ -37,6 +47,10 @@ public class SecurityConfig {
                 // 조회 권한은 읽기 전용이다. 쓰기는 전부 관리자.
                 .requestMatchers("/settings/**", "/audit/**", "/assets/*/delete").hasRole("ADMIN")
                 .anyRequest().authenticated())
+
+            // 로그인 뒤 돌아갈 자리는 '사람이 볼 화면' 만 기억한다. 경로를
+            // 여는 것만으로는 이번 한 건만 막힐 뿐이다.
+            .requestCache(cache -> cache.requestCache(new PageRequestCache()))
 
             .formLogin(form -> form
                 .loginPage("/login")
@@ -62,9 +76,16 @@ public class SecurityConfig {
                 // 로그인 화면으로 튕기면 고장으로 읽힌다.
                 .invalidSessionUrl("/login?expired")
                 .sessionFixation(fixation -> fixation.changeSessionId())
-                // 같은 계정으로 여러 자리에서 보는 것은 막지 않는다(운영 중
-                // 흔한 일이다). 대신 세션 수를 세어 두어 설정에서 볼 수 있게 한다.
-                .maximumSessions(10))
+                // 한 계정은 한 자리에서만. 같은 계정으로 새로 로그인하면
+                // **먼저 있던 세션이 끊긴다.**
+                //
+                // 새 로그인을 막는 쪽(maxSessionsPreventsLogin=true)도 있지만
+                // 쓰지 않는다 — 브라우저를 그냥 닫아 세션이 남아 있으면 본인이
+                // 자기 계정에 못 들어오고, 그때 풀어 줄 사람이 없다.
+                // 끊긴 쪽에는 왜 끊겼는지 알려 준다.
+                .maximumSessions(1)
+                    .maxSessionsPreventsLogin(false)
+                    .expiredUrl("/login?taken"))
 
             // 화면이 전부 서버 렌더링 폼이라 CSRF 토큰이 자동으로 실린다.
             // 끄지 않는다 — 끄는 순간 점검에서 바로 지적된다.
@@ -79,6 +100,18 @@ public class SecurityConfig {
             .userDetailsService(users);
 
         return http.build();
+    }
+
+    /**
+     * 세션이 끝났다는 사실을 시큐리티에 알려 준다.
+     *
+     * <p>이것이 없으면 {@code SessionRegistry} 가 죽은 세션을 계속 들고 있어
+     * 세션 수가 실제와 어긋난다. 한 자리만 허용하는 설정에서는 그 어긋남이
+     * 곧 "본인이 못 들어오는" 상태가 된다.
+     */
+    @Bean
+    HttpSessionEventPublisher httpSessionEventPublisher() {
+        return new HttpSessionEventPublisher();
     }
 
     @Bean
