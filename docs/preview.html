@@ -1,0 +1,2063 @@
+<title>SBOMSight 개편 미리보기</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* ==========================================================================
+   SBOMSight 개편 미리보기
+
+   색·글꼴·간격은 지금 쓰는 src/main/resources/static/css/app.css 를 그대로
+   가져왔다. 새 화면이 기존 화면과 따로 놀지 않게 하려는 것이고, 여기서
+   승인된 것이 그대로 구현된다.
+
+   새로 더한 것만 "새로 더함" 으로 표시해 두었다.
+   ========================================================================== */
+
+:root {
+  /* 심각도 — grype 이 주는 단계를 그대로 쓴다. 다시 나누지 않는다. */
+  --critical: #a71922; --critical-bg: #fdecea; --critical-line: #f6c9c3;
+  --high:     #c3571a; --high-bg:     #fdefe3; --high-line:     #f6d0b0;
+  --medium:   #b4821b; --medium-bg:   #fcf4e0; --medium-line:   #efd9a6;
+  --low:      #6f7e8d; --low-bg:      #f1f4f7; --low-line:      #dae0e7;
+  --accent:   #2262bb; --accent-bg:   #ecf3fd; --accent-line:   #c2d8f5;
+  --ok:       #1b854f; --ok-bg:       #e8f6ed; --ok-line:       #bcdfc8;
+
+  --fg: #14161a; --fg-muted: #5a616b; --fg-faint: #8a919b;
+  --line: #e6e9ed; --line-strong: #d6dae0;
+  --bg: #ffffff; --sunken: #fafbfc; --subtle: #f4f6f8; --hover: #f0f2f5;
+
+  --radius: 8px;
+  --gutter: 28px;
+  --sidebar: 236px;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "IBM Plex Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: #1a4f9c; }
+code, .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; font-size: .92em; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* 미리보기임을 밝히는 줄. 실제 앱에는 없다. */
+.previewbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 16px; background: var(--fg); color: #fff; font-size: 12.5px;
+}
+.previewbar b { font-weight: 600; }
+.previewbar span { color: #b8bec7; }
+
+/* ── 틀 ─────────────────────────────────────────────────────────── */
+.shell { display: flex; min-height: calc(100vh - 33px); }
+
+.side {
+  width: var(--sidebar); flex-shrink: 0;
+  border-right: 1px solid var(--line); background: var(--sunken);
+  display: flex; flex-direction: column;
+  position: sticky; top: 0; align-self: flex-start; height: calc(100vh - 33px);
+}
+.side .brand { padding: 20px 20px 18px; font-size: 17px; font-weight: 700; letter-spacing: -.015em; }
+.side .brand a { color: var(--fg); }
+.side nav { display: flex; flex-direction: column; gap: 1px; padding: 0 10px; }
+.side nav a {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: 7px; font-size: 14.5px; color: var(--fg-muted);
+}
+.side nav a:hover { background: var(--hover); color: var(--fg); }
+.side nav a.current { background: var(--hover); color: var(--fg); font-weight: 600; }
+.side nav a .badge {
+  margin-left: auto; font-size: 13px; font-weight: 600;
+  color: var(--fg-faint); font-variant-numeric: tabular-nums;
+}
+.side nav a .badge.alert { color: var(--critical); }
+.side .spacer { flex: 1; }
+
+/* 계정 블록 — 새로 더함. 누르면 메뉴가 열린다.
+   지금은 이름이 /password 로 바로 가는 링크라 "왜 비밀번호 변경으로 가지" 가 된다. */
+.me { border-top: 1px solid var(--line); padding: 10px; }
+.menu { position: relative; }
+.menu > summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: 8px;
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover { background: var(--hover); }
+.menu[open] > summary { background: var(--hover); }
+.avatar {
+  width: 28px; height: 28px; border-radius: 14px; flex-shrink: 0;
+  background: var(--subtle); border: 1px solid var(--line-strong);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12.5px; font-weight: 700; color: var(--fg-muted);
+}
+.me .who { min-width: 0; flex: 1; }
+.me .who b { display: block; font-size: 13.5px; font-weight: 600; color: var(--fg); }
+.me .who span { font-size: 12px; color: var(--fg-faint); }
+.me .caret { color: var(--fg-faint); font-size: 11px; }
+.menu-list {
+  position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+  background: var(--bg); border: 1px solid var(--line-strong); border-radius: 9px;
+  box-shadow: 0 10px 30px rgba(20, 22, 26, .16); padding: 4px;
+}
+.menu-list a, .menu-list button {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 10px; border-radius: 6px; font-size: 13.5px;
+  color: var(--fg-muted); border: 0; background: transparent;
+}
+.menu-list a:hover, .menu-list button:hover { background: var(--hover); color: var(--fg); }
+.menu-list hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+
+.main { flex: 1; min-width: 0; }
+
+/* ── 페이지 머리 — 한 모양으로 (새로 더함) ─────────────────────── */
+.page-header { padding: 20px var(--gutter) 0; }
+.page-pretitle {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--fg-faint); margin-bottom: 4px;
+}
+.page-titlerow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.page-titlerow h1 { margin: 0; font-size: 23px; font-weight: 700; letter-spacing: -.018em; }
+.page-subtitle {
+  font-size: 14px; color: var(--fg-faint);
+  font-variant-numeric: tabular-nums; margin-top: 5px;
+}
+.btn-list { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.page-header.plain { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+
+/* ── 탭 — 새로 더함 ─────────────────────────────────────────────── */
+.tabs {
+  display: flex; gap: 2px; margin-top: 16px; padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--line); overflow-x: auto;
+}
+.page-header .tabs { margin-left: calc(var(--gutter) * -1); margin-right: calc(var(--gutter) * -1); }
+.tabs a {
+  padding: 9px 12px; font-size: 14px; color: var(--fg-muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
+}
+.tabs a:hover { color: var(--fg); }
+.tabs a.current { color: var(--fg); font-weight: 600; border-bottom-color: var(--fg); }
+.tabs a .n { margin-left: 5px; color: var(--fg-faint); font-variant-numeric: tabular-nums; font-weight: 500; }
+.tabs a.current .n { color: var(--fg-muted); }
+
+.body { padding: 18px var(--gutter) 48px; }
+.body.flush { padding: 0 0 48px; }
+h2 { font-size: 16px; font-weight: 700; margin: 28px 0 10px; letter-spacing: -.01em; }
+h2:first-child { margin-top: 0; }
+h3 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: var(--fg-muted); }
+.faint { color: var(--fg-faint); }
+.muted { color: var(--fg-muted); }
+
+/* ── 요약 줄 — 새로 더함. 카드 벽 대신 한 줄. ───────────────────── */
+.summaryline {
+  display: flex; align-items: center; gap: 0; flex-wrap: wrap;
+  padding: 12px var(--gutter); border-bottom: 1px solid var(--line);
+  background: var(--sunken);
+}
+.summaryline a {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 4px 14px 4px 0; margin-right: 14px;
+  font-size: 13.5px; color: var(--fg-muted); border-right: 1px solid var(--line-strong);
+}
+.summaryline a:last-child { border-right: 0; margin-right: 0; }
+.summaryline a:hover { color: var(--fg); }
+.summaryline a b { font-size: 17px; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums; }
+.summaryline a.alert b { color: var(--critical); }
+
+/* ── 버튼 ───────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 14px; padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: var(--bg); color: var(--fg-muted);
+  white-space: nowrap;
+}
+.btn:hover { background: var(--subtle); color: var(--fg); }
+.btn.primary { background: var(--fg); border-color: var(--fg); color: #fff; font-weight: 500; }
+.btn.primary:hover { background: #2a2e35; }
+.btn.small { font-size: 13px; padding: 5px 10px; border-radius: 6px; }
+.btn.danger { border-color: var(--critical-line); color: var(--critical); }
+.btn.danger:hover { background: var(--critical-bg); }
+
+/* ── 입력 ───────────────────────────────────────────────────────── */
+label { display: block; margin-bottom: 14px; font-size: 13px; color: var(--fg-muted); }
+input, select, textarea {
+  font: inherit; font-size: 14px; width: 100%; margin-top: 5px;
+  padding: 8px 11px; border: 1px solid var(--line-strong);
+  border-radius: 8px; background: var(--bg); color: var(--fg);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-bg); border-color: var(--accent); }
+input[type="color"] { width: 40px; height: 32px; padding: 2px; margin-top: 0; }
+input[type="checkbox"] { width: auto; margin: 0 5px 0 0; vertical-align: -1px; }
+.filters {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 14px var(--gutter); border-bottom: 1px solid var(--line);
+}
+.filters label { margin: 0; display: inline-flex; align-items: center; gap: 6px; }
+.filters input, .filters select { width: auto; min-width: 8rem; margin: 0; }
+.filters .grow { flex: 1; min-width: 12rem; }
+.filters .grow input { width: 100%; }
+
+.segmented { display: inline-flex; padding: 3px; gap: 2px; background: var(--subtle); border-radius: 9px; }
+.segmented a { padding: 5px 12px; border-radius: 7px; font-size: 13.5px; color: var(--fg-muted); }
+.segmented a:hover { color: var(--fg); }
+.segmented a.current { background: var(--bg); color: var(--fg); font-weight: 600; box-shadow: 0 1px 2px rgba(20,22,26,.08); }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px; border-radius: 8px; font-size: 13.5px;
+  border: 1px solid var(--line-strong); background: var(--bg); color: var(--fg-muted);
+}
+.chip:hover { background: var(--subtle); color: var(--fg); }
+.chip.on { border-color: var(--fg); background: var(--fg); color: #fff; font-weight: 500; }
+.chip.on .zrail { background: #fff !important; }
+.chip .n { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ── 표 ─────────────────────────────────────────────────────────── */
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th {
+  text-align: left; padding: 9px 14px; white-space: nowrap;
+  font-size: 12.5px; font-weight: 600; color: var(--fg-faint); background: var(--sunken);
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 2;       /* 새로 더함 — 긴 표에서 머리가 남는다 */
+}
+td { padding: 11px 14px; font-size: 14px; vertical-align: middle; border-bottom: 1px solid var(--line); }
+tbody tr:hover { background: var(--sunken); }
+th.num, td.num { text-align: right; }
+th.tight, td.tight { width: 1%; white-space: nowrap; }
+.flush table th:first-child, .flush table td:first-child { padding-left: var(--gutter); }
+.flush table th:last-child, .flush table td:last-child { padding-right: var(--gutter); }
+th.sortable { cursor: pointer; }
+th.sortable:hover { color: var(--fg); }
+th .sortmark { color: var(--fg); }
+.actions { white-space: nowrap; }
+.actions .btn + .btn { margin-left: 5px; }
+
+.kv th {
+  width: 8rem; background: transparent; color: var(--fg-muted);
+  font-weight: 500; border-top: 0; vertical-align: top; position: static;
+}
+.kv td { border-top: 0; }
+
+/* ── 카드 ───────────────────────────────────────────────────────── */
+.card { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); margin-bottom: 18px; }
+.card-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 18px; border-bottom: 1px solid var(--line);
+}
+.card-title { font-size: 14.5px; font-weight: 600; margin: 0; }
+.card-header .btn-list { margin-left: auto; }
+.card-body { padding: 16px 18px; }
+.card-body > :first-child { margin-top: 0; }
+.card-body > :last-child { margin-bottom: 0; }
+.card > .table-scroll table th { border-top: 0; }
+.card > .table-scroll table tr:last-child td { border-bottom: 0; }
+.card.danger-zone { border-color: var(--critical-line); background: #fffafa; }
+
+/* ── 빈 화면 — 새로 더함: 버튼이 들어간다 ───────────────────────── */
+.empty { padding: 52px var(--gutter); text-align: center; color: var(--fg-muted); }
+.empty .glyph {
+  width: 38px; height: 38px; margin: 0 auto 12px; border-radius: 10px;
+  border: 1.5px dashed var(--line-strong); display: flex;
+  align-items: center; justify-content: center; color: var(--fg-faint); font-size: 17px;
+}
+.empty b { display: block; font-size: 15px; font-weight: 600; color: var(--fg); margin-bottom: 5px; }
+.empty p { margin: 0 0 14px; font-size: 13.5px; }
+
+/* ── 심각도 ─────────────────────────────────────────────────────── */
+.zrail { display: inline-block; width: 3px; height: 15px; border-radius: 2px; flex-shrink: 0; }
+.mark { display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.mark.critical { background: var(--critical); } .mark.high { background: var(--high); }
+.mark.medium { background: var(--medium); } .mark.low { background: var(--low); }
+.pcount { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13.5px; }
+.pcount + .pcount { margin-left: 11px; }
+.sev {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 6px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+}
+.sev.critical { background: var(--critical-bg); color: var(--critical); }
+.sev.high { background: var(--high-bg); color: var(--high); }
+.sev.medium { background: var(--medium-bg); color: var(--medium); }
+.sev.low { background: var(--low-bg); color: var(--low); }
+.sev i { width: 6px; height: 6px; border-radius: 2px; background: currentColor; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 12.5px; font-weight: 600;
+       background: var(--subtle); color: var(--fg-muted); }
+.tag.kev { background: var(--critical-bg); color: var(--critical); }
+.tag.fix { background: var(--ok-bg); color: var(--ok); }
+.tag.nofix { background: var(--medium-bg); color: var(--medium); }
+.danger-text { color: var(--critical); font-weight: 600; }
+.ok-text { color: var(--ok); font-weight: 600; }
+
+/* 심각도 막대 — Dependency-Track 에서 가져온 것.
+   0 이 아닌 구간은 최소 2px. 안 그러면 심각 1건이 폭 0 으로 사라진다. */
+.sevbar { display: flex; height: 7px; border-radius: 4px; overflow: hidden; background: var(--hover); min-width: 90px; }
+.sevbar i { display: block; height: 100%; min-width: 2px; }
+.sevbar i.critical { background: var(--critical); } .sevbar i.high { background: var(--high); }
+.sevbar i.medium { background: var(--medium); } .sevbar i.low { background: var(--low); }
+.sevbar.lg { height: 9px; border-radius: 5px; }
+
+.status { font-size: 12.5px; font-weight: 600; padding: 2px 8px; border-radius: 5px; white-space: nowrap; }
+.status.DONE { background: var(--ok-bg); color: var(--ok); }
+.status.FAILED { background: var(--critical-bg); color: var(--critical); }
+.status.RUNNING { background: var(--accent-bg); color: var(--accent); }
+td.overdue, .overdue { color: var(--critical); font-weight: 600; }
+
+/* ── 구역 표/카드 ───────────────────────────────────────────────── */
+tr.zone-row > td { padding: 11px var(--gutter); background: var(--subtle); border-top: 1px solid var(--line); }
+tbody tr.zone-row:hover > td { background: var(--subtle); }
+.zone-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
+.zone-head b { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.zone-head .spacer { flex: 1; }
+
+.zonegrid {
+  display: grid; gap: 16px; padding: 18px var(--gutter) 0;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.zonecard { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+.zonecard .top { display: flex; align-items: center; gap: 9px; padding: 14px 16px 0; }
+.zonecard .top b { font-size: 15.5px; font-weight: 700; letter-spacing: -.01em; }
+.zonecard .top .faint { font-size: 13px; }
+.zonecard .top .spacer { flex: 1; }
+.zonecard .stat { padding: 10px 16px 12px; display: flex; align-items: baseline; gap: 8px; }
+.zonecard .stat b { font-size: 30px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1; }
+.zonecard .stat span { font-size: 13px; color: var(--fg-muted); }
+.zonecard .bars { padding: 0 16px 10px; }
+.zonecard .counts { padding: 0 16px 12px; display: flex; flex-wrap: wrap; gap: 4px 0; }
+.zonecard .servers { border-top: 1px solid var(--line); background: var(--sunken); }
+.zonecard .servers a {
+  display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+  font-size: 13.5px; color: var(--fg-muted); border-bottom: 1px solid var(--line);
+}
+.zonecard .servers a:last-of-type { border-bottom: 0; }
+.zonecard .servers a:hover { background: var(--hover); color: var(--fg); }
+.zonecard .servers a b { font-weight: 600; color: var(--fg); }
+.zonecard .servers a .spacer { flex: 1; }
+.zonecard .foot {
+  padding: 9px 16px; border-top: 1px solid var(--line);
+  font-size: 12.5px; color: var(--fg-faint); display: flex; align-items: center; gap: 8px;
+}
+.zonecard .foot .spacer { flex: 1; }
+.iconbtn {
+  border: 0; background: transparent; color: var(--fg-faint);
+  padding: 2px 7px; border-radius: 6px; font-size: 15px; line-height: 1.2;
+}
+.iconbtn:hover { background: var(--hover); color: var(--fg); }
+
+/* ── 판정 펼침 — 새로 더함 ──────────────────────────────────────── */
+tr.expand > td { background: var(--sunken); padding: 0; border-bottom: 1px solid var(--line); }
+.analysis { padding: 16px var(--gutter); display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.analysis .full { grid-column: 1 / -1; }
+.analysis label { margin: 0; }
+.analysis .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.analysis .hint { font-size: 12.5px; color: var(--fg-faint); margin-top: 4px; }
+.history { border-top: 1px solid var(--line); padding: 10px var(--gutter) 14px; font-size: 12.5px; color: var(--fg-faint); }
+.history div + div { margin-top: 3px; }
+
+/* ── 진행 상태 ──────────────────────────────────────────────────── */
+.progress { border: 1px solid var(--accent-line); border-radius: 12px; overflow: hidden; margin-bottom: 20px; }
+.progress-head { display: flex; align-items: center; gap: 13px; padding: 15px 18px; background: var(--accent-bg); }
+.progress-head b { font-size: 15.5px; font-weight: 600; }
+.progress-head .spacer { flex: 1; }
+.spinner { width: 19px; height: 19px; border-radius: 10px; flex-shrink: 0;
+           border: 2.5px solid var(--accent-line); border-top-color: var(--accent); animation: spin .75s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.steps { display: flex; padding: 16px 18px 18px; border-top: 1px solid var(--line); gap: 4px; }
+.step { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.step .rail { display: flex; align-items: center; }
+.step .rail i { width: 19px; height: 19px; border-radius: 10px; flex-shrink: 0;
+                border: 2px solid var(--line-strong); background: var(--bg); }
+.step .rail span { flex: 1; height: 3px; margin-left: 5px; border-radius: 2px; background: var(--hover); }
+.step:last-child .rail span { visibility: hidden; }
+.step .name { font-size: 13.5px; color: var(--fg-faint); }
+.step.done .rail i { background: var(--ok); border-color: var(--ok); }
+.step.done .rail span { background: var(--ok); }
+.step.done .name { color: var(--fg); }
+.step.running .rail i { border-color: var(--accent); background: var(--accent-bg); }
+.step.running .name { color: var(--fg); font-weight: 600; }
+
+/* ── 보고서 — 기승전결 폐기, 표와 수치만 ────────────────────────── */
+.report { max-width: 58rem; }
+.doc-title { text-align: center; margin-bottom: 26px; padding-bottom: 18px; border-bottom: 2px solid var(--fg); }
+.doc-title h1 { font-size: 25px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+.docinfo { border: 1px solid var(--line-strong); margin-bottom: 32px; }
+.docinfo table { width: 100%; }
+.docinfo th, .docinfo td {
+  border: 1px solid var(--line-strong); padding: 8px 12px; font-size: 13.5px; position: static;
+}
+.docinfo th { background: var(--subtle); color: var(--fg-muted); font-weight: 600; width: 7rem; white-space: nowrap; }
+.report section { margin-bottom: 34px; }
+.report section > h2 {
+  font-size: 16px; margin: 0 0 12px; padding-bottom: 7px; border-bottom: 1px solid var(--line-strong);
+}
+.report table th { position: static; }
+.report .barcell { display: flex; align-items: center; gap: 8px; }
+.report .bar { height: 8px; border-radius: 3px; background: var(--accent); min-width: 2px; }
+.footnote { margin-top: 10px; font-size: 12.5px; color: var(--fg-faint); line-height: 1.7; }
+.report .totalrow td { font-weight: 700; background: var(--sunken); }
+
+/* ── 팝업 ───────────────────────────────────────────────────────── */
+dialog {
+  border: 1px solid var(--line); border-radius: 12px; padding: 22px;
+  width: min(32rem, 92vw); box-shadow: 0 12px 40px rgba(20,22,26,.18); color: var(--fg); background: var(--bg);
+}
+dialog::backdrop { background: rgba(20,22,26,.32); }
+dialog h2 { margin: 0 0 16px; font-size: 17px; }
+.dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+.field2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+
+.pager { display: flex; gap: 16px; align-items: center; justify-content: center; padding: 18px; font-size: 14px; }
+
+/* 지금 / 바뀜 표시 — 미리보기 전용 */
+.note-now {
+  display: flex; gap: 9px; align-items: flex-start;
+  margin: 0 var(--gutter) 0; padding: 9px 12px;
+  border-left: 3px solid var(--accent); background: var(--accent-bg);
+  font-size: 12.5px; color: #1b4d92; border-radius: 0 6px 6px 0;
+}
+.note-now b { font-weight: 600; }
+.body .note-now { margin-left: 0; margin-right: 0; margin-bottom: 16px; }
+
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+@media (max-width: 900px) {
+  .shell { flex-direction: column; }
+  .side { width: auto; height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--line); }
+  .side nav { flex-direction: row; flex-wrap: wrap; padding: 0 14px 10px; }
+  .side .spacer { display: none; }
+  :root { --gutter: 16px; }
+  .field2 { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="previewbar">
+  <b>미리보기</b>
+  <span>화면 구성 확인용입니다. 데이터는 전부 예시이고 버튼은 동작하지 않습니다.</span>
+  <span style="margin-left:auto">파란 줄 = 지금과 달라지는 곳</span>
+</div>
+
+<div class="shell">
+
+  <!-- ══ 왼쪽 기둥 ══════════════════════════════════════════════ -->
+  <aside class="side">
+    <div class="brand"><a href="#assets">SBOMSight</a></div>
+    <nav id="mainnav">
+      <a href="#assets" data-nav="assets">자산 <span class="badge">9</span></a>
+      <a href="#vulns" data-nav="vulns">취약점 <span class="badge">1,223</span></a>
+      <a href="#packages" data-nav="packages">패키지 <span class="badge">3,481</span></a>
+      <a href="#actions" data-nav="actions">대응 <span class="badge alert">1</span></a>
+      <a href="#reports" data-nav="reports">보고서</a>
+      <a href="#settings" data-nav="settings">설정</a>
+    </nav>
+
+    <div class="spacer"></div>
+
+    <div class="me">
+      <details class="menu" id="accountmenu">
+        <summary>
+          <span class="avatar">KL</span>
+          <span class="who"><b>admin</b><span>관리자</span></span>
+          <span class="caret">▲</span>
+        </summary>
+        <div class="menu-list">
+          <a href="#me">내 계정</a>
+          <a href="#me">비밀번호 변경</a>
+          <hr>
+          <button type="button">로그아웃</button>
+        </div>
+      </details>
+    </div>
+  </aside>
+
+  <div class="main">
+
+  <!-- ══ 자산 ═══════════════════════════════════════════════════ -->
+  <section data-route="assets" hidden>
+    <div class="page-header plain">
+      <div class="page-titlerow">
+        <h1>자산</h1>
+        <div class="btn-list">
+          <button class="btn" data-open="zonedlg">구역 관리</button>
+          <button class="btn">일괄 등록</button>
+          <button class="btn primary">자산 등록</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-now">
+      <b>바뀜</b>
+      <span>왼쪽 기둥의 ZONE 목록을 없앴습니다 — 눌러도 이 화면에 거르개만 걸리던 것이라
+      아래 칩으로 내려왔습니다. 구역 관리도 설정에서 여기로 옮겼습니다.</span>
+    </div>
+
+    <div class="summaryline">
+      <a href="#assets"><b>2</b> 검사 안 한 서버</a>
+      <a href="#assets"><b>1</b> 30일 넘은 서버</a>
+      <a href="#actions" class="alert"><b>1</b> 기한 지난 조치</a>
+      <a href="#vulns"><b>16</b> 심각</a>
+      <a href="#vulns"><b>209</b> 수정본 없음</a>
+    </div>
+
+    <div class="filters">
+      <a href="#assets" class="chip on">전체 <span class="n">9</span></a>
+      <a href="#assets" class="chip"><i class="zrail" style="background:#a71922"></i>DMZ <span class="n">3</span></a>
+      <a href="#assets" class="chip"><i class="zrail" style="background:#2262bb"></i>내부업무 <span class="n">3</span></a>
+      <a href="#assets" class="chip"><i class="zrail" style="background:#1b854f"></i>관리망 <span class="n">2</span></a>
+      <a href="#assets" class="chip"><i class="zrail" style="background:#8a919b"></i>미분류 <span class="n">1</span></a>
+      <span style="flex:1"></span>
+      <label style="color:var(--fg-faint)"><input type="checkbox" id="show-archived">보관된 자산도</label>
+      <span class="segmented">
+        <a href="#assets" class="current">표</a>
+        <a href="#assets/zones">구역</a>
+      </span>
+    </div>
+
+    <div class="body flush">
+      <div class="table-scroll">
+        <table>
+          <thead>
+          <tr>
+            <th class="tight sortable">서버 <span class="sortmark">↑</span></th>
+            <th class="tight">운영체제</th>
+            <th class="tight sortable">마지막 검사</th>
+            <th class="num tight sortable">탐지</th>
+            <th class="tight">심각도</th>
+            <th class="num tight">조치</th>
+            <th>비고</th>
+            <th class="tight"></th>
+          </tr>
+          </thead>
+
+          <tbody>
+          <tr class="zone-row"><td colspan="8"><div class="zone-head">
+            <i class="zrail" style="background:#a71922"></i><b>DMZ</b>
+            <span class="faint">3대</span>
+            <span class="spacer"></span>
+            <span class="pcount"><i class="mark critical"></i>심각 <b style="color:var(--critical)">11</b></span>
+            <span class="pcount"><i class="mark high"></i>높음 <b style="color:var(--high)">44</b></span>
+            <span class="faint num">탐지 <b style="color:var(--fg)">610</b></span>
+            <a class="btn small" href="#report">보고서</a>
+          </div></td></tr>
+
+          <tr>
+            <td class="tight"><a href="#asset" style="font-weight:600">web-01</a></td>
+            <td class="tight faint">Rocky Linux 9.3</td>
+            <td class="tight faint mono">2026-09-10 14:22</td>
+            <td class="num tight" style="font-weight:600">187</td>
+            <td class="tight"><span class="sevbar" title="심각 3 · 높음 12 · 보통 61 · 낮음 111">
+              <i class="critical" style="width:1.6%"></i><i class="high" style="width:6.4%"></i>
+              <i class="medium" style="width:32.6%"></i><i class="low" style="width:59.4%"></i></span></td>
+            <td class="num tight"><a href="#asset">2</a></td>
+            <td class="faint">대외 웹</td>
+            <td class="tight actions"><a class="btn small" href="#asset">열기</a></td>
+          </tr>
+          <tr>
+            <td class="tight"><a href="#asset" style="font-weight:600">web-02</a></td>
+            <td class="tight faint">Rocky Linux 9.3</td>
+            <td class="tight faint mono">2026-09-10 15:01</td>
+            <td class="num tight" style="font-weight:600">179</td>
+            <td class="tight"><span class="sevbar" title="심각 2 · 높음 11 · 보통 58 · 낮음 108">
+              <i class="critical" style="width:1.1%"></i><i class="high" style="width:6.1%"></i>
+              <i class="medium" style="width:32.4%"></i><i class="low" style="width:60.4%"></i></span></td>
+            <td class="num tight"><a href="#asset">1</a></td>
+            <td class="faint">대외 웹</td>
+            <td class="tight actions"><a class="btn small" href="#asset">열기</a></td>
+          </tr>
+          <tr>
+            <td class="tight"><a href="#asset" style="font-weight:600">api-01</a></td>
+            <td class="tight faint">Ubuntu 22.04</td>
+            <td class="tight mono overdue">2026-08-02 09:30</td>
+            <td class="num tight" style="font-weight:600">244</td>
+            <td class="tight"><span class="sevbar" title="심각 6 · 높음 21 · 보통 77 · 낮음 140">
+              <i class="critical" style="width:2.5%"></i><i class="high" style="width:8.6%"></i>
+              <i class="medium" style="width:31.5%"></i><i class="low" style="width:57.4%"></i></span></td>
+            <td class="num tight faint">—</td>
+            <td class="faint">대외 API · 41일 전 검사</td>
+            <td class="tight actions"><a class="btn small" href="#asset">열기</a></td>
+          </tr>
+
+          <tr class="zone-row"><td colspan="8"><div class="zone-head">
+            <i class="zrail" style="background:#2262bb"></i><b>내부업무</b>
+            <span class="faint">3대</span>
+            <span class="spacer"></span>
+            <span class="pcount"><i class="mark critical"></i>심각 <b style="color:var(--critical)">5</b></span>
+            <span class="pcount"><i class="mark high"></i>높음 <b style="color:var(--high)">32</b></span>
+            <span class="faint num">탐지 <b style="color:var(--fg)">549</b></span>
+            <a class="btn small" href="#report">보고서</a>
+          </div></td></tr>
+
+          <tr>
+            <td class="tight"><a href="#asset" style="font-weight:600">was-01</a></td>
+            <td class="tight faint">Rocky Linux 8.9</td>
+            <td class="tight faint mono">2026-09-11 10:05</td>
+            <td class="num tight" style="font-weight:600">302</td>
+            <td class="tight"><span class="sevbar" title="심각 4 · 높음 18 · 보통 95 · 낮음 185">
+              <i class="critical" style="width:1.3%"></i><i class="high" style="width:6%"></i>
+              <i class="medium" style="width:31.5%"></i><i class="low" style="width:61.2%"></i></span></td>
+            <td class="num tight"><a href="#asset">3</a></td>
+            <td class="faint">전자결재</td>
+            <td class="tight actions"><a class="btn small" href="#asset">열기</a></td>
+          </tr>
+          <tr>
+            <td class="tight"><a href="#asset" style="font-weight:600">db-01</a></td>
+            <td class="tight faint">Rocky Linux 9.3</td>
+            <td class="tight faint mono">2026-09-09 22:14</td>
+            <td class="num tight" style="font-weight:600">96</td>
+            <td class="tight"><span class="sevbar" title="높음 5 · 보통 31 · 낮음 60">
+              <i class="high" style="width:5.2%"></i><i class="medium" style="width:32.3%"></i>
+              <i class="low" style="width:62.5%"></i></span></td>
+            <td class="num tight"><a href="#asset">1</a></td>
+            <td class="faint">주계정 DB</td>
+            <td class="tight actions"><a class="btn small" href="#asset">열기</a></td>
+          </tr>
+          <tr>
+            <td class="tight"><a href="#asset" style="font-weight:600">batch-01</a></td>
+            <td class="tight faint">Rocky Linux 8.9</td>
+            <td class="tight faint mono">2026-09-11 11:20</td>
+            <td class="num tight" style="font-weight:600">151</td>
+            <td class="tight"><span class="sevbar" title="심각 1 · 높음 9 · 보통 48 · 낮음 93">
+              <i class="critical" style="width:0.7%"></i><i class="high" style="width:6%"></i>
+              <i class="medium" style="width:31.8%"></i><i class="low" style="width:61.5%"></i></span></td>
+            <td class="num tight faint">—</td>
+            <td class="faint">야간 배치</td>
+            <td class="tight actions"><a class="btn small" href="#asset">열기</a></td>
+          </tr>
+
+          <tr class="zone-row"><td colspan="8"><div class="zone-head">
+            <i class="zrail" style="background:#1b854f"></i><b>관리망</b>
+            <span class="faint">2대</span>
+            <span class="spacer"></span>
+            <span class="pcount"><i class="mark high"></i>높음 <b style="color:var(--high)">2</b></span>
+            <span class="faint num">탐지 <b style="color:var(--fg)">64</b></span>
+            <a class="btn small" href="#report">보고서</a>
+          </div></td></tr>
+
+          <tr>
+            <td class="tight"><a href="#asset" style="font-weight:600">log-01</a></td>
+            <td class="tight faint">Ubuntu 22.04</td>
+            <td class="tight faint mono">2026-09-08 03:00</td>
+            <td class="num tight" style="font-weight:600">64</td>
+            <td class="tight"><span class="sevbar" title="높음 2 · 보통 19 · 낮음 43">
+              <i class="high" style="width:3.1%"></i><i class="medium" style="width:29.7%"></i>
+              <i class="low" style="width:67.2%"></i></span></td>
+            <td class="num tight faint">—</td>
+            <td class="faint">로그 수집</td>
+            <td class="tight actions"><a class="btn small" href="#asset">열기</a></td>
+          </tr>
+          <tr>
+            <td class="tight"><a href="#asset" style="font-weight:600">mgmt-01</a></td>
+            <td class="tight faint">Rocky Linux 9.3</td>
+            <td class="tight faint">검사 없음</td>
+            <td class="num tight faint">—</td>
+            <td class="tight faint">—</td>
+            <td class="num tight faint">—</td>
+            <td class="faint">점프 서버</td>
+            <td class="tight actions"><a class="btn small" href="#asset">SBOM 올리기</a></td>
+          </tr>
+
+          <tr class="zone-row"><td colspan="8"><div class="zone-head">
+            <i class="zrail" style="background:#8a919b"></i><b>미분류</b>
+            <span class="faint">1대</span>
+          </div></td></tr>
+          <tr>
+            <td class="tight"><a href="#asset" style="font-weight:600">old-app</a></td>
+            <td class="tight faint">—</td>
+            <td class="tight faint">검사 없음</td>
+            <td class="num tight faint">—</td>
+            <td class="tight faint">—</td>
+            <td class="num tight faint">—</td>
+            <td class="faint">—</td>
+            <td class="tight actions"><a class="btn small" href="#asset">SBOM 올리기</a></td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 자산 — 구역 보기 ═══════════════════════════════════════ -->
+  <section data-route="assets/zones" hidden>
+    <div class="page-header plain">
+      <div class="page-titlerow">
+        <h1>자산</h1>
+        <div class="btn-list">
+          <button class="btn" data-open="zonedlg">구역 관리</button>
+          <button class="btn">일괄 등록</button>
+          <button class="btn primary">자산 등록</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-now">
+      <b>바뀜</b>
+      <span>시안의 구역 현황입니다. 별도 화면으로 만들지 않고 자산의 보기 전환으로 뒀습니다 —
+      <b>카드 안에 그 구역 서버가 그대로 들어 있어</b> 눌러서 자산 목록으로 튕기지 않습니다.</span>
+    </div>
+
+    <div class="filters">
+      <a href="#assets" class="chip on">전체 <span class="n">9</span></a>
+      <a href="#assets" class="chip"><i class="zrail" style="background:#a71922"></i>DMZ <span class="n">3</span></a>
+      <a href="#assets" class="chip"><i class="zrail" style="background:#2262bb"></i>내부업무 <span class="n">3</span></a>
+      <a href="#assets" class="chip"><i class="zrail" style="background:#1b854f"></i>관리망 <span class="n">2</span></a>
+      <span style="flex:1"></span>
+      <span class="segmented">
+        <a href="#assets">표</a>
+        <a href="#assets/zones" class="current">구역</a>
+      </span>
+    </div>
+
+    <div class="zonegrid">
+      <div class="zonecard">
+        <div class="top">
+          <i class="zrail" style="background:#a71922;height:17px"></i>
+          <b>DMZ</b><span class="faint">3대</span>
+          <span class="spacer"></span>
+          <span class="tag kev">기한 경과 1</span>
+          <button class="iconbtn" title="이름·색·삭제·보고서">⋮</button>
+        </div>
+        <div class="stat"><b>55</b><span>심각 · 높음</span></div>
+        <div class="bars"><span class="sevbar lg">
+          <i class="critical" style="width:1.8%"></i><i class="high" style="width:7.2%"></i>
+          <i class="medium" style="width:31.9%"></i><i class="low" style="width:59.1%"></i></span></div>
+        <div class="counts">
+          <span class="pcount"><i class="mark critical"></i>심각 <b>11</b></span>
+          <span class="pcount"><i class="mark high"></i>높음 <b>44</b></span>
+          <span class="pcount"><i class="mark medium"></i>보통 <b>196</b></span>
+          <span class="pcount"><i class="mark low"></i>낮음 <b>359</b></span>
+        </div>
+        <div class="servers">
+          <a href="#asset"><b>web-01</b><span class="spacer"></span><span class="num">187</span></a>
+          <a href="#asset"><b>web-02</b><span class="spacer"></span><span class="num">179</span></a>
+          <a href="#asset"><b>api-01</b><span class="overdue">41일 전</span><span class="spacer"></span><span class="num">244</span></a>
+        </div>
+        <div class="foot"><span>가장 오래된 검사 2026-08-02</span><span class="spacer"></span>
+          <a href="#report">보고서</a></div>
+      </div>
+
+      <div class="zonecard">
+        <div class="top">
+          <i class="zrail" style="background:#2262bb;height:17px"></i>
+          <b>내부업무</b><span class="faint">3대</span>
+          <span class="spacer"></span>
+          <button class="iconbtn" title="이름·색·삭제·보고서">⋮</button>
+        </div>
+        <div class="stat"><b>37</b><span>심각 · 높음</span></div>
+        <div class="bars"><span class="sevbar lg">
+          <i class="critical" style="width:0.9%"></i><i class="high" style="width:5.8%"></i>
+          <i class="medium" style="width:31.7%"></i><i class="low" style="width:61.6%"></i></span></div>
+        <div class="counts">
+          <span class="pcount"><i class="mark critical"></i>심각 <b>5</b></span>
+          <span class="pcount"><i class="mark high"></i>높음 <b>32</b></span>
+          <span class="pcount"><i class="mark medium"></i>보통 <b>174</b></span>
+          <span class="pcount"><i class="mark low"></i>낮음 <b>338</b></span>
+        </div>
+        <div class="servers">
+          <a href="#asset"><b>was-01</b><span class="spacer"></span><span class="num">302</span></a>
+          <a href="#asset"><b>db-01</b><span class="spacer"></span><span class="num">96</span></a>
+          <a href="#asset"><b>batch-01</b><span class="spacer"></span><span class="num">151</span></a>
+        </div>
+        <div class="foot"><span>가장 오래된 검사 2026-09-09</span><span class="spacer"></span>
+          <a href="#report">보고서</a></div>
+      </div>
+
+      <div class="zonecard">
+        <div class="top">
+          <i class="zrail" style="background:#1b854f;height:17px"></i>
+          <b>관리망</b><span class="faint">2대</span>
+          <span class="spacer"></span>
+          <span class="tag nofix">검사 없음 1</span>
+          <button class="iconbtn" title="이름·색·삭제·보고서">⋮</button>
+        </div>
+        <div class="stat"><b>2</b><span>심각 · 높음</span></div>
+        <div class="bars"><span class="sevbar lg">
+          <i class="high" style="width:3.1%"></i><i class="medium" style="width:29.7%"></i>
+          <i class="low" style="width:67.2%"></i></span></div>
+        <div class="counts">
+          <span class="pcount"><i class="mark high"></i>높음 <b>2</b></span>
+          <span class="pcount"><i class="mark medium"></i>보통 <b>19</b></span>
+          <span class="pcount"><i class="mark low"></i>낮음 <b>43</b></span>
+        </div>
+        <div class="servers">
+          <a href="#asset"><b>log-01</b><span class="spacer"></span><span class="num">64</span></a>
+          <a href="#asset"><b>mgmt-01</b><span class="faint">검사 없음</span><span class="spacer"></span><span class="faint">—</span></a>
+        </div>
+        <div class="foot"><span>가장 오래된 검사 2026-09-08</span><span class="spacer"></span>
+          <a href="#report">보고서</a></div>
+      </div>
+    </div>
+    <div style="height:40px"></div>
+  </section>
+
+  <!-- ══ 자산 상세 ══════════════════════════════════════════════ -->
+  <section data-route="asset" hidden>
+    <div class="page-header">
+      <div class="page-pretitle">
+        <i class="zrail" style="background:#a71922"></i><a href="#assets">DMZ</a>
+      </div>
+      <div class="page-titlerow">
+        <h1>web-01</h1>
+        <div class="btn-list">
+          <a class="btn" href="#report">보고서</a>
+          <button class="btn primary">SBOM 올리기</button>
+        </div>
+      </div>
+      <div class="page-subtitle">Rocky Linux 9.3 · 대외 웹 · 마지막 검사 2026-09-10 14:22</div>
+      <div style="margin-top:10px;max-width:340px">
+        <span class="sevbar lg" title="심각 3 · 높음 12 · 보통 61 · 낮음 111">
+          <i class="critical" style="width:1.6%"></i><i class="high" style="width:6.4%"></i>
+          <i class="medium" style="width:32.6%"></i><i class="low" style="width:59.4%"></i></span>
+      </div>
+
+      <div class="tabs">
+        <a href="#asset/overview" data-tab="overview">개요</a>
+        <a href="#asset/vulns" data-tab="vulns">취약점<span class="n">187</span></a>
+        <a href="#asset/packages" data-tab="packages">패키지<span class="n">1,204</span></a>
+        <a href="#asset/history" data-tab="history">검사 이력<span class="n">12</span></a>
+        <a href="#asset/actions" data-tab="actions">조치·판정<span class="n">5</span></a>
+      </div>
+    </div>
+
+    <!-- 개요 -->
+    <div data-pane="overview" hidden>
+      <div class="body">
+        <div class="note-now" style="margin-bottom:18px">
+          <b>바뀜</b>
+          <span>지금은 SBOM 올리기·검사 이력·조치·자산 삭제가 한 화면에 세로로 이어 붙어 있어
+          아래가 안 보입니다. 탭으로 갈랐고, 선택은 주소에 남습니다(<code>?tab=</code>).</span>
+        </div>
+
+        <div class="progress">
+          <div class="progress-head">
+            <span class="spinner"></span>
+            <b>grype 검사</b>
+            <span class="faint">취약점 대조 중 · 컴포넌트 1,204개</span>
+            <span class="spacer"></span>
+            <span class="faint num">2분 41초</span>
+          </div>
+          <div class="steps">
+            <div class="step done"><div class="rail"><i></i><span></span></div><div class="name">올리기</div></div>
+            <div class="step done"><div class="rail"><i></i><span></span></div><div class="name">SBOM 읽기</div></div>
+            <div class="step running"><div class="rail"><i></i><span></span></div><div class="name">grype 검사</div></div>
+            <div class="step"><div class="rail"><i></i><span></span></div><div class="name">결과 정리</div></div>
+            <div class="step"><div class="rail"><i></i><span></span></div><div class="name">완료</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">기본 정보</h2>
+            <div class="btn-list"><button class="btn small">수정</button></div></div>
+          <div class="card-body">
+            <table class="kv">
+              <tr><th>구역</th><td>DMZ</td><th>운영체제</th><td>Rocky Linux 9.3</td></tr>
+              <tr><th>비고</th><td colspan="3">대외 웹</td></tr>
+              <tr><th>등록</th><td>2026-01-12</td><th>검사 횟수</th><td>12회</td></tr>
+            </table>
+          </div>
+        </div>
+
+        <div class="card danger-zone">
+          <div class="card-header"><h2 class="card-title">보관 · 삭제</h2></div>
+          <div class="card-body">
+            <p style="margin:0 0 14px;font-size:14px">
+              <b>보관</b>하면 목록에서 사라지고 결과는 남습니다.
+              <b>삭제</b>하면 스캔 12건 · 탐지 1,842건 · 보관된 SBOM 파일이 함께 사라집니다.</p>
+            <button class="btn">보관</button>
+            <button class="btn danger">삭제</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 취약점 탭 -->
+    <div data-pane="vulns" hidden>
+      <div class="note-now" style="margin-top:14px">
+        <b>바뀜</b>
+        <span>한 서버의 취약점은 <b>그 서버 안에서 봅니다.</b> 표를 그리는 조각은
+        전체 취약점 화면과 같은 것을 씁니다. 행을 누르면 그 자리에서 판정 칸이 펼쳐집니다.</span>
+      </div>
+
+      <div class="filters">
+        <span class="segmented">
+          <a href="#asset/vulns" class="current">항목별</a>
+          <a href="#vulns/cve">CVE별</a>
+          <a href="#vulns/pkg">패키지별</a>
+        </span>
+        <span class="grow"><input type="search" id="q-asset" placeholder="CVE · 패키지 이름"></span>
+        <select id="sev-asset" aria-label="심각도"><option>심각도 전체</option><option>심각</option><option>높음</option></select>
+        <select id="fix-asset" aria-label="수정본"><option>수정본 전체</option><option>있음</option><option>없음</option></select>
+        <select id="an-asset" aria-label="판정"><option>판정 전체</option><option>미판정</option><option>조치 대상</option><option>해당 없음</option></select>
+        <label style="color:var(--fg-faint)"><input type="checkbox" id="hidden-asset">감춘 것도</label>
+      </div>
+
+      <div class="body flush">
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th class="tight">취약점</th><th class="tight sortable">심각도 <span class="sortmark">↓</span></th>
+              <th class="num tight sortable">CVSS</th><th class="num tight">악용 확률</th>
+              <th class="tight">패키지</th><th class="tight">설치 → 수정</th>
+              <th class="tight">판정</th><th class="tight"></th>
+            </tr></thead>
+            <tbody>
+            <tr class="rowtoggle" data-row="r1">
+              <td class="tight"><a href="#cve" class="mono">CVE-2024-3094</a>
+                <div class="faint" style="font-size:12px">공급망 백도어</div></td>
+              <td class="tight"><span class="sev critical"><i></i>심각</span> <span class="tag kev">실제 악용</span></td>
+              <td class="num tight">10.0</td><td class="num tight">94.2%</td>
+              <td class="tight">xz-libs <span class="faint">rpm</span></td>
+              <td class="tight">5.4.1 → <b>5.4.3</b></td>
+              <td class="tight"><span class="tag nofix">미판정</span></td>
+              <td class="tight actions"><button class="btn small" data-row="r1">판정 ▾</button></td>
+            </tr>
+            <tr class="expand" data-expand="r1" hidden><td colspan="8">
+              <div class="analysis">
+                <label class="full" style="font-size:13.5px;color:var(--fg)">
+                  <b>CVE-2024-3094</b> · xz-libs 5.4.1</label>
+                <label>상태
+                  <select id="a-state"><option>미판정</option><option>검토 중</option>
+                    <option selected>조치 대상</option><option>해당 없음</option><option>오탐</option></select>
+                  <div class="hint">grype 의 탐지를 지우는 것이 아니라 그 탐지에 대한 우리 결정입니다.</div>
+                </label>
+                <label>근거 <span class="faint">— 해당 없음일 때만</span>
+                  <select id="a-just" disabled><option>코드 없음</option><option>실행 경로 아님</option>
+                    <option>특정 설정 필요</option><option>특정 의존성 필요</option><option>특정 환경 필요</option>
+                    <option>컴파일러가 막음</option><option>런타임이 막음</option><option>경계에서 차단</option>
+                    <option>대체 통제 있음</option></select></label>
+                <label>대응
+                  <select id="a-resp"><option selected>업데이트</option><option>고칠 수 없음</option>
+                    <option>고치지 않음</option><option>되돌리기</option><option>우회책 있음</option></select></label>
+                <label>승인한 사람 <input id="a-by" value="김보안 팀장"></label>
+                <label>다시 볼 날 <input id="a-review" type="date" value="2026-12-31"></label>
+                <label class="full">메모
+                  <textarea id="a-note" rows="2">5.4.3 으로 올리는 것으로 확정. 9/15 정기 점검 때 반영.</textarea></label>
+                <div class="full row">
+                  <label style="display:inline-flex;align-items:center;gap:6px;margin:0">
+                    <input type="checkbox" id="a-hide">목록에서 감추기</label>
+                  <span class="faint" style="font-size:12.5px">감춰도 보고서의 탐지 건수는 줄지 않습니다.</span>
+                  <span style="flex:1"></span>
+                  <button class="btn small">취소</button>
+                  <button class="btn small primary">저장</button>
+                </div>
+              </div>
+              <div class="history">
+                <div>2026-09-11 09:14 · admin · 상태 미판정 → 조치 대상</div>
+                <div>2026-09-10 16:40 · admin · 처음 탐지됨 (grype 0.87.0)</div>
+              </div>
+            </td></tr>
+
+            <tr class="rowtoggle" data-row="r2">
+              <td class="tight"><a href="#cve" class="mono">CVE-2023-45853</a></td>
+              <td class="tight"><span class="sev critical"><i></i>심각</span></td>
+              <td class="num tight">9.8</td><td class="num tight faint">—</td>
+              <td class="tight">zlib <span class="faint">rpm</span></td>
+              <td class="tight">1.2.11 → <span class="tag nofix">수정본 없음</span></td>
+              <td class="tight"><span class="tag fix">해당 없음</span>
+                <div class="faint" style="font-size:12px">실행 경로 아님</div></td>
+              <td class="tight actions"><button class="btn small" data-row="r2">판정 ▾</button></td>
+            </tr>
+            <tr class="expand" data-expand="r2" hidden><td colspan="8">
+              <div class="analysis">
+                <label class="full" style="font-size:13.5px;color:var(--fg)"><b>CVE-2023-45853</b> · zlib 1.2.11</label>
+                <label>상태 <select id="a2-state"><option>미판정</option><option>검토 중</option>
+                  <option>조치 대상</option><option selected>해당 없음</option><option>오탐</option></select></label>
+                <label>근거 <select id="a2-just"><option>코드 없음</option>
+                  <option selected>실행 경로 아님</option><option>특정 설정 필요</option></select></label>
+                <label>대응 <select id="a2-resp"><option selected>고칠 수 없음</option><option>업데이트</option></select></label>
+                <label>승인한 사람 <input id="a2-by" value="김보안 팀장"></label>
+                <label>다시 볼 날 <input id="a2-review" type="date" value="2027-03-31"></label>
+                <label class="full">메모 <textarea id="a2-note" rows="2">minizip 기능을 쓰지 않음. 업스트림 수정본 없음.</textarea></label>
+                <div class="full row">
+                  <label style="display:inline-flex;align-items:center;gap:6px;margin:0">
+                    <input type="checkbox" id="a2-hide" checked>목록에서 감추기</label>
+                  <span style="flex:1"></span>
+                  <button class="btn small">취소</button><button class="btn small primary">저장</button>
+                </div>
+              </div>
+            </td></tr>
+
+            <tr class="rowtoggle" data-row="r3">
+              <td class="tight"><a href="#cve" class="mono">CVE-2024-6387</a>
+                <div class="faint" style="font-size:12px">regreSSHion</div></td>
+              <td class="tight"><span class="sev high"><i></i>높음</span></td>
+              <td class="num tight">8.1</td><td class="num tight">12.4%</td>
+              <td class="tight">openssh-server <span class="faint">rpm</span></td>
+              <td class="tight">8.7p1 → <b>8.7p1-38</b></td>
+              <td class="tight"><span class="tag">조치 등록됨</span></td>
+              <td class="tight actions"><button class="btn small" data-row="r3">판정 ▾</button></td>
+            </tr>
+            <tr class="expand" data-expand="r3" hidden><td colspan="8">
+              <div class="analysis"><label class="full faint" style="font-size:13.5px">
+                이 취약점은 조치로 등록되어 있습니다 — <a href="#actions">openssh-server 8.7p1 → 8.7p1-38</a>,
+                담당 이운영, 기한 2026-09-20.</label></div>
+            </td></tr>
+
+            <tr class="rowtoggle" data-row="r4">
+              <td class="tight"><a href="#cve" class="mono">CVE-2024-2961</a></td>
+              <td class="tight"><span class="sev high"><i></i>높음</span></td>
+              <td class="num tight">7.3</td><td class="num tight">0.4%</td>
+              <td class="tight">glibc <span class="faint">rpm</span></td>
+              <td class="tight">2.34 → <b>2.34-100</b></td>
+              <td class="tight"><span class="tag nofix">미판정</span></td>
+              <td class="tight actions"><button class="btn small" data-row="r4">판정 ▾</button></td>
+            </tr>
+            <tr class="expand" data-expand="r4" hidden><td colspan="8">
+              <div class="analysis"><label class="full faint" style="font-size:13.5px">위와 같은 판정 칸이 펼쳐집니다.</label></div>
+            </td></tr>
+
+            <tr class="rowtoggle" data-row="r5">
+              <td class="tight"><a href="#cve" class="mono">CVE-2023-44487</a>
+                <div class="faint" style="font-size:12px">HTTP/2 Rapid Reset</div></td>
+              <td class="tight"><span class="sev high"><i></i>높음</span> <span class="tag kev">실제 악용</span></td>
+              <td class="num tight">7.5</td><td class="num tight">88.1%</td>
+              <td class="tight">nghttp2 <span class="faint">rpm</span></td>
+              <td class="tight">1.43.0 → <b>1.43.0-6</b></td>
+              <td class="tight"><span class="tag nofix">미판정</span></td>
+              <td class="tight actions"><button class="btn small" data-row="r5">판정 ▾</button></td>
+            </tr>
+            <tr class="expand" data-expand="r5" hidden><td colspan="8">
+              <div class="analysis"><label class="full faint" style="font-size:13.5px">위와 같은 판정 칸이 펼쳐집니다.</label></div>
+            </td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager"><span class="faint">이전</span><span>1 / 8</span><a href="#asset/vulns">다음</a></div>
+      </div>
+    </div>
+
+    <!-- 패키지 탭 -->
+    <div data-pane="packages" hidden>
+      <div class="note-now" style="margin-top:14px">
+        <b>새로 생김</b>
+        <span>지금은 <b>취약점이 붙은 패키지만</b> 알 수 있습니다.
+        "이 서버에 뭐가 깔려 있나" 에 답하려면 컴포넌트를 저장해야 합니다(V12).</span>
+      </div>
+      <div class="filters">
+        <span class="grow"><input type="search" id="q-pkg-asset" placeholder="패키지 이름"></span>
+        <select id="t-pkg-asset" aria-label="유형"><option>유형 전체</option><option>rpm</option><option>java-archive</option><option>python</option></select>
+        <label style="color:var(--fg-faint)"><input type="checkbox" id="vuln-only-asset">취약점 있는 것만</label>
+      </div>
+      <div class="body flush">
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th class="tight sortable">패키지 <span class="sortmark">↑</span></th><th class="tight">유형</th>
+              <th class="tight">설치 버전</th><th class="num tight">취약점</th><th>설치 경로</th>
+            </tr></thead>
+            <tbody>
+            <tr><td class="tight"><b>glibc</b></td><td class="tight faint">rpm</td><td class="tight mono">2.34-83.el9</td>
+              <td class="num tight"><a href="#asset/vulns">7</a></td><td class="faint mono" style="font-size:12.5px">/usr/lib64</td></tr>
+            <tr><td class="tight"><b>openssl-libs</b></td><td class="tight faint">rpm</td><td class="tight mono">3.0.7-24.el9</td>
+              <td class="num tight"><a href="#asset/vulns">4</a></td><td class="faint mono" style="font-size:12.5px">/usr/lib64</td></tr>
+            <tr><td class="tight"><b>openssh-server</b></td><td class="tight faint">rpm</td><td class="tight mono">8.7p1-34.el9</td>
+              <td class="num tight"><a href="#asset/vulns">2</a></td><td class="faint mono" style="font-size:12.5px">/usr/sbin</td></tr>
+            <tr><td class="tight"><b>nginx</b></td><td class="tight faint">rpm</td><td class="tight mono">1.20.1-14.el9</td>
+              <td class="num tight"><a href="#asset/vulns">3</a></td><td class="faint mono" style="font-size:12.5px">/usr/sbin</td></tr>
+            <tr><td class="tight"><b>python3</b></td><td class="tight faint">rpm</td><td class="tight mono">3.9.18-1.el9</td>
+              <td class="num tight faint">—</td><td class="faint mono" style="font-size:12.5px">/usr/bin</td></tr>
+            <tr><td class="tight"><b>tzdata</b></td><td class="tight faint">rpm</td><td class="tight mono">2026a-1.el9</td>
+              <td class="num tight faint">—</td><td class="faint mono" style="font-size:12.5px">/usr/share</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager"><span class="faint">이전</span><span>1 / 61</span><a href="#asset/packages">다음</a></div>
+      </div>
+    </div>
+
+    <!-- 검사 이력 탭 -->
+    <div data-pane="history" hidden>
+      <div class="note-now" style="margin-top:14px">
+        <b>바뀜</b>
+        <span>맨 오른쪽 <b>열기</b>가 글자였고 옆은 버튼이었습니다. 전부 같은 버튼으로 맞췄고,
+        보관해 둔 원본 SBOM 을 내려받는 버튼을 더했습니다.</span>
+      </div>
+      <div class="body flush">
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th class="tight">시각</th><th class="tight">상태</th>
+              <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
+              <th class="num tight">컴포넌트</th><th class="tight">grype</th>
+              <th class="tight">DB 기준일</th><th>SBOM</th><th class="tight"></th>
+            </tr></thead>
+            <tbody>
+            <tr>
+              <td class="tight mono">2026-09-10 14:22</td>
+              <td class="tight"><span class="status DONE">완료</span></td>
+              <td class="num tight">187</td><td class="num tight"><span class="danger-text">+4</span></td>
+              <td class="num tight">1,204</td><td class="tight faint">0.87.0</td>
+              <td class="tight faint">2026-09-09</td><td class="faint">sbom-web01-0910.json</td>
+              <td class="tight actions">
+                <a class="btn small" href="#asset/vulns">열기</a>
+                <button class="btn small">다시 검사</button>
+                <button class="btn small">SBOM</button>
+                <button class="btn small danger">삭제</button></td>
+            </tr>
+            <tr>
+              <td class="tight mono">2026-09-03 14:10<div class="faint" style="font-size:12px">재검사 (원본 2026-08-27)</div></td>
+              <td class="tight"><span class="status DONE">완료</span></td>
+              <td class="num tight">183</td><td class="num tight"><span class="ok-text">−2</span></td>
+              <td class="num tight">1,204</td><td class="tight faint">0.87.0</td>
+              <td class="tight faint">2026-09-02</td><td class="faint">sbom-web01-0827.json</td>
+              <td class="tight actions">
+                <a class="btn small" href="#asset/vulns">열기</a>
+                <button class="btn small">다시 검사</button>
+                <button class="btn small">SBOM</button>
+                <button class="btn small danger">삭제</button></td>
+            </tr>
+            <tr>
+              <td class="tight mono">2026-08-27 09:41</td>
+              <td class="tight"><span class="status FAILED">실패</span></td>
+              <td class="num tight faint">—</td><td class="num tight faint">—</td>
+              <td class="num tight faint">—</td><td class="tight faint">0.86.1</td>
+              <td class="tight faint">—</td>
+              <td class="faint">sbom-web01-0827.json <span class="tag nofix">grype 실행 실패: DB 없음</span></td>
+              <td class="tight actions"><button class="btn small danger">삭제</button></td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 조치·판정 탭 -->
+    <div data-pane="actions" hidden>
+      <div class="body">
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">조치</h2>
+            <span class="faint" style="font-size:13px">2건</span></div>
+          <div class="table-scroll"><table>
+            <thead><tr><th class="tight">패키지</th><th class="tight">현재 → 목표</th>
+              <th class="tight">상태</th><th class="tight">담당</th><th class="tight">기한</th><th>메모</th></tr></thead>
+            <tbody>
+            <tr><td class="tight"><a href="#actions">openssh-server</a></td>
+              <td class="tight faint mono">8.7p1-34 → 8.7p1-38</td>
+              <td class="tight"><span class="tag">진행 중</span></td><td class="tight">이운영</td>
+              <td class="tight">2026-09-20</td><td class="faint">정기 점검 때 반영</td></tr>
+            <tr><td class="tight"><a href="#actions">xz-libs</a></td>
+              <td class="tight faint mono">5.4.1 → 5.4.3</td>
+              <td class="tight"><span class="tag">대기</span></td><td class="tight">이운영</td>
+              <td class="tight">2026-09-15</td><td class="faint">—</td></tr>
+            </tbody></table></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">판정</h2>
+            <span class="faint" style="font-size:13px">3건 · 감춰진 것 1건</span></div>
+          <div class="table-scroll"><table>
+            <thead><tr><th class="tight">취약점</th><th class="tight">패키지</th><th class="tight">상태</th>
+              <th class="tight">근거</th><th class="tight">승인</th><th class="tight">다시 볼 날</th></tr></thead>
+            <tbody>
+            <tr><td class="tight mono">CVE-2023-45853</td><td class="tight">zlib</td>
+              <td class="tight"><span class="tag fix">해당 없음</span></td>
+              <td class="tight faint">실행 경로 아님</td><td class="tight">김보안 팀장</td>
+              <td class="tight">2027-03-31</td></tr>
+            <tr><td class="tight mono">CVE-2022-37434</td><td class="tight">zlib</td>
+              <td class="tight"><span class="tag fix">해당 없음</span></td>
+              <td class="tight faint">코드 없음</td><td class="tight">김보안 팀장</td>
+              <td class="tight">2027-03-31</td></tr>
+            <tr><td class="tight mono">CVE-2021-3712</td><td class="tight">openssl-libs</td>
+              <td class="tight"><span class="tag">오탐</span></td>
+              <td class="tight faint">—</td><td class="tight">김보안 팀장</td>
+              <td class="tight overdue">2026-08-31</td></tr>
+            </tbody></table></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 취약점 (전역) ══════════════════════════════════════════ -->
+  <section data-route="vulns" hidden>
+    <div class="page-header plain">
+      <div class="page-titlerow">
+        <h1>취약점</h1>
+        <div class="btn-list"><button class="btn">CSV 내려받기</button></div>
+      </div>
+      <div class="page-subtitle">서버 7대 · 최근 검사 기준 · 1,223건</div>
+    </div>
+
+    <div class="note-now">
+      <b>바뀜</b>
+      <span><b>전사 조회 탭을 없앴습니다</b> — 같은 질의를 부르던 화면이었습니다.
+      범위(전체·구역·검사)와 묶기(항목별·CVE별·패키지별)를 여기서 고릅니다.
+      한 서버짜리는 그 서버 안에서 봅니다.</span>
+    </div>
+
+    <div class="filters">
+      <select id="scope" aria-label="범위" style="min-width:11rem">
+        <option>전체</option><option>DMZ</option><option>내부업무</option><option>관리망</option>
+      </select>
+      <span class="segmented">
+        <a href="#vulns" class="current">항목별</a>
+        <a href="#vulns/cve">CVE별</a>
+        <a href="#vulns/pkg">패키지별</a>
+      </span>
+      <span class="grow"><input type="search" id="q-all" placeholder="CVE · 패키지 이름"></span>
+      <select id="sev-all" aria-label="심각도"><option>심각도 전체</option><option>심각</option></select>
+      <select id="fix-all" aria-label="수정본"><option>수정본 전체</option><option>있음</option><option>없음</option></select>
+    </div>
+
+    <div class="body flush">
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th class="tight">자산</th><th class="tight">구역</th><th class="tight">취약점</th>
+            <th class="tight sortable">심각도 <span class="sortmark">↓</span></th><th class="num tight">CVSS</th>
+            <th class="tight">패키지</th><th class="tight">설치 → 수정</th><th class="tight">판정</th>
+          </tr></thead>
+          <tbody>
+          <tr><td class="tight"><a href="#asset">web-01</a></td>
+            <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
+            <td class="tight mono"><a href="#cve">CVE-2024-3094</a></td>
+            <td class="tight"><span class="sev critical"><i></i>심각</span></td><td class="num tight">10.0</td>
+            <td class="tight">xz-libs</td><td class="tight">5.4.1 → <b>5.4.3</b></td>
+            <td class="tight"><span class="tag nofix">미판정</span></td></tr>
+          <tr><td class="tight"><a href="#asset">web-02</a></td>
+            <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
+            <td class="tight mono"><a href="#cve">CVE-2024-3094</a></td>
+            <td class="tight"><span class="sev critical"><i></i>심각</span></td><td class="num tight">10.0</td>
+            <td class="tight">xz-libs</td><td class="tight">5.4.1 → <b>5.4.3</b></td>
+            <td class="tight"><span class="tag nofix">미판정</span></td></tr>
+          <tr><td class="tight"><a href="#asset">was-01</a></td>
+            <td class="tight faint"><i class="zrail" style="background:#2262bb"></i> 내부업무</td>
+            <td class="tight mono"><a href="#cve">CVE-2021-44228</a></td>
+            <td class="tight"><span class="sev critical"><i></i>심각</span></td><td class="num tight">10.0</td>
+            <td class="tight">log4j-core <span class="faint">java-archive</span></td>
+            <td class="tight">2.14.1 → <b>2.17.1</b></td>
+            <td class="tight"><span class="tag">조치 등록됨</span></td></tr>
+          <tr><td class="tight"><a href="#asset">api-01</a></td>
+            <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
+            <td class="tight mono"><a href="#cve">CVE-2024-45490</a></td>
+            <td class="tight"><span class="sev critical"><i></i>심각</span></td><td class="num tight">9.8</td>
+            <td class="tight">libexpat</td><td class="tight">2.4.7 → <b>2.4.9</b></td>
+            <td class="tight"><span class="tag nofix">미판정</span></td></tr>
+          <tr><td class="tight"><a href="#asset">web-01</a></td>
+            <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
+            <td class="tight mono"><a href="#cve">CVE-2023-44487</a></td>
+            <td class="tight"><span class="sev high"><i></i>높음</span> <span class="tag kev">실제 악용</span></td>
+            <td class="num tight">7.5</td>
+            <td class="tight">nghttp2</td><td class="tight">1.43.0 → <b>1.43.0-6</b></td>
+            <td class="tight"><span class="tag nofix">미판정</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pager"><span class="faint">이전</span><span>1 / 245</span><a href="#vulns">다음</a></div>
+    </div>
+  </section>
+
+  <!-- 취약점 — CVE별 -->
+  <section data-route="vulns/cve" hidden>
+    <div class="page-header plain">
+      <div class="page-titlerow"><h1>취약점</h1>
+        <div class="btn-list"><button class="btn">CSV 내려받기</button></div></div>
+      <div class="page-subtitle">서버 7대 · 최근 검사 기준 · 고유 CVE 412건</div>
+    </div>
+
+    <div class="note-now"><b>새로 생김</b>
+      <span>"이 CVE 가 몇 대에 있나" 를 한 줄로 봅니다. 지적하신 <b>취약점별로 보기</b>입니다.</span></div>
+
+    <div class="filters">
+      <select id="scope2" aria-label="범위" style="min-width:11rem"><option>전체</option><option>DMZ</option></select>
+      <span class="segmented">
+        <a href="#vulns">항목별</a><a href="#vulns/cve" class="current">CVE별</a><a href="#vulns/pkg">패키지별</a>
+      </span>
+      <span class="grow"><input type="search" id="q-cve" placeholder="CVE · 패키지 이름"></span>
+      <select id="sev-cve" aria-label="심각도"><option>심각도 전체</option></select>
+    </div>
+
+    <div class="body flush">
+      <div class="table-scroll"><table>
+        <thead><tr>
+          <th class="tight">취약점</th><th class="tight sortable">심각도 <span class="sortmark">↓</span></th>
+          <th class="num tight">CVSS</th><th class="num tight sortable">영향 서버</th>
+          <th class="tight">구역 분포</th><th class="tight">패키지</th><th class="tight">수정본</th>
+        </tr></thead>
+        <tbody>
+        <tr><td class="tight"><a href="#cve" class="mono">CVE-2024-3094</a>
+            <div class="faint" style="font-size:12px">xz 공급망 백도어</div></td>
+          <td class="tight"><span class="sev critical"><i></i>심각</span> <span class="tag kev">실제 악용</span></td>
+          <td class="num tight">10.0</td><td class="num tight"><b>2</b>대</td>
+          <td class="tight"><span class="pcount"><i class="zrail" style="background:#a71922"></i>DMZ 2</span></td>
+          <td class="tight">xz-libs</td><td class="tight"><span class="tag fix">5.4.3</span></td></tr>
+        <tr><td class="tight"><a href="#cve" class="mono">CVE-2023-44487</a>
+            <div class="faint" style="font-size:12px">HTTP/2 Rapid Reset</div></td>
+          <td class="tight"><span class="sev high"><i></i>높음</span> <span class="tag kev">실제 악용</span></td>
+          <td class="num tight">7.5</td><td class="num tight"><b>5</b>대</td>
+          <td class="tight"><span class="pcount"><i class="zrail" style="background:#a71922"></i>DMZ 3</span>
+            <span class="pcount"><i class="zrail" style="background:#2262bb"></i>내부업무 2</span></td>
+          <td class="tight">nghttp2</td><td class="tight"><span class="tag fix">1.43.0-6</span></td></tr>
+        <tr><td class="tight"><a href="#cve" class="mono">CVE-2024-2961</a></td>
+          <td class="tight"><span class="sev high"><i></i>높음</span></td>
+          <td class="num tight">7.3</td><td class="num tight"><b>7</b>대</td>
+          <td class="tight"><span class="pcount"><i class="zrail" style="background:#a71922"></i>DMZ 3</span>
+            <span class="pcount"><i class="zrail" style="background:#2262bb"></i>내부업무 3</span>
+            <span class="pcount"><i class="zrail" style="background:#1b854f"></i>관리망 1</span></td>
+          <td class="tight">glibc</td><td class="tight"><span class="tag fix">2.34-100</span></td></tr>
+        <tr><td class="tight"><a href="#cve" class="mono">CVE-2023-45853</a></td>
+          <td class="tight"><span class="sev critical"><i></i>심각</span></td>
+          <td class="num tight">9.8</td><td class="num tight"><b>6</b>대</td>
+          <td class="tight"><span class="pcount"><i class="zrail" style="background:#a71922"></i>DMZ 3</span>
+            <span class="pcount"><i class="zrail" style="background:#2262bb"></i>내부업무 3</span></td>
+          <td class="tight">zlib</td><td class="tight"><span class="tag nofix">없음</span></td></tr>
+        <tr><td class="tight"><a href="#cve" class="mono">CVE-2021-44228</a>
+            <div class="faint" style="font-size:12px">Log4Shell</div></td>
+          <td class="tight"><span class="sev critical"><i></i>심각</span> <span class="tag kev">실제 악용</span></td>
+          <td class="num tight">10.0</td><td class="num tight"><b>1</b>대</td>
+          <td class="tight"><span class="pcount"><i class="zrail" style="background:#2262bb"></i>내부업무 1</span></td>
+          <td class="tight">log4j-core</td><td class="tight"><span class="tag fix">2.17.1</span></td></tr>
+        </tbody>
+      </table></div>
+      <div class="pager"><span class="faint">이전</span><span>1 / 83</span><a href="#vulns/cve">다음</a></div>
+    </div>
+  </section>
+
+  <!-- 취약점 — 패키지별 -->
+  <section data-route="vulns/pkg" hidden>
+    <div class="page-header plain">
+      <div class="page-titlerow"><h1>취약점</h1>
+        <div class="btn-list"><button class="btn">CSV 내려받기</button></div></div>
+      <div class="page-subtitle">서버 7대 · 최근 검사 기준 · 패키지 148개</div>
+    </div>
+    <div class="note-now"><b>새로 생김</b>
+      <span>실무자가 실행하는 단위는 패키지 업데이트입니다.
+      하나를 올리면 몇 건이 사라지는지 여기서 봅니다.</span></div>
+    <div class="filters">
+      <select id="scope3" aria-label="범위" style="min-width:11rem"><option>전체</option></select>
+      <span class="segmented">
+        <a href="#vulns">항목별</a><a href="#vulns/cve">CVE별</a><a href="#vulns/pkg" class="current">패키지별</a>
+      </span>
+      <span class="grow"><input type="search" id="q-pkg2" placeholder="패키지 이름"></span>
+    </div>
+    <div class="body flush">
+      <div class="table-scroll"><table>
+        <thead><tr><th class="tight">패키지</th><th class="tight">현재 → 목표</th>
+          <th class="num tight sortable">해소 건수 <span class="sortmark">↓</span></th>
+          <th class="tight">최고 심각도</th><th class="num tight">영향 서버</th><th class="tight"></th></tr></thead>
+        <tbody>
+        <tr><td class="tight"><b>glibc</b> <span class="faint">rpm</span></td>
+          <td class="tight mono">2.34-83 → <b>2.34-100</b></td>
+          <td class="num tight"><b>49</b></td><td class="tight"><span class="sev high"><i></i>높음</span></td>
+          <td class="num tight">7대</td>
+          <td class="tight actions"><button class="btn small">조치 등록</button></td></tr>
+        <tr><td class="tight"><b>openssl-libs</b> <span class="faint">rpm</span></td>
+          <td class="tight mono">3.0.7-24 → <b>3.0.7-28</b></td>
+          <td class="num tight"><b>28</b></td><td class="tight"><span class="sev high"><i></i>높음</span></td>
+          <td class="num tight">7대</td>
+          <td class="tight actions"><button class="btn small">조치 등록</button></td></tr>
+        <tr><td class="tight"><b>xz-libs</b> <span class="faint">rpm</span></td>
+          <td class="tight mono">5.4.1 → <b>5.4.3</b></td>
+          <td class="num tight"><b>2</b></td><td class="tight"><span class="sev critical"><i></i>심각</span></td>
+          <td class="num tight">2대</td>
+          <td class="tight actions"><button class="btn small">조치 등록</button></td></tr>
+        <tr><td class="tight"><b>zlib</b> <span class="faint">rpm</span></td>
+          <td class="tight"><span class="tag nofix">수정본 없음</span></td>
+          <td class="num tight faint">0</td><td class="tight"><span class="sev critical"><i></i>심각</span></td>
+          <td class="num tight">6대</td>
+          <td class="tight actions"><button class="btn small">판정</button></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ══ CVE 상세 ═══════════════════════════════════════════════ -->
+  <section data-route="cve" hidden>
+    <div class="page-header plain">
+      <div class="page-pretitle"><a href="#vulns/cve">취약점</a></div>
+      <div class="page-titlerow"><h1 class="mono" style="font-size:22px">CVE-2024-3094</h1>
+        <span class="sev critical"><i></i>심각</span><span class="tag kev">실제 악용</span></div>
+      <div class="page-subtitle">xz-utils 공급망 백도어 · 서버 2대 · 공개 2024-03-29</div>
+    </div>
+    <div class="note-now"><b>새로 생김</b>
+      <span>지금은 CVE 번호를 눌러도 갈 곳이 없습니다.</span></div>
+    <div class="body">
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">grype 이 준 값</h2></div>
+        <div class="card-body">
+          <table class="kv">
+            <tr><th>CVSS</th><td>10.0 <span class="faint">CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H</span></td></tr>
+            <tr><th>접근 경로</th><td>네트워크 · 인증 불필요 · 사용자 개입 불필요 · <b>권한 경계를 넘음</b></td></tr>
+            <tr><th>악용 확률</th><td>94.2% <span class="faint">EPSS</span></td></tr>
+            <tr><th>실제 악용</th><td><span class="tag kev">확인됨 (KEV)</span></td></tr>
+            <tr><th>별칭</th><td class="mono faint">GHSA-rxwq-x6h5-x525</td></tr>
+            <tr><th>수정본</th><td><b>5.4.3</b></td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">이 CVE 가 있는 서버</h2>
+          <span class="faint" style="font-size:13px">2대</span></div>
+        <div class="table-scroll"><table>
+          <thead><tr><th class="tight">서버</th><th class="tight">구역</th><th class="tight">패키지</th>
+            <th class="tight">설치 버전</th><th class="tight">판정</th><th class="tight"></th></tr></thead>
+          <tbody>
+          <tr><td class="tight"><a href="#asset">web-01</a></td>
+            <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
+            <td class="tight">xz-libs</td><td class="tight mono">5.4.1</td>
+            <td class="tight"><span class="tag nofix">미판정</span></td>
+            <td class="tight actions"><a class="btn small" href="#asset/vulns">판정</a></td></tr>
+          <tr><td class="tight"><a href="#asset">web-02</a></td>
+            <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
+            <td class="tight">xz-libs</td><td class="tight mono">5.4.1</td>
+            <td class="tight"><span class="tag nofix">미판정</span></td>
+            <td class="tight actions"><a class="btn small" href="#asset/vulns">판정</a></td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 패키지 (전역) ══════════════════════════════════════════ -->
+  <section data-route="packages" hidden>
+    <div class="page-header plain">
+      <div class="page-titlerow"><h1>패키지</h1>
+        <div class="btn-list"><button class="btn">CSV 내려받기</button></div></div>
+      <div class="page-subtitle">서버 7대 · 고유 패키지 3,481개</div>
+    </div>
+    <div class="note-now"><b>새로 생김 · V12 필요</b>
+      <span>취약점과 무관하게 <b>"무엇이 어디에 몇 버전으로 깔려 있나"</b> 에 답합니다.
+      지금은 <code>Scan.componentCount</code> 숫자 하나만 있어 <b>취약점이 붙은 패키지만</b> 알 수 있습니다.
+      log4j 가 어디 있는지 CVE 가 붙기 전에는 못 찾습니다.</span></div>
+    <div class="filters">
+      <span class="grow"><input type="search" id="q-pkgs" value="openssl" placeholder="패키지 이름"></span>
+      <select id="z-pkgs" aria-label="구역"><option>구역 전체</option><option>DMZ</option></select>
+      <select id="t-pkgs" aria-label="유형"><option>유형 전체</option><option>rpm</option><option>java-archive</option></select>
+      <label style="color:var(--fg-faint)"><input type="checkbox" id="vuln-only">취약점 있는 것만</label>
+    </div>
+    <div class="body flush">
+      <div class="table-scroll"><table>
+        <thead><tr><th class="tight sortable">패키지 <span class="sortmark">↑</span></th><th class="tight">유형</th>
+          <th class="num tight">설치 서버</th><th>버전 분포</th><th class="num tight">취약점</th></tr></thead>
+        <tbody>
+        <tr><td class="tight"><b>openssl</b></td><td class="tight faint">rpm</td>
+          <td class="num tight">7대</td>
+          <td><span class="mono">3.0.7-24</span> <span class="faint">5대</span> ·
+              <span class="mono">3.0.1-43</span> <span class="faint">2대</span></td>
+          <td class="num tight"><a href="#vulns">28</a></td></tr>
+        <tr><td class="tight"><b>openssl-libs</b></td><td class="tight faint">rpm</td>
+          <td class="num tight">7대</td>
+          <td><span class="mono">3.0.7-24</span> <span class="faint">5대</span> ·
+              <span class="mono">3.0.1-43</span> <span class="faint">2대</span></td>
+          <td class="num tight"><a href="#vulns">28</a></td></tr>
+        <tr><td class="tight"><b>openssl-pkcs11</b></td><td class="tight faint">rpm</td>
+          <td class="num tight">4대</td><td><span class="mono">0.4.11-7</span> <span class="faint">4대</span></td>
+          <td class="num tight faint">—</td></tr>
+        <tr><td class="tight"><b>pyOpenSSL</b></td><td class="tight faint">python</td>
+          <td class="num tight">2대</td><td><span class="mono">21.0.0</span> <span class="faint">2대</span></td>
+          <td class="num tight faint">—</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ══ 대응 ═══════════════════════════════════════════════════ -->
+  <section data-route="actions" hidden>
+    <div class="page-header">
+      <div class="page-titlerow"><h1>대응</h1>
+        <div class="btn-list"><button class="btn">CSV 내려받기</button></div></div>
+      <div class="tabs">
+        <a href="#actions/fix" data-tab="fix">조치<span class="n">12</span></a>
+        <a href="#actions/analysis" data-tab="analysis">판정·수용<span class="n">18</span></a>
+      </div>
+    </div>
+
+    <div data-pane="fix" hidden>
+      <div class="note-now" style="margin-top:14px"><b>바뀜</b>
+        <span>위험 수용 탭을 없애고 여기 둘째 탭으로 넣었습니다.
+        <b>등록은 이 화면에서 하지 않습니다</b> — 취약점 행에서 합니다.
+        이 화면은 결정을 모아 보는 자리입니다.</span></div>
+      <div class="filters">
+        <select id="z-fix" aria-label="구역"><option>구역 전체</option><option>DMZ</option></select>
+        <select id="s-fix" aria-label="서버"><option>서버 전체</option><option>web-01</option></select>
+        <select id="st-fix" aria-label="상태"><option>상태 전체</option><option>대기</option><option>진행 중</option><option>완료</option></select>
+        <label style="color:var(--fg-faint)"><input type="checkbox" id="od-fix" checked>기한 지난 것 먼저</label>
+      </div>
+      <div class="body flush">
+        <div class="table-scroll"><table>
+          <thead><tr><th class="tight">자산</th><th class="tight">패키지</th><th class="tight">현재 → 목표</th>
+            <th class="tight">상태</th><th class="tight">담당</th><th class="tight sortable">기한 <span class="sortmark">↑</span></th>
+            <th class="num tight">등록 시 건수</th><th>메모</th></tr></thead>
+          <tbody>
+          <tr><td class="tight"><a href="#asset">api-01</a></td><td class="tight"><a href="#actions">glibc</a></td>
+            <td class="tight faint mono">2.34-83 → 2.34-100</td><td class="tight"><span class="tag">대기</span></td>
+            <td class="tight">이운영</td><td class="tight overdue">2026-08-30</td>
+            <td class="num tight">21</td><td class="faint">담당자 휴가로 지연</td></tr>
+          <tr><td class="tight"><a href="#asset">web-01</a></td><td class="tight"><a href="#actions">xz-libs</a></td>
+            <td class="tight faint mono">5.4.1 → 5.4.3</td><td class="tight"><span class="tag">대기</span></td>
+            <td class="tight">이운영</td><td class="tight">2026-09-15</td>
+            <td class="num tight">1</td><td class="faint">—</td></tr>
+          <tr><td class="tight"><a href="#asset">web-01</a></td><td class="tight"><a href="#actions">openssh-server</a></td>
+            <td class="tight faint mono">8.7p1-34 → 8.7p1-38</td><td class="tight"><span class="tag">진행 중</span></td>
+            <td class="tight">이운영</td><td class="tight">2026-09-20</td>
+            <td class="num tight">2</td><td class="faint">정기 점검 때 반영</td></tr>
+          <tr><td class="tight"><a href="#asset">was-01</a></td><td class="tight"><a href="#actions">log4j-core</a></td>
+            <td class="tight faint mono">2.14.1 → 2.17.1</td><td class="tight"><span class="tag fix">완료</span></td>
+            <td class="tight">박개발</td><td class="tight faint">2026-09-05</td>
+            <td class="num tight">8</td><td class="faint">9/4 반영 확인</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div data-pane="analysis" hidden>
+      <div class="note-now" style="margin-top:14px"><b>바뀜</b>
+        <span>지금 위험 수용 폼은 <b>빈 칸(사유 textarea)</b> 하나입니다. 그래서 쓸 줄을 모릅니다.
+        CycloneDX VEX 어휘로 <b>고르게</b> 바꿨습니다 — 상태 5 · 근거 9 · 대응 5.
+        승인자와 다시 볼 날은 우리 규정상 더한 것입니다.</span></div>
+      <div class="filters">
+        <select id="z-an" aria-label="구역"><option>구역 전체</option><option>DMZ</option></select>
+        <select id="st-an" aria-label="상태"><option>상태 전체</option><option>조치 대상</option>
+          <option>해당 없음</option><option>오탐</option><option>검토 중</option></select>
+        <label style="color:var(--fg-faint)"><input type="checkbox" id="rev-an">다시 볼 날 지난 것만</label>
+      </div>
+      <div class="body flush">
+        <div class="table-scroll"><table>
+          <thead><tr><th class="tight">자산</th><th class="tight">취약점</th><th class="tight">패키지</th>
+            <th class="tight">상태</th><th class="tight">근거</th><th class="tight">대응</th>
+            <th class="tight">승인</th><th class="tight sortable">다시 볼 날 <span class="sortmark">↑</span></th>
+            <th class="tight">감춤</th></tr></thead>
+          <tbody>
+          <tr><td class="tight"><a href="#asset">web-01</a></td><td class="tight mono">CVE-2021-3712</td>
+            <td class="tight">openssl-libs</td><td class="tight"><span class="tag">오탐</span></td>
+            <td class="tight faint">—</td><td class="tight faint">—</td>
+            <td class="tight">김보안 팀장<div class="faint" style="font-size:12px">2026-05-31</div></td>
+            <td class="tight overdue">2026-08-31</td><td class="tight faint">예</td></tr>
+          <tr><td class="tight"><a href="#asset">web-01</a></td><td class="tight mono">CVE-2023-45853</td>
+            <td class="tight">zlib</td><td class="tight"><span class="tag fix">해당 없음</span></td>
+            <td class="tight faint">실행 경로 아님</td><td class="tight faint">고칠 수 없음</td>
+            <td class="tight">김보안 팀장<div class="faint" style="font-size:12px">2026-09-01</div></td>
+            <td class="tight">2027-03-31</td><td class="tight faint">예</td></tr>
+          <tr><td class="tight"><a href="#asset">db-01</a></td><td class="tight mono">CVE-2022-37434</td>
+            <td class="tight">zlib</td><td class="tight"><span class="tag fix">해당 없음</span></td>
+            <td class="tight faint">코드 없음</td><td class="tight faint">고칠 수 없음</td>
+            <td class="tight">김보안 팀장<div class="faint" style="font-size:12px">2026-09-01</div></td>
+            <td class="tight">2027-03-31</td><td class="tight faint">예</td></tr>
+          <tr><td class="tight"><a href="#asset">was-01</a></td><td class="tight mono">CVE-2024-2961</td>
+            <td class="tight">glibc</td><td class="tight"><span class="tag nofix">검토 중</span></td>
+            <td class="tight faint">—</td><td class="tight faint">—</td>
+            <td class="tight faint">—</td><td class="tight faint">—</td><td class="tight faint">아니오</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 보고서 고르기 ══════════════════════════════════════════ -->
+  <section data-route="reports" hidden>
+    <div class="page-header plain"><div class="page-titlerow"><h1>보고서</h1></div></div>
+    <div class="note-now"><b>바뀜</b>
+      <span>지금은 서버 보고서가 자산 상세 안에만 있고 구역 보고서는 따로 기둥에 있습니다.
+      한 화면에서 범위와 기간을 골라 뽑습니다.</span></div>
+    <div class="body">
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">새 보고서</h2></div>
+        <div class="card-body">
+          <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+            <label style="margin:0">범위
+              <select id="r-scope" style="min-width:9rem"><option>서버</option><option>구역</option><option>전체</option></select></label>
+            <label style="margin:0">대상
+              <select id="r-target" style="min-width:11rem"><option>web-01</option><option>web-02</option><option>api-01</option></select></label>
+            <label style="margin:0">기준
+              <select id="r-basis" style="min-width:11rem"><option>가장 최근 검사</option><option>기간</option></select></label>
+            <button class="btn primary" style="margin-bottom:0">보고서 만들기</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">최근에 만든 것</h2></div>
+        <div class="table-scroll"><table>
+          <thead><tr><th class="tight">대상</th><th class="tight">기준</th><th class="tight">만든 날</th>
+            <th class="tight">만든 사람</th><th class="tight"></th></tr></thead>
+          <tbody>
+          <tr><td class="tight"><b>web-01</b></td><td class="tight faint">2026-09-10 검사</td>
+            <td class="tight faint mono">2026-09-11</td><td class="tight faint">admin</td>
+            <td class="tight actions"><a class="btn small" href="#report">열기</a>
+              <button class="btn small">인쇄</button></td></tr>
+          <tr><td class="tight"><b>DMZ</b> <span class="faint">구역</span></td>
+            <td class="tight faint">2026-08-01 ~ 2026-08-31</td>
+            <td class="tight faint mono">2026-09-01</td><td class="tight faint">admin</td>
+            <td class="tight actions"><a class="btn small" href="#report">열기</a>
+              <button class="btn small">인쇄</button></td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 보고서 본문 ════════════════════════════════════════════ -->
+  <section data-route="report" hidden>
+    <div class="page-header plain">
+      <div class="page-pretitle"><a href="#reports">보고서</a></div>
+      <div class="page-titlerow"><h1>web-01 점검 결과 보고</h1>
+        <div class="btn-list"><button class="btn">인쇄 · PDF</button></div></div>
+    </div>
+
+    <div class="note-now"><b>바뀜</b>
+      <span>기·승·전·결과 장마다 붙던 서술형 문단을 <b>전부 없앴습니다.</b>
+      국내 점검 결과 보고서 형식으로 바꿨고, 내용은 표와 수치만 남습니다.</span></div>
+
+    <div class="body">
+    <div class="report">
+
+      <div class="doc-title"><h1>web-01 취약점 점검 결과 보고</h1></div>
+
+      <div class="docinfo"><table>
+        <tr><th>점검 대상</th><td>web-01 (DMZ) · Rocky Linux 9.3</td>
+            <th>점검 일시</th><td>2026-09-10 14:22</td></tr>
+        <tr><th>점검 도구</th><td>grype 0.87.0 · 취약점 DB 2026-09-09 기준</td>
+            <th>작성일</th><td>2026-09-11</td></tr>
+        <tr><th>SBOM</th><td>sbom-web01-0910.json · syft</td>
+            <th>작성자</th><td>admin</td></tr>
+      </table></div>
+
+      <section>
+        <h2>1. 점검 개요</h2>
+        <table>
+          <tr><th style="width:12rem">검사한 컴포넌트</th><td class="num" style="width:8rem">1,204</td><td></td></tr>
+          <tr><th>탐지 건수</th><td class="num"><b>187</b></td><td class="faint">grype 이 낸 191건에서 중복 4건 합침</td></tr>
+          <tr><th>고유 CVE</th><td class="num">164</td><td></td></tr>
+          <tr><th>영향 패키지</th><td class="num">63</td><td></td></tr>
+          <tr><th>판정으로 감춘 것</th><td class="num">3</td>
+            <td class="faint">아래 수치에는 포함되어 있습니다</td></tr>
+        </table>
+      </section>
+
+      <section>
+        <h2>2. 점검 결과 요약</h2>
+        <table>
+          <thead><tr><th class="tight">심각도</th><th class="num tight">건수</th>
+            <th class="num tight">비중</th><th>분포</th></tr></thead>
+          <tbody>
+          <tr><td class="tight"><i class="mark critical"></i> 심각</td><td class="num tight">3</td>
+            <td class="num tight">1.6%</td><td><div class="barcell"><span class="bar" style="width:1.6%;background:var(--critical)"></span></div></td></tr>
+          <tr><td class="tight"><i class="mark high"></i> 높음</td><td class="num tight">12</td>
+            <td class="num tight">6.4%</td><td><div class="barcell"><span class="bar" style="width:6.4%;background:var(--high)"></span></div></td></tr>
+          <tr><td class="tight"><i class="mark medium"></i> 보통</td><td class="num tight">61</td>
+            <td class="num tight">32.6%</td><td><div class="barcell"><span class="bar" style="width:32.6%;background:var(--medium)"></span></div></td></tr>
+          <tr><td class="tight"><i class="mark low"></i> 낮음</td><td class="num tight">111</td>
+            <td class="num tight">59.4%</td><td><div class="barcell"><span class="bar" style="width:59.4%;background:var(--low)"></span></div></td></tr>
+          <tr class="totalrow"><td class="tight">계</td><td class="num tight">187</td>
+            <td class="num tight">100%</td><td></td></tr>
+          </tbody>
+        </table>
+
+        <h3 style="margin-top:22px">수정 가능 여부</h3>
+        <table>
+          <thead><tr><th class="tight">구분</th><th class="num tight">건수</th><th class="num tight">비중</th></tr></thead>
+          <tbody>
+          <tr><td class="tight">패키지를 올리면 사라짐</td><td class="num tight">143</td><td class="num tight">76.5%</td></tr>
+          <tr><td class="tight">수정본 없음</td><td class="num tight">41</td><td class="num tight">21.9%</td></tr>
+          <tr><td class="tight">수정 상태 미상</td><td class="num tight">3</td><td class="num tight">1.6%</td></tr>
+          </tbody>
+        </table>
+
+        <h3 style="margin-top:22px">접근 경로</h3>
+        <table>
+          <thead><tr><th class="tight">구분</th><th class="num tight">건수</th></tr></thead>
+          <tbody>
+          <tr><td class="tight">원격 · 인증 불필요 · 사용자 개입 불필요</td><td class="num tight"><b>78</b></td></tr>
+          <tr><td class="tight">└ 그중 수정본 없음</td><td class="num tight danger-text">9</td></tr>
+          <tr><td class="tight">권한 경계를 넘음</td><td class="num tight">14</td></tr>
+          <tr><td class="tight">판단 불가</td><td class="num tight">2</td></tr>
+          <tr><td class="tight">실제 악용 확인 (KEV)</td><td class="num tight">2</td></tr>
+          </tbody>
+        </table>
+        <p class="footnote">
+          AV:N 원격 · PR:N 인증 불필요 · UI:N 사용자 개입 불필요 · S:C 권한 경계를 넘음.
+          판단 불가 2건은 grype 이 CVSS 3.x 벡터를 주지 않은 건으로, 어느 구분에도 넣지 않았습니다.
+        </p>
+      </section>
+
+      <section>
+        <h2>3. 조치 대상</h2>
+        <table>
+          <thead><tr><th class="tight">순위</th><th class="tight">패키지</th><th class="tight">현재 → 목표</th>
+            <th class="num tight">해소 건수</th><th class="tight">최고 심각도</th><th class="num tight">원격 접근</th></tr></thead>
+          <tbody>
+          <tr><td class="tight num">1</td><td class="tight"><b>glibc</b></td>
+            <td class="tight mono">2.34-83 → 2.34-100</td><td class="num tight">21</td>
+            <td class="tight"><span class="sev high"><i></i>높음</span></td><td class="num tight">14</td></tr>
+          <tr><td class="tight num">2</td><td class="tight"><b>openssl-libs</b></td>
+            <td class="tight mono">3.0.7-24 → 3.0.7-28</td><td class="num tight">18</td>
+            <td class="tight"><span class="sev high"><i></i>높음</span></td><td class="num tight">11</td></tr>
+          <tr><td class="tight num">3</td><td class="tight"><b>nghttp2</b></td>
+            <td class="tight mono">1.43.0 → 1.43.0-6</td><td class="num tight">4</td>
+            <td class="tight"><span class="sev high"><i></i>높음</span></td><td class="num tight">4</td></tr>
+          <tr><td class="tight num">4</td><td class="tight"><b>xz-libs</b></td>
+            <td class="tight mono">5.4.1 → 5.4.3</td><td class="num tight">1</td>
+            <td class="tight"><span class="sev critical"><i></i>심각</span></td><td class="num tight">1</td></tr>
+          <tr><td class="tight num">5</td><td class="tight"><b>openssh-server</b></td>
+            <td class="tight mono">8.7p1-34 → 8.7p1-38</td><td class="num tight">2</td>
+            <td class="tight"><span class="sev high"><i></i>높음</span></td><td class="num tight">2</td></tr>
+          <tr class="totalrow"><td class="tight" colspan="3">상위 5개 패키지 소계</td>
+            <td class="num tight">46</td><td class="tight"></td><td class="num tight">32</td></tr>
+          </tbody>
+        </table>
+        <p class="footnote">전체 조치 대상 38개 패키지 · 해소 가능 143건. 순위는 원격 접근 건수 → 실제 악용 → 최고 CVSS 순.</p>
+      </section>
+
+      <section>
+        <h2>4. 수정본 없는 항목</h2>
+        <table>
+          <thead><tr><th class="tight">패키지</th><th class="num tight">건수</th><th class="tight">최고 심각도</th>
+            <th class="tight">판정</th><th class="tight">근거</th><th class="tight">다시 볼 날</th></tr></thead>
+          <tbody>
+          <tr><td class="tight"><b>zlib</b></td><td class="num tight">2</td>
+            <td class="tight"><span class="sev critical"><i></i>심각</span></td>
+            <td class="tight">해당 없음</td><td class="tight faint">실행 경로 아님</td>
+            <td class="tight">2027-03-31</td></tr>
+          <tr><td class="tight"><b>krb5-libs</b></td><td class="num tight">3</td>
+            <td class="tight"><span class="sev high"><i></i>높음</span></td>
+            <td class="tight danger-text">미판정</td><td class="tight faint">—</td><td class="tight faint">—</td></tr>
+          <tr><td class="tight"><b>libtiff</b></td><td class="num tight">6</td>
+            <td class="tight"><span class="sev medium"><i></i>보통</span></td>
+            <td class="tight danger-text">미판정</td><td class="tight faint">—</td><td class="tight faint">—</td></tr>
+          </tbody>
+        </table>
+        <p class="footnote">수정본 없는 41건 중 판정이 없는 것 <b>38건</b>. 점검에서 사유를 묻는 자리입니다.</p>
+      </section>
+
+      <section>
+        <h2>5. 조치 진행 현황</h2>
+        <table>
+          <thead><tr><th class="tight">패키지</th><th class="tight">현재 → 목표</th><th class="tight">상태</th>
+            <th class="tight">담당</th><th class="tight">기한</th><th class="num tight">등록 시 건수</th></tr></thead>
+          <tbody>
+          <tr><td class="tight">openssh-server</td><td class="tight mono">8.7p1-34 → 8.7p1-38</td>
+            <td class="tight">진행 중</td><td class="tight">이운영</td><td class="tight">2026-09-20</td>
+            <td class="num tight">2</td></tr>
+          <tr><td class="tight">xz-libs</td><td class="tight mono">5.4.1 → 5.4.3</td>
+            <td class="tight">대기</td><td class="tight">이운영</td><td class="tight">2026-09-15</td>
+            <td class="num tight">1</td></tr>
+          </tbody>
+        </table>
+        <p class="footnote">조치 대상 38개 패키지 중 등록된 것 2개 · 기한 경과 0건.</p>
+      </section>
+
+      <section>
+        <h2>6. 이전 검사 대비</h2>
+        <table>
+          <thead><tr><th class="tight">구분</th><th class="num tight">건수</th><th>비고</th></tr></thead>
+          <tbody>
+          <tr><td class="tight">이전 검사</td><td class="num tight">183</td>
+            <td class="faint">2026-09-03 14:10 · grype DB 2026-09-02</td></tr>
+          <tr><td class="tight">신규</td><td class="num tight danger-text">+6</td>
+            <td class="faint">취약점 DB 갱신 4건 · 패키지 변경 2건</td></tr>
+          <tr><td class="tight">해소</td><td class="num tight ok-text">−2</td>
+            <td class="faint">log4j-core 2.17.1 반영</td></tr>
+          <tr><td class="tight">유지</td><td class="num tight">181</td><td></td></tr>
+          <tr class="totalrow"><td class="tight">이번 검사</td><td class="num tight">187</td><td></td></tr>
+          </tbody>
+        </table>
+        <p class="footnote">(CVE, 패키지명) 으로 대조했습니다. 버전을 넣으면 패치했을 때 키가 바뀌어 "해소 1건 + 신규 1건" 으로 갈라집니다.</p>
+      </section>
+
+      <p class="footnote" style="border-top:1px solid var(--line);padding-top:12px">
+        이 문서의 모든 수치는 grype 0.87.0 (취약점 DB 2026-09-09) 의 출력입니다.
+        심각도와 수정 버전을 다시 계산하지 않습니다.
+      </p>
+    </div>
+    </div>
+  </section>
+
+  <!-- ══ 설정 ═══════════════════════════════════════════════════ -->
+  <section data-route="settings" hidden>
+    <div class="page-header">
+      <div class="page-titlerow"><h1>설정</h1></div>
+      <div class="tabs">
+        <a href="#settings/accounts" data-tab="accounts">계정<span class="n">4</span></a>
+        <a href="#settings/ips" data-tab="ips">접근 IP</a>
+        <a href="#settings/tools" data-tab="tools">도구</a>
+        <a href="#settings/audit" data-tab="audit">감사 로그</a>
+      </div>
+    </div>
+
+    <div data-pane="accounts" hidden>
+      <div class="note-now" style="margin-top:14px"><b>바뀜</b>
+        <span>초기화·삭제만 있고 <b>수정이 없었습니다.</b> 권한은 드롭다운을 바꾸는 순간 저장돼
+        확인 한 번 없이 바뀌었습니다. <b>수정 버튼 → 팝업</b>으로 바꿨습니다.
+        구역 표는 자산 화면으로 옮겼습니다.</span></div>
+      <div class="body">
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">계정</h2>
+            <div class="btn-list"><button class="btn small primary" data-open="newuser">계정 추가</button></div></div>
+          <div class="table-scroll"><table>
+            <thead><tr><th class="tight">계정</th><th class="tight">권한</th><th class="tight">마지막 로그인</th>
+              <th class="tight">상태</th><th class="tight"></th></tr></thead>
+            <tbody>
+            <tr><td class="tight"><b>admin</b><div class="faint" style="font-size:12px">최초 관리자</div></td>
+              <td class="tight">관리자</td><td class="tight faint mono">2026-09-12 09:14</td>
+              <td class="tight faint">—</td>
+              <td class="tight actions"><button class="btn small" data-open="edituser">수정</button>
+                <button class="btn small">비밀번호 초기화</button>
+                <button class="btn small danger">삭제</button></td></tr>
+            <tr><td class="tight"><b>kim.bosan</b><div class="faint" style="font-size:12px">김보안 · 정보보호팀</div></td>
+              <td class="tight">관리자</td><td class="tight faint mono">2026-09-12 08:02</td>
+              <td class="tight faint">—</td>
+              <td class="tight actions"><button class="btn small" data-open="edituser">수정</button>
+                <button class="btn small">비밀번호 초기화</button>
+                <button class="btn small danger">삭제</button></td></tr>
+            <tr><td class="tight"><b>lee.unyoung</b><div class="faint" style="font-size:12px">이운영 · 인프라운영팀</div></td>
+              <td class="tight">조회</td><td class="tight faint mono">2026-09-11 17:40</td>
+              <td class="tight"><span class="tag nofix">초기화됨</span></td>
+              <td class="tight actions"><button class="btn small" data-open="edituser">수정</button>
+                <button class="btn small">비밀번호 초기화</button>
+                <button class="btn small danger">삭제</button></td></tr>
+            <tr><td class="tight"><b>park.gaebal</b><div class="faint" style="font-size:12px">박개발 · 시스템개발팀</div></td>
+              <td class="tight">조회</td><td class="tight faint">없음</td>
+              <td class="tight"><span class="tag kev">잠김 12분 남음</span></td>
+              <td class="tight actions"><button class="btn small" data-open="edituser">수정</button>
+                <button class="btn small">잠금 해제</button>
+                <button class="btn small danger">삭제</button></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <div data-pane="ips" hidden>
+      <div class="body">
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">접속을 허용할 IP · 대역</h2></div>
+          <div class="card-body">
+            <textarea id="ips" rows="4" style="max-width:32rem">192.168.10.0/24
+10.0.0.5</textarea>
+            <p style="font-size:14px"><b>제한 중</b> · 지금 접속 주소 <code>192.168.10.41</code></p>
+            <button class="btn primary">저장</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div data-pane="tools" hidden>
+      <div class="body">
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">grype</h2></div>
+          <div class="card-body">
+            <table class="kv">
+              <tr><th>상태</th><td><span class="tag fix">실행됨</span> <b>0.87.0</b></td></tr>
+              <tr><th>취약점 DB</th><td>2026-09-09 기준 <span class="faint">· 3일 전</span></td></tr>
+              <tr><th>실행 경로</th><td><code>C:\tools\grype\grype.exe</code></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div data-pane="audit" hidden>
+      <div class="note-now" style="margin-top:14px"><b>바뀜</b>
+        <span>기둥에 상시 노출돼 있던 감사 로그를 설정 안으로 넣었습니다.</span></div>
+      <div class="body flush">
+        <div class="table-scroll"><table>
+          <thead><tr><th class="tight">시각</th><th class="tight">계정</th><th class="tight">주소</th>
+            <th class="tight">행위</th><th>내용</th></tr></thead>
+          <tbody>
+          <tr><td class="tight faint mono">2026-09-12 09:14</td><td class="tight">admin</td>
+            <td class="tight faint mono">192.168.10.41</td><td class="tight">로그인</td><td class="faint">—</td></tr>
+          <tr><td class="tight faint mono">2026-09-11 17:22</td><td class="tight">kim.bosan</td>
+            <td class="tight faint mono">192.168.10.52</td><td class="tight">판정 변경</td>
+            <td class="faint">web-01 · CVE-2023-45853 · 미판정 → 해당 없음</td></tr>
+          <tr><td class="tight faint mono">2026-09-11 09:14</td><td class="tight">admin</td>
+            <td class="tight faint mono">192.168.10.41</td><td class="tight">계정 수정</td>
+            <td class="faint">lee.unyoung · 권한 관리자 → 조회</td></tr>
+          <tr><td class="tight faint mono">2026-09-10 14:22</td><td class="tight">admin</td>
+            <td class="tight faint mono">192.168.10.41</td><td class="tight">SBOM 업로드</td>
+            <td class="faint">web-01 · sbom-web01-0910.json · 84.2MB</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 내 계정 ════════════════════════════════════════════════ -->
+  <section data-route="me" hidden>
+    <div class="page-header plain"><div class="page-titlerow"><h1>내 계정</h1></div></div>
+    <div class="note-now"><b>새로 생김</b>
+      <span>지금은 기둥 아래 이름을 누르면 곧바로 비밀번호 변경으로 갑니다.
+      누를 곳 하나에 갈 곳이 셋이면 그건 링크가 아니라 메뉴입니다 — 왼쪽 아래를 눌러 보세요.</span></div>
+    <div class="body">
+      <div class="card" style="max-width:38rem">
+        <div class="card-header"><h2 class="card-title">계정 정보</h2></div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+            <span class="avatar" style="width:40px;height:40px;border-radius:20px;font-size:15px">KL</span>
+            <div><b style="font-size:16px">admin</b>
+              <div class="faint" style="font-size:13px">관리자 · 전체 권한</div></div>
+          </div>
+          <table class="kv">
+            <tr><th>이름</th><td><input id="me-name" value="이기윤 · 정보보호팀" style="max-width:20rem"></td></tr>
+            <tr><th>마지막 로그인</th><td>2026-09-12 09:14 <span class="faint">· 192.168.10.41</span></td></tr>
+            <tr><th>계정 만든 날</th><td>2026-01-04</td></tr>
+          </table>
+          <div style="text-align:right"><button class="btn primary">이름 저장</button></div>
+        </div>
+      </div>
+
+      <div class="card" style="max-width:38rem">
+        <div class="card-header"><h2 class="card-title">비밀번호</h2></div>
+        <div class="card-body">
+          <table class="kv">
+            <tr><th>마지막 변경</th><td>2026-06-01 <span class="faint">· 103일 전</span></td></tr>
+            <tr><th>변경 주기</th><td>90일 <span class="tag nofix">기한 지남</span></td></tr>
+          </table>
+          <div style="text-align:right"><button class="btn">비밀번호 변경</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 빈 화면 보기 ═══════════════════════════════════════════ -->
+  <section data-route="empty" hidden>
+    <div class="page-header plain"><div class="page-titlerow"><h1>자산</h1>
+      <div class="btn-list"><button class="btn primary">자산 등록</button></div></div></div>
+    <div class="empty">
+      <div class="glyph">+</div>
+      <b>등록된 자산이 없습니다</b>
+      <p>서버를 등록하고 그 서버에서 syft 로 뽑은 SBOM 을 올립니다.</p>
+      <button class="btn primary">자산 등록</button>
+    </div>
+  </section>
+
+  </div>
+</div>
+
+<!-- ══ 팝업 ═════════════════════════════════════════════════════ -->
+<dialog id="edituser">
+  <h2>계정 수정 — lee.unyoung</h2>
+  <div class="field2">
+    <label>이름 <input id="eu-name" value="이운영 · 인프라운영팀"></label>
+    <label>권한 <select id="eu-role"><option>관리자 — 전체 권한</option><option selected>조회 — 읽기 전용</option></select></label>
+  </div>
+  <label>새 비밀번호 <span class="faint">— 비워 두면 바꾸지 않습니다</span>
+    <input id="eu-pw" type="password" placeholder="8자 이상"></label>
+  <div style="display:flex;gap:18px;flex-wrap:wrap">
+    <label style="display:inline-flex;align-items:center;gap:6px;margin:0">
+      <input type="checkbox" id="eu-enabled" checked>이 계정을 쓸 수 있게 함</label>
+    <label style="display:inline-flex;align-items:center;gap:6px;margin:0">
+      <input type="checkbox" id="eu-unlock">잠금 해제</label>
+  </div>
+  <div class="dialog-actions">
+    <button class="btn" data-close>취소</button>
+    <button class="btn primary" data-close>저장</button>
+  </div>
+</dialog>
+
+<dialog id="newuser">
+  <h2>계정 추가</h2>
+  <div class="field2">
+    <label>계정 이름 <input id="nu-id" placeholder="hong.gildong"></label>
+    <label>이름 <input id="nu-name" placeholder="홍길동 · 인프라운영팀"></label>
+    <label>비밀번호 <input id="nu-pw" type="password" placeholder="8자 이상"></label>
+    <label>권한 <select id="nu-role"><option>조회 — 읽기 전용</option><option>관리자 — 전체 권한</option></select></label>
+  </div>
+  <div class="dialog-actions">
+    <button class="btn" data-close>취소</button>
+    <button class="btn primary" data-close>추가</button>
+  </div>
+</dialog>
+
+<dialog id="zonedlg">
+  <h2>구역 관리</h2>
+  <table>
+    <thead><tr><th class="tight">구역</th><th class="num tight">자산</th><th class="tight">색</th><th class="tight"></th></tr></thead>
+    <tbody>
+    <tr><td class="tight"><input id="z1" value="DMZ" style="min-width:8rem"></td><td class="num tight">3</td>
+      <td class="tight"><input type="color" id="z1c" value="#a71922"></td>
+      <td class="tight faint" style="font-size:12.5px">자산이 남아 있음</td></tr>
+    <tr><td class="tight"><input id="z2" value="내부업무" style="min-width:8rem"></td><td class="num tight">3</td>
+      <td class="tight"><input type="color" id="z2c" value="#2262bb"></td>
+      <td class="tight faint" style="font-size:12.5px">자산이 남아 있음</td></tr>
+    <tr><td class="tight"><input id="z3" value="관리망" style="min-width:8rem"></td><td class="num tight">2</td>
+      <td class="tight"><input type="color" id="z3c" value="#1b854f"></td>
+      <td class="tight faint" style="font-size:12.5px">자산이 남아 있음</td></tr>
+    <tr><td class="tight"><b>미분류</b></td><td class="num tight">1</td>
+      <td class="tight"><input type="color" id="z4c" value="#8a919b"></td>
+      <td class="tight faint" style="font-size:12.5px">기본 구역</td></tr>
+    </tbody>
+  </table>
+  <div style="display:flex;gap:8px;align-items:flex-end;margin-top:16px;flex-wrap:wrap">
+    <label style="margin:0;flex:1">구역 추가 <input id="znew" placeholder="개발망"></label>
+    <input type="color" id="znewc" value="#2262bb">
+    <button class="btn">추가</button>
+  </div>
+  <div class="dialog-actions"><button class="btn primary" data-close>닫기</button></div>
+</dialog>
+
+<script>
+// 화면 전환. 실제 앱은 서버가 그리고, 여기서는 주소의 # 로 가른다 —
+// 탭 선택이 주소에 남아야 한다는 것을 그대로 보여 주려는 것이다.
+(function () {
+  var sections = document.querySelectorAll('[data-route]');
+
+  function show() {
+    var route = (location.hash || '#assets').slice(1);
+    var parts = route.split('/');
+    var head = parts[0];
+    var sub = parts[1] || '';
+
+    // 정확히 맞는 화면이 있으면 그것, 없으면 앞부분만 맞는 화면.
+    var target = document.querySelector('[data-route="' + route + '"]')
+              || document.querySelector('[data-route="' + head + '"]');
+
+    sections.forEach(function (s) { s.hidden = s !== target; });
+    if (!target) return;
+
+    // 기둥
+    document.querySelectorAll('#mainnav a').forEach(function (a) {
+      a.classList.toggle('current', a.dataset.nav === head
+        || (head === 'asset' && a.dataset.nav === 'assets')
+        || (head === 'cve' && a.dataset.nav === 'vulns')
+        || (head === 'report' && a.dataset.nav === 'reports'));
+    });
+
+    // 탭 — 없으면 첫 탭
+    var tabs = target.querySelectorAll('[data-tab]');
+    if (tabs.length) {
+      var want = sub || tabs[0].dataset.tab;
+      tabs.forEach(function (t) { t.classList.toggle('current', t.dataset.tab === want); });
+      target.querySelectorAll('[data-pane]').forEach(function (p) {
+        p.hidden = p.dataset.pane !== want;
+      });
+    }
+    window.scrollTo(0, 0);
+  }
+
+  window.addEventListener('hashchange', show);
+  show();
+
+  // 판정 칸 펼치기
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-row]');
+    if (btn) {
+      var row = document.querySelector('[data-expand="' + btn.dataset.row + '"]');
+      if (row) { row.hidden = !row.hidden; }
+      return;
+    }
+    var open = e.target.closest('[data-open]');
+    if (open) { document.getElementById(open.dataset.open).showModal(); return; }
+    if (e.target.closest('[data-close]')) { e.target.closest('dialog').close(); }
+  });
+
+  // 상태가 '해당 없음' 일 때만 근거를 고를 수 있다.
+  var state = document.getElementById('a-state');
+  var just = document.getElementById('a-just');
+  if (state && just) {
+    state.addEventListener('change', function () {
+      just.disabled = state.value !== '해당 없음';
+    });
+  }
+
+  // 메뉴 밖을 누르면 닫는다.
+  document.addEventListener('click', function (e) {
+    var menu = document.getElementById('accountmenu');
+    if (menu && menu.open && !menu.contains(e.target)) { menu.open = false; }
+  });
+})();
+</script>
