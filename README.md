@@ -33,6 +33,10 @@ HTTPS 는 필수다(443). 금융권 지침상 http 로는 열지 않는다.
 
 ## 설치
 
+아래는 요약이다. **Windows 11 PC 에 처음부터 올리는 전체 절차는
+[`docs/windows-setup.md`](docs/windows-setup.md) 에 있다** — 단계마다 확인
+명령과 막혔을 때 볼 곳이 붙어 있다.
+
 ### 1. 준비물
 
 - JDK 21 (Maven 은 필요 없다 — 저장소의 `mvnw` 래퍼가 알아서 받는다)

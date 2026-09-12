@@ -127,9 +127,9 @@ Write-Host "설치 위치: $InstallDir"
 if (($env:Path -split ';') -notcontains $InstallDir) {
     Write-Host "PATH에 없습니다. 다음을 실행한 뒤 새 터미널을 여세요:"
     Write-Host "  [Environment]::SetEnvironmentVariable('Path', `"`$env:Path;$InstallDir`", 'User')"
-    Write-Host "또는 .env 에 경로를 지정하세요:"
-    Write-Host "  SYFT_BIN=$InstallDir\syft.exe"
-    Write-Host "  GRYPE_BIN=$InstallDir\grype.exe"
+    Write-Host "또는 config\env.ps1 에 경로를 지정하세요:"
+    Write-Host "  `$env:SBOMSIGHT_SYFT  = '$InstallDir\syft.exe'"
+    Write-Host "  `$env:SBOMSIGHT_GRYPE = '$InstallDir\grype.exe'"
 }
 Write-Host ""
 Write-Host "취약점 DB 준비 (인터넷 필요):  grype db update"
