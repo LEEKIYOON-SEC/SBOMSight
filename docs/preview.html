@@ -352,7 +352,7 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 }
 .iconbtn:hover { background: var(--hover); color: var(--fg); }
 
-/* ── 판정 펼침 — 새로 더함 ──────────────────────────────────────── */
+/* ── 검토 결과 펼침 — 새로 더함 ──────────────────────────────────────── */
 tr.expand > td { background: var(--sunken); padding: 0; border-bottom: 1px solid var(--line); }
 .analysis { padding: 16px var(--gutter); display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .analysis .full { grid-column: 1 / -1; }
@@ -521,11 +521,11 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     </div>
 
     <div class="summaryline">
-      <a href="#assets"><b>2</b> 검사 안 한 서버</a>
-      <a href="#assets"><b>1</b> 30일 넘은 서버</a>
+      <a href="#assets"><b>2</b> 검사 안 한 자산</a>
+      <a href="#assets"><b>1</b> 30일 넘은 자산</a>
       <a href="#actions" class="alert"><b>1</b> 기한 지난 조치</a>
       <a href="#vulns"><b>16</b> 심각</a>
-      <a href="#vulns"><b>209</b> 수정본 없음</a>
+      <a href="#vulns"><b>209</b> 수정 버전 없음</a>
     </div>
 
     <div class="filters">
@@ -547,7 +547,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         <table>
           <thead>
           <tr>
-            <th class="tight sortable">서버 <span class="sortmark">↑</span></th>
+            <th class="tight sortable">자산 <span class="sortmark">↑</span></th>
             <th class="tight">운영체제</th>
             <th class="tight sortable">마지막 검사</th>
             <th class="num tight sortable">탐지</th>
@@ -721,7 +721,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     <div class="note-now">
       <b>바뀜</b>
       <span>시안의 구역 현황입니다. 별도 화면으로 만들지 않고 자산의 보기 전환으로 뒀습니다 —
-      <b>카드 안에 그 구역 서버가 그대로 들어 있어</b> 눌러서 자산 목록으로 튕기지 않습니다.</span>
+      <b>카드 안에 그 구역 자산이 그대로 들어 있어</b> 눌러서 자산 목록으로 튕기지 않습니다.</span>
     </div>
 
     <div class="filters">
@@ -843,7 +843,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         <a href="#asset/vulns" data-tab="vulns">취약점<span class="n">187</span></a>
         <a href="#asset/packages" data-tab="packages">패키지<span class="n">1,204</span></a>
         <a href="#asset/history" data-tab="history">검사 이력<span class="n">12</span></a>
-        <a href="#asset/actions" data-tab="actions">조치·판정<span class="n">5</span></a>
+        <a href="#asset/actions" data-tab="actions">조치·검토<span class="n">5</span></a>
       </div>
     </div>
 
@@ -860,7 +860,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
           <div class="progress-head">
             <span class="spinner"></span>
             <b>grype 검사</b>
-            <span class="faint">취약점 대조 중 · 컴포넌트 1,204개</span>
+            <span class="faint">취약점 대조 중 · 패키지 1,204개</span>
             <span class="spacer"></span>
             <span class="faint num">2분 41초</span>
           </div>
@@ -901,10 +901,10 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     <!-- 취약점 탭 -->
     <div data-pane="vulns" hidden>
       <div class="note-now" style="margin-top:14px">
-        <b>바뀜 · 판정은 여기입니다</b>
-        <span>한 서버의 취약점은 <b>그 서버 안에서 봅니다.</b> 표를 그리는 조각은
+        <b>바뀜 · 검토 결과는 여기입니다</b>
+        <span>한 자산의 취약점은 <b>그 자산 안에서 봅니다.</b> 표를 그리는 조각은
         전체 취약점 화면과 같은 것을 씁니다.
-        <b>오른쪽 끝 `판정 ▾` 버튼</b>을 누르면 그 자리에서 판정 칸이 펼쳐집니다
+        <b>오른쪽 끝 `검토 ▾` 버튼</b>을 누르면 그 자리에서 검토 칸이 펼쳐집니다
         (첫 줄은 보이시라고 펼쳐 뒀습니다). 상태를 <b>해당 없음</b> 으로 바꾸면 근거가 열립니다.</span>
       </div>
 
@@ -916,9 +916,9 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         </span>
         <span class="grow"><input type="search" id="q-asset" placeholder="CVE · 패키지 이름"></span>
         <select id="sev-asset" aria-label="심각도"><option>심각도 전체</option><option>심각</option><option>높음</option></select>
-        <select id="fix-asset" aria-label="수정본"><option>수정본 전체</option><option>있음</option><option>없음</option></select>
-        <select id="an-asset" aria-label="판정"><option>판정 전체</option><option>미판정</option><option>해당됨</option><option>해당 없음</option></select>
-        <label style="color:var(--fg-faint)"><input type="checkbox" id="hidden-asset">감춘 것도</label>
+        <select id="fix-asset" aria-label="수정 버전"><option>수정 버전 전체</option><option>있음</option><option>없음</option></select>
+        <select id="an-asset" aria-label="검토 결과"><option>검토 결과 전체</option><option>미검토</option><option>해당됨</option><option>해당 없음</option></select>
+        <label style="color:var(--fg-faint)"><input type="checkbox" id="hidden-asset">검토 끝난 것도</label>
       </div>
 
       <div class="body flush">
@@ -928,7 +928,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
               <th class="tight">취약점</th><th class="tight sortable">심각도 <span class="sortmark">↓</span></th>
               <th class="num tight sortable">CVSS</th><th class="num tight">악용 확률</th>
               <th class="tight">패키지</th><th class="tight">설치 → 수정</th>
-              <th class="tight">판정</th><th class="tight"></th>
+              <th class="tight">검토 결과</th><th class="tight"></th>
             </tr></thead>
             <tbody>
             <tr class="rowtoggle" data-row="r1">
@@ -938,17 +938,17 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
               <td class="num tight">10.0</td><td class="num tight">94.2%</td>
               <td class="tight">xz-libs <span class="faint">rpm</span></td>
               <td class="tight">5.4.1 → <b>5.4.3</b></td>
-              <td class="tight"><span class="tag nofix">미판정</span></td>
-              <td class="tight actions"><button class="btn small" data-row="r1">판정 ▾</button></td>
+              <td class="tight"><span class="tag nofix">미검토</span></td>
+              <td class="tight actions"><button class="btn small" data-row="r1">검토 ▾</button></td>
             </tr>
-            <!-- 첫 줄은 펼친 채로 둔다 — 판정 칸이 어디 있는지 바로 보이게. -->
+            <!-- 첫 줄은 펼친 채로 둔다 — 검토 칸이 어디 있는지 바로 보이게. -->
             <tr class="expand" data-expand="r1"><td colspan="8">
               <div class="analysis">
                 <label class="full" style="font-size:13.5px;color:var(--fg)">
                   <b>CVE-2024-3094</b> · xz-libs 5.4.1</label>
                 <label>상태
                   <select id="a-state">
-                    <option>미판정</option><option>검토 중</option>
+                    <option>미검토</option><option>검토 중</option>
                     <option selected>해당됨</option><option>해당 없음</option><option>오탐</option></select>
                   <div class="hint" id="a-state-hint">우리 환경에 영향이 있습니다. 고쳐야 합니다.</div>
                 </label>
@@ -972,23 +972,28 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
                     <option>우회 조치 (패치 없이)</option>
                     <option>조치 불가</option>
                     <option>조치 안 함 (위험 수용)</option></select>
-                  <div class="hint" id="a-resp-hint">수정본이 나온 버전으로 올립니다.</div>
+                  <div class="hint" id="a-resp-hint">수정 버전이 나온 버전으로 올립니다.</div>
                 </label>
-                <label>승인한 사람 <input id="a-by" value="김보안 팀장"></label>
-                <label>다시 볼 날 <input id="a-review" type="date" value="2026-12-31"></label>
+                <label>결재 문서 번호 <span class="faint">— 있으면</span>
+                  <input id="a-by" value="보안-2026-0912" placeholder="사내 결재 번호">
+                  <div class="hint">승인은 사내 결재에서 납니다. 여기엔 그 번호만 적습니다.</div></label>
+                <label>재검토일 <input id="a-review" type="date" value="2026-12-31"></label>
+                <label>기록한 사람
+                  <input id="a-rec" value="admin" disabled>
+                  <div class="hint">로그인한 계정이 자동으로 남습니다.</div></label>
                 <label class="full">메모
                   <textarea id="a-note" rows="2">5.4.3 으로 올리는 것으로 확정. 9/15 정기 점검 때 반영.</textarea></label>
                 <div class="full row">
-                  <label style="display:inline-flex;align-items:center;gap:6px;margin:0">
-                    <input type="checkbox" id="a-hide">목록에서 감추기</label>
-                  <span class="faint" style="font-size:12.5px">감춰도 보고서의 탐지 건수는 줄지 않습니다.</span>
+                  <span class="faint" style="font-size:12.5px">
+                    <b>해당 없음</b>·<b>오탐</b> 으로 저장하면 기본 목록에서 빠집니다.
+                    보고서의 탐지 건수는 줄지 않습니다.</span>
                   <span style="flex:1"></span>
                   <button class="btn small">취소</button>
                   <button class="btn small primary">저장</button>
                 </div>
               </div>
               <div class="history">
-                <div>2026-09-11 09:14 · admin · 상태 미판정 → 해당됨</div>
+                <div>2026-09-11 09:14 · admin · 상태 미검토 → 해당됨</div>
                 <div>2026-09-10 16:40 · admin · 처음 탐지됨 (grype 0.87.0)</div>
               </div>
             </td></tr>
@@ -998,15 +1003,15 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
               <td class="tight"><span class="sev critical"><i></i>심각</span></td>
               <td class="num tight">9.8</td><td class="num tight faint">—</td>
               <td class="tight">zlib <span class="faint">rpm</span></td>
-              <td class="tight">1.2.11 → <span class="tag nofix">수정본 없음</span></td>
+              <td class="tight">1.2.11 → <span class="tag nofix">수정 버전 없음</span></td>
               <td class="tight"><span class="tag fix">해당 없음</span>
                 <div class="faint" style="font-size:12px">취약한 코드를 실행하지 않음</div></td>
-              <td class="tight actions"><button class="btn small" data-row="r2">판정 ▾</button></td>
+              <td class="tight actions"><button class="btn small" data-row="r2">검토 ▾</button></td>
             </tr>
             <tr class="expand" data-expand="r2" hidden><td colspan="8">
               <div class="analysis">
                 <label class="full" style="font-size:13.5px;color:var(--fg)"><b>CVE-2023-45853</b> · zlib 1.2.11</label>
-                <label>상태 <select id="a2-state"><option>미판정</option><option>검토 중</option>
+                <label>상태 <select id="a2-state"><option>미검토</option><option>검토 중</option>
                   <option>해당됨</option><option selected>해당 없음</option><option>오탐</option></select>
                   <div class="hint">탐지는 맞지만 우리 환경에는 영향이 없습니다.</div></label>
                 <label>근거 <select id="a2-just"><option>취약한 코드가 들어 있지 않음</option>
@@ -1014,13 +1019,13 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
                   <option>특정 설정을 켜야 하는데 안 켜 둠</option></select></label>
                 <label>대응 <select id="a2-resp"><option selected>조치 불가</option>
                   <option>버전 올려 조치</option></select>
-                  <div class="hint">수정본이 없고 우회도 되지 않습니다.</div></label>
-                <label>승인한 사람 <input id="a2-by" value="김보안 팀장"></label>
-                <label>다시 볼 날 <input id="a2-review" type="date" value="2027-03-31"></label>
-                <label class="full">메모 <textarea id="a2-note" rows="2">minizip 기능을 쓰지 않음. 업스트림 수정본 없음.</textarea></label>
+                  <div class="hint">수정 버전이 없고 우회도 되지 않습니다.</div></label>
+                <label>결재 문서 번호 <input id="a2-by" value="보안-2026-0901"></label>
+                <label>재검토일 <input id="a2-review" type="date" value="2027-03-31"></label>
+                <label class="full">메모 <textarea id="a2-note" rows="2">minizip 기능을 쓰지 않음. 업스트림 수정 버전 없음.</textarea></label>
                 <div class="full row">
-                  <label style="display:inline-flex;align-items:center;gap:6px;margin:0">
-                    <input type="checkbox" id="a2-hide" checked>목록에서 감추기</label>
+                  <span class="faint" style="font-size:12.5px">
+                    <b>해당 없음</b> 이라 기본 목록에서 빠져 있습니다.</span>
                   <span style="flex:1"></span>
                   <button class="btn small">취소</button><button class="btn small primary">저장</button>
                 </div>
@@ -1035,7 +1040,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
               <td class="tight">openssh-server <span class="faint">rpm</span></td>
               <td class="tight">8.7p1 → <b>8.7p1-38</b></td>
               <td class="tight"><span class="tag">조치 등록됨</span></td>
-              <td class="tight actions"><button class="btn small" data-row="r3">판정 ▾</button></td>
+              <td class="tight actions"><button class="btn small" data-row="r3">검토 ▾</button></td>
             </tr>
             <tr class="expand" data-expand="r3" hidden><td colspan="8">
               <div class="analysis"><label class="full faint" style="font-size:13.5px">
@@ -1049,11 +1054,11 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
               <td class="num tight">7.3</td><td class="num tight">0.4%</td>
               <td class="tight">glibc <span class="faint">rpm</span></td>
               <td class="tight">2.34 → <b>2.34-100</b></td>
-              <td class="tight"><span class="tag nofix">미판정</span></td>
-              <td class="tight actions"><button class="btn small" data-row="r4">판정 ▾</button></td>
+              <td class="tight"><span class="tag nofix">미검토</span></td>
+              <td class="tight actions"><button class="btn small" data-row="r4">검토 ▾</button></td>
             </tr>
             <tr class="expand" data-expand="r4" hidden><td colspan="8">
-              <div class="analysis"><label class="full faint" style="font-size:13.5px">위와 같은 판정 칸이 펼쳐집니다.</label></div>
+              <div class="analysis"><label class="full faint" style="font-size:13.5px">위와 같은 검토 칸이 펼쳐집니다.</label></div>
             </td></tr>
 
             <tr class="rowtoggle" data-row="r5">
@@ -1063,11 +1068,11 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
               <td class="num tight">7.5</td><td class="num tight">88.1%</td>
               <td class="tight">nghttp2 <span class="faint">rpm</span></td>
               <td class="tight">1.43.0 → <b>1.43.0-6</b></td>
-              <td class="tight"><span class="tag nofix">미판정</span></td>
-              <td class="tight actions"><button class="btn small" data-row="r5">판정 ▾</button></td>
+              <td class="tight"><span class="tag nofix">미검토</span></td>
+              <td class="tight actions"><button class="btn small" data-row="r5">검토 ▾</button></td>
             </tr>
             <tr class="expand" data-expand="r5" hidden><td colspan="8">
-              <div class="analysis"><label class="full faint" style="font-size:13.5px">위와 같은 판정 칸이 펼쳐집니다.</label></div>
+              <div class="analysis"><label class="full faint" style="font-size:13.5px">위와 같은 검토 칸이 펼쳐집니다.</label></div>
             </td></tr>
             </tbody>
           </table>
@@ -1081,7 +1086,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
       <div class="note-now" style="margin-top:14px">
         <b>새로 생김</b>
         <span>지금은 <b>취약점이 붙은 패키지만</b> 알 수 있습니다.
-        "이 서버에 뭐가 깔려 있나" 에 답하려면 컴포넌트를 저장해야 합니다(V12).</span>
+        "이 자산에 뭐가 깔려 있나" 에 답하려면 패키지를 저장해야 합니다(V12).</span>
       </div>
       <div class="filters">
         <span class="grow"><input type="search" id="q-pkg-asset" placeholder="패키지 이름"></span>
@@ -1140,7 +1145,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
             <thead><tr>
               <th class="tight">시각</th><th class="tight">상태</th>
               <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
-              <th class="num tight">컴포넌트</th><th class="tight">grype</th>
+              <th class="num tight">패키지</th><th class="tight">grype</th>
               <th class="tight">DB 기준일</th><th>SBOM</th><th class="tight"></th>
             </tr></thead>
             <tbody>
@@ -1157,7 +1162,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
                 <button class="btn small danger">삭제</button></td>
             </tr>
             <tr>
-              <td class="tight mono">2026-09-03 14:10<div class="faint" style="font-size:12px">재검사 (원본 2026-08-27)</div></td>
+              <td class="tight mono">2026-09-03 14:10<div class="faint" style="font-size:12px">다시 검사 (원본 2026-08-27)</div></td>
               <td class="tight"><span class="status DONE">완료</span></td>
               <td class="num tight">183</td><td class="num tight"><span class="ok-text">−2</span></td>
               <td class="num tight">1,204</td><td class="tight faint">0.87.0</td>
@@ -1183,7 +1188,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
       </div>
     </div>
 
-    <!-- 조치·판정 탭 -->
+    <!-- 조치·검토 탭 -->
     <div data-pane="actions" hidden>
       <div class="body">
         <div class="card">
@@ -1205,23 +1210,23 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         </div>
 
         <div class="card">
-          <div class="card-header"><h2 class="card-title">판정</h2>
-            <span class="faint" style="font-size:13px">3건 · 감춰진 것 1건</span></div>
+          <div class="card-header"><h2 class="card-title">검토 결과</h2>
+            <span class="faint" style="font-size:13px">3건 · 목록에서 빠진 것 2건</span></div>
           <div class="table-scroll"><table>
             <thead><tr><th class="tight">취약점</th><th class="tight">패키지</th><th class="tight">상태</th>
-              <th class="tight">근거</th><th class="tight">승인</th><th class="tight">다시 볼 날</th></tr></thead>
+              <th class="tight">근거</th><th class="tight">기록</th><th class="tight">재검토일</th></tr></thead>
             <tbody>
             <tr><td class="tight mono">CVE-2023-45853</td><td class="tight">zlib</td>
               <td class="tight"><span class="tag fix">해당 없음</span></td>
-              <td class="tight faint">취약한 코드를 실행하지 않음</td><td class="tight">김보안 팀장</td>
+              <td class="tight faint">취약한 코드를 실행하지 않음</td><td class="tight">kim.bosan</td>
               <td class="tight">2027-03-31</td></tr>
             <tr><td class="tight mono">CVE-2022-37434</td><td class="tight">zlib</td>
               <td class="tight"><span class="tag fix">해당 없음</span></td>
-              <td class="tight faint">취약한 코드가 들어 있지 않음</td><td class="tight">김보안 팀장</td>
+              <td class="tight faint">취약한 코드가 들어 있지 않음</td><td class="tight">kim.bosan</td>
               <td class="tight">2027-03-31</td></tr>
             <tr><td class="tight mono">CVE-2021-3712</td><td class="tight">openssl-libs</td>
               <td class="tight"><span class="tag">오탐</span></td>
-              <td class="tight faint">—</td><td class="tight">김보안 팀장</td>
+              <td class="tight faint">—</td><td class="tight">kim.bosan</td>
               <td class="tight overdue">2026-08-31</td></tr>
             </tbody></table></div>
         </div>
@@ -1236,14 +1241,14 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         <h1>취약점</h1>
         <div class="btn-list"><button class="btn">CSV 내려받기</button></div>
       </div>
-      <div class="page-subtitle">서버 7대 · 최근 검사 기준 · 1,223건</div>
+      <div class="page-subtitle">자산 7대 · 최근 검사 기준 · 1,223건</div>
     </div>
 
     <div class="note-now">
       <b>바뀜</b>
       <span><b>전사 조회 탭을 없앴습니다</b> — 같은 질의를 부르던 화면이었습니다.
       범위(전체·구역·검사)와 묶기(항목별·CVE별·패키지별)를 여기서 고릅니다.
-      한 서버짜리는 그 서버 안에서 봅니다.</span>
+      한 자산짜리는 그 자산 안에서 봅니다.</span>
     </div>
 
     <div class="filters">
@@ -1257,7 +1262,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
       </span>
       <span class="grow"><input type="search" id="q-all" placeholder="CVE · 패키지 이름"></span>
       <select id="sev-all" aria-label="심각도"><option>심각도 전체</option><option>심각</option></select>
-      <select id="fix-all" aria-label="수정본"><option>수정본 전체</option><option>있음</option><option>없음</option></select>
+      <select id="fix-all" aria-label="수정 버전"><option>수정 버전 전체</option><option>있음</option><option>없음</option></select>
     </div>
 
     <div class="body flush">
@@ -1266,7 +1271,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
           <thead><tr>
             <th class="tight">자산</th><th class="tight">구역</th><th class="tight">취약점</th>
             <th class="tight sortable">심각도 <span class="sortmark">↓</span></th><th class="num tight">CVSS</th>
-            <th class="tight">패키지</th><th class="tight">설치 → 수정</th><th class="tight">판정</th>
+            <th class="tight">패키지</th><th class="tight">설치 → 수정</th><th class="tight">검토 결과</th>
           </tr></thead>
           <tbody>
           <tr><td class="tight"><a href="#asset">web-01</a></td>
@@ -1274,13 +1279,13 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
             <td class="tight mono"><a href="#cve">CVE-2024-3094</a></td>
             <td class="tight"><span class="sev critical"><i></i>심각</span></td><td class="num tight">10.0</td>
             <td class="tight">xz-libs</td><td class="tight">5.4.1 → <b>5.4.3</b></td>
-            <td class="tight"><span class="tag nofix">미판정</span></td></tr>
+            <td class="tight"><span class="tag nofix">미검토</span></td></tr>
           <tr><td class="tight"><a href="#asset">web-02</a></td>
             <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
             <td class="tight mono"><a href="#cve">CVE-2024-3094</a></td>
             <td class="tight"><span class="sev critical"><i></i>심각</span></td><td class="num tight">10.0</td>
             <td class="tight">xz-libs</td><td class="tight">5.4.1 → <b>5.4.3</b></td>
-            <td class="tight"><span class="tag nofix">미판정</span></td></tr>
+            <td class="tight"><span class="tag nofix">미검토</span></td></tr>
           <tr><td class="tight"><a href="#asset">was-01</a></td>
             <td class="tight faint"><i class="zrail" style="background:#2262bb"></i> 내부업무</td>
             <td class="tight mono"><a href="#cve">CVE-2021-44228</a></td>
@@ -1293,14 +1298,14 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
             <td class="tight mono"><a href="#cve">CVE-2024-45490</a></td>
             <td class="tight"><span class="sev critical"><i></i>심각</span></td><td class="num tight">9.8</td>
             <td class="tight">libexpat</td><td class="tight">2.4.7 → <b>2.4.9</b></td>
-            <td class="tight"><span class="tag nofix">미판정</span></td></tr>
+            <td class="tight"><span class="tag nofix">미검토</span></td></tr>
           <tr><td class="tight"><a href="#asset">web-01</a></td>
             <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
             <td class="tight mono"><a href="#cve">CVE-2023-44487</a></td>
             <td class="tight"><span class="sev high"><i></i>높음</span> <span class="tag kev">실제 악용</span></td>
             <td class="num tight">7.5</td>
             <td class="tight">nghttp2</td><td class="tight">1.43.0 → <b>1.43.0-6</b></td>
-            <td class="tight"><span class="tag nofix">미판정</span></td></tr>
+            <td class="tight"><span class="tag nofix">미검토</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -1313,7 +1318,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     <div class="page-header plain">
       <div class="page-titlerow"><h1>취약점</h1>
         <div class="btn-list"><button class="btn">CSV 내려받기</button></div></div>
-      <div class="page-subtitle">서버 7대 · 최근 검사 기준 · 고유 CVE 412건</div>
+      <div class="page-subtitle">자산 7대 · 최근 검사 기준 · 고유 CVE 412건</div>
     </div>
 
     <div class="note-now"><b>새로 생김</b>
@@ -1332,8 +1337,8 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
       <div class="table-scroll"><table>
         <thead><tr>
           <th class="tight">취약점</th><th class="tight sortable">심각도 <span class="sortmark">↓</span></th>
-          <th class="num tight">CVSS</th><th class="num tight sortable">영향 서버</th>
-          <th class="tight">구역 분포</th><th class="tight">패키지</th><th class="tight">수정본</th>
+          <th class="num tight">CVSS</th><th class="num tight sortable">영향 자산</th>
+          <th class="tight">구역 분포</th><th class="tight">패키지</th><th class="tight">수정 버전</th>
         </tr></thead>
         <tbody>
         <tr><td class="tight"><a href="#cve" class="mono">CVE-2024-3094</a>
@@ -1379,7 +1384,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     <div class="page-header plain">
       <div class="page-titlerow"><h1>취약점</h1>
         <div class="btn-list"><button class="btn">CSV 내려받기</button></div></div>
-      <div class="page-subtitle">서버 7대 · 최근 검사 기준 · 패키지 148개</div>
+      <div class="page-subtitle">자산 7대 · 최근 검사 기준 · 패키지 148개</div>
     </div>
     <div class="note-now"><b>새로 생김</b>
       <span>실무자가 실행하는 단위는 패키지 업데이트입니다.
@@ -1395,7 +1400,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
       <div class="table-scroll"><table>
         <thead><tr><th class="tight">패키지</th><th class="tight">현재 → 목표</th>
           <th class="num tight sortable">해소 건수 <span class="sortmark">↓</span></th>
-          <th class="tight">최고 심각도</th><th class="num tight">영향 서버</th><th class="tight"></th></tr></thead>
+          <th class="tight">최고 심각도</th><th class="num tight">영향 자산</th><th class="tight"></th></tr></thead>
         <tbody>
         <tr><td class="tight"><b>glibc</b> <span class="faint">rpm</span></td>
           <td class="tight mono">2.34-83 → <b>2.34-100</b></td>
@@ -1413,10 +1418,10 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
           <td class="num tight">2대</td>
           <td class="tight actions"><button class="btn small">조치 등록</button></td></tr>
         <tr><td class="tight"><b>zlib</b> <span class="faint">rpm</span></td>
-          <td class="tight"><span class="tag nofix">수정본 없음</span></td>
+          <td class="tight"><span class="tag nofix">수정 버전 없음</span></td>
           <td class="num tight faint">0</td><td class="tight"><span class="sev critical"><i></i>심각</span></td>
           <td class="num tight">6대</td>
-          <td class="tight actions"><button class="btn small">판정</button></td></tr>
+          <td class="tight actions"><button class="btn small">검토 결과</button></td></tr>
         </tbody>
       </table></div>
     </div>
@@ -1428,7 +1433,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
       <div class="page-pretitle"><a href="#vulns/cve">취약점</a></div>
       <div class="page-titlerow"><h1 class="mono" style="font-size:22px">CVE-2024-3094</h1>
         <span class="sev critical"><i></i>심각</span><span class="tag kev">실제 악용</span></div>
-      <div class="page-subtitle">xz-utils 공급망 백도어 · 서버 2대 · 공개 2024-03-29</div>
+      <div class="page-subtitle">xz-utils 공급망 백도어 · 자산 2대 · 공개 2024-03-29</div>
     </div>
     <div class="note-now"><b>새로 생김</b>
       <span>지금은 CVE 번호를 눌러도 갈 곳이 없습니다.</span></div>
@@ -1442,27 +1447,27 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
             <tr><th>악용 확률</th><td>94.2% <span class="faint">EPSS</span></td></tr>
             <tr><th>실제 악용</th><td><span class="tag kev">확인됨 (KEV)</span></td></tr>
             <tr><th>별칭</th><td class="mono faint">GHSA-rxwq-x6h5-x525</td></tr>
-            <tr><th>수정본</th><td><b>5.4.3</b></td></tr>
+            <tr><th>수정 버전</th><td><b>5.4.3</b></td></tr>
           </table>
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><h2 class="card-title">이 CVE 가 있는 서버</h2>
+        <div class="card-header"><h2 class="card-title">이 CVE 가 있는 자산</h2>
           <span class="faint" style="font-size:13px">2대</span></div>
         <div class="table-scroll"><table>
-          <thead><tr><th class="tight">서버</th><th class="tight">구역</th><th class="tight">패키지</th>
-            <th class="tight">설치 버전</th><th class="tight">판정</th><th class="tight"></th></tr></thead>
+          <thead><tr><th class="tight">자산</th><th class="tight">구역</th><th class="tight">패키지</th>
+            <th class="tight">설치 버전</th><th class="tight">검토 결과</th><th class="tight"></th></tr></thead>
           <tbody>
           <tr><td class="tight"><a href="#asset">web-01</a></td>
             <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
             <td class="tight">xz-libs</td><td class="tight mono">5.4.1</td>
-            <td class="tight"><span class="tag nofix">미판정</span></td>
-            <td class="tight actions"><a class="btn small" href="#asset/vulns">판정</a></td></tr>
+            <td class="tight"><span class="tag nofix">미검토</span></td>
+            <td class="tight actions"><a class="btn small" href="#asset/vulns">검토 결과</a></td></tr>
           <tr><td class="tight"><a href="#asset">web-02</a></td>
             <td class="tight faint"><i class="zrail" style="background:#a71922"></i> DMZ</td>
             <td class="tight">xz-libs</td><td class="tight mono">5.4.1</td>
-            <td class="tight"><span class="tag nofix">미판정</span></td>
-            <td class="tight actions"><a class="btn small" href="#asset/vulns">판정</a></td></tr>
+            <td class="tight"><span class="tag nofix">미검토</span></td>
+            <td class="tight actions"><a class="btn small" href="#asset/vulns">검토 결과</a></td></tr>
           </tbody>
         </table></div>
       </div>
@@ -1474,7 +1479,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     <div class="page-header plain">
       <div class="page-titlerow"><h1>패키지</h1>
         <div class="btn-list"><button class="btn">CSV 내려받기</button></div></div>
-      <div class="page-subtitle">서버 7대 · 고유 패키지 3,481개</div>
+      <div class="page-subtitle">자산 7대 · 고유 패키지 3,481개</div>
     </div>
     <div class="note-now"><b>새로 생김 · V12 필요</b>
       <span>취약점과 무관하게 <b>"무엇이 어디에 몇 버전으로 깔려 있나"</b> 에 답합니다.
@@ -1491,7 +1496,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     <div class="body flush">
       <div class="table-scroll"><table>
         <thead><tr><th class="tight sortable">패키지 <span class="sortmark">↑</span></th><th class="tight">유형</th>
-          <th class="num tight">설치 서버</th><th>버전 분포</th><th class="num tight">취약점</th></tr></thead>
+          <th class="num tight">설치 자산</th><th>버전 분포</th><th class="num tight">취약점</th></tr></thead>
         <tbody>
         <tr><td class="tight"><b>openssl</b></td><td class="tight faint">rpm</td>
           <td class="num tight">7대</td>
@@ -1562,7 +1567,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         <div class="btn-list"><button class="btn">CSV 내려받기</button></div></div>
       <div class="tabs">
         <a href="#actions/fix" data-tab="fix">조치<span class="n">12</span></a>
-        <a href="#actions/analysis" data-tab="analysis">판정·수용<span class="n">18</span></a>
+        <a href="#actions/analysis" data-tab="analysis">검토 결과<span class="n">18</span></a>
       </div>
     </div>
 
@@ -1573,7 +1578,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         이 화면은 결정을 모아 보는 자리입니다.</span></div>
       <div class="filters">
         <select id="z-fix" aria-label="구역"><option>구역 전체</option><option>DMZ</option></select>
-        <select id="s-fix" aria-label="서버"><option>서버 전체</option><option>web-01</option></select>
+        <select id="s-fix" aria-label="자산"><option>자산 전체</option><option>web-01</option></select>
         <select id="st-fix" aria-label="상태"><option>상태 전체</option><option>대기</option><option>진행 중</option><option>완료</option></select>
         <label style="color:var(--fg-faint)"><input type="checkbox" id="od-fix" checked>기한 지난 것 먼저</label>
       </div>
@@ -1608,39 +1613,39 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
       <div class="note-now" style="margin-top:14px"><b>바뀜</b>
         <span>지금 위험 수용 폼은 <b>빈 칸(사유 textarea)</b> 하나입니다. 그래서 쓸 줄을 모릅니다.
         CycloneDX VEX 어휘로 <b>고르게</b> 바꿨습니다 — 상태 5 · 근거 9 · 대응 5.
-        승인자와 다시 볼 날은 우리 규정상 더한 것입니다.</span></div>
+        승인은 사내 결재에서 납니다 — 이 도구는 <b>결재 번호</b>만 갖고, <b>기록한 사람</b>은 로그인 계정으로 자동으로 남습니다.</span></div>
       <div class="filters">
         <select id="z-an" aria-label="구역"><option>구역 전체</option><option>DMZ</option></select>
         <select id="st-an" aria-label="상태"><option>상태 전체</option><option>해당됨</option>
           <option>해당 없음</option><option>오탐</option><option>검토 중</option></select>
-        <label style="color:var(--fg-faint)"><input type="checkbox" id="rev-an">다시 볼 날 지난 것만</label>
+        <label style="color:var(--fg-faint)"><input type="checkbox" id="rev-an">재검토일 지난 것만</label>
       </div>
       <div class="body flush">
         <div class="table-scroll"><table>
           <thead><tr><th class="tight">자산</th><th class="tight">취약점</th><th class="tight">패키지</th>
             <th class="tight">상태</th><th class="tight">근거</th><th class="tight">대응</th>
-            <th class="tight">승인</th><th class="tight sortable">다시 볼 날 <span class="sortmark">↑</span></th>
-            <th class="tight">감춤</th></tr></thead>
+            <th class="tight">기록</th><th class="tight">결재 번호</th><th class="tight sortable">재검토일 <span class="sortmark">↑</span></th>
+            </tr></thead>
           <tbody>
           <tr><td class="tight"><a href="#asset">web-01</a></td><td class="tight mono">CVE-2021-3712</td>
             <td class="tight">openssl-libs</td><td class="tight"><span class="tag">오탐</span></td>
             <td class="tight faint">—</td><td class="tight faint">—</td>
-            <td class="tight">김보안 팀장<div class="faint" style="font-size:12px">2026-05-31</div></td>
-            <td class="tight overdue">2026-08-31</td><td class="tight faint">예</td></tr>
+            <td class="tight">admin<div class="faint" style="font-size:12px">2026-05-31</div></td><td class="tight faint mono">—</td>
+            <td class="tight overdue">2026-08-31</td></tr>
           <tr><td class="tight"><a href="#asset">web-01</a></td><td class="tight mono">CVE-2023-45853</td>
             <td class="tight">zlib</td><td class="tight"><span class="tag fix">해당 없음</span></td>
             <td class="tight faint">취약한 코드를 실행하지 않음</td><td class="tight faint">조치 불가</td>
-            <td class="tight">김보안 팀장<div class="faint" style="font-size:12px">2026-09-01</div></td>
-            <td class="tight">2027-03-31</td><td class="tight faint">예</td></tr>
+            <td class="tight">kim.bosan<div class="faint" style="font-size:12px">2026-09-01</div></td><td class="tight faint mono">보안-2026-0901</td>
+            <td class="tight">2027-03-31</td></tr>
           <tr><td class="tight"><a href="#asset">db-01</a></td><td class="tight mono">CVE-2022-37434</td>
             <td class="tight">zlib</td><td class="tight"><span class="tag fix">해당 없음</span></td>
             <td class="tight faint">취약한 코드가 들어 있지 않음</td><td class="tight faint">조치 불가</td>
-            <td class="tight">김보안 팀장<div class="faint" style="font-size:12px">2026-09-01</div></td>
-            <td class="tight">2027-03-31</td><td class="tight faint">예</td></tr>
+            <td class="tight">kim.bosan<div class="faint" style="font-size:12px">2026-09-01</div></td><td class="tight faint mono">보안-2026-0901</td>
+            <td class="tight">2027-03-31</td></tr>
           <tr><td class="tight"><a href="#asset">was-01</a></td><td class="tight mono">CVE-2024-2961</td>
             <td class="tight">glibc</td><td class="tight"><span class="tag nofix">검토 중</span></td>
             <td class="tight faint">—</td><td class="tight faint">—</td>
-            <td class="tight faint">—</td><td class="tight faint">—</td><td class="tight faint">아니오</td></tr>
+            <td class="tight faint">—</td><td class="tight faint">—</td><td class="tight faint">—</td></tr>
           </tbody>
         </table></div>
       </div>
@@ -1651,7 +1656,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
   <section data-route="reports" hidden>
     <div class="page-header plain"><div class="page-titlerow"><h1>보고서</h1></div></div>
     <div class="note-now"><b>바뀜</b>
-      <span>지금은 서버 보고서가 자산 상세 안에만 있고 구역 보고서는 따로 기둥에 있습니다.
+      <span>지금은 자산 보고서가 자산 상세 안에만 있고 구역 보고서는 따로 기둥에 있습니다.
       한 화면에서 범위와 기간을 골라 뽑습니다.</span></div>
     <div class="body">
       <div class="card">
@@ -1659,7 +1664,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
         <div class="card-body">
           <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
             <label style="margin:0">범위
-              <select id="r-scope" style="min-width:9rem"><option>서버</option><option>구역</option><option>전체</option></select></label>
+              <select id="r-scope" style="min-width:9rem"><option>자산</option><option>구역</option><option>전체</option></select></label>
             <label style="margin:0">대상
               <select id="r-target" style="min-width:11rem"><option>web-01</option><option>web-02</option><option>api-01</option></select></label>
             <label style="margin:0">기준
@@ -1719,11 +1724,11 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
       <section>
         <h2>1. 점검 개요</h2>
         <table>
-          <tr><th style="width:12rem">검사한 컴포넌트</th><td class="num" style="width:8rem">1,204</td><td></td></tr>
+          <tr><th style="width:12rem">검사한 패키지</th><td class="num" style="width:8rem">1,204</td><td></td></tr>
           <tr><th>탐지 건수</th><td class="num"><b>187</b></td><td class="faint">grype 이 낸 191건에서 중복 4건 합침</td></tr>
           <tr><th>고유 CVE</th><td class="num">164</td><td></td></tr>
           <tr><th>영향 패키지</th><td class="num">63</td><td></td></tr>
-          <tr><th>판정으로 감춘 것</th><td class="num">3</td>
+          <tr><th>검토를 마친 것</th><td class="num">3</td>
             <td class="faint">아래 수치에는 포함되어 있습니다</td></tr>
         </table>
       </section>
@@ -1752,7 +1757,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
           <thead><tr><th class="tight">구분</th><th class="num tight">건수</th><th class="num tight">비중</th></tr></thead>
           <tbody>
           <tr><td class="tight">패키지를 올리면 사라짐</td><td class="num tight">143</td><td class="num tight">76.5%</td></tr>
-          <tr><td class="tight">수정본 없음</td><td class="num tight">41</td><td class="num tight">21.9%</td></tr>
+          <tr><td class="tight">수정 버전 없음</td><td class="num tight">41</td><td class="num tight">21.9%</td></tr>
           <tr><td class="tight">수정 상태 미상</td><td class="num tight">3</td><td class="num tight">1.6%</td></tr>
           </tbody>
         </table>
@@ -1762,7 +1767,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
           <thead><tr><th class="tight">구분</th><th class="num tight">건수</th></tr></thead>
           <tbody>
           <tr><td class="tight">원격 · 인증 불필요 · 사용자 개입 불필요</td><td class="num tight"><b>78</b></td></tr>
-          <tr><td class="tight">└ 그중 수정본 없음</td><td class="num tight danger-text">9</td></tr>
+          <tr><td class="tight">└ 그중 수정 버전 없음</td><td class="num tight danger-text">9</td></tr>
           <tr><td class="tight">권한 경계를 넘음</td><td class="num tight">14</td></tr>
           <tr><td class="tight">판단 불가</td><td class="num tight">2</td></tr>
           <tr><td class="tight">실제 악용 확인 (KEV)</td><td class="num tight">2</td></tr>
@@ -1803,10 +1808,10 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
       </section>
 
       <section>
-        <h2>4. 수정본 없는 항목</h2>
+        <h2>4. 수정 버전 없는 항목</h2>
         <table>
           <thead><tr><th class="tight">패키지</th><th class="num tight">건수</th><th class="tight">최고 심각도</th>
-            <th class="tight">판정</th><th class="tight">근거</th><th class="tight">다시 볼 날</th></tr></thead>
+            <th class="tight">검토 결과</th><th class="tight">근거</th><th class="tight">재검토일</th></tr></thead>
           <tbody>
           <tr><td class="tight"><b>zlib</b></td><td class="num tight">2</td>
             <td class="tight"><span class="sev critical"><i></i>심각</span></td>
@@ -1814,13 +1819,13 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
             <td class="tight">2027-03-31</td></tr>
           <tr><td class="tight"><b>krb5-libs</b></td><td class="num tight">3</td>
             <td class="tight"><span class="sev high"><i></i>높음</span></td>
-            <td class="tight danger-text">미판정</td><td class="tight faint">—</td><td class="tight faint">—</td></tr>
+            <td class="tight danger-text">미검토</td><td class="tight faint">—</td><td class="tight faint">—</td></tr>
           <tr><td class="tight"><b>libtiff</b></td><td class="num tight">6</td>
             <td class="tight"><span class="sev medium"><i></i>보통</span></td>
-            <td class="tight danger-text">미판정</td><td class="tight faint">—</td><td class="tight faint">—</td></tr>
+            <td class="tight danger-text">미검토</td><td class="tight faint">—</td><td class="tight faint">—</td></tr>
           </tbody>
         </table>
-        <p class="footnote">수정본 없는 41건 중 판정이 없는 것 <b>38건</b>. 점검에서 사유를 묻는 자리입니다.</p>
+        <p class="footnote">수정 버전 없는 41건 중 검토가 없는 것 <b>38건</b>. 점검에서 사유를 묻는 자리입니다.</p>
       </section>
 
       <section>
@@ -1961,8 +1966,8 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
           <tr><td class="tight faint mono">2026-09-12 09:14</td><td class="tight">admin</td>
             <td class="tight faint mono">192.168.10.41</td><td class="tight">로그인</td><td class="faint">—</td></tr>
           <tr><td class="tight faint mono">2026-09-11 17:22</td><td class="tight">kim.bosan</td>
-            <td class="tight faint mono">192.168.10.52</td><td class="tight">판정 변경</td>
-            <td class="faint">web-01 · CVE-2023-45853 · 미판정 → 해당 없음</td></tr>
+            <td class="tight faint mono">192.168.10.52</td><td class="tight">검토 결과 변경</td>
+            <td class="faint">web-01 · CVE-2023-45853 · 미검토 → 해당 없음</td></tr>
           <tr><td class="tight faint mono">2026-09-11 09:14</td><td class="tight">admin</td>
             <td class="tight faint mono">192.168.10.41</td><td class="tight">계정 수정</td>
             <td class="faint">lee.unyoung · 권한 관리자 → 조회</td></tr>
@@ -2019,7 +2024,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
     <div class="empty">
       <div class="glyph">+</div>
       <b>등록된 자산이 없습니다</b>
-      <p>서버를 등록하고 그 서버에서 syft 로 뽑은 SBOM 을 올립니다.</p>
+      <p>자산을 등록하고 그 자산에서 syft 로 뽑은 SBOM 을 올립니다.</p>
       <button class="btn primary">자산 등록</button>
     </div>
   </section>
@@ -2131,7 +2136,7 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
   window.addEventListener('hashchange', show);
   show();
 
-  // 판정 칸 펼치기
+  // 검토 칸 펼치기
   document.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-row]');
     if (btn) {
@@ -2147,17 +2152,17 @@ dialog h2 { margin: 0 0 16px; font-size: 17px; }
   // 고른 항목의 뜻을 아래에 한 줄로. 빈 칸은 사용법을 가르쳐 주지 않는다 —
   // 고르는 항목에 뜻이 붙어야 화면이 스스로 설명한다.
   var STATE = {
-    '미판정':    '아직 보지 않았습니다.',
+    '미검토':    '아직 보지 않았습니다.',
     '검토 중':   '우리 환경에 해당되는지 확인하고 있습니다.',
     '해당됨':    '우리 환경에 영향이 있습니다. 고쳐야 합니다.',
     '해당 없음': '탐지는 맞지만 우리 환경에는 영향이 없습니다. 근거를 골라야 합니다.',
     '오탐':      '탐지 자체가 틀렸습니다(패키지 오인 등).'
   };
   var RESP = {
-    '버전 올려 조치':      '수정본이 나온 버전으로 올립니다.',
+    '버전 올려 조치':      '수정 버전이 나온 버전으로 올립니다.',
     '이전 버전으로 내림':  '올릴 수 없어, 취약하지 않은 예전 버전으로 내립니다.',
     '우회 조치 (패치 없이)': '설정 변경·접근 제한 등으로 막습니다. 패키지는 그대로 둡니다.',
-    '조치 불가':           '수정본이 없고 우회도 되지 않습니다.',
+    '조치 불가':           '수정 버전이 없고 우회도 되지 않습니다.',
     '조치 안 함 (위험 수용)': '고칠 수 있지만 하지 않기로 하고 위험을 감수합니다.'
   };
 
