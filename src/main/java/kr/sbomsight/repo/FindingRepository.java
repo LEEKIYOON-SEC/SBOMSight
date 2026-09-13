@@ -246,8 +246,8 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      * 증감 대조용 키. {@code (자산, CVE, 패키지명)} 세 축이다.
      *
      * <p>문자열로 이어 붙여 돌려주지 않는다 — {@code CAST(id AS string)} 은
-     * DB 마다 다르게 굴고, 시험은 H2 로 도는데 운영은 MySQL 이다. 이어 붙이는
-     * 일은 자바에서 한다.
+     * DB 마다 다르게 굴고, 시험은 H2 로 도는데 운영은 MariaDB 나 MySQL 이다.
+     * 이어 붙이는 일은 자바에서 한다.
      */
     @Query("""
            SELECT s.asset.id AS assetId, f.cve AS cve, f.packageName AS packageName

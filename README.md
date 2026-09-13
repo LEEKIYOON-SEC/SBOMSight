@@ -24,7 +24,7 @@ SBOM 기반 취약점 대응 검토. **Syft 와 Grype 이 전부이고**, 이 �
 | 웹 | Spring Boot 3.3 (내장 Tomcat) · Java 21 |
 | 화면 | Thymeleaf 서버 렌더링 — 로그인 상태와 화면이 어긋날 자리를 만들지 않는다 |
 | 로그인 | Spring Security 폼 로그인 · 세션 유휴 만료 · CSRF |
-| DB | MySQL 8 · Flyway 마이그레이션 |
+| DB | MariaDB 또는 MySQL 8 · Flyway 마이그레이션 · 드라이버는 MariaDB Connector/J (LGPL-2.1) |
 | 검사 | **syft**(SBOM 생성, 대상 서버에서) · **grype**(취약점 매칭, 이 서버에서) |
 
 HTTPS 는 필수다(443). 금융권 지침상 http 로는 열지 않는다.
@@ -40,7 +40,7 @@ HTTPS 는 필수다(443). 금융권 지침상 http 로는 열지 않는다.
 ### 1. 준비물
 
 - JDK 21 (Maven 은 필요 없다 — 저장소의 `mvnw` 래퍼가 알아서 받는다)
-- MySQL 8
+- MariaDB 10.6+ 또는 MySQL 8 (드라이버 하나로 둘 다 붙는다)
 - grype (이 서버에)
 - syft (검사할 대상 서버들에)
 
@@ -161,7 +161,7 @@ CycloneDX · SPDX · syft 자체 형식 모두 받는다. grype 이 읽을 수 �
 | `SBOMSIGHT_KEYSTORE` | `file:./config/keystore.p12` | 인증서 |
 | `SBOMSIGHT_KEYSTORE_PASSWORD` | changeit | 키스토어 비밀번호 |
 | `SBOMSIGHT_SESSION_TIMEOUT` | 10m | 유휴 만료 |
-| `SBOMSIGHT_DB_URL` · `_USER` · `_PASSWORD` | | MySQL |
+| `SBOMSIGHT_DB_URL` · `_USER` · `_PASSWORD` | | DB 접속 — 주소는 `jdbc:mariadb://` |
 | `SBOMSIGHT_DATA_DIR` | `./data` | SBOM·grype 결과 보관 |
 | `SBOMSIGHT_GRYPE` | grype | grype 경로 |
 | `SBOMSIGHT_MAX_UPLOAD` | 10GB | 업로드 상한 |

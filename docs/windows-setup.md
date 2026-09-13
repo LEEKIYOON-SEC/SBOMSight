@@ -3,7 +3,7 @@
 초기화된 Windows 11 PC 에 SBOMSight 을 처음부터 올리는 절차다. 위에서부터
 순서대로 따라간다. 각 단계 끝의 **확인** 을 통과하고 다음으로 넘어간다.
 
-이 도구는 **Java(Spring Boot) + MySQL** 로 돌고 **HTTPS 443** 으로만 열린다.
+이 도구는 **Java(Spring Boot) + MariaDB/MySQL** 로 돌고 **HTTPS 443** 으로만 열린다.
 Python 은 쓰지 않는다.
 
 ---
@@ -13,7 +13,7 @@ Python 은 쓰지 않는다.
 | 무엇 | 어디서 | 크기 | 필수 |
 |---|---|---|---|
 | **JDK 21** | [adoptium.net](https://adoptium.net/temurin/releases/?version=21) | 약 190MB | 필수 |
-| **MySQL 8** | [dev.mysql.com](https://dev.mysql.com/downloads/installer/) | 약 450MB | 필수 |
+| **MySQL 8** 또는 **MariaDB** | [dev.mysql.com](https://dev.mysql.com/downloads/installer/) · [mariadb.org](https://mariadb.org/download/) | 약 100~450MB | 필수 (둘 중 하나) |
 | Git for Windows | [git-scm.com](https://git-scm.com/download/win) | 약 65MB | 권장 (ZIP 으로 대체 가능) |
 | SBOMSight 소스 | GitHub `LEEKIYOON-SEC/SBOMSight` | 약 10MB | 필수 |
 | **grype** | 설치 스크립트가 받는다 | 약 30MB | 필수 (이 PC) |
@@ -61,7 +61,12 @@ keytool -help
 
 ---
 
-## 2단계 — MySQL 8
+## 2단계 — 데이터베이스 (MySQL 8 또는 MariaDB)
+
+> **접속 드라이버는 MariaDB Connector/J 하나다**(`jdbc:mariadb://`). MySQL 8 서버에도
+> 그대로 붙는다 — MySQL 8 의 기본 인증(`caching_sha2_password`)까지 지원한다.
+> 접속이 안 될 때 MySQL Connector/J 를 찾지 말 것. 아래는 MySQL 8 기준이고,
+> MariaDB 를 쓰면 설치 프로그램만 다르고 그 뒤 SQL 은 같다(`mysql` 대신 `mariadb`).
 
 ### 받기
 
@@ -249,7 +254,7 @@ $env:SBOMSIGHT_GRYPE = "$env:LOCALAPPDATA\SBOMSight\bin\grype.exe"
 Test-Path target\sbomsight-1.0.0.jar
 ```
 
-> 시험까지 돌려 보려면 `.\mvnw.cmd test`. H2 메모리 DB 로 돌기 때문에 MySQL 을
+> 시험까지 돌려 보려면 `.\mvnw.cmd test`. H2 메모리 DB 로 돌기 때문에 DB 를
 > 건드리지 않는다.
 
 ---
@@ -531,7 +536,7 @@ git pull
 
 | 무엇 | 어디 | 없으면 |
 |---|---|---|
-| DB | MySQL `sbomsight` | 자산·이력·조치·감사 로그가 전부 사라진다 |
+| DB | `sbomsight` 데이터베이스 | 자산·이력·조치·감사 로그가 전부 사라진다 |
 | 보관 파일 | `$env:SBOMSIGHT_DATA_DIR` (기본 `.\data`) | 옛 SBOM 과 grype 원본이 사라져 **다시 검사** 를 못 한다 |
 | 인증서 | `config\keystore.p12` | 다시 만들면 된다 (자체 서명) |
 | 설정 | `config\env.ps1` | 다시 채우면 된다 |
