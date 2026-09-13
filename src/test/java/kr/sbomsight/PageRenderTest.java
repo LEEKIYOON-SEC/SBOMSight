@@ -126,6 +126,90 @@ class PageRenderTest {
         open("/?zone=" + asset.getZone().getId());
     }
 
+    /**
+     * 목록의 보기·거르개·정렬.
+     *
+     * <p>전부 주소에 남는 값이라 사람이 링크로 밟을 수 있다. 하나라도 500 이면
+     * 그 링크는 막다른 길이다 — 표 머리를 눌렀을 뿐인데 화면이 죽는다.
+     */
+    @Test
+    @DisplayName("자산 목록의 보기·거르개·정렬이 전부 열린다")
+    void assetListControls() throws Exception {
+        // 구역 카드 보기 — 카드 안에 그 구역의 자산이 들어 있어야 한다.
+        assertThat(open("/?view=zones")).contains(asset.getName());
+
+        // 거르개. 걸리는 것이 없을 때도 화면은 열려야 한다.
+        open("/?filter=noscan");
+        open("/?filter=stale");
+
+        // 정렬 네 가지 × 두 방향.
+        for (String sort : new String[] { "name", "scanned", "findings", "critical" }) {
+            open("/?sort=" + sort + "&dir=asc");
+            open("/?sort=" + sort + "&dir=desc");
+        }
+
+        // 보관된 자산도 함께.
+        open("/?archived=true");
+        // 구역 카드 + 구역 거르개가 겹칠 때.
+        open("/?view=zones&zone=" + asset.getZone().getId());
+    }
+
+    /**
+     * 조각이 <b>안 나와야 할 때 안 나오는가.</b>
+     *
+     * <p>타임리프는 {@code th:replace} 를 {@code th:if} 보다 먼저 처리한다
+     * (우선순위 100 대 300). 같은 태그에 둘을 걸면 조각이 그 태그를 통째로
+     * 갈아치우면서 조건까지 함께 사라진다 — 조건은 <b>있는데 안 먹는다.</b>
+     *
+     * <p>실제로 자산이 세 대 있는데 "등록된 자산이 없습니다" 가 함께 떠 있었고,
+     * 표 보기인데 구역 카드가 같이 그려졌고, 검사가 없는 자산에도 심각도
+     * 막대가 붙었다. 조각을 쓰는 화면이 늘수록 다시 나올 자리라 못 박아 둔다.
+     */
+    @Test
+    @DisplayName("조건이 걸린 조각은 조건이 아닐 때 나오지 않는다")
+    void conditionalFragmentsStayHidden() throws Exception {
+        // 검사가 한 번도 없는 자산을 하나 더 둔다.
+        Asset fresh = new Asset();
+        fresh.setName("noscan-" + System.nanoTime());
+        fresh.setZone(asset.getZone());
+        assets.saveAndFlush(fresh);
+
+        String table = open("/");
+        assertThat(table)
+                .as("자산이 있는데 빈 화면 문구가 함께 뜨면 th:if 가 안 먹은 것이다")
+                .doesNotContain("등록된 자산이 없습니다");
+        assertThat(table)
+                .as("표 보기인데 구역 카드가 같이 그려지면 th:if 가 안 먹은 것이다")
+                .doesNotContain("zonegrid");
+
+        // 심각도 막대는 검사가 있고 탐지가 있는 자산에만. 자산 둘 중 하나는
+        // 검사가 없으므로 막대도 하나여야 한다.
+        assertThat(table.split("class=\"sevbar\"", -1).length - 1)
+                .as("검사 없는 자산에 심각도 막대가 붙으면 안 된다")
+                .isEqualTo(1);
+
+        // 구역 보기에서는 반대로 카드가 있고 표가 없어야 한다.
+        String cards = open("/?view=zones");
+        assertThat(cards).contains("zonegrid");
+        assertThat(cards).doesNotContain("asset-table");
+    }
+
+    /** 요약 줄의 숫자는 링크다. 누른 자리가 열리지 않으면 숫자만 보여 준 셈이다. */
+    @Test
+    @DisplayName("요약 줄이 가리키는 자리가 전부 열린다")
+    void summaryLinksOpen() throws Exception {
+        String html = open("/");
+        // 기한이 지난 조치를 씨앗으로 넣어 두었으므로 줄이 그려져야 한다.
+        assertThat(html).contains("summaryline");
+
+        open("/?filter=noscan");
+        open("/?filter=stale");
+        mvc.perform(get("/actions").with(user("tester").roles("ADMIN")))
+           .andExpect(status().is3xxRedirection());
+        mvc.perform(get("/vulns").with(user("tester").roles("ADMIN")))
+           .andExpect(status().is3xxRedirection());
+    }
+
     @Test
     @DisplayName("자산 상세 · 취약점 목록")
     void assetAndScan() throws Exception {

@@ -25,6 +25,18 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
            """)
     List<Asset> findLiveWithZone();
 
+    /**
+     * 보관한 것까지 전부. 목록에서 <b>보관된 자산도</b> 를 켰을 때 쓴다.
+     *
+     * <p>보관은 지우는 것과 다르다 — 결과는 남고 목록에서만 빠진다. 그런데
+     * 다시 볼 길이 없으면 그건 지운 것이나 마찬가지다.
+     */
+    @Query("""
+           SELECT a FROM Asset a JOIN FETCH a.zone z
+           ORDER BY z.sortOrder ASC, z.name ASC, a.name ASC
+           """)
+    List<Asset> findAllWithZone();
+
     @Query("SELECT a FROM Asset a JOIN FETCH a.zone WHERE a.id = :id")
     Optional<Asset> findWithZone(@Param("id") Long id);
 

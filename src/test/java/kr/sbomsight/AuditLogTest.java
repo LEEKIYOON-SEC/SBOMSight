@@ -102,7 +102,7 @@ class AuditLogTest {
     void zoneCreationIsRecorded() throws Exception {
         String name = "감사시험-" + System.nanoTime();
 
-        mvc.perform(post("/settings/zones").with(user(ADMIN).roles("ADMIN")).with(csrf())
+        mvc.perform(post("/zones").with(user(ADMIN).roles("ADMIN")).with(csrf())
                         .param("name", name).param("color", "#a71922"))
            .andExpect(status().is3xxRedirection());
 
@@ -121,7 +121,7 @@ class AuditLogTest {
         Long protectedId = zoneService.unassigned().getId();
         long before = recent(AuditEvent.ZONE_DELETED).size();
 
-        mvc.perform(post("/settings/zones/" + protectedId + "/delete")
+        mvc.perform(post("/zones/" + protectedId + "/delete")
                         .with(user(ADMIN).roles("ADMIN")).with(csrf()))
            .andExpect(status().is3xxRedirection());
 

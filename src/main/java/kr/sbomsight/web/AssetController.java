@@ -62,22 +62,51 @@ public class AssetController {
         this.acceptances = acceptances;
     }
 
-    /** 자산 목록. 구역별로 묶어 "어느 구역의 어느 서버부터 볼 것인가"에 답한다. */
+    /** 마지막 검사가 이보다 오래되면 "오래됐다" 고 센다. */
+    private static final int STALE_DAYS = 30;
+
+    /**
+     * 자산 목록.
+     *
+     * <p>맨 위 한 줄이 "지금 무엇이 급한가" 에 답하고, 그 숫자를 누르면 그
+     * 조건이 걸린 화면으로 간다. 카드 벽을 세우지 않는다 — 매일 보는 사람에게
+     * 숫자 상자 여섯 개는 한 번 보고 지나치는 장식이 된다.
+     *
+     * @param zone     구역 거르개. 기둥에 있던 구역 목록이 여기로 내려왔다.
+     * @param filter   {@code noscan} 검사 없는 것 · {@code stale} 오래된 것
+     * @param view     {@code table} 표 · {@code zones} 구역 카드
+     * @param archived 보관한 자산도 함께 보는가
+     */
     @GetMapping
-    public String index(@RequestParam(required = false) Long zone, Model model) {
-        List<Asset> list = assets.findLiveWithZone();
+    public String index(@RequestParam(required = false) Long zone,
+                        @RequestParam(required = false) String filter,
+                        @RequestParam(defaultValue = "table") String view,
+                        @RequestParam(defaultValue = "name") String sort,
+                        @RequestParam(defaultValue = "asc") String dir,
+                        @RequestParam(defaultValue = "false") boolean archived,
+                        Model model) {
+        List<Asset> list = archived ? assets.findAllWithZone() : assets.findLiveWithZone();
 
         // 자산마다 질의하면 자산 수만큼 왕복한다. 한 번에 가져와 맞춘다.
         Map<Long, Scan> latest = scans.findLatestDonePerAsset().stream()
                 .collect(Collectors.toMap(s -> s.getAsset().getId(), s -> s, (a, b) -> a));
 
-        List<AssetRow> rows = list.stream().map(asset -> {
+        List<AssetRow> all = list.stream().map(asset -> {
             Scan scan = latest.get(asset.getId());
             Map<String, Long> severity = scan == null ? Map.of() : severityMap(scan.getId());
             long open = remediations.countByAssetIdAndStatusIn(
                     asset.getId(), List.of(RemediationStatus.OPEN, RemediationStatus.IN_PROGRESS));
             return new AssetRow(asset, scan, severity, open);
         }).toList();
+
+        // 요약 줄은 **거르기 전** 전체를 센다. 거른 뒤 세면 "검사 안 한 자산 3"
+        // 을 눌렀을 때 숫자가 3 에서 다른 값으로 바뀐다.
+        model.addAttribute("summary", summarize(all));
+
+        List<AssetRow> rows = all.stream()
+                .filter(r -> matches(r, filter))
+                .sorted(comparator(sort, dir))
+                .toList();
 
         // 구역 순서는 구역 목록이 정한다. 자산이 한 대도 없는 구역도 보여
         // 준다 — 없는 것처럼 보이면 "왜 안 보이지" 부터 물어야 한다.
@@ -90,11 +119,80 @@ public class AssetController {
 
         model.addAttribute("groups", groups);
         model.addAttribute("zones", zoneService.all());
+        model.addAttribute("zoneCounts", all.stream().collect(Collectors.groupingBy(
+                r -> r.asset().getZone().getId(), Collectors.counting())));
         model.addAttribute("selectedZone", zone);
         model.addAttribute("assetCount", rows.size());
+        model.addAttribute("totalCount", all.size());
+        model.addAttribute("filter", filter);
+        model.addAttribute("view", view);
+        model.addAttribute("sort", sort);
+        model.addAttribute("dir", dir);
+        model.addAttribute("archived", archived);
         model.addAttribute("newAsset", new Asset());
-        model.addAttribute("overdue", remediations.findOverdue(java.time.LocalDate.now()));
         return "assets";
+    }
+
+    /** 요약 줄에 들어가는 다섯 숫자. 0 인 것은 화면이 그리지 않는다. */
+    public record Summary(long noScan, long stale, long actionOverdue, long critical, long noFix) {
+    }
+
+    private Summary summarize(List<AssetRow> rows) {
+        java.time.Instant cut = java.time.Instant.now()
+                .minus(STALE_DAYS, java.time.temporal.ChronoUnit.DAYS);
+        long noScan = rows.stream().filter(r -> !r.hasScan()).count();
+        long stale = rows.stream()
+                .filter(r -> r.hasScan() && r.latest().getCreatedAt().isBefore(cut)).count();
+        long critical = rows.stream().mapToLong(r -> r.severityCount("critical")).sum();
+
+        // 수정 버전이 없는 탐지. 최신 완료 검사들만 한 번에 센다 — 자산마다
+        // 물으면 자산 수만큼 왕복한다.
+        List<Long> scanIds = rows.stream().filter(AssetRow::hasScan)
+                .map(r -> r.latest().getId()).toList();
+        long noFix = scanIds.isEmpty() ? 0 : findings.countByFixStateIn(scanIds).stream()
+                .filter(c -> "wont-fix".equals(c.getFixState()) || "not-fixed".equals(c.getFixState()))
+                .mapToLong(FindingRepository.FixStateCount::getTotal).sum();
+
+        // 기한이 지난 것 = 조치 기한 + 검토 결과의 재검토일. 기둥의 배지와
+        // 같은 수를 쓴다 — 두 곳이 다른 수를 보이면 어느 쪽을 믿을지 모른다.
+        long overdue = remediations.countOverdue(java.time.LocalDate.now())
+                + acceptances.reviewOverdue().size();
+        return new Summary(noScan, stale, overdue, critical, noFix);
+    }
+
+    private boolean matches(AssetRow row, String filter) {
+        if (filter == null || filter.isBlank()) {
+            return true;
+        }
+        java.time.Instant cut = java.time.Instant.now()
+                .minus(STALE_DAYS, java.time.temporal.ChronoUnit.DAYS);
+        return switch (filter) {
+            case "noscan" -> !row.hasScan();
+            case "stale" -> row.hasScan() && row.latest().getCreatedAt().isBefore(cut);
+            default -> true;
+        };
+    }
+
+    /**
+     * 표 머리를 눌러 정렬한다.
+     *
+     * <p><b>검사가 없는 자산은 방향과 무관하게 언제나 뒤로.</b> 탐지 0건으로
+     * 놓고 줄 세우면 "안전하다" 는, 아무도 확인하지 않은 판정이 된다.
+     */
+    private Comparator<AssetRow> comparator(String sort, String dir) {
+        Comparator<AssetRow> base = switch (sort) {
+            case "scanned" -> Comparator.comparing(
+                    r -> r.hasScan() ? r.latest().getCreatedAt() : null,
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+            case "findings" -> Comparator.comparingLong(
+                    (AssetRow r) -> r.hasScan() ? r.latest().getFindingCount() : -1).reversed();
+            case "critical" -> Comparator.comparingLong(
+                    (AssetRow r) -> r.severityCount("critical")).reversed();
+            default -> Comparator.comparing(r -> r.asset().getName(), String.CASE_INSENSITIVE_ORDER);
+        };
+        Comparator<AssetRow> ordered = "desc".equals(dir) ? base.reversed() : base;
+        // 검사 없는 것은 뒤로 몰아 둔다 — 뒤집어도 따라 올라오지 않는다.
+        return Comparator.comparing((AssetRow r) -> !r.hasScan()).thenComparing(ordered);
     }
 
     @PostMapping("assets")
@@ -413,6 +511,23 @@ public class AssetController {
 
         public boolean isEmpty() {
             return rows.isEmpty();
+        }
+
+        /**
+         * 아직 한 번도 검사하지 않은 자산 수.
+         *
+         * <p>탐지 0건과 "아직 안 봤다" 는 완전히 다른 이야기다. 카드에 0 만
+         * 떠 있으면 깨끗한 구역으로 읽힌다.
+         */
+        public long unscannedCount() {
+            return rows.stream().filter(r -> !r.hasScan()).count();
+        }
+
+        /** 이 구역에서 가장 오래된 마지막 검사. 없으면 {@code null}. */
+        public java.time.Instant oldestScan() {
+            return rows.stream().filter(AssetRow::hasScan)
+                       .map(r -> r.latest().getCreatedAt())
+                       .min(java.time.Instant::compareTo).orElse(null);
         }
     }
 }

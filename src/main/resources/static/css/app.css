@@ -305,6 +305,67 @@ input[type="color"] {
 .chip:hover { background: var(--subtle); color: var(--fg); }
 .chip.on { border-color: var(--fg); background: var(--fg); color: #fff; font-weight: 500; }
 
+/* ============================================================
+   요약 줄 · 구역 카드
+   ============================================================ */
+/* 지금 무엇이 급한가 — 한 줄이다. 숫자 상자를 여섯 개 세우면 매일 보는
+   사람에게 장식이 되고, 그 아래 정작 봐야 하는 목록이 화면 밖으로 밀린다. */
+.summaryline {
+  display: flex; align-items: center; flex-wrap: wrap;
+  padding: 12px var(--gutter); border-bottom: 1px solid var(--line);
+  background: var(--sunken);
+}
+.summaryline a {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 4px 14px 4px 0; margin-right: 14px;
+  font-size: 13.5px; color: var(--fg-muted); border-right: 1px solid var(--line-strong);
+}
+.summaryline a:last-child { border-right: 0; margin-right: 0; }
+.summaryline a:hover { color: var(--fg); }
+.summaryline a b {
+  font-size: 17px; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums;
+}
+.summaryline a.alert b { color: var(--critical); }
+
+/* 구역 카드. 카드 **안에** 그 구역의 자산이 들어 있다 — 눌러서 자산 목록으로
+   튕기면 그 화면은 중간 정거장일 뿐이고, 기둥에 구역 목록을 두었던 것과
+   같은 문제가 된다. */
+.zonegrid {
+  display: grid; gap: 16px; padding: 18px var(--gutter) 0;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.zonecard { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+.zonecard .top { display: flex; align-items: center; gap: 9px; padding: 14px 16px 0; }
+.zonecard .top b { font-size: 15.5px; font-weight: 700; letter-spacing: -.01em; }
+.zonecard .top .faint { font-size: 13px; }
+.zonecard .spacer { flex: 1; }
+.zonecard .stat { padding: 10px 16px 12px; display: flex; align-items: baseline; gap: 8px; }
+.zonecard .stat b {
+  font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.zonecard .stat span { font-size: 13px; color: var(--fg-muted); }
+.zonecard .bars { padding: 0 16px 10px; }
+.zonecard .counts { padding: 0 16px 12px; display: flex; flex-wrap: wrap; gap: 4px 0; }
+.zonecard .servers { border-top: 1px solid var(--line); background: var(--sunken); }
+.zonecard .servers a {
+  display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+  font-size: 13.5px; color: var(--fg-muted); border-bottom: 1px solid var(--line);
+}
+.zonecard .servers a:last-of-type { border-bottom: 0; }
+.zonecard .servers a:hover { background: var(--hover); color: var(--fg); }
+.zonecard .servers a b { font-weight: 600; color: var(--fg); }
+.zonecard .foot {
+  padding: 9px 16px; border-top: 1px solid var(--line);
+  font-size: 12.5px; color: var(--fg-faint); display: flex; align-items: center; gap: 8px;
+}
+
+/* 표 머리를 눌러 정렬한다. 링크가 칸을 꽉 채워야 어디를 눌러도 먹는다. */
+th.sortable { padding: 0; }
+th.sortable a { display: block; padding: 9px 14px; color: inherit; }
+th.sortable a:hover { color: var(--fg); }
+th.sortable .sortmark { color: var(--fg); }
+
 /* 결과 수. 표 위에 크게 한 번. */
 .resultcount { display: flex; align-items: baseline; gap: 8px; padding: 12px var(--gutter) 10px; }
 .resultcount b { font-size: 20px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }

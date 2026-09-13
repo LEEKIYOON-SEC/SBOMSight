@@ -89,62 +89,6 @@
     </form>
   </div>
 
-  <h2 id="zones" th:if="${tab} == 'accounts'">구역</h2>
-  <div class="card" th:if="${tab} == 'accounts'">
-    <table>
-      <thead>
-      <tr>
-        <th class="tight">구역</th>
-        <th class="num tight">자산</th>
-        <th class="tight">색</th>
-        <th class="actions"></th>
-      </tr>
-      </thead>
-      <tbody>
-      <tr th:each="r : ${zones}">
-        <td class="tight">
-          <form method="post" th:action="@{'/settings/zones/' + ${r.zone.id} + '/rename'}" class="inline"
-                th:unless="${r.zone.isUnassigned()}">
-            <input name="name" th:value="${r.zone.name}" required maxlength="64">
-            <button type="submit" class="btn small">이름 바꾸기</button>
-          </form>
-          <b th:if="${r.zone.isUnassigned()}" th:text="${r.zone.name}">미분류</b>
-        </td>
-        <td class="num tight" th:text="${r.assetCount}">0</td>
-        <td class="tight">
-          <form method="post" th:action="@{'/settings/zones/' + ${r.zone.id} + '/color'}" class="inline">
-            <input type="color" name="color"
-                   th:value="${#strings.isEmpty(r.zone.color)} ? '#6f7e8d' : ${r.zone.color}"
-                   onchange="this.form.submit()">
-          </form>
-        </td>
-        <td class="actions">
-          <form method="post" th:action="@{'/settings/zones/' + ${r.zone.id} + '/delete'}" class="inline"
-                th:if="${r.deletable()}"
-                onsubmit="return confirm('이 구역을 지웁니다.\n\n계속할까요?')">
-            <button type="submit" class="btn small danger">삭제</button>
-          </form>
-          <span class="faint" th:unless="${r.deletable()}"
-                th:text="${r.zone.isUnassigned()} ? '기본 구역' : '자산이 남아 있음'">—</span>
-        </td>
-      </tr>
-      </tbody>
-    </table>
-
-    <form method="post" th:action="@{/settings/zones}" class="inline-form" style="margin-top:1rem">
-      <label>구역 이름
-        <input name="name" required maxlength="64" autocomplete="off" placeholder="DMZ">
-      </label>
-      <label>색
-        <input type="color" name="color" value="#2262bb">
-      </label>
-      <label>비고
-        <input name="note" maxlength="500" autocomplete="off">
-      </label>
-      <button type="submit" class="btn primary">구역 추가</button>
-    </form>
-  </div>
-
   <h2 id="ips" th:if="${tab} == 'ips'">접근 IP</h2>
   <div class="card" th:if="${tab} == 'ips'">
     <form method="post" th:action="@{/settings/ips}">
