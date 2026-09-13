@@ -40,6 +40,32 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
            """)
     List<Remediation> findAllWithAsset(@Param("statuses") List<RemediationStatus> statuses);
 
+    /**
+     * 대응 화면의 조치 탭.
+     *
+     * <p><b>기한이 지난 것이 맨 위로 온다.</b> 앞서는 {@code dueDate ASC} 로만
+     * 줄 세웠는데, 그러면 기한을 아직 안 정한 것(NULL)이 MySQL 에서 맨 앞에
+     * 온다 — 가장 급한 자리에 가장 안 급한 것이 앉는다.
+     *
+     * <p>순서: 기한 지난 것 → 아직 열린 것 → 닫힌 것. 닫힌 것을 아예 빼지는
+     * 않는다. "저건 어떻게 됐더라" 를 물을 자리가 여기 말고 없다.
+     *
+     * <p>구역을 {@code JOIN FETCH} 로 함께 끌어온다. 화면이 구역 이름을 찍고
+     * {@code open-in-view} 가 꺼져 있다.
+     */
+    @Query("""
+           SELECT r FROM Remediation r JOIN FETCH r.asset a JOIN FETCH a.zone z
+           WHERE r.status IN :statuses
+             AND (:zoneId IS NULL OR z.id = :zoneId)
+           ORDER BY CASE WHEN r.status IN ('DONE', 'ACCEPTED') THEN 2
+                         WHEN r.dueDate < :today THEN 0
+                         ELSE 1 END,
+                    r.dueDate ASC NULLS LAST, a.name ASC, r.packageName ASC
+           """)
+    List<Remediation> findForList(@Param("zoneId") Long zoneId,
+                                  @Param("statuses") List<RemediationStatus> statuses,
+                                  @Param("today") LocalDate today);
+
     /** 기한이 지난 채 아직 안 닫힌 것. 첫 화면에서 먼저 보여야 하는 값이다. */
     @Query("""
            SELECT r FROM Remediation r JOIN FETCH r.asset

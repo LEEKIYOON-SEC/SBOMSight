@@ -210,8 +210,7 @@ class PageRenderTest {
         open("/?filter=noscan");
         open("/?filter=stale");
         open("/vulns");
-        mvc.perform(get("/actions").with(user("tester").roles("ADMIN")))
-           .andExpect(status().is3xxRedirection());
+        open("/actions");
     }
 
     @Test
@@ -288,18 +287,22 @@ class PageRenderTest {
     }
 
     @Test
-    @DisplayName("조치 목록과 상세")
-    void remediationPages() throws Exception {
-        assertThat(open("/remediations")).contains("xz");
-        assertThat(open("/remediations/" + remediation.getId())).contains("xz");
+    @DisplayName("대응 — 조치 탭과 상세")
+    void actionPages() throws Exception {
+        assertThat(open("/actions")).contains("xz");
+        assertThat(open("/actions/" + remediation.getId())).contains("xz");
+        // 상태 거르개도 주소에 남는다.
+        open("/actions?status=OPEN");
+        open("/actions?zone=" + asset.getZone().getId());
     }
 
     @Test
     @DisplayName("검토 결과")
     void analysisPages() throws Exception {
-        assertThat(open("/analyses")).contains("CVE-2024-2961");
+        assertThat(open("/actions?tab=analyses")).contains("CVE-2024-2961");
         // 볼 일이 끝난 것까지 켜서 보는 거르개. 켜고 끄는 것은 이것 하나다.
-        open("/analyses?includeDone=true");
+        open("/actions?tab=analyses&includeDone=true");
+        open("/actions?tab=analyses&zone=" + asset.getZone().getId());
     }
 
     @Test
@@ -330,7 +333,13 @@ class PageRenderTest {
                 { "/lookup", "/vulns" },
                 { "/lookup?q=xz", "/vulns?q=xz" },
                 { "/lookup/export.csv?q=xz", "/vulns/export.csv?q=xz" },
-                { "/scans/" + scan.getId(), "/vulns?scan=" + scan.getId() } }) {
+                { "/scans/" + scan.getId(), "/vulns?scan=" + scan.getId() },
+                // N5 — 조치와 검토 결과가 대응 화면의 두 탭이 됐다.
+                { "/remediations", "/actions" },
+                { "/remediations/" + remediation.getId(), "/actions/" + remediation.getId() },
+                { "/remediations/export.csv", "/actions/export.csv" },
+                { "/analyses", "/actions?tab=analyses" },
+                { "/acceptances", "/actions?tab=analyses" } }) {
             mvc.perform(get(pair[0]).with(user("tester").roles("ADMIN")))
                .andExpect(status().is3xxRedirection())
                .andExpect(redirectedUrl(pair[1]));
@@ -342,7 +351,6 @@ class PageRenderTest {
 
         // 임시 다리 — 해당 단계에서 지우고 반대 방향으로 바꾼다.
         for (String[] pair : new String[][] {
-                { "/actions", "/remediations" },
                 { "/reports", "/report/zone" },
                 { "/me", "/password" } }) {
             mvc.perform(get(pair[0]).with(user("tester").roles("ADMIN")))
@@ -373,7 +381,10 @@ class PageRenderTest {
     void downloads() throws Exception {
         mvc.perform(get("/scans/" + scan.getId() + "/export.csv").with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
-        mvc.perform(get("/remediations/export.csv").with(user("tester").roles("ADMIN")))
+        mvc.perform(get("/actions/export.csv").with(user("tester").roles("ADMIN")))
+           .andExpect(status().isOk());
+        // 내려받기는 보고 있는 탭의 것이다.
+        mvc.perform(get("/actions/export.csv?tab=analyses").with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
         mvc.perform(get("/assets/import/template.csv").with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
@@ -392,8 +403,8 @@ class PageRenderTest {
         for (String url : new String[] {
                 "/", "/assets/" + asset.getId(), "/assets/" + asset.getId() + "?tab=vulns",
                 "/vulns", "/vulns?scan=" + scan.getId(), "/vulns/CVE-2024-3094",
-                "/remediations", "/remediations/" + remediation.getId(),
-                "/analyses", "/report/" + scan.getId(), "/report/zone", "/password" }) {
+                "/actions", "/actions/" + remediation.getId(), "/actions?tab=analyses",
+                "/report/" + scan.getId(), "/report/zone", "/password" }) {
             mvc.perform(get(url).with(user("viewer").roles("VIEWER")))
                .andExpect(status().isOk());
         }

@@ -280,6 +280,9 @@ public class AssetController {
         model.addAttribute("severity", latest == null ? Map.of() : severityMap(latest.getId()));
         model.addAttribute("remediations",
                 remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id));
+        // 이 자산에 대해 내린 결정 둘을 한 탭에서 본다. 검토 결과를 대응
+        // 화면에서만 볼 수 있으면 "이 서버 것만" 을 물을 자리가 없다.
+        model.addAttribute("assetAnalyses", analyses.forAsset(id));
         // 지우면 무엇이 함께 사라지는지 확인 문구에 그대로 쓴다.
         model.addAttribute("impact", assetService.impactOf(asset));
 

@@ -1,6 +1,7 @@
 package kr.sbomsight.service;
 
 import kr.sbomsight.domain.AuditLog;
+import kr.sbomsight.domain.FindingAnalysis;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.Remediation;
 
@@ -78,6 +79,41 @@ public final class CsvWriter {
                     r.getNote(),
                     WHEN.format(r.getCreatedAt()),
                     WHEN.format(r.getUpdatedAt()));
+            }
+        }
+    }
+
+    /**
+     * 검토 결과.
+     *
+     * <p>자산과 구역이 앞에 온다. 이 파일로 답해야 하는 질문이 "어느 서버의
+     * 무엇을 어떻게 하기로 했나" 이기 때문이다.
+     *
+     * <p><b>고르는 값은 화면 말로 적는다.</b> 표준값({@code NOT_AFFECTED})을
+     * 그대로 내보내면 결재 서류에 붙였을 때 아무도 못 읽는다. 표준 이름이
+     * 필요한 자리는 VEX 내보내기이지 이 파일이 아니다.
+     */
+    public static void writeAnalyses(OutputStream out, List<FindingAnalysis> rows)
+            throws IOException {
+        try (Writer writer = start(out)) {
+            row(writer, "자산", "구역", "취약점", "패키지", "상태", "근거", "대응",
+                        "설명", "다른 통제", "결재 문서 번호", "재검토일",
+                        "기록한 사람", "기록한 때");
+            for (FindingAnalysis a : rows) {
+                row(writer,
+                    a.getAsset().getName(),
+                    a.getAsset().getZone().getName(),
+                    a.getCve(),
+                    a.getPackageName(),
+                    a.getState().label(),
+                    a.getJustification() == null ? "" : a.getJustification().label(),
+                    a.getResponse() == null ? "" : a.getResponse().label(),
+                    a.getNote(),
+                    a.getOtherControl(),
+                    a.getApprovalDoc(),
+                    a.getReviewBy() == null ? "" : a.getReviewBy().format(DAY),
+                    a.getUpdatedBy(),
+                    WHEN.format(a.getUpdatedAt()));
             }
         }
     }

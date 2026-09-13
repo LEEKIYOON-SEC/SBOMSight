@@ -1,7 +1,9 @@
 package kr.sbomsight.web;
 
 import org.springframework.stereotype.Controller;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.util.UriUtils;
 
@@ -69,24 +71,36 @@ public class LegacyRedirectController {
     }
 
     /**
-     * 위험 수용은 검토 결과에 흡수됐다 (N5).
+     * 조치와 검토 결과는 대응 화면의 두 탭이 됐다 (N5).
      *
-     * <p>'위험 수용' 은 다섯 상태 중 하나({@code 해당됨})와 다섯 대응 중
-     * 하나({@code 조치 안 함})의 조합일 뿐이었다. 표를 따로 두니 나머지
-     * 조합("해당 없음"·"오탐")을 적을 자리가 아예 없었다.
+     * <p>둘 다 "이 건을 어떻게 할 것인가" 에 대한 답인데 화면이 갈라져 있어,
+     * 어느 쪽이 급한지 알려면 두 번 봐야 했다. 위험 수용은 그중에서도
+     * 다섯 상태 중 하나({@code 해당됨})와 다섯 대응 중 하나({@code 조치 안 함})의
+     * 조합일 뿐이었고, 표를 따로 두니 나머지 조합("해당 없음"·"오탐")을
+     * 적을 자리가 아예 없었다.
      */
-    @GetMapping("/acceptances")
-    public String acceptances() {
-        return "redirect:/analyses";
+    @GetMapping({ "/remediations", "/analyses", "/acceptances" })
+    public String actions(HttpServletRequest request) {
+        // 검토 결과 쪽에서 온 것은 그 탭으로 연다. 조치 탭으로 떨어뜨리면
+        // 즐겨찾기를 눌렀는데 다른 목록이 뜬다.
+        String from = request.getRequestURI();
+        return from.endsWith("/remediations")
+                ? "redirect:/actions"
+                : "redirect:/actions?tab=analyses";
+    }
+
+    /** 조치 상세도 대응 아래로 옮겼다. 한 영역의 주소가 두 갈래이면 기억하지 못한다. */
+    @GetMapping("/remediations/{id}")
+    public String remediationDetail(@PathVariable Long id) {
+        return "redirect:/actions/" + id;
+    }
+
+    @GetMapping("/remediations/export.csv")
+    public String remediationExport() {
+        return "redirect:/actions/export.csv";
     }
 
     // --- ② 임시 다리 — 진짜 화면이 생기면 지운다 ----------------------------
-
-    /** N5 에서 {@code /actions} 가 생기면 지우고 두 옛 화면을 이리로 보낸다. */
-    @GetMapping("/actions")
-    public String actions() {
-        return "redirect:/remediations";
-    }
 
     /** N7 에서 {@code /reports} 고르기 화면이 생기면 지운다. */
     @GetMapping("/reports")

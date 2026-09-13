@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      th:replace="~{layout :: page(~{::main}, 'actions', '대응')}">
+<body>
+<main>
+
+  <!--/*
+    대응 — 내린 결정을 모아 보는 자리.
+
+    앞서는 `조치` 와 `위험 수용` 이 각각 따로 화면이었고 기둥에서도 갈라져
+    있었다. 둘 다 "이 건을 어떻게 할 것인가" 에 대한 답인데 갈라 놓으니
+    어느 쪽이 급한지 알려면 두 번 봐야 했다.
+
+    **여기서 등록하지 않는다.** 조치도 검토 결과도 취약점 화면에서 건을
+    보면서 적는다 — 목록만 보고 무엇을 조치할지 고를 수는 없다.
+  */-->
+  <div th:replace="~{fragments/ui :: pagehead('대응', null, ~{::actions}, ~{})}"></div>
+  <div th:fragment="actions" th:remove="tag">
+    <a class="btn" th:href="@{/actions/export.csv(tab=${tab}, zone=${selectedZone},
+                             status=${status}, includeDone=${includeDone})}">CSV 내려받기</a>
+  </div>
+
+  <div class="tabs">
+    <a th:replace="~{fragments/ui :: tab('/actions', '조치',
+                     ${remediationCount}, ${tab} != 'analyses')}"></a>
+    <a th:replace="~{fragments/ui :: tab('/actions?tab=analyses', '검토 결과',
+                     ${analysisCount}, ${tab} == 'analyses')}"></a>
+  </div>
+
+  <form method="get" class="filters">
+    <input type="hidden" name="tab" th:value="${tab}">
+    <label>구역
+      <select name="zone" onchange="this.form.submit()">
+        <option value="">전체</option>
+        <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
+                th:selected="${selectedZone != null && selectedZone == z.id}">DMZ</option>
+      </select>
+    </label>
+
+    <!-- 조치 탭의 거르개 -->
+    <label th:if="${tab} != 'analyses'">상태
+      <select name="status" onchange="this.form.submit()">
+        <option value="">전체</option>
+        <option th:each="s : ${statuses}" th:value="${s}" th:text="${s.label()}"
+                th:selected="${status != null && status == s}">대기</option>
+      </select>
+    </label>
+
+    <!--/*
+      검토 결과 탭의 거르개는 이것 하나다. 앞서 `목록에서 감추기` 체크박스를
+      두려 했는데 없앴다 — 사람이 켜고 끄게 두면 같은 상태인데 어떤 건은
+      보이고 어떤 건은 안 보인다. 볼 일이 끝난 상태가 자동으로 빠진다.
+    */-->
+    <label class="check" th:if="${tab} == 'analyses'">
+      <input type="checkbox" name="includeDone" value="true" th:checked="${includeDone}"
+             onchange="this.form.submit()">
+      검토 끝난 것도 보기
+    </label>
+
+    <button class="btn" type="submit">적용</button>
+  </form>
+
+  <div class="body flush">
+
+    <!-- ══ 조치 ══════════════════════════════════════════════════════ -->
+    <th:block th:if="${tab} != 'analyses'">
+      <div th:if="${!overdue.isEmpty()}" class="banner warn">
+        <b th:text="'기한이 지난 조치 ' + ${overdue.size()} + '건'">기한 경과</b>
+        <span th:each="r, i : ${overdue}" th:if="${i.index < 5}">
+          <span th:text="${r.asset.name} + ' · ' + ${r.packageName}">web-01 · openssl</span><th:block
+            th:if="${!i.last && i.index < 4}"> · </th:block>
+        </span>
+      </div>
+
+      <th:block th:if="${remediations.isEmpty()}">
+        <div th:replace="~{fragments/ui :: empty('등록된 조치가 없습니다',
+                          '취약점 화면에서 패키지를 골라 조치로 올립니다.',
+                          '/vulns?group=package', '취약점 보기')}"></div>
+      </th:block>
+
+      <div class="table-scroll" th:unless="${remediations.isEmpty()}">
+        <table>
+          <thead>
+          <tr>
+            <th class="tight">자산</th><th class="tight">구역</th>
+            <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
+            <th class="tight">상태</th><th class="tight">담당</th>
+            <th class="tight">기한</th><th class="num tight">등록 시 건수</th>
+            <th>메모</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="r : ${remediations}" th:style="${r.status.isClosed()} ? 'opacity:.6' : ''">
+            <td class="tight"><a th:href="@{'/assets/' + ${r.asset.id}}"
+                                 th:text="${r.asset.name}">web-01</a></td>
+            <td class="tight faint">
+              <i class="zrail" th:style="'background:' + (${#strings.isEmpty(r.asset.zone.color)}
+                                         ? '#6f7e8d' : ${r.asset.zone.color})"></i>
+              <span th:text="${r.asset.zone.name}">DMZ</span></td>
+            <td class="tight"><a th:href="@{'/actions/' + ${r.id}}"
+                                 th:text="${r.packageName}">openssl</a></td>
+            <td class="tight faint mono"
+                th:text="${r.fromVersion} + ' → ' + ${r.toVersion}">—</td>
+            <td class="tight" th:text="${r.status.label()}">대기</td>
+            <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
+            <td class="tight num" th:classappend="${r.overdue} ? 'overdue' : ''"
+                th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
+            <td class="num tight" th:text="${r.openedCount}">0</td>
+            <td class="faint" th:text="${#strings.isEmpty(r.note)} ? '—' : ${r.note}">—</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </th:block>
+
+    <!-- ══ 검토 결과 ══════════════════════════════════════════════════ -->
+    <th:block th:if="${tab} == 'analyses'">
+      <div th:if="${!overdue.isEmpty()}" class="banner danger">
+        <b th:text="'재검토일이 지난 것 ' + ${overdue.size()} + '건'">재검토 기한 경과</b>
+        <span th:each="r, i : ${overdue}" th:if="${i.index < 5}">
+          <span th:text="${r.asset.name} + ' · ' + ${r.packageName}">web-01 · openssl</span><th:block
+            th:if="${!i.last && i.index < 4}"> · </th:block>
+        </span>
+      </div>
+
+      <th:block th:if="${analyses.isEmpty()}">
+        <div th:replace="~{fragments/ui :: empty('적어 둔 검토 결과가 없습니다',
+                          '취약점 화면에서 건을 골라 상태와 대응을 적습니다.',
+                          '/vulns', '취약점 보기')}"></div>
+      </th:block>
+
+      <div class="table-scroll" th:unless="${analyses.isEmpty()}">
+        <table>
+          <thead>
+          <tr>
+            <th class="tight">자산</th><th class="tight">구역</th>
+            <th class="tight">취약점</th><th class="tight">패키지</th>
+            <th class="tight">상태</th><th class="tight">대응</th>
+            <!-- 한 칸에 두 가지를 넣지 않는다. 고르는 것(근거)과 적는 것(설명)은
+                 다른 것이라 열을 가른다. -->
+            <th class="tight">근거</th><th>설명</th>
+            <th class="tight">기록</th><th class="tight">재검토일</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="a : ${analyses}" th:style="${a.open} ? '' : 'opacity:.6'">
+            <td class="tight"><a th:href="@{'/assets/' + ${a.asset.id}(tab='vulns')}"
+                                 th:text="${a.asset.name}">web-01</a></td>
+            <td class="tight faint">
+              <i class="zrail" th:style="'background:' + (${#strings.isEmpty(a.asset.zone.color)}
+                                         ? '#6f7e8d' : ${a.asset.zone.color})"></i>
+              <span th:text="${a.asset.zone.name}">DMZ</span></td>
+            <td class="tight mono"><a th:href="@{'/vulns/' + ${a.cve}}"
+                                      th:text="${a.cve}">CVE-0000-0000</a></td>
+            <td class="tight" th:text="${a.packageName}">openssl</td>
+
+            <td class="tight">
+              <span class="sev" th:classappend="${a.state.name() == 'EXPLOITABLE'} ? 'high'
+                                : (${a.open} ? 'medium' : 'low')"><i></i>
+                <span th:text="${a.state.label()}">해당됨</span></span>
+            </td>
+            <td class="tight">
+              <span th:if="${a.response != null}"
+                    th:text="${a.response.label()}">조치 안 함 (위험 수용)</span>
+              <span class="faint" th:if="${a.response == null}">—</span>
+            </td>
+            <td class="tight faint">
+              <span th:if="${a.justification != null}"
+                    th:text="${a.justification.label()}">취약한 코드가 들어 있지 않음</span>
+              <span th:if="${a.justification == null}">—</span>
+            </td>
+            <td>
+              <div th:if="${!#strings.isEmpty(a.note)}" th:text="${a.note}">설명</div>
+              <div class="faint" th:if="${!#strings.isEmpty(a.otherControl)}"
+                   th:text="'다른 통제: ' + ${a.otherControl}"></div>
+            </td>
+
+            <!-- 시스템이 아는 것만 적는다 — 로그인 계정과 시각. 결재 문서
+                 번호는 사람이 적는 칸이라 비어 있을 수 있다. -->
+            <td class="tight">
+              <div th:text="${a.updatedBy}">admin</div>
+              <div class="faint num"
+                   th:text="${#temporals.format(a.updatedAt, 'yyyy-MM-dd')}">—</div>
+              <div class="faint" th:if="${!#strings.isEmpty(a.approvalDoc)}"
+                   th:text="'결재 ' + ${a.approvalDoc}">결재 보안-2026-0143</div>
+            </td>
+            <td class="tight num" th:classappend="${a.reviewOverdue} ? 'overdue' : ''">
+              <span th:if="${a.reviewBy != null}"
+                    th:text="${#temporals.format(a.reviewBy, 'yyyy-MM-dd')}">—</span>
+              <span class="faint" th:if="${a.reviewBy == null}">—</span>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </th:block>
+  </div>
+
+</main>
+</body>
+</html>

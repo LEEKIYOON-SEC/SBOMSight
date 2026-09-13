@@ -394,8 +394,8 @@ Rocky Linux 9.3 · 대외 웹 · 마지막 검사 2026-09-10 14:22
 | `/vulns?asset={id}` | → `/assets/{id}?tab=vulns` (302) |
 | — | `/vulns/{cve}` 새로 |
 | — | `/packages`, `/packages/export.csv` 새로 |
-| `/remediations` | → `/actions` (302) |
-| `/acceptances` | → `/actions?tab=analysis` (302) |
+| `/remediations`, `/remediations/{id}` | → `/actions`, `/actions/{id}` (302) |
+| `/acceptances`, `/analyses` | → `/actions?tab=analyses` (302) |
 | `/report/{scanId}` | → `/reports/scan/{scanId}` (302) |
 | `/report/zone` | → `/reports/zone` (302) |
 | — | `/reports`, `/me` 새로 |
@@ -566,10 +566,31 @@ component (asset_id, scan_id, name, version, type, purl, location)
 자유 입력 칸(`사유`→`근거`)과 `해당 없음` 일 때 고르는 표준값. §4.0 규칙 2 와
 충돌한다. **고르는 것을 `근거`, 적는 것을 `설명`** 으로 갈랐다.
 
-### N5b — `/actions` 두 탭
-- 새 `ActionController`(`/actions`) — `조치` 와 `검토 결과` 두 탭 + 거르개
-- `remediations.html` + `analyses.html` → `actions.html`
-- `/actions` 임시 다리를 지우고 `/remediations`·`/analyses` 를 이리로 보낸다
+### N5b — `/actions` 두 탭 ✅
+- 새 `ActionController`(`/actions`) — `조치` 와 `검토 결과` 두 탭.
+  거르개는 구역(양쪽 공통) + 상태(조치) + `검토 끝난 것도 보기`(검토 결과)
+- **기한이 지난 것이 맨 위로.** 앞서 조치 목록은 `dueDate ASC` 로만 줄 세웠는데
+  MySQL 에서는 기한을 아직 안 정한 것(NULL)이 맨 앞에 온다 — 가장 급한 자리에
+  가장 안 급한 것이 앉아 있었다
+- `remediations.html` + `analyses.html` → `actions.html`,
+  `remediation-detail.html` → `action-detail.html`
+- 임시 다리를 지우고 방향을 뒤집었다: `/remediations`·`/analyses`·`/acceptances`
+  → `/actions`(그 탭), `/remediations/{id}` → `/actions/{id}`
+- 등록하는 길은 그대로 취약점 화면에 둔다. 두 컨트롤러에 POST 하나씩만 남겼다 —
+  **목록만 보고 무엇을 조치할지 고를 수는 없다**
+- 자산 상세의 `조치·검토` 탭에 **검토 결과를 넣었다.** 탭 이름은 그런데 조치만
+  있었고, 검토 결과는 대응 화면에서만 볼 수 있어 "이 서버 것만" 을 물을 자리가
+  없었다 (§1 지적 7)
+
+**어휘 — 없는 승인이 하나 더 있었다.** `RemediationStatus.ACCEPTED` 의 화면
+이름이 `예외 승인` 이었다. 아무나 눌러 닫을 수 있는 상태에 '승인' 을 붙이면
+통제가 있는 것처럼 보이는데 실제로는 없다. `하지 않고 닫음` 으로 고쳤다.
+
+> **남은 겹침 — 결정이 필요하다.** "안 고치기로 했다" 는 판단은 이제 검토
+> 결과의 대응(`조치 안 함`)이 담는다. 조치 상태의 `ACCEPTED` 는 *그 판단이
+> 아니라 조치 하나가 닫힌 상태*인데, 둘이 가까워서 어느 쪽을 봐야 할지
+> 헷갈릴 수 있다. 없애고 검토 결과로 모으려면 값이 DB 에 글자로 들어 있어
+> 마이그레이션이 필요하다 — 화면을 합치는 단계에서 함께 하지 않았다.
 
 ### N6 — 계정
 - `AccountService.update(username, displayName, role, enabled, newPasswordOrNull, actor)`

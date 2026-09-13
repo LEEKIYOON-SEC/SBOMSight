@@ -372,7 +372,7 @@ class FindingAnalysisTest {
     @DisplayName("목록 화면이 뜬다")
     void listRenders() throws Exception {
         acceptRisk("CVE-1", "openssl");
-        String html = mvc.perform(get("/analyses").with(user("tester").roles("VIEWER")))
+        String html = mvc.perform(get("/actions?tab=analyses").with(user("tester").roles("VIEWER")))
                          .andExpect(status().isOk())
                          .andReturn().getResponse().getContentAsString();
         assertThat(html).contains("openssl")
@@ -380,11 +380,14 @@ class FindingAnalysisTest {
                         .contains("보안-2026-0143");
     }
 
+    /** 적어 둔 주소와 즐겨찾기가 죽지 않아야 한다. */
     @Test
-    @DisplayName("옛 위험 수용 주소는 검토 결과로 이어진다")
-    void theOldAddressStillWorks() throws Exception {
-        mvc.perform(get("/acceptances").with(user("tester").roles("VIEWER")))
-           .andExpect(redirectedUrl("/analyses"));
+    @DisplayName("옛 위험 수용·검토 결과 주소는 대응 화면의 그 탭으로 이어진다")
+    void theOldAddressesStillWork() throws Exception {
+        for (String old : new String[] { "/acceptances", "/analyses" }) {
+            mvc.perform(get(old).with(user("tester").roles("VIEWER")))
+               .andExpect(redirectedUrl("/actions?tab=analyses"));
+        }
     }
 
     @Test
@@ -411,7 +414,7 @@ class FindingAnalysisTest {
                         .param("state", "IN_TRIAGE")
                         .param("justification", "").param("response", "")
                         .param("reviewBy", "").param("note", "확인 중입니다"))
-           .andExpect(redirectedUrl("/analyses"));
+           .andExpect(redirectedUrl("/actions?tab=analyses"));
 
         assertThat(repo.findOne(asset.getId(), "CVE-7", "openssl")).isPresent();
     }
@@ -428,6 +431,6 @@ class FindingAnalysisTest {
                         .param("cve", "CVE-9").param("packageName", "openssl")
                         .param("state", "IN_TRIAGE")
                         .param("back", "//evil.example.com/"))
-           .andExpect(redirectedUrl("/analyses"));
+           .andExpect(redirectedUrl("/actions?tab=analyses"));
     }
 }

@@ -160,7 +160,23 @@ public class FindingAnalysisService {
 
     @Transactional(readOnly = true)
     public List<FindingAnalysis> list(boolean includeDone, Long zoneId) {
-        return analyses.findForList(includeDone, OPEN_STATES, zoneId);
+        return analyses.findForList(includeDone, OPEN_STATES, zoneId, LocalDate.now());
+    }
+
+    /**
+     * 한 자산치 — 자산 상세의 조치·검토 결과 탭.
+     *
+     * <p>아무도 손대지 않은 행은 내지 않는다. 목록 화면과 같은 규칙이다 —
+     * 그 자산의 탐지 전부가 쏟아지면 목록이 되지 못한다.
+     */
+    @Transactional(readOnly = true)
+    public List<FindingAnalysis> forAsset(Long assetId) {
+        return analyses.findByAsset(assetId).stream()
+                       .filter(a -> !a.isUntouched())
+                       .sorted(java.util.Comparator
+                               .comparing(FindingAnalysis::isReviewOverdue).reversed()
+                               .thenComparing(FindingAnalysis::getCve))
+                       .toList();
     }
 
     @Transactional(readOnly = true)

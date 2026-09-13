@@ -3,10 +3,8 @@ package kr.sbomsight.web;
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.service.FindingAnalysisService;
-import kr.sbomsight.service.ZoneService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
@@ -17,12 +15,11 @@ import java.time.LocalDate;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
- * 검토 결과 — 탐지 하나하나에 대한 우리의 결정을 적는 곳.
+ * 검토 결과를 <b>적는</b> 자리.
  *
- * <p><b>앞서 '위험 수용' 화면이었다.</b> 그런데 그것은 다섯 상태 중
- * 하나({@code 해당됨})와 다섯 대응 중 하나({@code 조치 안 함})의 조합일
- * 뿐이었고, 나머지 조합을 적을 자리는 없었다. "이건 우리 환경에 해당 없다"
- * 도, "오탐이다" 도 적을 데가 없어서 그냥 목록에 남아 있었다.
+ * <p>목록은 {@link ActionController}(`/actions?tab=analyses`)로 옮겼다. 여기
+ * 남은 것은 취약점 화면에서 건을 보면서 적는 길 하나다 — <b>목록이 아니라
+ * 건을 보면서 적는다.</b> 무엇이 해당 없는지는 그 탐지를 봐야 알 수 있다.
  *
  * <p>적는 것은 관리자만 한다. 조회 권한으로 남의 결정을 적을 수는 없다.
  */
@@ -32,25 +29,10 @@ public class FindingAnalysisController {
 
     private final FindingAnalysisService analyses;
     private final AssetRepository assets;
-    private final ZoneService zones;
 
-    public FindingAnalysisController(FindingAnalysisService analyses, AssetRepository assets,
-                                     ZoneService zones) {
+    public FindingAnalysisController(FindingAnalysisService analyses, AssetRepository assets) {
         this.analyses = analyses;
         this.assets = assets;
-        this.zones = zones;
-    }
-
-    @GetMapping
-    public String index(@RequestParam(defaultValue = "false") boolean includeDone,
-                        @RequestParam(required = false) Long zone,
-                        Model model) {
-        model.addAttribute("rows", analyses.list(includeDone, zone));
-        model.addAttribute("includeDone", includeDone);
-        model.addAttribute("zones", zones.all());
-        model.addAttribute("selectedZone", zone);
-        model.addAttribute("overdue", analyses.reviewOverdue());
-        return "analyses";
     }
 
     /**
@@ -88,7 +70,7 @@ public class FindingAnalysisController {
         } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
             flash.addFlashAttribute("error", message(e));
         }
-        return "redirect:" + safeBack(back, "/analyses");
+        return "redirect:" + safeBack(back, "/actions?tab=analyses");
     }
 
     private <E extends Enum<E>> E enumOf(Class<E> type, String value) {

@@ -46,8 +46,8 @@
                        ${latest != null} ? ${latest.findingCount} : 0, ${tab} == 'vulns')}"></a>
       <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=history', '검사 이력',
                        ${history.size()}, ${tab} == 'history')}"></a>
-      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=actions', '조치·검토',
-                       ${remediations.size()}, ${tab} == 'actions')}"></a>
+      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=actions', '조치·검토 결과',
+                       ${remediations.size() + assetAnalyses.size()}, ${tab} == 'actions')}"></a>
     </div>
   </div>
 
@@ -313,11 +313,16 @@
     </div>
   </div>
 
-  <!-- ══ 조치 · 검토 ════════════════════════════════════════════════ -->
+  <!--/*
+    ══ 조치 · 검토 결과 ════════════════════════════════════════════════
+    이 자산에 대해 내린 결정 둘. 탭 이름이 '조치·검토' 인데 조치만 있었다 —
+    검토 결과는 대응 화면에 가야만 볼 수 있어서, "이 서버 것만" 을 물으면
+    답이 없었다. 둘 다 여기 둔다.
+  */-->
   <div class="body" th:if="${tab} == 'actions'">
-    <th:block th:if="${remediations.isEmpty()}">
-      <div th:replace="~{fragments/ui :: empty('등록된 조치가 없습니다',
-                        '취약점 화면에서 패키지를 골라 조치로 올립니다.',
+    <th:block th:if="${remediations.isEmpty() and assetAnalyses.isEmpty()}">
+      <div th:replace="~{fragments/ui :: empty('등록된 조치도 검토 결과도 없습니다',
+                        '취약점 화면에서 건을 골라 조치로 올리거나 검토 결과를 적습니다.',
                         ${latest != null} ? '/assets/' + ${asset.id} + '?tab=vulns' : null,
                         '취약점 보기')}"></div>
     </th:block>
@@ -336,13 +341,62 @@
           </thead>
           <tbody>
           <tr th:each="r : ${remediations}">
-            <td class="tight"><a th:href="@{'/remediations/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td>
+            <td class="tight"><a th:href="@{'/actions/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td>
             <td class="tight faint mono" th:text="${r.fromVersion} + ' → ' + ${r.toVersion}">—</td>
             <td class="tight" th:text="${r.status.label()}">대기</td>
             <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
             <td class="tight" th:classappend="${r.overdue} ? 'overdue' : ''"
                 th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
             <td class="faint" th:text="${#strings.isEmpty(r.note)} ? '—' : ${r.note}">—</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" th:unless="${assetAnalyses.isEmpty()}">
+      <div class="card-header"><h2 class="card-title">검토 결과</h2>
+        <span class="faint" style="font-size:13px"
+              th:text="${assetAnalyses.size()} + '건'">0건</span></div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+          <tr>
+            <th class="tight">취약점</th><th class="tight">패키지</th>
+            <th class="tight">상태</th><th class="tight">대응</th>
+            <th class="tight">근거</th><th>설명</th>
+            <th class="tight">재검토일</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="a : ${assetAnalyses}" th:style="${a.open} ? '' : 'opacity:.6'">
+            <td class="tight mono"><a th:href="@{'/vulns/' + ${a.cve}}"
+                                      th:text="${a.cve}">CVE-0000-0000</a></td>
+            <td class="tight" th:text="${a.packageName}">openssl</td>
+            <td class="tight">
+              <span class="sev" th:classappend="${a.state.name() == 'EXPLOITABLE'} ? 'high'
+                                : (${a.open} ? 'medium' : 'low')"><i></i>
+                <span th:text="${a.state.label()}">해당됨</span></span>
+            </td>
+            <td class="tight">
+              <span th:if="${a.response != null}" th:text="${a.response.label()}">조치 안 함</span>
+              <span class="faint" th:if="${a.response == null}">—</span>
+            </td>
+            <td class="tight faint">
+              <span th:if="${a.justification != null}"
+                    th:text="${a.justification.label()}">취약한 코드를 실행하지 않음</span>
+              <span th:if="${a.justification == null}">—</span>
+            </td>
+            <td>
+              <div th:if="${!#strings.isEmpty(a.note)}" th:text="${a.note}">설명</div>
+              <div class="faint" th:if="${!#strings.isEmpty(a.otherControl)}"
+                   th:text="'다른 통제: ' + ${a.otherControl}"></div>
+            </td>
+            <td class="tight num" th:classappend="${a.reviewOverdue} ? 'overdue' : ''">
+              <span th:if="${a.reviewBy != null}"
+                    th:text="${#temporals.format(a.reviewBy, 'yyyy-MM-dd')}">—</span>
+              <span class="faint" th:if="${a.reviewBy == null}">—</span>
+            </td>
           </tr>
           </tbody>
         </table>

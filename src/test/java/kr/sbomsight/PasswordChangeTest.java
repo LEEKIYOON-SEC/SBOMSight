@@ -61,7 +61,7 @@ class PasswordChangeTest {
     @Test
     @DisplayName("초기 비밀번호를 쓰는 계정은 어느 화면을 열어도 비밀번호 화면으로 간다")
     void lockedUserIsSentToPasswordPage() throws Exception {
-        for (String path : new String[] { "/", "/remediations", "/settings" }) {
+        for (String path : new String[] { "/", "/actions", "/settings" }) {
             mvc.perform(get(path).with(user(NAME).roles("ADMIN")))
                .andExpect(status().is3xxRedirection())
                .andExpect(redirectedUrl("/password"));

@@ -47,17 +47,24 @@ public interface FindingAnalysisRepository extends JpaRepository<FindingAnalysis
      * <p>아무도 손대지 않은 행({@code 미검토} 이고 대응도 없는 것)은 목록에
      * 내지 않는다. 탐지 전체가 그대로 쏟아지는 것이라 목록이 되지 못한다 —
      * 그 목록은 취약점 화면이다.
+     *
+     * <p><b>재검토일이 지난 것이 맨 위로 온다.</b> 표 어딘가에 섞여 있으면
+     * 지났다는 사실 자체를 못 보고 지나간다.
      */
     @Query("""
            SELECT f FROM FindingAnalysis f JOIN FETCH f.asset a JOIN FETCH a.zone z
            WHERE NOT (f.state = kr.sbomsight.domain.AnalysisState.NOT_SET AND f.response IS NULL)
              AND (:includeDone = TRUE OR f.state IN :openStates)
              AND (:zoneId IS NULL OR z.id = :zoneId)
-           ORDER BY a.name ASC, f.cve ASC
+           ORDER BY CASE WHEN f.reviewBy IS NOT NULL AND f.reviewBy < :today THEN 0
+                         WHEN f.state IN :openStates THEN 1
+                         ELSE 2 END,
+                    f.reviewBy ASC NULLS LAST, a.name ASC, f.cve ASC
            """)
     List<FindingAnalysis> findForList(@Param("includeDone") boolean includeDone,
                                       @Param("openStates") Collection<AnalysisState> openStates,
-                                      @Param("zoneId") Long zoneId);
+                                      @Param("zoneId") Long zoneId,
+                                      @Param("today") LocalDate today);
 
     /** 재검토일이 지난 것. 자산 목록 머리와 기둥의 숫자에 조치 기한과 나란히 선다. */
     @Query("""

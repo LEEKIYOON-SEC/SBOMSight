@@ -105,6 +105,14 @@ public class RemediationService {
         return remediations.findAllWithAsset(List.of(RemediationStatus.values()));
     }
 
+    /** 대응 화면의 조치 탭 — 구역으로 좁힐 수 있고 기한 지난 것이 위로 온다. */
+    @Transactional(readOnly = true)
+    public List<Remediation> list(Long zoneId, RemediationStatus status) {
+        List<RemediationStatus> statuses =
+                status == null ? List.of(RemediationStatus.values()) : List.of(status);
+        return remediations.findForList(zoneId, statuses, LocalDate.now());
+    }
+
     @Transactional(readOnly = true)
     public Map<Long, Remediation> byPackage(Long assetId) {
         return remediations.findByAssetIdOrderByStatusAscPackageNameAsc(assetId).stream()
