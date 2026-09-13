@@ -82,14 +82,15 @@ class ReportRenderTest {
     void rendersWithExposure() throws Exception {
         Scan scan = seed(true);
 
-        String html = mvc.perform(get("/report/" + scan.getId()).with(user("tester").roles("ADMIN")))
+        String html = mvc.perform(get("/reports/scan/" + scan.getId()).with(user("tester").roles("ADMIN")))
                          .andExpect(status().isOk())
                          .andReturn().getResponse().getContentAsString();
 
-        assertThat(html).contains("어떻게 닿을 수 있는가");
-        assertThat(html).contains("밖에서 바로");
+        assertThat(html).contains("2.3 접근 경로");
         // 셋 중 둘이 AV:N/PR:N/UI:N 이다 (requests 는 UI:R).
         assertThat(html).contains("원격 접근");
+        // 약어는 표 안이 아니라 표 아래 각주 한 줄로 푼다.
+        assertThat(html).contains("AV:N / PR:N / UI:N");
     }
 
     /**
@@ -101,7 +102,7 @@ class ReportRenderTest {
     void rendersWithoutVectors() throws Exception {
         Scan scan = seed(false);
 
-        mvc.perform(get("/report/" + scan.getId()).with(user("tester").roles("ADMIN")))
+        mvc.perform(get("/reports/scan/" + scan.getId()).with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
     }
 
@@ -116,7 +117,7 @@ class ReportRenderTest {
         scan.setStatus(ScanStatus.DONE);
         scans.saveAndFlush(scan);
 
-        mvc.perform(get("/report/" + scan.getId()).with(user("tester").roles("ADMIN")))
+        mvc.perform(get("/reports/scan/" + scan.getId()).with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
     }
 
@@ -163,7 +164,7 @@ class ReportRenderTest {
         doneToday(a, "openssl", "3.0.7");
         doneToday(b, "openssl", "3.0.7");
 
-        String html = mvc.perform(get("/report/zone").param("zone", zone.getId().toString())
+        String html = mvc.perform(get("/reports/zone").param("zone", zone.getId().toString())
                                                      .with(user("tester").roles("ADMIN")))
                          .andExpect(status().isOk())
                          .andReturn().getResponse().getContentAsString();
@@ -182,7 +183,7 @@ class ReportRenderTest {
         Zone zone = zoneService.create("빈구역-" + System.nanoTime(), "", "");
         assetIn(zone, "web");
 
-        mvc.perform(get("/report/zone").param("zone", zone.getId().toString())
+        mvc.perform(get("/reports/zone").param("zone", zone.getId().toString())
                                        .with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
     }
@@ -192,7 +193,7 @@ class ReportRenderTest {
     void rendersZoneReportWithNoAssets() throws Exception {
         Zone zone = zoneService.create("무자산-" + System.nanoTime(), "", "");
 
-        String html = mvc.perform(get("/report/zone").param("zone", zone.getId().toString())
+        String html = mvc.perform(get("/reports/zone").param("zone", zone.getId().toString())
                                                      .with(user("tester").roles("ADMIN")))
                          .andExpect(status().isOk())
                          .andReturn().getResponse().getContentAsString();
@@ -212,7 +213,7 @@ class ReportRenderTest {
         Asset missed = assetIn(zone, "db");
         doneToday(a, "openssl", "3.0.7");
 
-        String html = mvc.perform(get("/report/zone").with(user("tester").roles("ADMIN")))
+        String html = mvc.perform(get("/reports/zone").with(user("tester").roles("ADMIN")))
                          .andExpect(status().isOk())
                          .andReturn().getResponse().getContentAsString();
 
@@ -225,7 +226,7 @@ class ReportRenderTest {
     @Test
     @DisplayName("시작일이 종료일보다 늦으면 바꾸고 알린다")
     void swapsReversedDates() throws Exception {
-        String html = mvc.perform(get("/report/zone")
+        String html = mvc.perform(get("/reports/zone")
                                           .param("from", "2026-09-30").param("to", "2026-09-01")
                                           .with(user("tester").roles("ADMIN")))
                          .andExpect(status().isOk())

@@ -13,24 +13,31 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 보고서 — 기 · 승 · 전 · 결.
+ * 점검 결과 보고서.
  *
- * <p>AI 는 쓰지 않는다. <b>grype 이 준 데이터만으로</b> 네 장을 만든다.
+ * <p><b>기승전결을 폐기했다.</b> 앞서 네 장에 각각 서술형 문단을 얹어
+ * "…해 187건을 탐지했습니다", "…사라집니다" 로 풀어썼다. 읽는 사람은 결재를
+ * 올리는 실무자인데, 그 문장들은 표에 이미 있는 숫자를 한 번 더 말할 뿐이었고
+ * <b>누가 봐도 사람이 쓴 문서가 아니었다.</b>
+ *
+ * <p>점검 결과 보고서의 모양으로 바꾼다 — <b>문서 정보 + 번호 붙은 장, 내용은
+ * 표.</b> 서술형 문단을 두지 않는다. 설명이 필요한 약어는 표 아래 각주 한 줄로
+ * 단다.
  *
  * <pre>
- *   기(起) 현황   무엇을, 언제, 무엇으로 봤는가
- *                 자산 · SBOM · grype 판과 DB 기준일 · 총 탐지
- *   승(承) 분석   그 안이 어떻게 생겼는가
- *                 심각도 분포 · 수정 가능 여부 · 실제 악용 · 매칭 근거
- *   전(轉) 판단   그래서 무엇이 문제인가
- *                 조치 하나로 몇 건이 사라지는가 · 손댈 수 없는 것은 무엇인가
- *                 · 지난번 대비 무엇이 늘고 줄었는가
- *   결(結) 조치   무엇을 언제까지 누가 하는가
- *                 조치 목록 · 잔여 위험
+ *   문서 정보   점검 대상 · 점검 일시 · 점검 도구 · SBOM · 작성일
+ *   1. 점검 개요        패키지 · 탐지 · 고유 취약점 · 영향 패키지 · 제외
+ *   2. 점검 결과 요약   심각도별 · 수정 가능 여부 · 접근 경로
+ *   3. 조치 대상        패키지를 올리면 해소되는 것
+ *   4. 수정 버전 없는 항목
+ *   5. 조치 진행 현황
+ *   6. 이전 검사 대비
  * </pre>
  *
- * <p>"CVE 187건"은 손댈 곳을 알려 주지 않는다. 실무자가 실행하는 단위는 패키지
- * 업데이트이므로 전(轉)과 결(結)은 패키지로 묶어 낸다.
+ * <p>AI 는 쓰지 않는다. <b>grype 이 준 데이터만으로</b> 만든다.
+ *
+ * <p>"취약점 187건"은 손댈 곳을 알려 주지 않는다. 실무자가 실행하는 단위는
+ * 패키지 업데이트이므로 3장과 5장은 패키지로 묶어 낸다.
  */
 @Service
 public class ReportService {
@@ -52,11 +59,12 @@ public class ReportService {
     @Transactional(readOnly = true)
     public Report build(Scan scan) {
         Exposure exposure = exposure(scan);
-        Chapter1 ch1 = chapter1(scan);
-        Chapter2 ch2 = chapter2(scan, exposure);
-        Chapter3 ch3 = chapter3(scan, exposure);
-        Chapter4 ch4 = chapter4(scan, ch3);
-        return new Report(scan, ch1, ch2, ch3, ch4);
+        Overview overview = overview(scan);
+        Summary summary = summary(scan, exposure);
+        Targets targets = targets(scan, exposure);
+        Progress progress = progress(scan, targets);
+        return new Report(scan, overview, summary, targets, progress,
+                          java.time.Instant.now());
     }
 
     // --- 노출면 --------------------------------------------------------------
@@ -98,10 +106,10 @@ public class ReportService {
         return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, reachableByPackage);
     }
 
-    // --- 기(起): 무엇을, 언제, 무엇으로 봤는가 ------------------------------
+    // --- 1장: 점검 개요 ------------------------------------------------------
 
-    private Chapter1 chapter1(Scan scan) {
-        return new Chapter1(
+    private Overview overview(Scan scan) {
+        return new Overview(
                 scan.getAsset(),
                 scan.getSbomFilename(),
                 scan.getComponentCount(),
@@ -113,12 +121,45 @@ public class ReportService {
                 scan.getMatchCount(),
                 scan.getMergedCount(),
                 scan.getDroppedCount(),
-                scan.accountsBalance());
+                scan.accountsBalance(),
+                distinctVulnerabilities(scan),
+                findings.groupByPackage(scan.getId()).size(),
+                excludedByAnalysis(scan));
     }
 
-    // --- 승(承): 그 안이 어떻게 생겼는가 ------------------------------------
+    /** 고유 취약점 수 — 같은 CVE 가 여러 패키지에 걸리면 한 가지로 센다. */
+    private long distinctVulnerabilities(Scan scan) {
+        return findings.groupByCveIn(List.of(scan.getId()), null, null, null, null).size();
+    }
 
-    private Chapter2 chapter2(Scan scan, Exposure exposure) {
+    /**
+     * <b>검토를 마쳐 목록에서 빠지는 건수.</b>
+     *
+     * <p>보고서는 이 수를 반드시 찍는다. 검토 결과로 목록에서 빠진 건이 있는데
+     * 그 사실을 안 적으면, 숫자가 조용히 줄어든 보고서가 된다 — 점검에서
+     * 문제가 되는 것이 정확히 그것이다. <b>탐지 건수 자체는 줄지 않는다.</b>
+     *
+     * <p>적어 둔 번호가 grype 의 주 식별자일 수도, 함께 온 CVE 번호일 수도
+     * 있다. 둘 다 본다 — 한쪽만 보면 적어 둔 것이 보고서에서 사라진다.
+     */
+    private long excludedByAnalysis(Scan scan) {
+        Set<String> done = analyses.forAsset(scan.getAsset().getId()).stream()
+                .filter(a -> !a.isOpen())
+                .map(FindingAnalysis::key)
+                .collect(Collectors.toSet());
+        if (done.isEmpty()) {
+            return 0;
+        }
+        return findings.findKeyRows(scan.getId()).stream()
+                .filter(row -> done.contains(row.getCve() + "|" + row.getPackageName())
+                            || (row.getRelatedCve() != null && !row.getRelatedCve().isBlank()
+                                && done.contains(row.getRelatedCve() + "|" + row.getPackageName())))
+                .count();
+    }
+
+    // --- 2장: 점검 결과 요약 -------------------------------------------------
+
+    private Summary summary(Scan scan, Exposure exposure) {
         Map<String, Long> severity = new LinkedHashMap<>();
         for (String key : List.of("critical", "high", "medium", "low", "negligible", "unknown")) {
             severity.put(key, 0L);
@@ -140,8 +181,8 @@ public class ReportService {
         boolean kevKnown = groups.stream().anyMatch(g -> g.getKevCount() > 0)
                 || hasAnyKevFlag(scan);
 
-        return new Chapter2(severity, fixState, fixable, noFix, unknownFix,
-                            groups.size(), kev, kevKnown, exposure);
+        return new Summary(severity, fixState, fixable, noFix, unknownFix,
+                           groups.size(), kev, kevKnown, exposure, scan.getFindingCount());
     }
 
     private boolean hasAnyKevFlag(Scan scan) {
@@ -151,9 +192,9 @@ public class ReportService {
                        .getTotalElements() > 0;
     }
 
-    // --- 전(轉): 그래서 무엇이 문제인가 --------------------------------------
+    // --- 3·4장: 조치 대상과 수정 버전 없는 항목 -------------------------------
 
-    private Chapter3 chapter3(Scan scan, Exposure exposure) {
+    private Targets targets(Scan scan, Exposure exposure) {
         List<PackageGroup> groups = findings.groupByPackage(scan.getId());
 
         // 조치 하나로 몇 건이 사라지는가. 이것이 보고서의 핵심 표다.
@@ -177,7 +218,14 @@ public class ReportService {
                 .toList();
 
         Diff diff = diff(scan);
-        return new Chapter3(actions, blocked, diff, exposure);
+        // 4장은 '손댈 수 없는 것' 에 우리가 적어 둔 검토 결과를 붙여 낸다.
+        Map<String, FindingAnalysis> byPackage = analyses.forAsset(scan.getAsset().getId())
+                .stream()
+                .collect(Collectors.toMap(FindingAnalysis::getPackageName, a -> a, (a, b) -> a));
+        List<NoFixRow> noFixRows = blocked.stream()
+                .map(b -> new NoFixRow(b, byPackage.get(b.packageName())))
+                .toList();
+        return new Targets(actions, blocked, noFixRows, diff, exposure);
     }
 
     /**
@@ -220,14 +268,14 @@ public class ReportService {
         return new Diff(previous.get(), added, resolved, kept);
     }
 
-    // --- 결(結): 무엇을 언제까지 누가 하는가 --------------------------------
+    // --- 5장: 조치 진행 현황 -------------------------------------------------
 
-    private Chapter4 chapter4(Scan scan, Chapter3 ch3) {
+    private Progress progress(Scan scan, Targets targets) {
         Map<String, Remediation> byPackage = remediations
                 .findByAssetIdOrderByStatusAscPackageNameAsc(scan.getAsset().getId()).stream()
                 .collect(Collectors.toMap(Remediation::getPackageName, r -> r, (a, b) -> a));
 
-        List<ActionRow> rows = ch3.actions().stream()
+        List<ActionRow> rows = targets.fixTargets().stream()
                 .map(action -> new ActionRow(action, byPackage.get(action.packageName())))
                 .toList();
 
@@ -245,7 +293,8 @@ public class ReportService {
                         .filter(a -> a.getAsset().getId().equals(scan.getAsset().getId()))
                         .toList();
 
-        return new Chapter4(rows, tracked, rows.size() - tracked, overdue, ch3.blocked(), explained);
+        return new Progress(rows, tracked, rows.size() - tracked, overdue,
+                            targets.blocked(), explained);
     }
 
     private String key(String value) {
@@ -256,17 +305,19 @@ public class ReportService {
     // 화면에 넘기는 모양
     // -----------------------------------------------------------------------
 
-    public record Report(Scan scan, Chapter1 status, Chapter2 analysis,
-                         Chapter3 judgement, Chapter4 action) {
+    public record Report(Scan scan, Overview overview, Summary summary,
+                         Targets targets, Progress progress, java.time.Instant printedAt) {
     }
 
-    /** 기 — 무엇을, 언제, 무엇으로 봤는가. */
-    public record Chapter1(Asset asset, String sbomFilename, int componentCount, int findingCount,
+    /** 1장 — 점검 개요. */
+    public record Overview(Asset asset, String sbomFilename, int componentCount, int findingCount,
                            String grypeVersion, java.time.Instant grypeDbBuilt,
                            String distroName, String distroVersion,
-                           int matchCount, int mergedCount, int droppedCount, boolean balanced) {
+                           int matchCount, int mergedCount, int droppedCount, boolean balanced,
+                           long distinctVulnerabilities, int affectedPackages,
+                           long excludedByAnalysis) {
 
-        /** 회계에 설명할 것이 있는가 — 없으면 이 문단 자체를 싣지 않는다. */
+        /** 회계에 설명할 것이 있는가 — 없으면 그 줄 자체를 싣지 않는다. */
         public boolean hasAccountingNote() {
             return mergedCount > 0 || droppedCount > 0 || !balanced;
         }
@@ -300,11 +351,11 @@ public class ReportService {
         }
     }
 
-    /** 승 — 그 안이 어떻게 생겼는가. */
-    public record Chapter2(Map<String, Long> severity, Map<String, Long> fixState,
-                           long fixable, long noFix, long unknownFix,
-                           int packageCount, long kevCount, boolean kevKnown,
-                           Exposure exposure) {
+    /** 2장 — 점검 결과 요약. */
+    public record Summary(Map<String, Long> severity, Map<String, Long> fixState,
+                          long fixable, long noFix, long unknownFix,
+                          int packageCount, long kevCount, boolean kevKnown,
+                          Exposure exposure, int total) {
 
         public long severityOf(String key) {
             return severity.getOrDefault(key, 0L);
@@ -314,35 +365,54 @@ public class ReportService {
         public long urgent() {
             return severityOf("critical") + severityOf("high");
         }
+
+        /**
+         * 비중(%). 표에 건수와 나란히 놓는다.
+         *
+         * <p>전체가 0 이면 <b>0% 가 아니라 값이 없다.</b> 0으로 적으면 "0%"
+         * 라는, 세어 본 적 없는 숫자가 표에 앉는다.
+         */
+        public String share(long count) {
+            return total <= 0 ? "—"
+                    : String.format("%.1f%%", count * 100.0 / total);
+        }
     }
 
-    /** 전 — 그래서 무엇이 문제인가. */
-    public record Chapter3(List<PackageAction> actions, List<PackageAction> blocked,
-                           Diff diff, Exposure exposure) {
+    /** 3·4장 — 조치 대상과 수정 버전 없는 항목. */
+    public record Targets(List<PackageAction> fixTargets, List<PackageAction> blocked,
+                          List<NoFixRow> noFixRows, Diff diff, Exposure exposure) {
 
-        /** 조치로 없앨 수 있는 건수 합계. */
+        /** 조치로 없앨 수 있는 건수 합계. 3장 표의 합계 줄이다. */
         public long resolvableFindings() {
-            return actions.stream().mapToLong(PackageAction::fixableCount).sum();
+            return fixTargets.stream().mapToLong(PackageAction::fixableCount).sum();
         }
 
-        /** 몇 개만 손대면 되는가 — 상위 다섯 패키지가 덮는 건수. */
-        public long topFiveCoverage() {
-            return actions.stream().limit(5).mapToLong(PackageAction::fixableCount).sum();
+        /** 3장 표가 덮는 '원격 접근' 건수 합계. */
+        public long resolvableReach() {
+            return fixTargets.stream().mapToLong(PackageAction::reachableCount).sum();
         }
 
-        /** 상위 다섯 패키지가 덮는 '바로 닿는' 건수. */
-        public long topFiveReach() {
-            return actions.stream().limit(5).mapToLong(PackageAction::reachableCount).sum();
-        }
-
-        /** 바로 닿는 건을 하나라도 품은 패키지 수 — 먼저 손댈 대상의 크기다. */
-        public long reachablePackages() {
-            return actions.stream().filter(a -> a.reachableCount() > 0).count();
+        /** 4장 표의 건수 합계. */
+        public long blockedFindings() {
+            return blocked.stream().mapToLong(PackageAction::total).sum();
         }
     }
 
-    /** 결 — 무엇을 언제까지 누가 하는가. */
-    public record Chapter4(List<ActionRow> rows, long tracked, long untracked, long overdue,
+    /**
+     * 4장 한 줄 — 손댈 수 없는 패키지와, 우리가 적어 둔 검토 결과.
+     *
+     * <p>검토 결과가 없으면 {@code null} 이다. <b>비어 있다는 것을 그대로
+     * 보여 준다</b> — 점검에서 "이건 왜 안 고쳤냐" 를 묻는 자리가 여기다.
+     */
+    public record NoFixRow(PackageAction action, FindingAnalysis analysis) {
+
+        public boolean isExplained() {
+            return analysis != null;
+        }
+    }
+
+    /** 5장 — 조치 진행 현황. */
+    public record Progress(List<ActionRow> rows, long tracked, long untracked, long overdue,
                            List<PackageAction> residual, List<FindingAnalysis> explained) {
 
         /** 이 패키지에 검토 결과가 적혀 있는가. */

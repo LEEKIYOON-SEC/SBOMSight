@@ -37,7 +37,7 @@ import java.util.TreeSet;
  * 나오는 값이 있다: <b>openssl 을 올리면 12대에서 47건이 사라진다.</b> 자산을
  * 하나씩 열어 보면 "여기 3건, 저기 5건" 으로 흩어져 그 판단이 서지 않는다.
  *
- * <p>구성은 자산 보고서와 같은 기 · 승 · 전 · 결이되, 기(起)가 다르다.
+ * <p>구성은 자산 보고서와 같은 번호 매긴 장이되, 1장이 다르다.
  * <b>기간 안에 검사되지 않은 자산을 먼저 밝힌다.</b> 서른 대 중 열 대만
  * 검사하고 "탐지 1,200건" 이라고 쓰면 그것은 구역의 현황이 아니라 열 대의
  * 현황이다. 보고서를 받는 사람은 그 차이를 알 수 없다.
@@ -110,7 +110,7 @@ public class ZoneReportService {
         return new ZoneReport(scope, aggregate, judgement, action);
     }
 
-    // --- 기(起): 무엇을, 언제, 얼마나 보았는가 ------------------------------
+    // --- 1장: 점검 범위 -----------------------------------------------------
 
     private Scope scope(Zone zone, LocalDate from, LocalDate to, List<Asset> inScope,
                         List<Scan> current, List<Asset> notScanned, long scanRuns) {
@@ -177,7 +177,7 @@ public class ZoneReportService {
         return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, byPackage, byAsset);
     }
 
-    // --- 승(承): 그 안이 어떻게 생겼는가 ------------------------------------
+    // --- 2·3장: 점검 결과 요약과 자산별 현황 --------------------------------
 
     private Aggregate aggregate(List<Scan> current, Exposure exposure,
                                 List<Asset> inScope, List<Asset> notScanned) {
@@ -229,7 +229,7 @@ public class ZoneReportService {
         return new Aggregate(severity, fixState, total, fixable, noFix, unknownFix, rows, exposure);
     }
 
-    // --- 전(轉): 그래서 무엇을 해야 하는가 ----------------------------------
+    // --- 4·5·7장: 조치 대상 · 수정 버전 없는 항목 · 기간 시작 대비 ----------
 
     private Judgement judgement(List<Scan> current, List<Scan> baseline, Exposure exposure) {
         List<ZonePackageAction> actions = List.of();
@@ -325,7 +325,7 @@ public class ZoneReportService {
         return list.stream().map(Scan::getCreatedAt).max(Comparator.naturalOrder()).orElse(null);
     }
 
-    // --- 결(結): 무엇을 언제까지 누가 하는가 --------------------------------
+    // --- 6장: 조치 진행 현황 ------------------------------------------------
 
     private Action action(Long zoneId, List<Asset> inScope, Judgement judgement,
                           Instant start, Instant end) {
@@ -378,7 +378,7 @@ public class ZoneReportService {
     }
 
     /**
-     * 기 — 무엇을, 언제, 얼마나 보았는가.
+     * 1장 — 점검 범위.
      *
      * @param notScanned 기간 안에 검사되지 않은 자산. <b>이 목록이 이 장의 핵심이다.</b>
      */
@@ -440,13 +440,23 @@ public class ZoneReportService {
         }
     }
 
-    /** 승 — 그 안이 어떻게 생겼는가. */
+    /** 2·3장 — 점검 결과 요약과 자산별 현황. */
     public record Aggregate(Map<String, Long> severity, Map<String, Long> fixState,
                             long total, long fixable, long noFix, long unknownFix,
                             List<AssetRow> rows, Exposure exposure) {
 
         public long severityOf(String key) {
             return severity.getOrDefault(key, 0L);
+        }
+
+        /**
+         * 비중(%). 표에 건수와 나란히 놓는다.
+         *
+         * <p>전체가 0 이면 <b>0% 가 아니라 값이 없다.</b> 0으로 적으면 "0%"
+         * 라는, 세어 본 적 없는 숫자가 표에 앉는다.
+         */
+        public String share(long count) {
+            return total <= 0 ? "—" : String.format("%.1f%%", count * 100.0 / total);
         }
 
         public long urgent() {
@@ -471,13 +481,29 @@ public class ZoneReportService {
         }
     }
 
-    /** 전 — 그래서 무엇을 해야 하는가. */
+    /** 4·5·7장 — 조치 대상 · 수정 버전 없는 항목 · 기간 시작 대비. */
     public record Judgement(List<ZonePackageAction> actions, List<ZonePackageAction> blocked,
                             Movement movement, Exposure exposure) {
 
         /** 상위 다섯 패키지가 덮는 건수 — "몇 개만 손대면 되는가". */
         public long topFiveCoverage() {
             return actions.stream().limit(5).mapToLong(ZonePackageAction::fixableCount).sum();
+        }
+
+        /**
+         * 4장 표의 해소 건수 합계.
+         *
+         * <p>앞서 이 자리에 {@link #topFiveCoverage()} 를 넣었다. 패키지가 다섯
+         * 개 이하일 때는 같은 값이라 띄워 놓고도 못 봤는데, 여섯 개부터는
+         * <b>합계 줄이 위 칸들의 합이 아니다.</b> 표에서 그것보다 나쁜 것이 없다.
+         */
+        public long resolvableFindings() {
+            return actions.stream().mapToLong(ZonePackageAction::fixableCount).sum();
+        }
+
+        /** 4장 표가 덮는 '원격 접근' 건수 합계. */
+        public long resolvableReach() {
+            return actions.stream().mapToLong(ZonePackageAction::reachableCount).sum();
         }
 
         public long reachablePackages() {
@@ -552,7 +578,7 @@ public class ZoneReportService {
         }
     }
 
-    /** 결 — 무엇을 언제까지 누가 하는가. */
+    /** 6장 — 조치 진행 현황. */
     public record Action(long total, long open, long overdue,
                          long openedInPeriod, long closedInPeriod,
                          List<Remediation> overdueRows, List<FindingAnalysis> explained,
@@ -562,8 +588,28 @@ public class ZoneReportService {
             return explained.stream().anyMatch(a -> a.getPackageName().equals(packageName));
         }
 
+        /**
+         * 그 패키지에 검토 결과가 적힌 <b>자산이 몇 대인가.</b>
+         *
+         * <p>구역 보고서에서 {@link #isExplained(String)} 하나로 "검토함" 이라고
+         * 쓰면, 열두 대에 걸린 패키지를 한 대에서만 검토해 놓고도 전부 검토한
+         * 것처럼 읽힌다. 걸린 자산 수와 나란히 놓아야 그 차이가 보인다.
+         */
+        public long explainedAssets(String packageName) {
+            return explained.stream()
+                    .filter(a -> a.getPackageName().equals(packageName))
+                    .map(a -> a.getAsset().getId())
+                    .distinct()
+                    .count();
+        }
+
         public long reviewOverdue() {
             return explained.stream().filter(FindingAnalysis::isReviewOverdue).count();
+        }
+
+        /** 5장 표의 건수 합계. */
+        public long residualFindings() {
+            return residual.stream().mapToLong(ZonePackageAction::total).sum();
         }
 
         /** 손댈 수 없는데 검토 결과도 없는 패키지 — 설명이 비어 있는 자리다. */

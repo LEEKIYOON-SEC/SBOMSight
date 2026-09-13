@@ -88,10 +88,10 @@ class ReportServiceTest {
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("기 — 무엇을 무엇으로 봤는지 그대로 싣는다")
+    @DisplayName("1장 — 무엇을 무엇으로 봤는지 그대로 싣는다")
     void chapter1CarriesProvenance() {
         Scan scan = seedTypicalScan();
-        ReportService.Chapter1 ch = reports.build(scan).status();
+        ReportService.Overview ch = reports.build(scan).overview();
 
         assertThat(ch.asset().getName()).isEqualTo(asset.getName());
         assertThat(ch.grypeVersion()).isEqualTo("0.87.0");
@@ -103,22 +103,22 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("기 — 건수가 어긋나면 설명할 것이 생긴다")
+    @DisplayName("1장 — 건수가 어긋나면 설명할 것이 생긴다")
     void chapter1FlagsAccountingGap() {
         Scan scan = seedTypicalScan();
         scan.setMatchCount(9);      // grype 은 9건을 냈는데 6건만 담겼다
         scans.saveAndFlush(scan);
 
-        ReportService.Chapter1 ch = reports.build(scan).status();
+        ReportService.Overview ch = reports.build(scan).overview();
         assertThat(ch.balanced()).isFalse();
         assertThat(ch.hasAccountingNote()).isTrue();
     }
 
     @Test
-    @DisplayName("승 — 심각도와 조치 가능 여부를 grype 이 준 대로 센다")
+    @DisplayName("2장 — 심각도와 조치 가능 여부를 grype 이 준 대로 센다")
     void chapter2CountsMatchGrype() {
         Scan scan = seedTypicalScan();
-        ReportService.Chapter2 ch = reports.build(scan).analysis();
+        ReportService.Summary ch = reports.build(scan).summary();
 
         assertThat(ch.severityOf("critical")).isEqualTo(1);
         assertThat(ch.severityOf("high")).isEqualTo(3);
@@ -133,10 +133,10 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("승 — grype 이 KEV 를 주지 않으면 그렇다고 밝힌다")
+    @DisplayName("2장 — grype 이 KEV 를 주지 않으면 그렇다고 밝힌다")
     void chapter2SaysWhenKevIsUnknown() {
         Scan scan = seedTypicalScan();     // kev 를 채우지 않았다
-        ReportService.Chapter2 ch = reports.build(scan).analysis();
+        ReportService.Summary ch = reports.build(scan).summary();
 
         // "KEV 0건" 이 아니라 "확인하지 않았다" 여야 한다. 0건이라고 쓰면
         // 아무도 확인하지 않은 판정이 보고서에 실린다.
@@ -145,19 +145,19 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("전 — 조치 하나로 몇 건이 사라지는지 패키지로 묶는다")
+    @DisplayName("3장 — 조치 하나로 몇 건이 사라지는지 패키지로 묶는다")
     void chapter3GroupsByPackage() {
         Scan scan = seedTypicalScan();
-        ReportService.Chapter3 ch = reports.build(scan).judgement();
+        ReportService.Targets ch = reports.build(scan).targets();
 
         // 수정본이 있는 패키지만 조치 대상이다.
-        assertThat(ch.actions()).extracting(ReportService.PackageAction::packageName)
+        assertThat(ch.fixTargets()).extracting(ReportService.PackageAction::packageName)
                                 .containsExactlyInAnyOrder("openssl", "curl");
         // 손댈 수 없는 것은 지우지 않고 따로 세워 둔다.
         assertThat(ch.blocked()).extracting(ReportService.PackageAction::packageName)
                                 .containsExactly("glibc");
 
-        ReportService.PackageAction openssl = ch.actions().stream()
+        ReportService.PackageAction openssl = ch.fixTargets().stream()
                 .filter(a -> a.packageName().equals("openssl")).findFirst().orElseThrow();
         assertThat(openssl.fixableCount()).isEqualTo(3);
         assertThat(openssl.targetVersion()).isEqualTo("3.0.7");
@@ -168,14 +168,14 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("전 — 첫 검사면 지난번 대비를 만들지 않는다")
+    @DisplayName("3장 — 첫 검사면 지난번 대비를 만들지 않는다")
     void chapter3NoDiffOnFirstScan() {
         Scan scan = seedTypicalScan();
-        assertThat(reports.build(scan).judgement().diff().hasPrevious()).isFalse();
+        assertThat(reports.build(scan).targets().diff().hasPrevious()).isFalse();
     }
 
     @Test
-    @DisplayName("전 — 지난 검사 대비는 (CVE, 패키지) 로 대조한다")
+    @DisplayName("3장 — 지난 검사 대비는 (CVE, 패키지) 로 대조한다")
     void chapter3DiffIgnoresVersion() {
         // 지난달: openssl 3.0.0 에서 CVE-1, CVE-2
         Scan before = new Scan(asset, "tester");
@@ -195,7 +195,7 @@ class ReportServiceTest {
         finding(now, "CVE-1", "openssl", "3.0.5", "Critical", "fixed", "3.0.7", 9.8);
         finding(now, "CVE-9", "openssl", "3.0.5", "High", "fixed", "3.0.7", 7.5);
 
-        ReportService.Diff diff = reports.build(now).judgement().diff();
+        ReportService.Diff diff = reports.build(now).targets().diff();
 
         assertThat(diff.hasPrevious()).isTrue();
         // 버전이 3.0.0 → 3.0.5 로 바뀌었지만 CVE-1 은 "유지" 다. 버전을 대조
@@ -206,7 +206,7 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("결 — 등록된 조치와 아직 아닌 것을 가른다")
+    @DisplayName("5장 — 등록된 조치와 아직 아닌 것을 가른다")
     void chapter4SplitsTrackedAndUntracked() {
         Scan scan = seedTypicalScan();
 
@@ -215,7 +215,7 @@ class ReportServiceTest {
         remediation.moveTo(RemediationStatus.IN_PROGRESS, "admin", "적용 예정");
         remediations.save(remediation);
 
-        ReportService.Chapter4 ch = reports.build(scan).action();
+        ReportService.Progress ch = reports.build(scan).progress();
 
         assertThat(ch.rows()).hasSize(2);           // openssl · curl
         assertThat(ch.tracked()).isEqualTo(1);      // openssl 만 등록됨
@@ -268,9 +268,9 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("승 — 벡터를 풀어 '밖에서 바로 닿는 것'을 센다")
+    @DisplayName("2장 — 벡터를 풀어 '밖에서 바로 닿는 것'을 센다")
     void countsTheDirectlyReachable() {
-        ReportService.Exposure e = reports.build(seedVectorScan()).analysis().exposure();
+        ReportService.Exposure e = reports.build(seedVectorScan()).summary().exposure();
 
         // AV:N + PR:N + UI:N 인 셋만.
         assertThat(e.reachable()).isEqualTo(3);
@@ -286,7 +286,7 @@ class ReportServiceTest {
     @Test
     @DisplayName("읽지 못한 벡터는 '아니오'가 아니라 '판단 불가'로 센다")
     void unreadableVectorsAreCountedApart() {
-        ReportService.Exposure e = reports.build(seedVectorScan()).analysis().exposure();
+        ReportService.Exposure e = reports.build(seedVectorScan()).summary().exposure();
 
         // 벡터 없음 1건 + CVSS 2.0 1건.
         assertThat(e.unreadable()).isEqualTo(2);
@@ -295,17 +295,18 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("전 — 바로 닿는 건이 많은 패키지가 먼저 온다")
+    @DisplayName("3장 — 원격 접근 건이 많은 패키지가 먼저 온다")
     void actionsAreOrderedByReach() {
-        ReportService.Chapter3 ch = reports.build(seedVectorScan()).judgement();
+        ReportService.Targets ch = reports.build(seedVectorScan()).targets();
 
         // log4j-core 가 2건으로 가장 많다.
-        assertThat(ch.actions().get(0).packageName()).isEqualTo("log4j-core");
-        assertThat(ch.actions().get(0).reachableCount()).isEqualTo(2);
+        assertThat(ch.fixTargets().get(0).packageName()).isEqualTo("log4j-core");
+        assertThat(ch.fixTargets().get(0).reachableCount()).isEqualTo(2);
         // 바로 닿는 건이 하나도 없는 패키지는 뒤로 간다.
-        assertThat(ch.actions()).last()
+        assertThat(ch.fixTargets()).last()
                 .extracting(ReportService.PackageAction::reachableCount).isEqualTo(0L);
-        assertThat(ch.reachablePackages()).isEqualTo(1);   // 수정 가능한 것 중에는 log4j-core 뿐
+        // 3장 표가 덮는 원격 접근 건수 합계 — log4j-core 의 2건뿐이다.
+        assertThat(ch.resolvableReach()).isEqualTo(2);
     }
 
     @Test
@@ -320,7 +321,7 @@ class ReportServiceTest {
         scan.setMatchCount(2);
         scans.saveAndFlush(scan);
 
-        ReportService.Exposure e = reports.build(scan).analysis().exposure();
+        ReportService.Exposure e = reports.build(scan).summary().exposure();
         assertThat(e.reachable()).isZero();
         assertThat(e.unreadable()).isEqualTo(2);
         // 한 건도 읽지 못했다 — 화면은 이 문단을 싣지 않는다.
@@ -335,8 +336,8 @@ class ReportServiceTest {
         scans.saveAndFlush(scan);
 
         ReportService.Report report = reports.build(scan);
-        assertThat(report.status().findingCount()).isZero();
-        assertThat(report.judgement().actions()).isEmpty();
-        assertThat(report.action().rows()).isEmpty();
+        assertThat(report.overview().findingCount()).isZero();
+        assertThat(report.targets().fixTargets()).isEmpty();
+        assertThat(report.progress().rows()).isEmpty();
     }
 }

@@ -11,7 +11,14 @@ import org.springframework.web.server.ResponseStatusException;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
-/** 기승전결 보고서. AI 는 쓰지 않는다 — grype 데이터만으로 만든다. */
+/**
+ * 자산 한 대의 점검 결과 보고서. grype 이 낸 것만으로 만든다.
+ *
+ * <p>주소가 {@code /reports/} 아래로 들어왔다 (N7). 앞서
+ * {@code /report/{scanId}} 와 {@code /report/zone} 과 {@code /reports} 가
+ * 따로 있었는데, 한 영역의 주소가 두 갈래면 기억하지 못한다. 옛 주소는
+ * {@link LegacyRedirectController} 가 영구히 받는다.
+ */
 @Controller
 public class ReportController {
 
@@ -23,7 +30,7 @@ public class ReportController {
         this.reports = reports;
     }
 
-    @GetMapping("/report/{scanId}")
+    @GetMapping("/reports/scan/{scanId}")
     public String report(@PathVariable Long scanId, Model model) {
         Scan scan = scans.findWithAsset(scanId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));

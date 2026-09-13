@@ -71,7 +71,7 @@
             th:text="'가장 오래된 검사 ' + ${#temporals.format(g.oldestScan(), 'yyyy-MM-dd')}">—</span>
       <span th:if="${g.oldestScan() == null}">검사 기록 없음</span>
       <span class="spacer"></span>
-      <a th:unless="${g.isEmpty()}" th:href="@{/report/zone(zone=${g.zone.id})}">보고서</a>
+      <a th:unless="${g.isEmpty()}" th:href="@{/reports/zone(zone=${g.zone.id})}">보고서</a>
     </div>
   </div>
 </div>

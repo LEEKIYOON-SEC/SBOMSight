@@ -351,7 +351,13 @@ class PageRenderTest {
                 { "/remediations/" + remediation.getId(), "/actions/" + remediation.getId() },
                 { "/remediations/export.csv", "/actions/export.csv" },
                 { "/analyses", "/actions?tab=analyses" },
-                { "/acceptances", "/actions?tab=analyses" } }) {
+                { "/acceptances", "/actions?tab=analyses" },
+                // N7 — 보고서 주소가 /reports/ 아래로 모였다. 한 글자 차이로
+                // 갈라진 두 접두사(/report 와 /reports)를 아무도 기억 못 한다.
+                { "/report/" + scan.getId(), "/reports/scan/" + scan.getId() },
+                { "/report/zone", "/reports/zone" },
+                { "/report/zone?zone=" + asset.getZone().getId(),
+                  "/reports/zone?zone=" + asset.getZone().getId() } }) {
             mvc.perform(get(pair[0]).with(user("tester").roles("ADMIN")))
                .andExpect(status().is3xxRedirection())
                .andExpect(redirectedUrl(pair[1]));
@@ -361,21 +367,24 @@ class PageRenderTest {
         mvc.perform(get("/vulns?asset=" + asset.getId()).with(user("tester").roles("ADMIN")))
            .andExpect(redirectedUrl("/assets/" + asset.getId() + "?tab=vulns"));
 
-        // 임시 다리 — 해당 단계에서 지우고 반대 방향으로 바꾼다.
-        for (String[] pair : new String[][] {
-                { "/reports", "/report/zone" } }) {
-            mvc.perform(get(pair[0]).with(user("tester").roles("ADMIN")))
-               .andExpect(status().is3xxRedirection())
-               .andExpect(redirectedUrl(pair[1]));
-        }
+        // 마지막 임시 다리였던 /reports 는 N7 에서 진짜 화면이 됐다.
+        // 302 가 아니라 200 이어야 한다 — 다리가 남아 있으면 여기서 걸린다.
+        mvc.perform(get("/reports").with(user("tester").roles("ADMIN")))
+           .andExpect(status().isOk());
     }
 
     @Test
     @DisplayName("보고서 두 가지")
     void reportPages() throws Exception {
-        assertThat(open("/report/" + scan.getId())).contains("취약점 대응 검토");
-        assertThat(open("/report/zone")).contains("취약점 현황");
-        open("/report/zone?zone=" + asset.getZone().getId());
+        // 고르는 자리에 두 가지가 다 있어야 한다. 앞서 기둥의 `보고서` 가
+        // 구역 보고서로 직행해서, 자산 보고서가 있다는 것을 알 길이 없었다.
+        String picker = open("/reports");
+        assertThat(picker).contains("구역 · 기간").contains("자산");
+        assertThat(picker).contains("/reports/scan/" + scan.getId());
+
+        assertThat(open("/reports/scan/" + scan.getId())).contains("취약점 점검 결과 보고");
+        assertThat(open("/reports/zone")).contains("취약점 현황");
+        open("/reports/zone?zone=" + asset.getZone().getId());
     }
 
     @Test
@@ -419,7 +428,8 @@ class PageRenderTest {
                 "/", "/assets/" + asset.getId(), "/assets/" + asset.getId() + "?tab=vulns",
                 "/vulns", "/vulns?scan=" + scan.getId(), "/vulns/CVE-2024-3094",
                 "/actions", "/actions/" + remediation.getId(), "/actions?tab=analyses",
-                "/report/" + scan.getId(), "/report/zone", "/password", "/me" }) {
+                "/reports", "/reports/scan/" + scan.getId(), "/reports/zone",
+                "/password", "/me" }) {
             mvc.perform(get(url).with(user("viewer").roles("VIEWER")))
                .andExpect(status().isOk());
         }

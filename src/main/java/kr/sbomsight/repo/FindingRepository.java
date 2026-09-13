@@ -309,6 +309,27 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         long getAssetCount();
     }
 
+    /**
+     * 이 검사의 식별자·패키지 짝 — 검토 결과와 맞대 보는 데 쓴다.
+     *
+     * <p>{@code relatedCve} 까지 함께 준다. grype 이 GHSA 를 주 식별자로 낸
+     * 건은 사람이 적을 때 CVE 번호를 쓰므로, 둘 중 어느 쪽으로 적혔든 찾아야
+     * 한다 — 한쪽만 보면 적어 둔 검토 결과가 보고서에서 사라진다.
+     */
+    @Query("""
+           SELECT f.cve AS cve, f.relatedCve AS relatedCve, f.packageName AS packageName
+           FROM Finding f WHERE f.scan.id = :scanId
+           """)
+    List<FindingKey> findKeyRows(@Param("scanId") Long scanId);
+
+    interface FindingKey {
+        String getCve();
+
+        String getRelatedCve();
+
+        String getPackageName();
+    }
+
     /** 이력 대조용. 버전이 바뀌면 키도 바뀌므로 (CVE, 패키지명) 으로 본다. */
     @Query("SELECT CONCAT(f.cve, '|', f.packageName) FROM Finding f WHERE f.scan.id = :scanId")
     List<String> findCvePackagePairs(@Param("scanId") Long scanId);

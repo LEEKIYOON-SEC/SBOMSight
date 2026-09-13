@@ -59,6 +59,30 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
            """)
     List<Scan> findLatestDonePerAsset();
 
+    /**
+     * 위와 같되 자산 · 구역까지 끌어오고 최근 순으로 준다 — 보고서 고르기 화면용.
+     *
+     * <p>{@link #findLatestDonePerAsset()} 는 자산의 <b>id</b> 만 쓰는 쪽에서
+     * 부르므로 지연 프록시로 충분하다. 여기서는 화면이 자산 이름과 구역
+     * 이름을 찍는데 {@code open-in-view} 가 꺼져 있어, 같이 읽어 오지 않으면
+     * 그 자리에서 {@code LazyInitializationException} 이 난다.
+     *
+     * <p>보관 처리한 자산은 뺀다 — 더 뽑을 일이 없는 자산이다.
+     */
+    @Query("""
+           SELECT s FROM Scan s
+             JOIN FETCH s.asset a
+             JOIN FETCH a.zone z
+           WHERE s.status = 'DONE'
+             AND a.archivedAt IS NULL
+             AND NOT EXISTS (SELECT 1 FROM Scan x
+                             WHERE x.asset.id = s.asset.id AND x.status = 'DONE'
+                               AND (x.createdAt > s.createdAt
+                                    OR (x.createdAt = s.createdAt AND x.id > s.id)))
+           ORDER BY s.createdAt DESC
+           """)
+    List<Scan> findLatestDonePerAssetWithAsset();
+
     long countByAssetId(Long assetId);
 
     /**

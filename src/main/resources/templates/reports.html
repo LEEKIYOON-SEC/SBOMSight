@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: page(~{::main}, 'reports', '보고서')}">
+<body>
+<main>
+
+  <!--/*
+    보고서 고르기.
+
+    앞서 기둥의 `보고서` 가 곧바로 구역 보고서로 갔다. 자산 한 대짜리
+    보고서는 자산 상세까지 들어가야 있었고, 두 가지가 한 이름 아래 있다는
+    것을 화면 어디에서도 알 수 없었다.
+
+    여기는 **뽑는 자리**다. 보고서 자체는 /reports/scan/{scanId} 와
+    /reports/zone 이 그린다.
+  */-->
+  <div th:replace="~{fragments/ui :: pagehead('보고서', null, ~{}, ~{})}"></div>
+
+  <div class="body">
+
+  <h2>구역 · 기간</h2>
+  <div class="card">
+    <form method="get" th:action="@{/reports/zone}" class="report-picker" style="margin:0;border:0;padding:0">
+      <label>구역
+        <select name="zone">
+          <option value="">전체</option>
+          <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}">DMZ</option>
+        </select>
+      </label>
+      <label>시작 <input type="date" name="from" th:value="${thisMonth}"></label>
+      <label>종료 <input type="date" name="to" th:value="${today}"></label>
+      <button class="btn primary" type="submit">보고서 보기</button>
+      <span class="spacer"></span>
+      <a class="btn small" th:href="@{/reports/zone(from=${thisMonth}, to=${today})}">이번 달</a>
+      <a class="btn small" th:href="@{/reports/zone(from=${lastMonthFrom}, to=${lastMonthTo})}">지난 달</a>
+      <a class="btn small" th:href="@{/reports/zone(from=${quarterFrom}, to=${today})}">최근 3개월</a>
+    </form>
+  </div>
+
+  <h2>자산</h2>
+  <th:block th:if="${latest.isEmpty() and neverScanned.isEmpty()}">
+    <div th:replace="~{fragments/ui :: empty('뽑을 보고서가 없습니다',
+                      '자산을 등록하고 그 자산에서 뽑은 SBOM 을 올립니다.',
+                      '/assets', '자산 보기')}"></div>
+  </th:block>
+
+  <div class="card" th:if="${!latest.isEmpty() or !neverScanned.isEmpty()}">
+    <table>
+      <thead>
+      <tr>
+        <th class="tight">자산</th>
+        <th class="tight">구역</th>
+        <th class="tight">기준이 된 검사</th>
+        <th class="num tight">탐지</th>
+        <th class="actions"></th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr th:each="s : ${latest}">
+        <td class="tight">
+          <a th:href="@{'/assets/' + ${s.asset.id}}" th:text="${s.asset.name}">web-01</a>
+        </td>
+        <td class="tight faint" th:text="${s.asset.zone.name}">DMZ</td>
+        <td class="tight" th:text="${#temporals.format(s.createdAt, 'yyyy-MM-dd HH:mm')}">—</td>
+        <td class="num tight"
+            th:text="${#numbers.formatInteger(s.findingCount, 0, 'COMMA')}">0</td>
+        <td class="actions">
+          <a class="btn small" th:href="@{'/reports/scan/' + ${s.id}}">보고서</a>
+        </td>
+      </tr>
+      <!--/*
+        검사가 없는 자산도 줄을 차지한다. 목록에서 빠지면 "안 본 것" 과
+        "문제가 없는 것" 을 구분할 수 없다 — 이 도구에서 반복해 지키는 것이다.
+      */-->
+      <tr th:each="a : ${neverScanned}" style="opacity:.6">
+        <td class="tight">
+          <a th:href="@{'/assets/' + ${a.id}}" th:text="${a.name}">db-01</a>
+        </td>
+        <td class="tight faint" th:text="${a.zone.name}">내부업무</td>
+        <td class="tight faint" colspan="2">완료된 검사가 없습니다</td>
+        <td class="actions">
+          <a class="btn small" th:href="@{'/assets/' + ${a.id} + '?tab=scans'}">SBOM 올리기</a>
+        </td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="footnote">
+    자산 보고서는 그 자산의 <b>마지막 완료 검사</b>를 기준으로 그립니다.
+    다른 시점이 필요하면 자산 상세의 검사 이력에서 그 검사를 엽니다.
+  </p>
+
+  </div>
+
+</main>
+</body>
+</html>

@@ -20,7 +20,7 @@
       <h1 th:text="${asset.name}">web-01</h1>
       <span class="tag" th:if="${asset.archivedAt != null}">보관됨</span>
       <div class="btn-list">
-        <a th:if="${latest != null}" class="btn" th:href="@{'/report/' + ${latest.id}}">보고서</a>
+        <a th:if="${latest != null}" class="btn" th:href="@{'/reports/scan/' + ${latest.id}}">보고서</a>
       </div>
     </div>
 

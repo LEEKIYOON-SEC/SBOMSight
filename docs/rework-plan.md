@@ -397,9 +397,9 @@ Rocky Linux 9.3 · 대외 웹 · 마지막 검사 2026-09-10 14:22
 | — | `/packages`, `/packages/export.csv` 새로 |
 | `/remediations`, `/remediations/{id}` | → `/actions`, `/actions/{id}` (302) |
 | `/acceptances`, `/analyses` | → `/actions?tab=analyses` (302) |
-| `/report/{scanId}` | → `/reports/scan/{scanId}` (302) |
-| `/report/zone` | → `/reports/zone` (302) |
-| — | `/reports`, `/me` 새로 |
+| `/report/{scanId}` | → `/reports/scan/{scanId}` (302) ✅ N7 |
+| `/report/zone` | → `/reports/zone` (302) ✅ N7 |
+| — | `/reports` ✅ N7, `/me` ✅ N6 새로 |
 | `/audit` | → `/settings/audit` (302) |
 | `/settings/zones*` | → `/zones*` |
 | — | `/scans/{id}/sbom` (원본 내려받기) 새로 |
@@ -634,14 +634,33 @@ previous_login_at  그 전에 들어온 시각    → NULL 이면 이번이 처�
 지나간다. `.with(user(...))` 로 주체를 꽂는 시험은 이 버그를 잡지 못했고,
 실제로 시험 229개가 전부 통과한 채로 망가져 있었다.
 
-### N7 — 보고서 재작성
-- `ReportService` — `Chapter1~4` → `DocumentInfo`/`Overview`/`Summary`/`FixTargets`/
-  `NoFix`/`InProgress`/`Change`
-- `report.html` 전면 재작성(표만) · `zone-report.html` 정렬 · 월별 추이
-- 새 `/reports` 고르기 화면 + `ReportsController`
-- `app.css` 인쇄 규칙
-- 새 시험 `ReportProseTest` — **`기`·`승`·`전`·`결` 표시와 `class="lead"` 가 없고
-  `<p>` 가 장당 1개 이하인지** 기계로 확인
+### N7 — 보고서 재작성 ✅
+
+- ✅ `ReportService` — `Chapter1~4` → `Overview`/`Summary`/`Targets`/`Progress`
+  (`ReportService.java:308`). `NoFixRow` 로 4장 한 줄에 검토 결과를 붙인다
+- ✅ `report.html` 전면 재작성 — 문서 정보 표 + 번호 매긴 6장, 표만
+- ✅ `zone-report.html` 같은 모양으로 — 번호 매긴 7장 (1장이 **점검 범위**:
+  기간 안에 검사되지 않은 자산을 먼저 밝힌다)
+- ✅ 새 `/reports` 고르기 화면 + `ReportsController` · 마지막 임시 다리를 지웠다
+- ✅ §6 대로 주소를 옮겼다 — `/report/{scanId}` → **`/reports/scan/{scanId}`** ·
+  `/report/zone` → **`/reports/zone`**. 옛 주소는 질의까지 들고 영구 302
+  (`LegacyRedirectController`). 한 글자 차이로 갈라진 두 접두사(`/report` 와
+  `/reports`)를 아무도 기억하지 못한다
+- ✅ `app.css` 인쇄 규칙 — `@page A4 portrait` · 장마다 `break-before: page` ·
+  `thead` 반복 · 각주는 표와 같은 쪽
+  > **쪽 번호는 CSS 로 못 넣는다.** `@page { @bottom-center }` 를 크롬·파이어폭스가
+  > 아직 읽지 않는다. 인쇄 대화상자의 `머리글·바닥글` 이 찍는다.
+- ✅ 새 시험 `ReportProseTest` — `기`·`승`·`전`·`결` 표시 · `class="lead"` ·
+  장당 `<p>` 2개 초과 · 표 안의 `뜻` 열을 기계로 막는다
+
+**띄워 보고 찾은 것** (시험 245개가 전부 통과한 채로 있던 것들)
+
+| | 무엇 | 어디 |
+|---|---|---|
+| 1 | 조치 대상 표의 **합계 줄이 그 칸들의 합이 아니었다** — 상위 5개 값을 넣어 두어 패키지가 여섯 개부터 어긋난다 | `ZoneReportService.java:498` · 시험 `ZoneReportTest#theTotalRowSumsEveryRow` |
+| 2 | 세 대에 걸린 패키지를 **한 대에서만 검토**해 놓고 `검토함` 이라 찍혔다 | `ZoneReportService.java:590` · 시험 `ZoneReportTest#countsHowManyAssetsWereReviewed` |
+| 3 | 모든 칸이 `tight`(줄바꿈 금지)라 표가 **A4 폭을 188px 넘고**, 넘은 만큼 비고가 한 글자씩 세로로 쪼개졌다 | `zone-report.html` · `report.html` 의 조치 대상 표 |
+| 4 | 2.2 의 `수정 버전 없음` 과 4장 합계가 달라 "나머지는 어디" 가 남았다 — 각주로 답한다 | `report.html` 4장 각주 |
 
 ### N8 — 일관성 정리 · 어휘 통일
 - 화면을 하나씩 열어 **§5 의 20개를 대조**한다. 표로 적어 두고 지운다

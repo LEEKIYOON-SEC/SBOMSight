@@ -1,5 +1,7 @@
 package kr.sbomsight;
 
+import kr.sbomsight.domain.AnalysisJustification;
+import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.Scan;
@@ -8,6 +10,7 @@ import kr.sbomsight.domain.Zone;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.repo.ScanRepository;
+import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.ZoneReportService;
 import kr.sbomsight.service.ZoneReportService.ZonePackageAction;
 import kr.sbomsight.service.ZoneReportService.ZoneReport;
@@ -57,6 +60,7 @@ class ZoneReportTest {
     @Autowired ScanRepository scans;
     @Autowired FindingRepository findings;
     @Autowired ZoneService zoneService;
+    @Autowired FindingAnalysisService analyses;
 
     private Zone zone;
 
@@ -265,6 +269,68 @@ class ZoneReportTest {
 
         assertThat(report().judgement().shared())
                 .extracting(ZonePackageAction::packageName).containsExactly("openssl");
+    }
+
+    /**
+     * <b>합계 줄은 그 칸들의 합이어야 한다.</b>
+     *
+     * <p>앞서 조치 대상 표의 합계 자리에 {@code topFiveCoverage()} 를 넣었다.
+     * 패키지가 다섯 개 이하면 두 값이 같아서 띄워 놓고도 못 봤다. 여섯 개부터
+     * 어긋난다 — 표에서 그것보다 나쁜 것이 없다.
+     *
+     * <p>그래서 여기서는 <b>여섯 개</b>를 만든다. 다섯 개짜리 시험은 고치기
+     * 전 코드에서도 통과하므로 아무것도 지키지 못한다.
+     */
+    @Test
+    @DisplayName("조치 대상 합계는 표에 실린 모든 줄의 합이다")
+    void theTotalRowSumsEveryRow() {
+        Scan s = scan(asset("web"), LocalDate.of(2026, 9, 10));
+        String[] packages = { "openssl", "curl", "nginx", "zlib", "expat", "libxml2" };
+        for (int i = 0; i < packages.length; i++) {
+            finding(s, "CVE-" + i, packages[i], "1.0", "High", "fixed", "2.0", 7.5, REACHABLE);
+        }
+
+        ZoneReport r = report();
+
+        assertThat(r.judgement().actions()).hasSize(6);
+        assertThat(r.judgement().resolvableFindings())
+                .as("합계가 여섯 줄의 합이 아니다")
+                .isEqualTo(6);
+        assertThat(r.judgement().resolvableReach()).isEqualTo(6);
+        // 상위 다섯 개는 다른 값이다. 같으면 이 시험이 헛돌고 있는 것이다.
+        assertThat(r.judgement().topFiveCoverage()).isEqualTo(5);
+    }
+
+    /**
+     * 열두 대에 걸린 패키지를 한 대에서만 검토해 놓고 "검토함" 이라고 쓰면
+     * 전부 검토한 것으로 읽힌다. 몇 대인지를 센다 — 띄워 보고 찾은 것이다.
+     *
+     * <p><b>세 대 중 두 대를 검토한다.</b> 한 대만 검토하는 시험은
+     * {@code isExplained() ? 1 : 0} 으로도 통과해 아무것도 지키지 못한다.
+     */
+    @Test
+    @DisplayName("검토 결과는 '검토함' 이 아니라 몇 대를 검토했는가로 센다")
+    void countsHowManyAssetsWereReviewed() {
+        Asset first = asset("web");
+        Asset second = asset("api");
+        Asset untouched = asset("db");
+        for (Asset a : new Asset[] { first, second, untouched }) {
+            Scan s = scan(a, LocalDate.of(2026, 9, 10));
+            finding(s, "CVE-1", "glibc", "2.34", "High", "wont-fix", "", 7.8, NEEDS_LOGIN);
+        }
+        for (Asset a : new Asset[] { first, second }) {
+            analyses.record(a, "CVE-1", "glibc",
+                            AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE,
+                            null, "이 경로를 쓰지 않습니다", "", "", null, "tester");
+        }
+
+        ZoneReportService.Action action = report().action();
+
+        // 세 대에 걸려 있고 그중 두 대를 검토했다. 나머지 한 대가 묻히면 안 된다.
+        assertThat(action.residual()).extracting(ZonePackageAction::assetCount)
+                .containsExactly(3L);
+        assertThat(action.explainedAssets("glibc")).isEqualTo(2);
+        assertThat(action.explainedAssets("openssl")).isZero();
     }
 
     @Test

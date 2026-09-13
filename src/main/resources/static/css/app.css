@@ -695,16 +695,24 @@ td.overdue { color: var(--critical); font-weight: 600; }
   font-size: 17px; margin: 0 0 14px; padding-bottom: 8px;
   border-bottom: 1px solid var(--line);
 }
-/* 기·승·전·결 표시. 장 번호 대신 이 글자가 순서를 말한다. */
-.report h2 .ch {
-  display: inline-block; width: 24px; height: 24px; line-height: 24px;
-  text-align: center; border-radius: 6px; margin-right: 8px;
-  background: var(--fg); color: #fff; font-size: 13px;
-}
 .report h3 { font-size: 14px; margin: 24px 0 8px; color: var(--fg-muted); }
 
-/* 각 장의 첫 문단은 그 장의 결론이다. 표를 안 읽어도 이 줄만으로 뜻이 통해야 한다. */
-.report .lead { font-size: 15px; line-height: 1.75; margin: 0 0 14px; }
+/* 문서 정보 — 결재 문서의 첫 표. 두 쌍이 한 줄에 들어간다. */
+.report .docinfo { margin-bottom: 32px; border: 1px solid var(--line); }
+.report .docinfo th {
+  width: 7.5rem; background: var(--bg-sunk); color: var(--fg-muted);
+  font-weight: 600; white-space: nowrap;
+}
+.report .docinfo th, .report .docinfo td {
+  border: 1px solid var(--line); padding: 8px 12px; font-size: 13px;
+}
+/* 첫 칸의 여백을 없애는 규칙(.report th:first-child)이 테두리 표에는 어울리지 않는다. */
+.report .docinfo th:first-child, .report .docinfo td:first-child { padding-left: 12px; }
+.report .docinfo th:last-child,  .report .docinfo td:last-child  { padding-right: 12px; }
+
+/* 합계 줄. 표의 마지막 줄이 합계라는 것이 눈에 걸려야 한다. */
+.report tr.total > td { border-top: 2px solid var(--fg-muted); font-weight: 600; }
+
 .report .note { font-size: 13.5px; color: var(--fg-muted); margin-top: 12px; line-height: 1.7; }
 /* 몇 대를 안 봤는가. 이 보고서에서 가장 먼저 읽혀야 하는 문장이라 각주가
    아니라 눈에 걸리는 상자로 둔다 — 놓치면 나머지 숫자를 잘못 읽는다. */
@@ -717,7 +725,6 @@ td.overdue { color: var(--critical); font-weight: 600; }
 .report th:last-child,  .report td:last-child  { padding-right: 0; }
 .report .kv th { width: 8rem; background: transparent; color: var(--fg-muted); border-top: 0; }
 .report .kv td { border-top: 0; }
-.report ul.residual { font-size: 14px; line-height: 1.9; padding-left: 18px; }
 
 /* 구역·기간 고르기. 보고서 위에 얹히는 줄이라 가볍게 둔다. */
 .report-picker {
@@ -727,13 +734,9 @@ td.overdue { color: var(--critical); font-weight: 600; }
 .report-picker label { margin-bottom: 0; }
 .report-picker input, .report-picker select { width: auto; min-width: 8rem; }
 
-.bar {
-  display: inline-block; height: 7px; background: var(--accent);
-  border-radius: 3px; margin-right: 8px; vertical-align: middle; min-width: 1px;
-}
-
+/* 표 아래 한 줄. 약어를 푸는 자리이지 설명을 쓰는 자리가 아니다. */
 .footnote {
-  margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--line);
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
   font-size: 12.5px; color: var(--fg-faint); line-height: 1.7;
 }
 
@@ -759,6 +762,10 @@ td.overdue { color: var(--critical); font-weight: 600; }
 /* 화면에서는 링크로, 종이에서는 글자로. 인쇄물의 파란 밑줄은 누를 수 없다. */
 .print-only { display: none; }
 
+/* A4 세로. 쪽 번호는 브라우저 인쇄 대화상자의 '머리글·바닥글' 이 찍는다 —
+   CSS 의 `@page { @bottom-center }` 는 크롬·파이어폭스가 아직 읽지 않는다. */
+@page { size: A4 portrait; margin: 18mm 15mm; }
+
 @media print {
   .side, .btn, .no-print, .report-picker { display: none !important; }
   .print-only { display: inline; }
@@ -770,6 +777,17 @@ td.overdue { color: var(--critical); font-weight: 600; }
   .card { border: none; padding: 0; margin-bottom: 12px; break-inside: avoid; }
   table { font-size: 9.5pt; }
   th { background: transparent; }
+  /* 표가 쪽을 넘어가면 다음 쪽에도 열 머리가 다시 찍혀야 한다. */
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
+  .table-scroll { overflow-x: visible; }
+
+  /* 장은 새 쪽에서 시작한다. 첫 장은 문서 정보에 붙여 둔다. */
+  .report section { break-before: page; margin-bottom: 0; }
+  .report section:first-of-type { break-before: auto; }
+  .report h2 { break-after: avoid; }
+  .report h3 { break-after: avoid; }
+  /* 각주는 자기가 다는 표와 같은 쪽에 있어야 뜻이 있다. */
+  .footnote { break-before: avoid; }
+  .report .docinfo th { background: transparent; }
 }
