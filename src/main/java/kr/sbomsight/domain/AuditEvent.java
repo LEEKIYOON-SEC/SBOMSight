@@ -33,6 +33,8 @@ public enum AuditEvent {
     ASSET_CREATED("자산 등록"),
     ASSET_DELETED("자산 삭제"),
     ASSET_ZONE_CHANGED("자산 구역 변경"),
+    ASSET_ARCHIVED("자산 보관"),
+    ASSET_UNARCHIVED("자산 보관 해제"),
     SBOM_UPLOADED("SBOM 업로드"),
     SCAN_DELETED("스캔 삭제"),
     SCAN_RESCANNED("재검사"),

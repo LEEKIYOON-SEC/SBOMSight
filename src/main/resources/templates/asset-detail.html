@@ -5,195 +5,276 @@
 <body>
 <main>
 
-  <div class="crumb">
-    <i class="zrail" th:style="'background:' + (${#strings.isEmpty(asset.zone.color)}
-                               ? '#6f7e8d' : ${asset.zone.color})"></i>
-    <a th:href="@{/(zone=${asset.zone.id})}" th:text="${asset.zone.name}">DMZ</a>
-  </div>
-
-  <div class="page-head">
-    <h1 th:text="${asset.name}">web-01</h1>
-    <span class="meta">
-      <span th:if="${!#strings.isEmpty(asset.osName)}" th:text="${asset.osName}">Rocky Linux 9.3</span>
-      <span th:if="${!#strings.isEmpty(asset.note)}"
-            th:text="(${#strings.isEmpty(asset.osName)} ? '' : ' · ') + ${asset.note}">대외 웹</span>
-    </span>
-    <span class="spacer"></span>
-    <a th:if="${latest != null}" class="btn"
-       th:href="@{'/report/' + ${latest.id}}">보고서</a>
-    <a th:if="${latest != null}" class="btn primary"
-       th:href="@{'/scans/' + ${latest.id}}"
-       th:text="'취약점 ' + ${#numbers.formatInteger(latest.findingCount, 0, 'COMMA')} + '건'">취약점 98건</a>
-  </div>
-
-  <div class="body">
-
-  <div>
-    <table class="kv">
-      <tr><th>구역</th>
-          <td>
-            <form method="post" th:action="@{'/assets/' + ${asset.id} + '/zone'}" class="inline"
-                  sec:authorize="hasRole('ADMIN')">
-              <select name="zoneId" onchange="this.form.submit()">
-                <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
-                        th:selected="${z.id == asset.zone.id}">DMZ</option>
-              </select>
-            </form>
-            <span sec:authorize="!hasRole('ADMIN')" th:text="${asset.zone.name}">DMZ</span>
-          </td>
-          <th>운영체제</th><td th:text="${#strings.isEmpty(asset.osName)} ? '—' : ${asset.osName}">—</td></tr>
-      <tr><th>비고</th><td colspan="3" th:text="${#strings.isEmpty(asset.note)} ? '—' : ${asset.note}">—</td></tr>
-    </table>
-  </div>
-
-  <!-- SBOM 업로드는 자산 안에 있다. 어느 서버 것인지 나중에 정하는 길을
-       열어 두면, 어디에도 속하지 않는 결과가 쌓인다. -->
-  <!-- 검사가 도는 동안 무엇이 일어나고 있는지. grype 은 서버 한 대에 몇 분씩
-       걸리는데, "검사 중" 한 마디만 떠 있으면 돌고 있는지 멈춘 것인지 알 수
-       없어 새로고침만 반복하게 된다. -->
-  <div class="progress" th:if="${running != null}" th:attr="data-scan=${running.id}" id="progress">
-    <div class="progress-head">
-      <span class="spinner" data-role="icon"></span>
-      <b data-role="title">검사 중</b>
-      <span class="faint" data-role="subtitle"></span>
-      <span class="spacer"></span>
-      <span class="faint num" data-role="elapsed"></span>
-      <a class="btn primary" data-role="open" hidden>결과 보기</a>
+  <!--/*
+    앞서는 SBOM 올리기·검사 이력·조치·자산 삭제가 한 화면에 세로로 이어 붙어
+    있어 아래가 화면 밖으로 밀렸다. 탭으로 가른다. 탭 선택은 주소에 남는다.
+  */-->
+  <div class="page-header">
+    <div class="page-pretitle">
+      <i class="zrail" th:style="'background:' + (${#strings.isEmpty(asset.zone.color)}
+                                 ? '#6f7e8d' : ${asset.zone.color})"></i>
+      <a th:href="@{/(zone=${asset.zone.id})}" th:text="${asset.zone.name}">DMZ</a>
     </div>
-    <div class="steps" data-role="steps"></div>
-  </div>
 
-  <h2 sec:authorize="hasRole('ADMIN')">SBOM 올리기</h2>
-  <div sec:authorize="hasRole('ADMIN')">
-    <form method="post" th:action="@{'/assets/' + ${asset.id} + '/sbom'}"
-          enctype="multipart/form-data" class="inline-form">
-      <label>syft 로 만든 SBOM 파일
-        <input type="file" name="file" accept=".json,.xml,.spdx,.cdx" required>
-      </label>
-      <button class="btn primary" type="submit">올리고 검사</button>
-    </form>
-    <!-- 처음 한 번만 필요한 내용이다. 매일 올리는 사람에게는 군더더기이고,
-         그 군더더기 때문에 아래 이력이 화면 밖으로 밀린다. -->
-    <details class="help">
-      <summary>SBOM 은 어떻게 만드나</summary>
-      <div class="inner">
-        대상 서버에서 <code>syft &lt;대상&gt; -o cyclonedx-json &gt; sbom.json</code> 으로 뽑습니다.
-        올리면 grype 이 이 서버에서 돌고, 끝나면 아래 이력에 나타납니다.
+    <div class="page-titlerow">
+      <h1 th:text="${asset.name}">web-01</h1>
+      <span class="tag" th:if="${asset.archivedAt != null}">보관됨</span>
+      <div class="btn-list">
+        <a th:if="${latest != null}" class="btn" th:href="@{'/report/' + ${latest.id}}">보고서</a>
+        <a th:if="${latest != null}" class="btn primary" th:href="@{'/scans/' + ${latest.id}}"
+           th:text="'취약점 ' + ${#numbers.formatInteger(latest.findingCount, 0, 'COMMA')} + '건'">취약점 98건</a>
       </div>
-    </details>
+    </div>
+
+    <div class="page-subtitle">
+      <span th:text="${#strings.isEmpty(asset.osName)} ? '운영체제 미상' : ${asset.osName}">Rocky Linux 9.3</span>
+      <th:block th:if="${!#strings.isEmpty(asset.note)}">
+        · <span th:text="${asset.note}">대외 웹</span></th:block>
+      <th:block th:if="${latest != null}">
+        · 마지막 검사 <span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</span></th:block>
+      <th:block th:if="${latest == null}"> · 검사 없음</th:block>
+    </div>
+
+    <div style="margin-top:10px; max-width:340px" th:if="${latest != null and latest.findingCount > 0}">
+      <span th:replace="~{fragments/ui :: sevbar(${severity.getOrDefault('critical', 0)},
+                         ${severity.getOrDefault('high', 0)}, ${severity.getOrDefault('medium', 0)},
+                         ${severity.getOrDefault('low', 0)})}"></span>
+    </div>
+
+    <div class="tabs">
+      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id}, '개요', null, ${tab} == 'overview')}"></a>
+      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=history', '검사 이력',
+                       ${history.size()}, ${tab} == 'history')}"></a>
+      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=actions', '조치·검토',
+                       ${remediations.size()}, ${tab} == 'actions')}"></a>
+    </div>
   </div>
 
-  <h2>검사 이력</h2>
-  <div class="empty inline" th:if="${history.isEmpty()}">
-    아직 검사가 없습니다.
-  </div>
-  <div class="table-scroll" th:unless="${history.isEmpty()}">
-    <table>
-      <thead>
-      <tr>
-        <th class="tight">시각</th><th class="tight">상태</th>
-        <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
-        <th class="num tight">컴포넌트</th>
-        <th class="tight">grype</th><th class="tight">DB 기준일</th>
-        <th>SBOM</th><th class="tight"></th>
-      </tr>
-      </thead>
-      <tbody>
-      <tr th:each="s : ${history}">
-        <td class="tight">
-          <span th:text="${#temporals.format(s.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
-          <!-- 서버가 바뀐 것과 취약점 DB 가 바뀐 것은 완전히 다른 이야기다. -->
-          <div class="faint" th:if="${s.isRescan()}"
-               th:text="'재검사 (원본 ' + ${s.rescanOf} + ')'">재검사</div>
-        </td>
-        <td class="tight">
-          <span class="status" th:classappend="${s.status}" th:text="${s.status.label()}">완료</span>
-        </td>
-        <td class="num tight" th:text="${s.status.name() == 'DONE'} ? ${#numbers.formatInteger(s.findingCount, 0, 'COMMA')} : '—'">—</td>
-        <!-- 바로 앞 완료 검사와의 차이. 실패한 검사는 건너뛴다 — 실패는
-             0건이 아니라 "모른다" 이고, 0 으로 놓고 빼면 다음 검사가
-             폭증한 것처럼 보인다. 첫 검사는 비워 둔다. -->
-        <td class="num tight" th:with="d=${delta.get(s.id)}">
-          <span th:if="${d != null && d > 0}" class="danger-text" th:text="'+' + ${d}">+0</span>
-          <span th:if="${d != null && d < 0}" style="color:var(--ok);font-weight:600" th:text="${d}">0</span>
-          <span th:if="${d != null && d == 0}" class="faint">0</span>
-          <span th:if="${d == null}" class="faint">—</span>
-        </td>
-        <td class="num tight" th:text="${s.componentCount > 0} ? ${#numbers.formatInteger(s.componentCount, 0, 'COMMA')} : '—'">—</td>
-        <td class="tight faint" th:text="${#strings.isEmpty(s.grypeVersion)} ? '—' : ${s.grypeVersion}">—</td>
-        <td class="tight faint"
-            th:text="${s.grypeDbBuilt != null} ? ${#temporals.format(s.grypeDbBuilt, 'yyyy-MM-dd')} : '—'">—</td>
-        <td class="faint">
-          <span th:text="${s.sbomFilename}">sbom.json</span>
-          <span th:if="${s.status.name() == 'FAILED'}" class="tag nofix"
-                th:text="${s.errorMessage}">오류</span>
-        </td>
-        <td class="tight">
-          <a th:if="${s.status.name() == 'DONE'}" th:href="@{'/scans/' + ${s.id}}">열기</a>
-          <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
-                th:if="${s.status.name() == 'DONE'}" sec:authorize="hasRole('ADMIN')">
-            <button type="submit" class="btn small" title="보관된 SBOM 을 갱신된 취약점 DB 로 다시 검사합니다">다시 검사</button>
-          </form>
-          <form method="post" th:action="@{'/scans/' + ${s.id} + '/delete'}" class="inline"
-                sec:authorize="hasRole('ADMIN')"
-                onsubmit="return confirm('이 스캔과 보관된 SBOM·검사 결과를 지웁니다.\n되돌릴 수 없습니다.\n\n계속할까요?')">
-            <button type="submit" class="btn small danger">삭제</button>
-          </form>
-        </td>
-      </tr>
-      </tbody>
-    </table>
+  <!-- ══ 개요 ══════════════════════════════════════════════════════ -->
+  <div class="body" th:if="${tab} == 'overview'">
+
+    <!--/*
+      검사가 도는 동안 무엇이 일어나고 있는지. grype 은 자산 한 대에 몇 분씩
+      걸리는데 "검사 중" 한 마디만 떠 있으면 돌고 있는지 멈춘 것인지 알 수
+      없어 새로고침만 반복하게 된다.
+    */-->
+    <div class="progress" th:if="${running != null}" th:attr="data-scan=${running.id}" id="progress">
+      <div class="progress-head">
+        <span class="spinner" data-role="icon"></span>
+        <b data-role="title">검사 중</b>
+        <span class="faint" data-role="subtitle"></span>
+        <span class="spacer"></span>
+        <span class="faint num" data-role="elapsed"></span>
+        <a class="btn primary" data-role="open" hidden>결과 보기</a>
+      </div>
+      <div class="steps" data-role="steps"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">기본 정보</h2></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th>구역</th>
+              <td>
+                <form method="post" th:action="@{'/assets/' + ${asset.id} + '/zone'}" class="inline"
+                      sec:authorize="hasRole('ADMIN')">
+                  <select name="zoneId" onchange="this.form.submit()">
+                    <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
+                            th:selected="${z.id == asset.zone.id}">DMZ</option>
+                  </select>
+                </form>
+                <span sec:authorize="!hasRole('ADMIN')" th:text="${asset.zone.name}">DMZ</span>
+              </td>
+              <th>운영체제</th>
+              <td th:text="${#strings.isEmpty(asset.osName)} ? '—' : ${asset.osName}">—</td></tr>
+          <tr><th>비고</th><td colspan="3" th:text="${#strings.isEmpty(asset.note)} ? '—' : ${asset.note}">—</td></tr>
+          <tr><th>등록</th>
+              <td th:text="${#temporals.format(asset.createdAt, 'yyyy-MM-dd')}">—</td>
+              <th>검사 횟수</th><td th:text="${history.size()} + '회'">0회</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- SBOM 업로드는 자산 안에 있다. 어느 자산 것인지 나중에 정하는 길을
+         열어 두면, 어디에도 속하지 않는 결과가 쌓인다. -->
+    <div class="card" sec:authorize="hasRole('ADMIN')">
+      <div class="card-header"><h2 class="card-title">SBOM 올리기</h2></div>
+      <div class="card-body">
+        <form method="post" th:action="@{'/assets/' + ${asset.id} + '/sbom'}"
+              enctype="multipart/form-data" class="inline-form">
+          <label>syft 로 만든 SBOM 파일
+            <input type="file" name="file" accept=".json,.xml,.spdx,.cdx" required>
+          </label>
+          <button class="btn primary" type="submit">올리고 검사</button>
+        </form>
+        <details class="help">
+          <summary>SBOM 은 어떻게 만드나</summary>
+          <div class="inner">
+            대상 자산에서 <code>syft &lt;대상&gt; -o cyclonedx-json &gt; sbom.json</code> 으로 뽑습니다.
+            올리면 grype 이 이 서버에서 돌고, 끝나면 <b>검사 이력</b> 탭에 나타납니다.
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <!--/*
+      보관과 삭제는 다르다. 보관은 목록에서 치우고 결과는 남긴다 — 쓰지 않는
+      자산을 정리하려고 지우면 검사 이력과 보고서 근거가 함께 사라지고,
+      점검에서 "작년 그 서버 기록" 을 물으면 답할 것이 없어진다.
+    */-->
+    <div class="card danger-zone" sec:authorize="hasRole('ADMIN')">
+      <div class="card-header"><h2 class="card-title">보관 · 삭제</h2></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th style="width:5rem">보관</th>
+              <td>
+                <form method="post" th:action="@{'/assets/' + ${asset.id} + '/archive'}"
+                      class="inline" th:if="${asset.archivedAt == null}">
+                  <button type="submit" class="btn small">보관</button>
+                </form>
+                <form method="post" th:action="@{'/assets/' + ${asset.id} + '/unarchive'}"
+                      class="inline" th:unless="${asset.archivedAt == null}">
+                  <button type="submit" class="btn small">보관 풀기</button>
+                </form>
+                <span class="faint" style="margin-left:8px">
+                  목록에서 빠지고 <b>결과는 남습니다.</b></span>
+              </td></tr>
+          <tr><th>삭제</th>
+              <td>
+                <span>
+                  <b th:text="'스캔 ' + ${impact.scanCount()} + '건'">스캔 0건</b> ·
+                  <b th:text="'탐지 ' + ${#numbers.formatInteger(impact.findingCount(), 0, 'COMMA')} + '건'">탐지 0건</b> ·
+                  <b th:text="'조치 ' + ${impact.remediationCount()} + '건'">조치 0건</b>
+                  과 보관된 SBOM·검사 결과 파일이 함께 사라집니다. 되돌릴 수 없습니다.
+                </span>
+                <form method="post" th:action="@{'/assets/' + ${asset.id} + '/delete'}"
+                      class="inline-form" style="margin-top:12px">
+                  <label style="margin:0">확인 — 자산 이름을 입력하세요
+                    <input name="confirm" required autocomplete="off" th:placeholder="${asset.name}">
+                  </label>
+                  <button type="submit" class="btn danger">삭제</button>
+                </form>
+              </td></tr>
+        </table>
+      </div>
+    </div>
   </div>
 
-  <h2>조치</h2>
-  <div class="empty inline" th:if="${remediations.isEmpty()}">
-    등록된 조치가 없습니다.
-  </div>
-  <div class="table-scroll" th:unless="${remediations.isEmpty()}">
-    <table>
-      <thead>
-      <tr>
-        <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
-        <th class="tight">상태</th><th class="tight">담당</th>
-        <th class="tight">기한</th><th>메모</th>
-      </tr>
-      </thead>
-      <tbody>
-      <tr th:each="r : ${remediations}">
-        <td class="tight"><a th:href="@{'/remediations/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td>
-        <td class="tight faint" th:text="${r.fromVersion} + ' → ' + ${r.toVersion}">—</td>
-        <td class="tight" th:text="${r.status.label()}">대기</td>
-        <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
-        <td class="tight" th:classappend="${r.overdue} ? 'overdue' : ''"
-            th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
-        <td class="faint" th:text="${#strings.isEmpty(r.note)} ? '—' : ${r.note}">—</td>
-      </tr>
-      </tbody>
-    </table>
+  <!-- ══ 검사 이력 ══════════════════════════════════════════════════ -->
+  <div class="body flush" th:if="${tab} == 'history'">
+    <th:block th:if="${history.isEmpty()}">
+      <div th:replace="~{fragments/ui :: empty('아직 검사가 없습니다',
+                        'SBOM 을 올리면 grype 이 돌고 여기에 쌓입니다.',
+                        '/assets/' + ${asset.id}, 'SBOM 올리기')}"></div>
+    </th:block>
+
+    <div class="table-scroll" th:unless="${history.isEmpty()}">
+      <table>
+        <thead>
+        <tr>
+          <th class="tight">시각</th><th class="tight">상태</th>
+          <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
+          <th class="num tight">패키지</th>
+          <th class="tight">grype</th><th class="tight">DB 기준일</th>
+          <th>SBOM</th><th class="tight"></th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="s : ${history}">
+          <td class="tight">
+            <span class="mono" th:text="${#temporals.format(s.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
+            <!-- 자산이 바뀐 것과 취약점 DB 가 바뀐 것은 완전히 다른 이야기다. -->
+            <div class="faint" th:if="${s.isRescan()}"
+                 th:text="'다시 검사 (원본 ' + ${s.rescanOf} + ')'">다시 검사</div>
+          </td>
+          <td class="tight">
+            <span class="status" th:classappend="${s.status}" th:text="${s.status.label()}">완료</span>
+          </td>
+          <td class="num tight" th:text="${s.status.name() == 'DONE'} ? ${#numbers.formatInteger(s.findingCount, 0, 'COMMA')} : '—'">—</td>
+          <!--/*
+            바로 앞 완료 검사와의 차이. 실패한 검사는 건너뛴다 — 실패는
+            0건이 아니라 "모른다" 이고, 0 으로 놓고 빼면 다음 검사가
+            폭증한 것처럼 보인다. 첫 검사는 비워 둔다.
+          */-->
+          <td class="num tight" th:with="d=${delta.get(s.id)}">
+            <span th:if="${d != null && d > 0}" class="danger-text" th:text="'+' + ${d}">+0</span>
+            <span th:if="${d != null && d < 0}" class="ok-text" th:text="${d}">0</span>
+            <span th:if="${d != null && d == 0}" class="faint">0</span>
+            <span th:if="${d == null}" class="faint">—</span>
+          </td>
+          <td class="num tight" th:text="${s.componentCount > 0} ? ${#numbers.formatInteger(s.componentCount, 0, 'COMMA')} : '—'">—</td>
+          <td class="tight faint" th:text="${#strings.isEmpty(s.grypeVersion)} ? '—' : ${s.grypeVersion}">—</td>
+          <td class="tight faint"
+              th:text="${s.grypeDbBuilt != null} ? ${#temporals.format(s.grypeDbBuilt, 'yyyy-MM-dd')} : '—'">—</td>
+          <td class="faint">
+            <span th:text="${s.sbomFilename}">sbom.json</span>
+            <span th:if="${s.status.name() == 'FAILED'}" class="tag nofix"
+                  th:text="${s.errorMessage}">오류</span>
+          </td>
+          <!--/*
+            행 액션은 전부 같은 버튼이다. 앞서는 '열기' 만 맨 글자였고 옆은
+            버튼이라 같은 칸에서 두 가지 모양이 놀았다.
+          */-->
+          <td class="tight actions">
+            <a class="btn small" th:if="${s.status.name() == 'DONE'}"
+               th:href="@{'/scans/' + ${s.id}}">열기</a>
+            <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
+                  th:if="${s.status.name() == 'DONE'}" sec:authorize="hasRole('ADMIN')">
+              <button type="submit" class="btn small"
+                      title="보관된 SBOM 을 갱신된 취약점 DB 로 다시 검사합니다">다시 검사</button>
+            </form>
+            <a class="btn small" th:if="${!#strings.isEmpty(s.sbomPath)}"
+               th:href="@{'/scans/' + ${s.id} + '/sbom'}"
+               title="올렸던 SBOM 원본을 내려받습니다">SBOM</a>
+            <form method="post" th:action="@{'/scans/' + ${s.id} + '/delete'}" class="inline"
+                  sec:authorize="hasRole('ADMIN')"
+                  onsubmit="return confirm('이 검사와 보관된 SBOM·검사 결과를 지웁니다.\n되돌릴 수 없습니다.\n\n계속할까요?')">
+              <button type="submit" class="btn small danger">삭제</button>
+            </form>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
-  <h2 sec:authorize="hasRole('ADMIN')">자산 삭제</h2>
-  <div class="card danger-zone" sec:authorize="hasRole('ADMIN')">
-    <p>
-      <b th:text="${asset.name}">web-01</b> 을 지우면
-      <b th:text="'스캔 ' + ${impact.scanCount()} + '건'">스캔 0건</b> ·
-      <b th:text="'탐지 ' + ${#numbers.formatInteger(impact.findingCount(), 0, 'COMMA')} + '건'">탐지 0건</b> ·
-      <b th:text="'조치 ' + ${impact.remediationCount()} + '건'">조치 0건</b>
-      과 <b>보관된 SBOM·검사 결과 파일</b>이 함께 사라집니다. 되돌릴 수 없고,
-      다시 보려면 SBOM 을 다시 올려 검사해야 합니다.
-    </p>
-    <form method="post" th:action="@{'/assets/' + ${asset.id} + '/delete'}" class="inline-form">
-      <label>확인 — 자산 이름을 입력하세요
-        <input name="confirm" required autocomplete="off"
-               th:placeholder="${asset.name}">
-      </label>
-      <button type="submit" class="btn danger">삭제</button>
-    </form>
-  </div>
+  <!-- ══ 조치 · 검토 ════════════════════════════════════════════════ -->
+  <div class="body" th:if="${tab} == 'actions'">
+    <th:block th:if="${remediations.isEmpty()}">
+      <div th:replace="~{fragments/ui :: empty('등록된 조치가 없습니다',
+                        '취약점 화면에서 패키지를 골라 조치로 올립니다.',
+                        ${latest != null} ? '/scans/' + ${latest.id} : null, '취약점 보기')}"></div>
+    </th:block>
+
+    <div class="card" th:unless="${remediations.isEmpty()}">
+      <div class="card-header"><h2 class="card-title">조치</h2>
+        <span class="faint" style="font-size:13px" th:text="${remediations.size()} + '건'">0건</span></div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+          <tr>
+            <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
+            <th class="tight">상태</th><th class="tight">담당</th>
+            <th class="tight">기한</th><th>메모</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="r : ${remediations}">
+            <td class="tight"><a th:href="@{'/remediations/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td>
+            <td class="tight faint mono" th:text="${r.fromVersion} + ' → ' + ${r.toVersion}">—</td>
+            <td class="tight" th:text="${r.status.label()}">대기</td>
+            <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
+            <td class="tight" th:classappend="${r.overdue} ? 'overdue' : ''"
+                th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
+            <td class="faint" th:text="${#strings.isEmpty(r.note)} ? '—' : ${r.note}">—</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
-
-  <script>
+  <script th:if="${tab} == 'overview'">
     // 검사가 도는 동안만 물어본다. 끝나면 스스로 멈춘다.
     //
     // 밀어 주는 방식(SSE·WebSocket)을 쓰지 않는 이유: 연결이 하나 더 생기고

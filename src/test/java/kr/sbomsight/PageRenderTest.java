@@ -26,7 +26,9 @@ import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -215,6 +217,57 @@ class PageRenderTest {
     void assetAndScan() throws Exception {
         assertThat(open("/assets/" + asset.getId())).contains(asset.getName());
         assertThat(open("/scans/" + scan.getId())).contains("CVE-2024-3094");
+    }
+
+    /**
+     * 자산 상세의 탭.
+     *
+     * <p>탭마다 내용이 갈려 있어서, 한 탭이 깨져도 나머지는 멀쩡히 그려진다 —
+     * 그래서 하나씩 열어 봐야 한다. 탭 선택은 주소에 남는다.
+     */
+    @Test
+    @DisplayName("자산 상세의 탭이 하나씩 열린다")
+    void assetDetailTabs() throws Exception {
+        String overview = open("/assets/" + asset.getId());
+        assertThat(overview).contains("기본 정보");
+        assertThat(overview).contains("SBOM 올리기");
+        assertThat(overview).contains("보관");
+
+        String history = open("/assets/" + asset.getId() + "?tab=history");
+        assertThat(history).contains("이전 대비");
+
+        // 행 액션이 **전부 같은 버튼**인가. '열기' 만 맨 글자였고 옆은 버튼이라
+        // 한 칸에서 두 가지 모양이 놀던 자리다. 맨 링크로 되돌아가면 여기서 깨진다.
+        assertThat(history)
+                .as("완료된 검사에는 열기·다시 검사가 둘 다 버튼으로 있어야 한다")
+                .contains("class=\"btn small\" href=\"/scans/" + scan.getId() + "\">열기</a>")
+                .contains("class=\"btn small\"")
+                .contains("다시 검사");
+
+        assertThat(open("/assets/" + asset.getId() + "?tab=actions")).contains("xz");
+    }
+
+    /** 보관해 둔 SBOM 원본을 꺼내 볼 수 있어야 grype 의 판정을 대조할 수 있다. */
+    @Test
+    @DisplayName("보관된 SBOM 이 없으면 404, 있으면 파일로 나온다")
+    void sbomDownload() throws Exception {
+        // 씨앗 스캔에는 보관 경로가 없다 — 없는데 200 을 주면 빈 파일이 떨어진다.
+        mvc.perform(get("/scans/" + scan.getId() + "/sbom").with(user("tester").roles("ADMIN")))
+           .andExpect(status().isNotFound());
+    }
+
+    /** 보관은 지우는 것과 다르다 — 목록에서 빠지고 결과는 남는다. */
+    @Test
+    @DisplayName("보관하면 목록에서 빠지고, 보관 보기에서는 나온다")
+    void archiveHidesFromList() throws Exception {
+        mvc.perform(post("/assets/" + asset.getId() + "/archive")
+                        .with(user("tester").roles("ADMIN")).with(csrf()))
+           .andExpect(status().is3xxRedirection());
+
+        assertThat(open("/")).doesNotContain(asset.getName());
+        assertThat(open("/?archived=true")).contains(asset.getName());
+        // 결과는 그대로 있다.
+        assertThat(open("/assets/" + asset.getId() + "?tab=history")).contains("0.87.0");
     }
 
     @Test

@@ -6,6 +6,7 @@ import kr.sbomsight.repo.*;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.service.AssetService;
 import kr.sbomsight.service.CsvWriter;
+import kr.sbomsight.service.SbomStorage;
 import kr.sbomsight.service.ScanService;
 import kr.sbomsight.service.ZoneService;
 import kr.sbomsight.service.AuditService;
@@ -46,11 +47,12 @@ public class AssetController {
     private final ZoneService zoneService;
     private final AuditService audit;
     private final RiskAcceptanceService acceptances;
+    private final SbomStorage storage;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
                            AssetService assetService, ZoneService zoneService, AuditService audit,
-                           RiskAcceptanceService acceptances) {
+                           RiskAcceptanceService acceptances, SbomStorage storage) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
@@ -60,6 +62,7 @@ public class AssetController {
         this.zoneService = zoneService;
         this.audit = audit;
         this.acceptances = acceptances;
+        this.storage = storage;
     }
 
     /** 마지막 검사가 이보다 오래되면 "오래됐다" 고 센다. */
@@ -233,9 +236,20 @@ public class AssetController {
         return "redirect:/assets/" + id;
     }
 
-    /** 자산 상세 — 스캔 이력과 조치가 한 화면에 있다. */
+    /**
+     * 자산 상세.
+     *
+     * <p>앞서는 SBOM 올리기·검사 이력·조치·자산 삭제가 한 화면에 세로로 이어
+     * 붙어 있어 아래가 화면 밖으로 밀렸다. 탭으로 가른다.
+     *
+     * <p>탭 선택은 <b>주소에 남는다</b>({@code ?tab=}). 자바스크립트로 감췄다
+     * 보였다 하면 새로고침했을 때 첫 탭으로 돌아가고 링크로 남길 수도 없다.
+     */
     @GetMapping("assets/{id}")
-    public String detail(@PathVariable Long id, Model model) {
+    public String detail(@PathVariable Long id,
+                         @RequestParam(defaultValue = "overview") String tab,
+                         Model model) {
+        model.addAttribute("tab", tab);
         Asset asset = asset(id);
         List<Scan> history = scans.findByAssetIdOrderByCreatedAtDesc(id);
         Scan latest = history.stream()
@@ -284,6 +298,69 @@ public class AssetController {
             previous = scan;
         }
         return out;
+    }
+
+    /**
+     * 보관 — 목록에서 치우되 결과는 남긴다.
+     *
+     * <p>{@code archivedAt} 은 처음부터 있었는데 켜고 끄는 길이 없었다. 쓰지
+     * 않는 자산을 정리하려면 지우는 수밖에 없었고, 지우면 그 자산의 검사 이력과
+     * 보고서 근거가 함께 사라진다. 점검에서 "작년 그 서버 기록" 을 물으면
+     * 답할 것이 없어진다.
+     */
+    @PostMapping("assets/{id}/archive")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String archive(@PathVariable Long id, RedirectAttributes flash) {
+        Asset asset = asset(id);
+        asset.setArchivedAt(java.time.Instant.now());
+        assets.save(asset);
+        audit.record(AuditEvent.ASSET_ARCHIVED, asset.getName(), "");
+        flash.addFlashAttribute("message",
+                asset.getName() + " 을 보관했습니다. 목록에서 빠지고 결과는 남습니다.");
+        return "redirect:/assets/" + id;
+    }
+
+    @PostMapping("assets/{id}/unarchive")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String unarchive(@PathVariable Long id, RedirectAttributes flash) {
+        Asset asset = asset(id);
+        asset.setArchivedAt(null);
+        assets.save(asset);
+        audit.record(AuditEvent.ASSET_UNARCHIVED, asset.getName(), "");
+        flash.addFlashAttribute("message", asset.getName() + " 의 보관을 풀었습니다.");
+        return "redirect:/assets/" + id;
+    }
+
+    /**
+     * 보관해 둔 SBOM 원본을 내려받는다.
+     *
+     * <p>올린 파일을 gzip 으로 쥐고만 있고 꺼내 볼 길이 없었다. 검사 결과가
+     * 이상할 때 "그 SBOM 에 실제로 뭐가 들어 있었나" 를 확인할 방법이 없으면
+     * grype 의 판정을 대조할 수도 없다.
+     */
+    @GetMapping("scans/{scanId}/sbom")
+    public void downloadSbom(@PathVariable Long scanId, HttpServletResponse response)
+            throws java.io.IOException {
+        Scan scan = scans.findById(scanId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
+        if (scan.getSbomPath() == null || scan.getSbomPath().isBlank()) {
+            throw new ResponseStatusException(NOT_FOUND, "보관된 SBOM 이 없습니다.");
+        }
+        java.nio.file.Path stored = java.nio.file.Path.of(scan.getSbomPath());
+        if (!java.nio.file.Files.exists(stored)) {
+            throw new ResponseStatusException(NOT_FOUND, "보관된 SBOM 파일이 사라졌습니다.");
+        }
+
+        String name = scan.getSbomFilename() == null || scan.getSbomFilename().isBlank()
+                ? "sbom-" + scanId + ".json" : scan.getSbomFilename();
+        response.setContentType("application/json; charset=UTF-8");
+        // 파일 이름에 한글·공백이 섞일 수 있다. RFC 5987 로 함께 준다.
+        response.setHeader("Content-Disposition", "attachment; filename=\"sbom-" + scanId
+                + ".json\"; filename*=UTF-8''"
+                + java.net.URLEncoder.encode(name, java.nio.charset.StandardCharsets.UTF_8));
+        try (java.io.InputStream in = storage.openGzip(stored)) {
+            in.transferTo(response.getOutputStream());
+        }
     }
 
     /**
