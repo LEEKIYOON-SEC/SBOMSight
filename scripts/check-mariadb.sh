@@ -48,10 +48,10 @@ run_sql -e "DROP DATABASE IF EXISTS \`$DB\`;
 
 # 환경변수로 넘긴다. surefire 가 시험을 별도 JVM 으로 띄우므로 -D 는
 # 그쪽에 닿지 않지만 환경변수는 그대로 물려받는다.
-export SPRING_DATASOURCE_URL="jdbc:mysql://${HOST}:${PORT}/${DB}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+export SPRING_DATASOURCE_URL="jdbc:mariadb://${HOST}:${PORT}/${DB}?sslMode=disable"
 export SPRING_DATASOURCE_USERNAME="$USER"
 export SPRING_DATASOURCE_PASSWORD="$PASS"
-export SPRING_DATASOURCE_DRIVER_CLASS_NAME="com.mysql.cj.jdbc.Driver"
+export SPRING_DATASOURCE_DRIVER_CLASS_NAME="org.mariadb.jdbc.Driver"
 # 스키마는 Flyway 가 만든다 — 운영에서 쓰는 그 파일들이다.
 export SPRING_FLYWAY_ENABLED=true
 export SPRING_JPA_HIBERNATE_DDL_AUTO=none

@@ -26,7 +26,7 @@ $env:SBOMSIGHT_KEYSTORE          = 'file:./config/keystore.p12'
 $env:SBOMSIGHT_KEYSTORE_PASSWORD = '여기에-키스토어-비밀번호'
 
 # --- 데이터베이스 ---
-$env:SBOMSIGHT_DB_URL      = 'jdbc:mysql://localhost:3306/sbomsight?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useSSL=false&rewriteBatchedStatements=true'
+$env:SBOMSIGHT_DB_URL      = 'jdbc:mariadb://localhost:3306/sbomsight?sslMode=disable&rewriteBatchedStatements=true'
 $env:SBOMSIGHT_DB_USER     = 'sbomsight'
 $env:SBOMSIGHT_DB_PASSWORD = '여기에-DB-비밀번호'
 

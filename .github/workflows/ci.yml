@@ -23,10 +23,15 @@ jobs:
       - name: 테스트
         run: ./mvnw -B test
 
-      # 스키마가 진짜 MySQL 에서 서는지, 우리 JPQL 이 MySQL 방언으로
-      # 번역됐을 때 도는지는 H2 로는 확인되지 않는다. 여기서 한 번 더 돈다.
+      # 스키마가 진짜 DB 에서 서는지, 우리 JPQL 이 MySQL 방언으로 번역됐을 때
+      # 도는지는 H2 로는 확인되지 않는다. 여기서 한 번 더 돈다.
+      #
+      # 서버는 MySQL 8 을 그대로 쓴다. 드라이버는 MariaDB Connector/J 다 —
+      # 둘을 붙여 두는 것이 일부러다. MySQL 8 의 기본 인증
+      # (caching_sha2_password)까지 이 조합으로 도는지가 확인되면
+      # MariaDB 서버 쪽은 자동으로 따라온다.
   mysql:
-    name: 테스트 (MySQL · Flyway 스키마)
+    name: 테스트 (MySQL 8 서버 · MariaDB 드라이버 · Flyway 스키마)
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -49,10 +54,10 @@ jobs:
 
       - name: 테스트
         env:
-          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/sbomsight_ci?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+          SPRING_DATASOURCE_URL: jdbc:mariadb://127.0.0.1:3306/sbomsight_ci?sslMode=disable
           SPRING_DATASOURCE_USERNAME: root
           SPRING_DATASOURCE_PASSWORD: root
-          SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+          SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.mariadb.jdbc.Driver
           # 스키마는 Flyway 가 만든다 — 운영에서 쓰는 그 파일들이다.
           SPRING_FLYWAY_ENABLED: 'true'
           SPRING_JPA_HIBERNATE_DDL_AUTO: none

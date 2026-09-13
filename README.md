@@ -92,7 +92,7 @@ notepad config\env.ps1          # 비밀번호 채우기
 ```bash
 # Linux — 환경변수로 준다. 저장소에 두지 않는다.
 export SBOMSIGHT_PORT=443
-export SBOMSIGHT_DB_URL='jdbc:mysql://localhost:3306/sbomsight?...'
+export SBOMSIGHT_DB_URL='jdbc:mariadb://localhost:3306/sbomsight?...'
 export SBOMSIGHT_DB_PASSWORD='<비밀번호>'
 export SBOMSIGHT_KEYSTORE_PASSWORD='<키스토어비밀번호>'
 

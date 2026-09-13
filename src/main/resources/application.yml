@@ -35,7 +35,11 @@ spring:
     name: SBOMSight
 
   datasource:
-    url: ${SBOMSIGHT_DB_URL:jdbc:mysql://127.0.0.1:13306/sbomsight?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useSSL=false&rewriteBatchedStatements=true}
+    # MariaDB Connector/J 를 쓴다. MariaDB 와 MySQL 8 둘 다 이 주소로 붙는다.
+    #   sslMode=disable            같은 PC 안이라 TLS 를 걸지 않는다. 밖에 두면 바꾼다.
+    #   rewriteBatchedStatements   grype 한 번에 수만 건이 들어온다. 묶어 보낸다.
+    # 문자셋은 드라이버 기본이 utf8mb4 라 따로 적지 않는다.
+    url: ${SBOMSIGHT_DB_URL:jdbc:mariadb://127.0.0.1:13306/sbomsight?sslMode=disable&rewriteBatchedStatements=true}
     username: ${SBOMSIGHT_DB_USER:sbomsight}
     password: ${SBOMSIGHT_DB_PASSWORD:devpass}
     hikari:

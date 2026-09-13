@@ -73,9 +73,17 @@
       <artifactId>flyway-mysql</artifactId>
     </dependency>
 
+    <!-- JDBC 드라이버. MariaDB 와 MySQL 8 둘 다 붙는다.
+         (MySQL 8 의 기본 인증 caching_sha2_password 는 2.5.0 부터 지원)
+
+         왜 mysql-connector-j 가 아닌가 — 그쪽은 GPL-2.0 이다. FOSS 예외가
+         붙어 있지만 그 예외는 승인된 오픈소스 라이선스로 배포할 때만 듣는다.
+         이쪽은 LGPL-2.1 이라 jar 를 그대로 두는 한(교체 가능) 우리 코드에
+         옮지 않는다. 사내 전용이면 어느 쪽이든 의무가 없지만, 나중에 밖으로
+         낼 일이 생겼을 때 걸리는 자리를 미리 없앤다. -->
     <dependency>
-      <groupId>com.mysql</groupId>
-      <artifactId>mysql-connector-j</artifactId>
+      <groupId>org.mariadb.jdbc</groupId>
+      <artifactId>mariadb-java-client</artifactId>
       <scope>runtime</scope>
     </dependency>
 
