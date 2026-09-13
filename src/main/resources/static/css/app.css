@@ -94,33 +94,91 @@ button { font: inherit; cursor: pointer; }
 /* 기한이 지난 것이 있으면 숫자를 붉게. 메뉴를 누르기 전에 알아야 한다. */
 .side nav a .badge.alert { color: var(--critical); }
 
-.side .rule { height: 1px; background: var(--line); margin: 16px 20px; }
-
-.side .grouphead {
-  display: flex; align-items: center; padding: 0 20px 8px;
-  font-size: 11.5px; font-weight: 700; color: var(--fg-faint); letter-spacing: .07em;
-}
-.side .grouphead a { margin-left: auto; font-size: 13px; font-weight: 500; letter-spacing: 0; }
-
 .side .spacer { flex: 1; }
 
-.side .me {
-  border-top: 1px solid var(--line); padding: 14px 20px;
-  display: flex; align-items: center; gap: 9px;
-}
-.side .me .avatar {
+/* 계정 블록. 안쪽은 <details> 메뉴다 (.menu — 아래 공통 규칙). */
+.side .me { border-top: 1px solid var(--line); padding: 10px; }
+.avatar {
   width: 28px; height: 28px; border-radius: 14px; flex-shrink: 0;
-  background: var(--subtle); border: 1px solid var(--line);
+  background: var(--subtle); border: 1px solid var(--line-strong);
   display: flex; align-items: center; justify-content: center;
   font-size: 12.5px; font-weight: 700; color: var(--fg-muted);
 }
-.side .me .who { min-width: 0; flex: 1; }
-.side .me .who a { display: block; font-size: 13.5px; font-weight: 600; color: var(--fg);
-                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.side .me .who a:hover { text-decoration: underline; }
-.side .me .role { font-size: 12px; color: var(--fg-faint); }
+.me .who { min-width: 0; flex: 1; }
+.me .who b {
+  display: block; font-size: 13.5px; font-weight: 600; color: var(--fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.me .who .role { display: block; font-size: 12px; color: var(--fg-faint); }
+.me .caret { color: var(--fg-faint); font-size: 11px; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* ============================================================
+   페이지 머리 · 탭 · 메뉴 — fragments/ui.html 이 쓰는 것
+   ============================================================ */
+/* 화면 머리를 한 모양으로. 앞서는 화면마다 .crumb / .page-head / .meta 를
+   제각각 조합해서, 화면을 옮길 때마다 눈이 제목 자리를 다시 찾아야 했다. */
+.page-header { padding: 20px var(--gutter) 0; }
+.page-pretitle {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--fg-faint); margin-bottom: 4px;
+}
+.page-pretitle:empty { display: none; }
+.page-titlerow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.page-titlerow h1 { margin: 0; font-size: 23px; font-weight: 700; letter-spacing: -.018em; }
+/* 제목 옆 한 줄. 무엇을 언제 봤는지 알려 주는 값이지 설명문이 아니다. */
+.page-subtitle {
+  font-size: 14px; color: var(--fg-faint);
+  font-variant-numeric: tabular-nums; margin-top: 5px;
+}
+.btn-list { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-list:empty { display: none; }
+/* 탭이 없는 화면은 머리 아래에 선을 그어 본문과 가른다. */
+.page-header.plain { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+
+/* 탭. 자바스크립트로 감췄다 보였다 하지 않고 링크로 만든다 — 그래야
+   새로고침·공유·뒤로가기가 살아 있다. */
+.tabs {
+  display: flex; gap: 2px; margin-top: 16px; padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--line); overflow-x: auto;
+}
+.page-header .tabs {
+  margin-left: calc(var(--gutter) * -1); margin-right: calc(var(--gutter) * -1);
+}
+.tabs a {
+  padding: 9px 12px; font-size: 14px; color: var(--fg-muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
+}
+.tabs a:hover { color: var(--fg); }
+.tabs a.current { color: var(--fg); font-weight: 600; border-bottom-color: var(--fg); }
+.tabs a .n {
+  margin-left: 5px; color: var(--fg-faint); font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.tabs a.current .n { color: var(--fg-muted); }
+
+/* 메뉴. <details> 라 자바스크립트가 없어도 열리고 Esc 가 듣는다. */
+.menu { position: relative; }
+.menu > summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: 8px;
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover, .menu[open] > summary { background: var(--hover); }
+.menu-list {
+  position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 30;
+  background: var(--bg); border: 1px solid var(--line-strong); border-radius: 9px;
+  box-shadow: 0 10px 30px rgba(20, 22, 26, .16); padding: 4px;
+}
+.menu-list a, .menu-list button {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 10px; border-radius: 6px; font-size: 13.5px;
+  color: var(--fg-muted); border: 0; background: transparent;
+}
+.menu-list a:hover, .menu-list button:hover { background: var(--hover); color: var(--fg); }
+.menu-list hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
 
 /* 어디에 있는지. 구역 색 띠를 앞에 달아 제목을 보기 전에 자리를 안다. */
 .crumb {
@@ -261,7 +319,12 @@ th {
   font-size: 12.5px; font-weight: 600; color: var(--fg-faint);
   background: var(--sunken);
   border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  /* 긴 표에서 머리가 붙어 있는다. 취약점 수천 건을 훑을 때 어느 칸이
+     무엇인지 매번 위로 올라가 확인하게 두지 않는다. */
+  position: sticky; top: 0; z-index: 2;
 }
+/* 이름표-값 표(.kv)와 보고서 표는 붙일 이유가 없다 — 짧고, 인쇄로 나간다. */
+.kv th, .report th, dialog th { position: static; }
 td { padding: 11px 14px; font-size: 14px; vertical-align: middle; border-bottom: 1px solid var(--line); }
 tbody tr:hover { background: var(--sunken); }
 th.num, td.num { text-align: right; }
@@ -313,9 +376,17 @@ details.help .inner {
 details.help .inner > :first-child { margin-top: 0; }
 details.help .inner > :last-child { margin-bottom: 0; }
 
-/* 아무것도 없을 때. 빈 표를 그리는 대신 왜 비었는지 말한다. */
-.empty { padding: 56px var(--gutter); text-align: center; color: var(--fg-muted); }
-.empty b { display: block; font-size: 15px; font-weight: 600; color: var(--fg); margin-bottom: 6px; }
+/* 아무것도 없을 때. 빈 표를 그리는 대신 왜 비었는지 말하고,
+   **다음에 할 것을 버튼 하나로** 준다. 앞서는 글자만 있어서, 읽고 나서
+   어디를 눌러야 하는지 다시 찾아야 했다. */
+.empty { padding: 52px var(--gutter); text-align: center; color: var(--fg-muted); }
+.empty .glyph {
+  width: 38px; height: 38px; margin: 0 auto 12px; border-radius: 10px;
+  border: 1.5px dashed var(--line-strong); display: flex;
+  align-items: center; justify-content: center; color: var(--fg-faint); font-size: 17px;
+}
+.empty b { display: block; font-size: 15px; font-weight: 600; color: var(--fg); margin-bottom: 5px; }
+.empty p { margin: 0 0 14px; font-size: 13.5px; }
 /* 화면 한가운데가 아니라 제목 바로 아래 붙는 것. 가운데로 몰면 어느 제목에
    딸린 말인지 흐려진다. */
 .empty.inline { padding: 14px 0; text-align: left; font-size: 14px; }
@@ -379,9 +450,16 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 
 .danger-text { color: var(--critical); font-weight: 600; }
 
-/* 심각도 막대. 한 자산의 구성을 한 줄로 본다. */
-.sevbar { display: flex; height: 7px; border-radius: 4px; overflow: hidden; background: var(--hover); }
-.sevbar i { display: block; height: 100%; }
+/* 심각도 막대. 한 자산의 구성을 한 줄로 본다.
+
+   0 이 아닌 구간은 **최소 2px**. 비율만으로 그리면 187건 중 심각 1건이
+   폭 0 으로 사라진다 — 가장 급한 것이 안 보이는 셈이다. */
+.sevbar {
+  display: flex; height: 7px; border-radius: 4px;
+  overflow: hidden; background: var(--hover); min-width: 90px;
+}
+.sevbar i { display: block; height: 100%; min-width: 2px; }
+.sevbar.lg { height: 9px; border-radius: 5px; }
 .sevbar i.critical { background: var(--critical); }
 .sevbar i.high     { background: var(--high); }
 .sevbar i.medium   { background: var(--medium); }
@@ -398,6 +476,20 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 }
 .card > :first-child { margin-top: 0; }
 .card > :last-child { margin-bottom: 0; }
+
+/* 카드에 머리를 달면 안쪽 여백은 .card-body 가 가진다 — 표를 카드 끝까지
+   붙이려면 .card 자신은 여백이 없어야 한다. */
+.card:has(> .card-header) { padding: 0; }
+.card-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 18px; border-bottom: 1px solid var(--line);
+}
+.card-title { font-size: 14.5px; font-weight: 600; margin: 0; }
+.card-body { padding: 16px 18px; }
+.card-body > :first-child { margin-top: 0; }
+.card-body > :last-child { margin-bottom: 0; }
+.card > .table-scroll > table > thead th { border-top: 0; }
+.card > .table-scroll > table > tbody > tr:last-child > td { border-bottom: 0; }
 
 /* 되돌릴 수 없는 동작. 실수로 누르는 자리가 아니라 마음먹고 찾아오는
    자리여야 한다. */

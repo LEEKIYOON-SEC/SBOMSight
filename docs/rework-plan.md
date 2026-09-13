@@ -462,14 +462,23 @@ component (asset_id, scan_id, name, version, type, purl, location)
 `docs/windows-setup.md`. 전체 시험 H2 + 실제 DB 양쪽. **가장 먼저 한다** — 여기가
 틀어지면 뒤 단계 전부가 못 쓴다.
 
-### N2 — 기둥 · 주소 · 공통 뼈대
-- `layout.html` 기둥 7→6, ZONE 목록 제거, 계정 블록을 `<details>` 메뉴로
-- **공통 조각을 먼저 만든다** — 뒤 단계가 전부 이것을 쓴다:
-  `page-header` · `tabs` · `empty` · `severity-bar` · `menu`
-- `app.css` 에 대응 규칙 + `thead` sticky
-- `LayoutAdvice` 정리 · 새 `LegacyRedirectController`(§6 의 302 전부) ·
-  `AuditController` → `/settings/audit`
-- `PageRenderTest` 새 주소로 + **옛 주소가 302 로 넘어가는지**
+### N2 — 기둥 · 주소 · 공통 뼈대  ✔ 끝남
+
+- `layout.html` 기둥 7+구역목록 → **5** , 계정 블록을 `<details>` 메뉴로
+- 공통 조각 `fragments/ui.html` — `pagehead` · `tab` · `empty` · `sevbar`
+- `app.css` 대응 규칙 + `thead` sticky + `.card-header`
+- `LayoutAdvice` 정리(구역 제거, 대응 배지를 하나로) ·
+  `AuditController` → `/settings/audit` · 새 `LegacyRedirectController`
+
+**하면서 정한 것 (계획과 달라진 자리)**
+
+| 무엇 | 왜 |
+|---|---|
+| 302 를 **반대 방향으로** 먼저 건다 (`/vulns → /lookup`) | §6 을 그대로 넣으면 `/lookup → /vulns` 인데 `/vulns` 는 N4 에나 생긴다. 그 사이 앱이 깨진 채로 있게 된다. 반대로 걸면 **커밋마다 앱이 살아 있고** 주소는 지금부터 최종 모양이다. 진짜 화면이 생길 때 그 줄을 지우고 뒤집는다 |
+| **패키지**는 기둥에 아직 안 올린다 | N9 전까지 갈 곳이 아예 없다. 기둥 5 → N9 에서 6 |
+| **설정 탭을 N6 에서 앞당김** | 감사 로그를 `/settings/audit` 로 옮기면 기둥에서 빠져 **갈 길이 없어진다.** 탭이 그 길이다 |
+| `menu` 조각을 만들지 않음 | 공유되는 것은 `.menu` CSS 이고, 쓰는 쪽은 평범한 `<details class="menu">` 다. 슬롯만 감싼 조각은 죽은 코드다 |
+| `sevbar` 는 만들되 **아직 아무도 안 쓴다** | 자산 표에 붙는 것이라 N3 에서 처음 쓰인다 |
 
 ### N3 — 자산 화면
 - `AssetController` — `filter`·`view`·`sort`·`archived`, 요약 줄

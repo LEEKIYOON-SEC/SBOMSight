@@ -4,12 +4,20 @@
 <body>
 <main>
 
-  <div class="page-head"><h1>설정</h1></div>
+  <div th:replace="~{fragments/ui :: pagehead('설정', null, ~{}, ~{})}"></div>
+  <div class="page-header" style="padding-top:0">
+    <div class="tabs">
+      <a th:replace="~{fragments/ui :: tab('/settings', '계정', null, ${tab} == 'accounts')}"></a>
+      <a th:replace="~{fragments/ui :: tab('/settings?tab=ips', '접근 IP', null, ${tab} == 'ips')}"></a>
+      <a th:replace="~{fragments/ui :: tab('/settings?tab=tools', '도구', null, ${tab} == 'tools')}"></a>
+      <a th:replace="~{fragments/ui :: tab('/settings/audit', '감사 로그', null, false)}"></a>
+    </div>
+  </div>
 
   <div class="body">
 
-  <h2 id="accounts">계정</h2>
-  <div class="card">
+  <h2 id="accounts" th:if="${tab} == 'accounts'">계정</h2>
+  <div class="card" th:if="${tab} == 'accounts'">
     <table>
       <thead>
       <tr>
@@ -81,8 +89,8 @@
     </form>
   </div>
 
-  <h2 id="zones">구역</h2>
-  <div class="card">
+  <h2 id="zones" th:if="${tab} == 'accounts'">구역</h2>
+  <div class="card" th:if="${tab} == 'accounts'">
     <table>
       <thead>
       <tr>
@@ -137,8 +145,8 @@
     </form>
   </div>
 
-  <h2 id="ips">접근 IP</h2>
-  <div class="card">
+  <h2 id="ips" th:if="${tab} == 'ips'">접근 IP</h2>
+  <div class="card" th:if="${tab} == 'ips'">
     <form method="post" th:action="@{/settings/ips}">
       <label>접속을 허용할 IP · 대역
         <textarea name="allowedIps" rows="4" th:text="${allowedIps}"
@@ -169,8 +177,8 @@
     </form>
   </div>
 
-  <h2 id="tools">도구 상태</h2>
-  <div class="card">
+  <h2 id="tools" th:if="${tab} == 'tools'">도구 상태</h2>
+  <div class="card" th:if="${tab} == 'tools'">
     <table class="kv">
       <tr>
         <th>grype</th>

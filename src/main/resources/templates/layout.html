@@ -30,60 +30,54 @@
   <aside class="side" sec:authorize="isAuthenticated()" th:unless="${passwordLocked}">
     <div class="brand"><a href="/">SBOMSight</a></div>
 
+    <!-- 기둥에 올릴 자격은 "자산을 거치지 않고 물을 수 있는 질문" 이다.
+         "이 CVE 가 어디 있나"(취약점) · "기한 지난 게 있나"(대응) ·
+         "보고서 뽑자"(보고서) 는 자격이 있다. "DMZ 자산 보여 줘" 는 자산
+         화면의 거르개이지 기둥이 아니다 — 그래서 ZONE 목록을 걷어냈다. -->
     <nav>
       <a href="/" th:classappend="${active} == 'assets' ? 'current' : ''">자산
         <span class="badge" th:text="${navAssetCount}">0</span></a>
-      <a href="/lookup" th:classappend="${active} == 'lookup' ? 'current' : ''">전사 조회</a>
-      <a href="/report/zone" th:classappend="${active} == 'zonereport' ? 'current' : ''">구역 보고서</a>
-      <a href="/remediations" th:classappend="${active} == 'remediations' ? 'current' : ''">조치
-        <!-- 기한이 지난 것이 있으면 그 수를 붉게. 화면을 열기 전에 알아야 한다. -->
-        <span class="badge" th:if="${navOverdue > 0}" th:classappend="'alert'"
-              th:text="${navOverdue}">0</span>
-        <span class="badge" th:if="${navOverdue == 0 && navOpenRemediations > 0}"
-              th:text="${navOpenRemediations}">0</span></a>
-      <a href="/acceptances" th:classappend="${active} == 'acceptances' ? 'current' : ''">위험 수용
-        <span class="badge alert" th:if="${navAcceptanceOverdue > 0}"
-              th:text="${navAcceptanceOverdue}">0</span></a>
-      <a href="/audit" sec:authorize="hasRole('ADMIN')"
-         th:classappend="${active} == 'audit' ? 'current' : ''">감사 로그</a>
+      <a href="/vulns" th:classappend="${active} == 'vulns' ? 'current' : ''">취약점</a>
+      <a href="/actions" th:classappend="${active} == 'actions' ? 'current' : ''">대응
+        <!-- 기한이 지난 것이 있으면 그 수를 붉게. 화면을 열기 전에 알아야 한다.
+             조치 기한과 재검토일을 한 숫자로 합친다 — 기둥에서 갈라 놓으면
+             어느 쪽이 급한지 두 번 보게 된다. -->
+        <span class="badge alert" th:if="${navActionOverdue > 0}"
+              th:text="${navActionOverdue}">0</span>
+        <span class="badge" th:if="${navActionOverdue == 0 && navActionOpen > 0}"
+              th:text="${navActionOpen}">0</span></a>
+      <a href="/reports" th:classappend="${active} == 'reports' ? 'current' : ''">보고서</a>
       <a href="/settings" sec:authorize="hasRole('ADMIN')"
          th:classappend="${active} == 'settings' ? 'current' : ''">설정</a>
     </nav>
 
-    <div class="rule"></div>
-
-    <div class="grouphead">
-      <span>ZONE</span>
-      <a href="/settings#zones" sec:authorize="hasRole('ADMIN')">관리</a>
-    </div>
-    <nav class="zonenav">
-      <!-- 식을 여러 줄로 쓰면 타임리프가 못 읽는다. 컴파일에 걸리지 않고 그
-           화면을 열 때 500 으로 터진다. -->
-      <a th:each="z : ${navZones}" th:href="@{/(zone=${z.zone.id})}"
-         th:classappend="${selectedZone != null and selectedZone == z.zone.id} ? 'current' : ''">
-        <i class="zrail" th:style="'background:' + (${#strings.isEmpty(z.zone.color)}
-                                   ? '#6f7e8d' : ${z.zone.color})"></i>
-        <span th:text="${z.zone.name}">DMZ</span>
-        <span class="badge" th:text="${z.assetCount}">0</span>
-      </a>
-    </nav>
-
     <div class="spacer"></div>
 
+    <!-- 누를 곳 하나에 갈 곳이 셋이면 그건 링크가 아니라 메뉴다.
+         앞서는 계정 이름이 곧바로 /password 로 가서 "왜 비밀번호 변경으로
+         가지?" 가 됐다. -->
     <div class="me">
-      <span class="avatar" th:text="${navInitials}">KL</span>
-      <div class="who">
-        <!-- 계정 이름이 곧 내 계정으로 가는 문이다. 앞서는 그냥 글자였고,
-             그래서 비밀번호를 바꾸려면 주소창에 /password 를 직접 쳐야 했다. -->
-        <a href="/password" title="비밀번호 변경" sec:authentication="name">—</a>
-        <div class="role" sec:authorize="hasRole('ADMIN')">관리자</div>
-        <div class="role" sec:authorize="!hasRole('ADMIN')">조회</div>
-      </div>
-      <!-- 로그아웃은 POST 다. GET 이면 링크를 미리 읽는 도구가 세션을 끊는다.
-           CSRF 토큰은 타임리프가 폼에 자동으로 넣는다. -->
-      <form th:action="@{/logout}" method="post" class="inline">
-        <button type="submit" class="btn small">로그아웃</button>
-      </form>
+      <details class="menu">
+        <summary>
+          <span class="avatar" th:text="${navInitials}">KL</span>
+          <span class="who">
+            <b sec:authentication="name">—</b>
+            <span class="role" sec:authorize="hasRole('ADMIN')">관리자</span>
+            <span class="role" sec:authorize="!hasRole('ADMIN')">조회</span>
+          </span>
+          <span class="caret">▲</span>
+        </summary>
+        <div class="menu-list">
+          <a href="/me">내 계정</a>
+          <a href="/password">비밀번호 변경</a>
+          <hr>
+          <!-- 로그아웃은 POST 다. GET 이면 링크를 미리 읽는 도구가 세션을 끊는다.
+               CSRF 토큰은 타임리프가 폼에 자동으로 넣는다. -->
+          <form th:action="@{/logout}" method="post">
+            <button type="submit">로그아웃</button>
+          </form>
+        </div>
+      </details>
     </div>
   </aside>
 

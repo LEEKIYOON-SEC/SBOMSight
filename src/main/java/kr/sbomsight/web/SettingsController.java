@@ -51,7 +51,11 @@ public class SettingsController {
     }
 
     @GetMapping
-    public String index(HttpServletRequest request, Model model) {
+    public String index(@RequestParam(defaultValue = "accounts") String tab,
+                        HttpServletRequest request, Model model) {
+        // 탭 선택은 주소에 남는다. 자바스크립트로 감췄다 보였다 하면
+        // 새로고침했을 때 첫 탭으로 돌아가고, 링크로 남길 수도 없다.
+        model.addAttribute("tab", tab);
         model.addAttribute("users", accounts.list().stream()
                 .map(u -> new UserRow(u, attempts.isLocked(u), attempts.minutesRemaining(u)))
                 .toList());

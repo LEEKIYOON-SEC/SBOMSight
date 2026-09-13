@@ -134,10 +134,10 @@ class AuditLogTest {
     @Test
     @DisplayName("조회 화면과 CSV 가 뜬다")
     void screensRender() throws Exception {
-        mvc.perform(get("/audit").with(user(ADMIN).roles("ADMIN")))
+        mvc.perform(get("/settings/audit").with(user(ADMIN).roles("ADMIN")))
            .andExpect(status().isOk());
 
-        String csv = mvc.perform(get("/audit/export.csv").with(user(ADMIN).roles("ADMIN")))
+        String csv = mvc.perform(get("/settings/audit/export.csv").with(user(ADMIN).roles("ADMIN")))
                         .andExpect(status().isOk())
                         .andReturn().getResponse().getContentAsString();
         // 엑셀이 UTF-8 로 읽게 하는 BOM 이 앞에 있어야 한다.
@@ -150,6 +150,9 @@ class AuditLogTest {
     void viewersCannotSeeTheAuditLog() throws Exception {
         // 로그 자체가 "누가 언제 어디서" 를 담고 있어서, 조회 권한을 넓히면
         // 그것이 곧 접속 현황 공개가 된다.
+        mvc.perform(get("/settings/audit").with(user("viewer").roles("VIEWER")))
+           .andExpect(status().isForbidden());
+        // 옛 주소로 우회해도 막혀야 한다. 넘겨주는 자리에 구멍이 나기 쉽다.
         mvc.perform(get("/audit").with(user("viewer").roles("VIEWER")))
            .andExpect(status().isForbidden());
     }

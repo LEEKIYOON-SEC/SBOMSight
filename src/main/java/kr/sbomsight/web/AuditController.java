@@ -27,7 +27,7 @@ import java.util.List;
  * 넓히면 그것이 곧 접속 현황 공개가 된다.
  */
 @Controller
-@RequestMapping("/audit")
+@RequestMapping("/settings/audit")
 @PreAuthorize("hasRole('ADMIN')")
 public class AuditController {
 

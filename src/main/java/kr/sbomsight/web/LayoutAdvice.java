@@ -1,12 +1,10 @@
 package kr.sbomsight.web;
 
 import kr.sbomsight.domain.RemediationStatus;
-import kr.sbomsight.domain.Zone;
 import kr.sbomsight.repo.AppUserRepository;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.RemediationRepository;
 import kr.sbomsight.repo.RiskAcceptanceRepository;
-import kr.sbomsight.repo.ZoneRepository;
 import kr.sbomsight.service.PasswordPolicy;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,9 +13,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 
 import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 모든 화면의 왼쪽 기둥이 쓰는 값.
@@ -37,24 +33,18 @@ public class LayoutAdvice {
 
     private final AppUserRepository users;
     private final PasswordPolicy policy;
-    private final ZoneRepository zones;
     private final AssetRepository assets;
     private final RemediationRepository remediations;
     private final RiskAcceptanceRepository acceptances;
 
-    public LayoutAdvice(AppUserRepository users, PasswordPolicy policy, ZoneRepository zones,
+    public LayoutAdvice(AppUserRepository users, PasswordPolicy policy,
                         AssetRepository assets, RemediationRepository remediations,
                         RiskAcceptanceRepository acceptances) {
         this.users = users;
         this.policy = policy;
-        this.zones = zones;
         this.assets = assets;
         this.remediations = remediations;
         this.acceptances = acceptances;
-    }
-
-    /** 왼쪽 기둥의 구역 한 줄. */
-    public record ZoneLink(Zone zone, long assetCount) {
     }
 
     @ModelAttribute
@@ -74,17 +64,16 @@ public class LayoutAdvice {
             return;
         }
 
-        Map<Long, Long> perZone = new HashMap<>();
-        assets.findLiveWithZone()
-              .forEach(a -> perZone.merge(a.getZone().getId(), 1L, Long::sum));
+        LocalDate today = LocalDate.now();
 
-        model.addAttribute("navZones", zones.findAllByOrderBySortOrderAscNameAsc().stream()
-                .map(z -> new ZoneLink(z, perZone.getOrDefault(z.getId(), 0L)))
-                .toList());
-        model.addAttribute("navAssetCount", perZone.values().stream().mapToLong(Long::longValue).sum());
-        model.addAttribute("navOpenRemediations", remediations.countByStatusIn(OPEN));
-        model.addAttribute("navOverdue", remediations.countOverdue(LocalDate.now()));
-        model.addAttribute("navAcceptanceOverdue", acceptances.countReviewOverdue(LocalDate.now()));
+        model.addAttribute("navAssetCount", assets.findLiveWithZone().size());
+
+        // 대응 배지는 하나다. 앞서는 '조치' 와 '위험 수용' 이 기둥에서 갈라져
+        // 있어 어느 쪽이 급한지 두 번 봐야 했고, 두 화면을 하나로 합치면서
+        // 숫자도 합친다. 기한이 지난 것 = 조치 기한 + 재검토일.
+        model.addAttribute("navActionOverdue",
+                remediations.countOverdue(today) + acceptances.countReviewOverdue(today));
+        model.addAttribute("navActionOpen", remediations.countByStatusIn(OPEN));
         model.addAttribute("navInitials", initials(auth.getName()));
     }
 

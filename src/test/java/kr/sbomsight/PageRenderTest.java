@@ -27,6 +27,7 @@ import java.time.LocalDate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -154,11 +155,42 @@ class PageRenderTest {
     }
 
     @Test
-    @DisplayName("감사 로그 · 설정 · 일괄 등록")
+    @DisplayName("설정 네 탭 · 일괄 등록")
     void adminPages() throws Exception {
-        open("/audit");
-        open("/settings");
+        // 탭 선택은 주소에 남는다. 탭마다 실제로 열리는지 하나씩 본다 —
+        // th:if 로 갈라 놓으면 한 탭이 비어도 나머지는 멀쩡히 그려진다.
+        assertThat(open("/settings")).contains("계정");
+        assertThat(open("/settings?tab=ips")).contains("접근 IP");
+        assertThat(open("/settings?tab=tools")).contains("grype");
+        assertThat(open("/settings/audit")).contains("감사 로그");
         open("/assets/import");
+    }
+
+    /**
+     * 옛 주소와, 아직 안 만든 화면의 새 주소.
+     *
+     * <p>기둥에는 최종 주소를 먼저 걸어 두고 그 화면은 뒤 단계에서 만든다.
+     * 그동안 <b>새 주소가 어디로도 가지 않으면 기둥이 고장 난 것</b>이므로,
+     * 지금은 옛 화면으로 이어 둔다. 진짜 화면이 생기면 방향이 뒤집힌다.
+     */
+    @Test
+    @DisplayName("기둥의 주소가 전부 어딘가로 이어진다")
+    void navLinksAllGoSomewhere() throws Exception {
+        // 영구 — 감사 로그가 설정 안으로 옮겨 갔다.
+        mvc.perform(get("/audit").with(user("tester").roles("ADMIN")))
+           .andExpect(status().is3xxRedirection())
+           .andExpect(redirectedUrl("/settings/audit"));
+
+        // 임시 다리 — 해당 단계에서 지우고 반대 방향으로 바꾼다.
+        for (String[] pair : new String[][] {
+                { "/vulns", "/lookup" },
+                { "/actions", "/remediations" },
+                { "/reports", "/report/zone" },
+                { "/me", "/password" } }) {
+            mvc.perform(get(pair[0]).with(user("tester").roles("ADMIN")))
+               .andExpect(status().is3xxRedirection())
+               .andExpect(redirectedUrl(pair[1]));
+        }
     }
 
     @Test

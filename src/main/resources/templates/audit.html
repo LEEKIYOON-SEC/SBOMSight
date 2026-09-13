@@ -1,13 +1,22 @@
 <!doctype html>
 <html lang="ko" xmlns:th="http://www.thymeleaf.org"
-      th:replace="~{layout :: page(~{::main}, 'audit', '감사 로그')}">
+      th:replace="~{layout :: page(~{::main}, 'settings', '감사 로그')}">
 <body>
 <main>
 
-  <div class="page-head">
-    <h1>감사 로그</h1>
-    <a class="btn" th:href="@{/audit/export.csv(actor=${actor}, action=${action},
+  <div th:replace="~{fragments/ui :: pagehead('감사 로그', null, ~{::actions}, ~{})}"></div>
+  <div th:fragment="actions" th:remove="tag">
+    <a class="btn" th:href="@{/settings/audit/export.csv(actor=${actor}, action=${action},
        from=${from}, to=${to}, q=${q})}">CSV 내려받기</a>
+  </div>
+  <div class="page-header" style="padding-top:0">
+    <!-- 설정과 같은 탭 줄. 여기로 들어온 뒤 돌아갈 길이 있어야 한다. -->
+    <div class="tabs">
+      <a th:replace="~{fragments/ui :: tab('/settings', '계정', null, false)}"></a>
+      <a th:replace="~{fragments/ui :: tab('/settings?tab=ips', '접근 IP', null, false)}"></a>
+      <a th:replace="~{fragments/ui :: tab('/settings?tab=tools', '도구', null, false)}"></a>
+      <a th:replace="~{fragments/ui :: tab('/settings/audit', '감사 로그', null, true)}"></a>
+    </div>
   </div>
 
   <form method="get" class="filters">
@@ -70,11 +79,11 @@
 
     <div class="pager" th:if="${page.totalPages > 1}">
       <a th:if="${page.hasPrevious()}"
-         th:href="@{/audit(page=${page.number - 1}, actor=${actor}, action=${action},
+         th:href="@{/settings/audit(page=${page.number - 1}, actor=${actor}, action=${action},
                     from=${from}, to=${to}, q=${q})}">이전</a>
       <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
       <a th:if="${page.hasNext()}"
-         th:href="@{/audit(page=${page.number + 1}, actor=${actor}, action=${action},
+         th:href="@{/settings/audit(page=${page.number + 1}, actor=${actor}, action=${action},
                     from=${from}, to=${to}, q=${q})}">다음</a>
     </div>
   </div>

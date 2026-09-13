@@ -15,10 +15,9 @@
     <b th:text="'기한이 지난 조치 ' + ${overdue.size()} + '건'">기한 경과</b>
   </div>
 
-  <div class="empty" th:if="${remediations.isEmpty()}">
-    <b>등록된 조치가 없습니다</b>
-    취약점 화면에서 패키지를 골라 조치로 올립니다.
-  </div>
+  <div th:if="${remediations.isEmpty()}"
+       th:replace="~{fragments/ui :: empty('등록된 조치가 없습니다',
+                    '취약점 화면에서 패키지를 골라 조치로 올립니다.', '/lookup', '취약점 보기')}"></div>
 
   <div class="table-scroll" th:unless="${remediations.isEmpty()}">
     <table>

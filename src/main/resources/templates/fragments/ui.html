@@ -1,0 +1,93 @@
+<!doctype html>
+<!--/*
+  화면마다 다시 쓰던 조각들. 여기 하나만 고치면 전부 따라온다.
+
+  왜 필요했나 — 같은 것이 화면마다 다른 모양이었다. 제목 줄이 어떤 화면은
+  `.crumb` + `.page-head`, 어떤 화면은 `.page-head` 만, 빈 화면은 글자만 있고
+  버튼이 없었다. 그래서 화면 사이를 오갈 때마다 눈이 다시 자리를 찾아야 했다.
+
+  타임리프 기본 기능만 쓴다. 식을 여러 줄로 나눠 쓰지 않는다 — 컴파일에
+  걸리지 않고 그 화면을 열 때 500 으로 터진다.
+*/-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+
+<!--/*
+  ─── 페이지 머리 ──────────────────────────────────────────────────────
+  상위 라벨 → 제목 → 부제(값) → 오른쪽 버튼 묶음. 이 순서를 바꾸지 않는다.
+
+    <div th:replace="~{fragments/ui :: pagehead('자산', ${count} + '대', ~{::actions}, ~{})}"></div>
+    <div th:fragment="actions">…버튼들…</div>
+
+  넘길 것이 없으면 `~{}` 를 준다.
+*/-->
+<div th:fragment="pagehead(title, subtitle, actions, pretitle)" class="page-header">
+  <div class="page-pretitle" th:replace="${pretitle}"></div>
+  <div class="page-titlerow">
+    <h1 th:text="${title}">제목</h1>
+    <div class="btn-list" th:replace="${actions}"></div>
+  </div>
+  <div class="page-subtitle" th:if="${subtitle != null and !#strings.isEmpty(subtitle)}"
+       th:text="${subtitle}">—</div>
+</div>
+
+
+<!--/*
+  ─── 탭 한 칸 ─────────────────────────────────────────────────────────
+  탭 줄은 부르는 쪽이 <div class="tabs"> 로 감싸고 이 조각을 늘어놓는다.
+
+    <div class="tabs">
+      <a th:replace="~{fragments/ui :: tab('/settings', '계정', ${n}, ${active} == 'accounts')}"></a>
+    </div>
+
+  숫자는 0 이면 안 쓴다 — 들어가기 전에 알아야 하는 값만 붙인다.
+  탭 선택은 주소에 남는다. 자바스크립트로 감췄다 보였다 하지 않는다 —
+  그러면 새로고침했을 때 첫 탭으로 돌아간다.
+*/-->
+<a th:fragment="tab(href, label, count, current)" th:href="${href}"
+   th:classappend="${current} ? 'current' : ''">
+  <span th:text="${label}">탭</span>
+  <span class="n" th:if="${count != null and count > 0}" th:text="${count}">0</span>
+</a>
+
+
+<!--/*
+  ─── 빈 화면 ──────────────────────────────────────────────────────────
+  표시 · 제목 · 한 줄 · 버튼 하나. 설명을 두 줄 넘기지 않는다.
+
+    <div th:replace="~{fragments/ui :: empty('등록된 자산이 없습니다',
+         '자산을 등록하고 그 자산에서 뽑은 SBOM 을 올립니다.', '/assets', '자산 등록')}"></div>
+
+  버튼이 없으면 href 에 null 을 준다 — 그러면 버튼 자리가 아예 안 그려진다.
+*/-->
+<div th:fragment="empty(title, message, href, label)" class="empty">
+  <div class="glyph">+</div>
+  <b th:text="${title}">아무것도 없습니다</b>
+  <p th:if="${message != null and !#strings.isEmpty(message)}" th:text="${message}">—</p>
+  <a th:if="${href != null}" class="btn primary" th:href="${href}" th:text="${label}">하기</a>
+</div>
+
+
+<!--/*
+  ─── 심각도 막대 ──────────────────────────────────────────────────────
+  목록 한 줄에 `심각 3 · 높음 12 · 보통 61 · 낮음 111` 네 덩이를 쓰면
+  자산 스무 대를 세로로 훑을 수 없다. 누적 막대 하나로 줄인다.
+
+  **0 이 아닌 구간은 최소 2px.** 비율만으로 그리면 187건 중 심각 1건이
+  폭 0 으로 사라진다 — 가장 급한 것이 안 보이는 셈이다. CSS 의
+  `.sevbar i { min-width: 2px }` 가 그 일을 한다.
+
+  색만으로 구분하지 않는다. title 에 숫자를 그대로 넣어 올리면 읽힌다.
+*/-->
+<span th:fragment="sevbar(critical, high, medium, low)" class="sevbar"
+      th:with="total=${critical + high + medium + low}"
+      th:title="'심각 ' + ${critical} + ' · 높음 ' + ${high} + ' · 보통 ' + ${medium} + ' · 낮음 ' + ${low}">
+  <i class="critical" th:if="${critical > 0}" th:style="'width:' + ${critical * 100.0 / total} + '%'"></i>
+  <i class="high"     th:if="${high > 0}"     th:style="'width:' + ${high * 100.0 / total} + '%'"></i>
+  <i class="medium"   th:if="${medium > 0}"   th:style="'width:' + ${medium * 100.0 / total} + '%'"></i>
+  <i class="low"      th:if="${low > 0}"      th:style="'width:' + ${low * 100.0 / total} + '%'"></i>
+</span>
+
+
+</body>
+</html>

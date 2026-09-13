@@ -39,7 +39,9 @@
     <button class="btn" type="submit">적용</button>
   </form>
 
-  <div class="empty" th:if="${rows.isEmpty()}">수용 기록이 없습니다.</div>
+  <div th:if="${rows.isEmpty()}"
+       th:replace="~{fragments/ui :: empty('수용 기록이 없습니다',
+                    '취약점 화면에서 고칠 수 없는 항목을 골라 기록합니다.', '/lookup', '취약점 보기')}"></div>
 
   <div class="table-scroll" th:unless="${rows.isEmpty()}">
       <table>
