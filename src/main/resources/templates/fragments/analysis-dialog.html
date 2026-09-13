@@ -1,0 +1,170 @@
+<!doctype html>
+<!--/*
+  검토 결과를 적는 칸 — **한 벌만 둔다.**
+
+  `/vulns` 와 자산 상세의 취약점 탭이 같은 것을 쓴다. 앞서 이 대화상자를
+  화면마다 복사해 두었다가, 새 화면을 만들면서 옛 화면에서 그대로 베껴 와
+  이미 없앤 말(`승인한 사람`)을 되살려 놓은 일이 있었다.
+
+  고르개마다 **고르면 뜻 한 줄이 아래에 뜬다.** 다섯 상태와 다섯 대응은
+  이름만 봐서는 무엇을 고르는지 알 수 없다 — 특히 `조치 불가` 와
+  `조치 안 함` 의 차이가 그렇다.
+*/-->
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<body>
+
+<div th:fragment="dialog(back)" th:remove="tag" sec:authorize="hasRole('ADMIN')">
+<dialog id="analysis-dialog" class="wide">
+  <form method="post" th:action="@{/analyses}">
+    <h2>검토 결과</h2>
+    <p class="lede" id="analysis-what">—</p>
+
+    <input type="hidden" name="assetId" id="analysis-asset">
+    <input type="hidden" name="cve" id="analysis-cve">
+    <input type="hidden" name="packageName" id="analysis-pkg">
+    <input type="hidden" name="back" th:value="${back}">
+
+    <!--/*
+      grype 이 낸 것은 탐지, 여기 적는 것은 그 탐지에 대한 우리의 결정이다.
+      무엇을 적어도 탐지 건수와 보고서의 원본 숫자는 줄지 않는다.
+    */-->
+    <label for="analysis-state">상태</label>
+    <select name="state" id="analysis-state" data-gloss="analysis-state-gloss">
+      <option th:each="s : ${T(kr.sbomsight.domain.AnalysisState).values()}"
+              th:value="${s.name()}" th:text="${s.label()}"
+              th:attr="data-gloss=${s.gloss()}, data-needs-justification=${s.needsJustification()}"
+              th:selected="${s.name() == 'NOT_SET'}">미검토</option>
+    </select>
+    <p class="footnote" id="analysis-state-gloss">아직 보지 않았습니다.</p>
+
+    <!-- 근거는 `해당 없음` 일 때만 연다. 다른 상태에서 물으면 고를 것이 없다. -->
+    <div id="analysis-justification-row" hidden>
+      <label for="analysis-justification">근거</label>
+      <select name="justification" id="analysis-justification">
+        <option value="">— 고르세요 —</option>
+        <option th:each="j : ${T(kr.sbomsight.domain.AnalysisJustification).values()}"
+                th:value="${j.name()}" th:text="${j.label()}">취약한 코드가 들어 있지 않음</option>
+      </select>
+      <p class="footnote">
+        해당 없다고만 적고 끝내면 점검에서 답할 것이 없습니다. 고를 수 없다면
+        아직 해당 없다고 말할 단계가 아닙니다.
+      </p>
+    </div>
+
+    <label for="analysis-response">대응</label>
+    <select name="response" id="analysis-response" data-gloss="analysis-response-gloss">
+      <option value="" data-needs-review="false">— 아직 정하지 않음 —</option>
+      <option th:each="r : ${T(kr.sbomsight.domain.AnalysisResponse).values()}"
+              th:value="${r.name()}" th:text="${r.label()}"
+              th:attr="data-gloss=${r.gloss()}, data-needs-review=${r.needsReviewDate()}">버전 올려 조치</option>
+    </select>
+    <p class="footnote" id="analysis-response-gloss"></p>
+
+    <!-- 고치지 않고 두기로 한 것에만 기한을 받는다. 기한 없이 남겨 둔 것은
+         방치와 구분되지 않는다. -->
+    <div id="analysis-review-row" hidden>
+      <label for="analysis-review">재검토일</label>
+      <input type="date" name="reviewBy" id="analysis-review">
+    </div>
+
+    <label for="analysis-note">설명</label>
+    <textarea name="note" id="analysis-note" rows="3"
+              placeholder="업스트림에 수정 버전이 없고, 해당 기능을 쓰지 않습니다"></textarea>
+
+    <label for="analysis-control">다른 통제 <span class="faint">선택</span></label>
+    <input name="otherControl" id="analysis-control" placeholder="내부망에서만 접근 · WAF 규칙 적용">
+
+    <!--/*
+      이 도구에 승인 절차는 없다. 앞서 '승인한 사람' 칸을 두었는데 아무나
+      아무 이름이나 적을 수 있었고, 통제가 있는 것처럼 보이는 만큼 없느니만
+      못했다. 실제 승인은 사내 결재에서 나고 여기엔 번호만 적는다.
+    */-->
+    <label for="analysis-doc">결재 문서 번호 <span class="faint">선택</span></label>
+    <input name="approvalDoc" id="analysis-doc" placeholder="보안-2026-0143">
+
+    <p class="footnote" th:text="'기록한 사람 ' + ${#authentication.name}
+                                 + ' — 로그인 계정으로 자동으로 남습니다'">기록한 사람 admin</p>
+
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close>취소</button>
+      <button type="submit" class="btn primary">적기</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  (function () {
+    const dialog = document.querySelector('#analysis-dialog');
+    if (!dialog) return;
+
+    const state = dialog.querySelector('#analysis-state');
+    const response = dialog.querySelector('#analysis-response');
+    const justificationRow = dialog.querySelector('#analysis-justification-row');
+    const reviewRow = dialog.querySelector('#analysis-review-row');
+    const review = dialog.querySelector('#analysis-review');
+    const justification = dialog.querySelector('#analysis-justification');
+
+    // 고른 것의 뜻 한 줄을 아래에 쓴다. 값은 서버가 그린 option 에 들어 있다 —
+    // 여기서 말을 짓지 않는다. 두 벌이 되면 화면 말만 바뀌는 날이 온다.
+    function gloss(select) {
+      const target = document.getElementById(select.dataset.gloss);
+      if (!target) return;
+      const picked = select.options[select.selectedIndex];
+      target.textContent = picked ? (picked.dataset.gloss || '') : '';
+    }
+
+    function sync() {
+      const pickedState = state.options[state.selectedIndex];
+      const needsJustification = pickedState
+              && pickedState.dataset.needsJustification === 'true';
+      justificationRow.hidden = !needsJustification;
+      justification.required = needsJustification;
+
+      const pickedResponse = response.options[response.selectedIndex];
+      const needsReview = pickedResponse && pickedResponse.dataset.needsReview === 'true';
+      reviewRow.hidden = !needsReview;
+      review.required = needsReview;
+
+      gloss(state);
+      gloss(response);
+    }
+
+    state.addEventListener('change', sync);
+    response.addEventListener('change', sync);
+
+    document.addEventListener('click', function (e) {
+      const link = e.target.closest('.analysis-link');
+      if (link) {
+        e.preventDefault();
+        dialog.querySelector('#analysis-asset').value = link.dataset.asset;
+        dialog.querySelector('#analysis-cve').value = link.dataset.cve;
+        dialog.querySelector('#analysis-pkg').value = link.dataset.pkg;
+        dialog.querySelector('#analysis-what').textContent =
+                link.dataset.label + ' · ' + link.dataset.pkg;
+
+        // 이미 적어 둔 것이 있으면 그 값에서 시작한다. 빈 칸에서 시작하면
+        // 한 칸만 고치려던 사람이 나머지를 지우게 된다.
+        state.value = link.dataset.state || 'NOT_SET';
+        justification.value = link.dataset.justification || '';
+        response.value = link.dataset.response || '';
+        review.value = link.dataset.review || '';
+        dialog.querySelector('#analysis-note').value = link.dataset.note || '';
+        dialog.querySelector('#analysis-control').value = link.dataset.control || '';
+        dialog.querySelector('#analysis-doc').value = link.dataset.doc || '';
+
+        sync();
+        dialog.showModal();
+        return;
+      }
+      const close = e.target.closest('[data-close]');
+      if (close) { close.closest('dialog').close(); }
+    });
+
+    sync();
+  })();
+</script>
+</div>
+
+</body>
+</html>

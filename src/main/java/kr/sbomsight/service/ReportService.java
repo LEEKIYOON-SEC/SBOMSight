@@ -38,15 +38,15 @@ public class ReportService {
     private final FindingRepository findings;
     private final ScanRepository scans;
     private final RemediationRepository remediations;
-    private final RiskAcceptanceService acceptances;
+    private final FindingAnalysisService analyses;
 
     public ReportService(FindingRepository findings, ScanRepository scans,
                          RemediationRepository remediations,
-                         RiskAcceptanceService acceptances) {
+                         FindingAnalysisService analyses) {
         this.findings = findings;
         this.scans = scans;
         this.remediations = remediations;
-        this.acceptances = acceptances;
+        this.analyses = analyses;
     }
 
     @Transactional(readOnly = true)
@@ -237,12 +237,15 @@ public class ReportService {
 
         // 고칠 수 없는 건에 "왜 그대로 두는가" 가 적혀 있는지. 점검에서
         // 반드시 묻는 것이고, 답이 없으면 방치로 읽힌다.
-        List<RiskAcceptance> accepted =
-                acceptances.list(false, null).stream()
-                           .filter(a -> a.getAsset().getId().equals(scan.getAsset().getId()))
-                           .toList();
+        //
+        // 검토가 끝난 것(해당 없음·오탐)도 가져온다 — 목록에서는 빠지지만
+        // "왜 그대로 두는가" 에는 그것도 답이다.
+        List<FindingAnalysis> explained =
+                analyses.list(true, null).stream()
+                        .filter(a -> a.getAsset().getId().equals(scan.getAsset().getId()))
+                        .toList();
 
-        return new Chapter4(rows, tracked, rows.size() - tracked, overdue, ch3.blocked(), accepted);
+        return new Chapter4(rows, tracked, rows.size() - tracked, overdue, ch3.blocked(), explained);
     }
 
     private String key(String value) {
@@ -340,21 +343,21 @@ public class ReportService {
 
     /** 결 — 무엇을 언제까지 누가 하는가. */
     public record Chapter4(List<ActionRow> rows, long tracked, long untracked, long overdue,
-                           List<PackageAction> residual, List<RiskAcceptance> accepted) {
+                           List<PackageAction> residual, List<FindingAnalysis> explained) {
 
-        /** 이 패키지에 수용 기록이 있는가. */
-        public boolean isAccepted(String packageName) {
-            return accepted.stream().anyMatch(a -> a.getPackageName().equals(packageName));
+        /** 이 패키지에 검토 결과가 적혀 있는가. */
+        public boolean isExplained(String packageName) {
+            return explained.stream().anyMatch(a -> a.getPackageName().equals(packageName));
         }
 
-        /** 재검토일이 지난 수용. 수용은 기한이 있어야 방치와 구분된다. */
-        public long acceptanceReviewOverdue() {
-            return accepted.stream().filter(RiskAcceptance::isReviewOverdue).count();
+        /** 재검토일이 지난 검토 결과. 기한이 있어야 방치와 구분된다. */
+        public long reviewOverdue() {
+            return explained.stream().filter(FindingAnalysis::isReviewOverdue).count();
         }
 
-        /** 손댈 수 없는데 수용 기록도 없는 패키지 — 설명이 비어 있는 자리다. */
+        /** 손댈 수 없는데 검토 결과도 없는 패키지 — 설명이 비어 있는 자리다. */
         public long unexplained() {
-            return residual.stream().filter(r -> !isAccepted(r.packageName())).count();
+            return residual.stream().filter(r -> !isExplained(r.packageName())).count();
         }
     }
 

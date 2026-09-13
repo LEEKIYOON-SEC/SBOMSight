@@ -3,6 +3,7 @@ package kr.sbomsight.service;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.repo.AssetRepository;
+import kr.sbomsight.repo.FindingAnalysisRepository;
 import kr.sbomsight.repo.RemediationRepository;
 import kr.sbomsight.repo.ScanRepository;
 import org.slf4j.Logger;
@@ -21,18 +22,22 @@ public class AssetService {
     private final AssetRepository assets;
     private final ScanRepository scans;
     private final RemediationRepository remediations;
+    private final FindingAnalysisRepository analyses;
     private final SbomStorage storage;
 
     public AssetService(AssetRepository assets, ScanRepository scans,
-                        RemediationRepository remediations, SbomStorage storage) {
+                        RemediationRepository remediations,
+                        FindingAnalysisRepository analyses, SbomStorage storage) {
         this.assets = assets;
         this.scans = scans;
         this.remediations = remediations;
+        this.analyses = analyses;
         this.storage = storage;
     }
 
     /** 삭제하면 무엇이 함께 사라지는지 — 확인 화면에서 그대로 보여 준다. */
-    public record Impact(long scanCount, long findingCount, long remediationCount) {
+    public record Impact(long scanCount, long findingCount, long remediationCount,
+                         long analysisCount) {
     }
 
     @Transactional(readOnly = true)
@@ -40,7 +45,10 @@ public class AssetService {
         List<Scan> list = scans.findByAssetIdOrderByCreatedAtDesc(asset.getId());
         long findings = list.stream().mapToLong(Scan::getFindingCount).sum();
         long rems = remediations.findByAssetIdOrderByStatusAscPackageNameAsc(asset.getId()).size();
-        return new Impact(list.size(), findings, rems);
+        // 검토 결과도 함께 사라진다. 확인 문구가 이것을 빠뜨리면 "조치만
+        // 지워지는 줄" 알고 누르게 된다.
+        long analyses = this.analyses.countByAsset(asset.getId());
+        return new Impact(list.size(), findings, rems, analyses);
     }
 
     /**
@@ -65,9 +73,9 @@ public class AssetService {
 
         scanIds.forEach(scanId -> storage.deleteScanDir(assetId, scanId));
 
-        log.info("자산을 지웠습니다: {} — 스캔 {}건 · 탐지 {}건 · 조치 {}건 ({})",
+        log.info("자산을 지웠습니다: {} — 스캔 {}건 · 탐지 {}건 · 조치 {}건 · 검토 결과 {}건 ({})",
                  asset.getName(), impact.scanCount(), impact.findingCount(),
-                 impact.remediationCount(), actor);
+                 impact.remediationCount(), impact.analysisCount(), actor);
         return impact;
     }
 }

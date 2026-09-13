@@ -3,7 +3,7 @@ package kr.sbomsight.service;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.CvssVector;
 import kr.sbomsight.domain.Remediation;
-import kr.sbomsight.domain.RiskAcceptance;
+import kr.sbomsight.domain.FindingAnalysis;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.Zone;
 import kr.sbomsight.repo.AssetRepository;
@@ -61,17 +61,17 @@ public class ZoneReportService {
     private final ScanRepository scans;
     private final FindingRepository findings;
     private final RemediationRepository remediations;
-    private final RiskAcceptanceService acceptances;
+    private final FindingAnalysisService analyses;
 
     public ZoneReportService(AssetRepository assets, ZoneRepository zones, ScanRepository scans,
                              FindingRepository findings, RemediationRepository remediations,
-                             RiskAcceptanceService acceptances) {
+                             FindingAnalysisService analyses) {
         this.assets = assets;
         this.zones = zones;
         this.scans = scans;
         this.findings = findings;
         this.remediations = remediations;
-        this.acceptances = acceptances;
+        this.analyses = analyses;
     }
 
     /**
@@ -345,7 +345,9 @@ public class ZoneReportService {
                              && !r.getClosedAt().isBefore(start) && r.getClosedAt().isBefore(end))
                 .count();
 
-        List<RiskAcceptance> accepted = acceptances.list(false, zoneId).stream()
+        // 검토가 끝난 것(해당 없음·오탐)도 가져온다 — 목록에서는 빠지지만
+        // "왜 그대로 두는가" 에는 그것도 답이다.
+        List<FindingAnalysis> explained = analyses.list(true, zoneId).stream()
                 .filter(a -> scope.contains(a.getAsset().getId()))
                 .toList();
 
@@ -355,7 +357,7 @@ public class ZoneReportService {
                 .toList();
 
         return new Action(all.size(), open, overdue, openedInPeriod, closedInPeriod,
-                          overdueRows, accepted, judgement.blocked());
+                          overdueRows, explained, judgement.blocked());
     }
 
     // -----------------------------------------------------------------------
@@ -553,20 +555,20 @@ public class ZoneReportService {
     /** 결 — 무엇을 언제까지 누가 하는가. */
     public record Action(long total, long open, long overdue,
                          long openedInPeriod, long closedInPeriod,
-                         List<Remediation> overdueRows, List<RiskAcceptance> accepted,
+                         List<Remediation> overdueRows, List<FindingAnalysis> explained,
                          List<ZonePackageAction> residual) {
 
-        public boolean isAccepted(String packageName) {
-            return accepted.stream().anyMatch(a -> a.getPackageName().equals(packageName));
+        public boolean isExplained(String packageName) {
+            return explained.stream().anyMatch(a -> a.getPackageName().equals(packageName));
         }
 
-        public long acceptanceReviewOverdue() {
-            return accepted.stream().filter(RiskAcceptance::isReviewOverdue).count();
+        public long reviewOverdue() {
+            return explained.stream().filter(FindingAnalysis::isReviewOverdue).count();
         }
 
-        /** 손댈 수 없는데 수용 기록도 없는 패키지 — 설명이 비어 있는 자리다. */
+        /** 손댈 수 없는데 검토 결과도 없는 패키지 — 설명이 비어 있는 자리다. */
         public long unexplained() {
-            return residual.stream().filter(r -> !isAccepted(r.packageName())).count();
+            return residual.stream().filter(r -> !isExplained(r.packageName())).count();
         }
     }
 }

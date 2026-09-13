@@ -89,7 +89,7 @@
         </div>
 
         <div th:replace="~{fragments/finding-table :: items(${page.content},
-                          ${selectedScan == null}, ${acceptedKeys})}"></div>
+                          ${selectedScan == null}, ${analyses})}"></div>
 
         <div class="pager" th:if="${page.totalPages > 1}">
           <a th:if="${page.hasPrevious()}"
@@ -218,61 +218,11 @@
   </div>
 
   <!--/*
-    위험 수용. N5 에서 검토 결과(VEX 어휘)로 다시 만든다 — 그때까지 이
-    입구가 사라지면 고칠 수 없는 건을 기록할 길이 없어진다.
+    검토 결과를 적는 칸. 조각 하나를 자산 상세의 취약점 탭과 나눠 쓴다 —
+    화면마다 베껴 두면 한쪽만 고치는 날이 오고, 실제로 그렇게 해서 이미
+    없앤 말이 되살아난 적이 있다.
   */-->
-  <dialog id="accept-dialog" sec:authorize="hasRole('ADMIN')"
-          th:if="${scope.singleAsset() != null}">
-    <form method="post" th:action="@{/acceptances}">
-      <h2>위험 수용</h2>
-      <input type="hidden" name="assetId" th:value="${scope.singleAsset()}">
-      <input type="hidden" name="cve" id="accept-cve">
-      <input type="hidden" name="packageName" id="accept-pkg">
-      <input type="hidden" name="back" value="/vulns">
-      <p class="lede" id="accept-what">—</p>
-      <label>수용 사유</label>
-      <textarea name="reason" rows="3" required
-                placeholder="업스트림에 수정 버전이 없고, 해당 기능을 쓰지 않음"></textarea>
-      <label>대신하는 통제</label>
-      <input name="compensating" placeholder="내부망에서만 접근 · WAF 규칙 적용">
-      <!--/*
-        앞서 여기에 '승인한 사람' 칸이 있었다. 이 도구에는 승인 절차가 없다 —
-        아무나 아무 이름이나 적을 수 있는 칸이었고, 통제가 있는 것처럼 보이는
-        만큼 없느니만 못했다. 결재는 사내 결재로 돌고 여기엔 번호만 적는다.
-        기록한 사람은 로그인 계정으로 자동으로 남으므로 묻지 않는다.
-      */-->
-      <label>결재 문서 번호 <span class="faint">선택</span></label>
-      <input name="approvalDoc" placeholder="보안-2026-0143">
-      <label>재검토일</label>
-      <input type="date" name="reviewBy" required>
-      <p class="footnote" th:text="'기록한 사람 ' + ${#authentication.name}
-                                   + ' — 로그인 계정으로 자동으로 남습니다'">기록한 사람 admin</p>
-      <div class="dialog-actions">
-        <button type="button" class="btn" data-close>취소</button>
-        <button type="submit" class="btn primary">수용 기록</button>
-      </div>
-    </form>
-  </dialog>
-
-  <script>
-    (function () {
-      const dialog = document.querySelector('#accept-dialog');
-      document.addEventListener('click', function (e) {
-        const link = e.target.closest('.accept-link');
-        if (link && dialog) {
-          e.preventDefault();
-          document.querySelector('#accept-cve').value = link.dataset.cve;
-          document.querySelector('#accept-pkg').value = link.dataset.pkg;
-          document.querySelector('#accept-what').textContent =
-              link.dataset.label + ' · ' + link.dataset.pkg;
-          dialog.showModal();
-          return;
-        }
-        const close = e.target.closest('[data-close]');
-        if (close) { close.closest('dialog').close(); }
-      });
-    })();
-  </script>
+  <div th:replace="~{fragments/analysis-dialog :: dialog(${links.here()})}"></div>
 
 </main>
 </body>

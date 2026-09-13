@@ -242,7 +242,7 @@ Rocky Linux 9.3 · 대외 웹 · 마지막 검사 2026-09-10 14:22
 | **다시 볼 날** | **재검토일** | 지어낸 말 | 검토 결과 |
 | **감춤 · 목록에서 감추기** | **없앤다** | 4.5 참조 — 체크박스 자체를 지운다 | 〃 |
 | **승인한 사람** | **기록한 사람**(자동) + **결재 문서 번호**(선택) | 4.6 참조 | 〃 |
-| `사유 · 대신하는 통제` | **근거** / **다른 통제** (열 둘로) | 한 칸에 둘 | 〃 |
+| `사유 · 대신하는 통제` | **설명** / **다른 통제** (열 둘로) | 한 칸에 둘. `근거` 는 §4.3 의 고르는 값에 쓴다 — **고르는 것이 `근거`, 적는 것이 `설명`** | 〃 |
 | **수정본** · 수정본 없음 | **수정 버전** · **수정 버전 없음** | 소프트웨어에 "본" 은 안 쓴다 | 전역 |
 | **컴포넌트** | **패키지** | 같은 것을 두 말로 불렀다. 패키지 화면이 생기면 더 헷갈린다 | 전역 |
 | **서버** (열 머리 · 등록 폼) | **자산** | 40 대 19 로 섞여 있었다 | 전역 |
@@ -432,13 +432,25 @@ Rocky Linux 9.3 · 대외 웹 · 마지막 검사 2026-09-10 14:22
 
 ```
 finding_analysis        (asset_id, cve, package_name, state, justification,
-                         response, note, approved_by, review_by, hidden,
+                         response, note, other_control, approval_doc, review_by,
                          created_at, updated_at, updated_by)
-finding_analysis_event  (analysis_id, at, actor, field, before, after)
+                        UNIQUE (asset_id, cve, package_name)
+finding_analysis_event  (analysis_id, at, actor, field_name, before_value, after_value)
 ```
 
-기존 `risk_acceptance` 행을 **`상태=해당됨 · 대응=조치 안 함(위험 수용) · 감춤=예`** 로
+기존 `risk_acceptances` 행을 **`상태=해당됨 · 대응=조치 안 함(위험 수용)`** 으로
 옮기고 표를 지운다. 뜻이 그대로 보존된다.
+
+**초안에서 두 가지를 고쳤다.**
+
+- `hidden` 열을 두지 않는다. §4.5 에서 감추기 칸 자체를 없애고 **상태가
+  정하도록** 바꿨다. 열을 두면 상태와 감춤이 어긋날 수 있고, 어긋나면 어느
+  쪽이 맞는지 아무도 모른다.
+- `approved_by` → `approval_doc`. §4.6 의 결정을 열 이름까지 반영한다.
+
+**옮기지 못하는 것은 뜻을 바꿔 옮기지 않는다.** 철회된 수용은 '지금의 결정' 이
+아니므로 `미검토` 로 두고, 수용했다가 거뒀다는 사실은 **변경 이력에** 그때 시각
+그대로 남긴다. 같은 키에 철회분이 여럿이면 가장 나중 것 하나만 행이 된다.
 
 ### V12 — 컴포넌트 (N9)
 
@@ -523,17 +535,41 @@ component (asset_id, scan_id, name, version, type, purl, location)
 선택 입력), 기록한 사람은 로그인 계정으로 자동. **열 이름은 아직
 `approved_by` 다** — N5 의 V11 에서 이 표를 다시 만들 때 함께 바꾼다.
 
-### N5 — 판정 · 대응 통합 ⚠ V11
-- V11 마이그레이션 + `FindingAnalysis` 도메인 (§4 어휘) + `FindingAnalysisService`
-- 새 `ActionController`(`/actions`) 두 탭 + 거르개
-- 취약점 행 펼침 검토 칸 — **고르면 뜻 한 줄이 아래에 뜬다**,
-  `해당 없음` 일 때만 근거가 열린다
-- **`감추기` 체크박스 없음** — 상태로 자동 (§4.5). 거르개는 `검토 끝난 것도 보기`
-- ~~**`승인한 사람` 입력칸 없음**~~ — **N4 에서 먼저 했다.** 여기서는 V11 로
-  열 이름(`approved_by` → `approval_doc`)만 마저 바꾼다 (§4.6)
-- `remediations.html`+`acceptances.html` → `actions.html`
-- **`check-migrations.sh` 를 데이터 있는 DB 로 반드시 실행** (CLAUDE.md 5)
-- 시험: 기존 수용 행이 뜻 그대로 옮겨지는지 · **감춰도 보고서 원본 건수가 남는지**
+### N5a — 검토 결과 도메인 ⚠ V11 ✅
+- V11 마이그레이션 + `FindingAnalysis`·`FindingAnalysisEvent` + `FindingAnalysisService`
+- 어휘 세 벌을 enum 으로: `AnalysisState`(5) · `AnalysisJustification`(9) ·
+  `AnalysisResponse`(5). **저장값은 CycloneDX VEX 표준, 화면 말은 한국어** —
+  한 곳에 묶어 둬야 화면 말만 바꾸다 저장값이 함께 바뀌는 일이 없다
+- 새 조각 `analysis-dialog.html` — `/vulns` 와 자산 상세가 **같은 것**을 쓴다.
+  고르면 뜻 한 줄이 아래에 뜨고, `해당 없음` 일 때만 근거가 열리고,
+  `조치 불가`·`조치 안 함` 일 때만 재검토일이 열린다
+- **`감추기` 체크박스 없음** — 상태가 정한다 (§4.5). 거르개는 `검토 끝난 것도 보기` 하나
+- `acceptances.html` → `analyses.html`, `/acceptances` → `/analyses` (302)
+- `approved_by` → `approval_doc` 열 이름까지 마저 바꿨다 (§4.6)
+- 탐지 표의 마지막 칸을 **둘로 갈랐다** — `grype 신호` 와 `검토 결과`.
+  한 칸에 두면 누가 말한 것인지 구분되지 않는다 (CLAUDE.md 11)
+
+**띄워 보고 찾은 것** (시험 227개가 전부 통과한 채로 있던 것):
+
+적어 둔 검토 결과가 **취약점 목록에 안 붙었다.** 키를 `finding.cve`(grype 의 주
+식별자)로 잡았는데, grype 이 GHSA 를 주 식별자로 낸 건은 사람이 읽고 적는 것이
+함께 온 CVE 번호다. 그래서 같은 건을 적어 놓고도 목록에는 "아직 안 적음" 으로
+떴다. 화면에 찍는 번호로 키를 잡고, 옛 번호로 적힌 것(옮겨 온 행)도 찾도록
+두 번호를 모두 본다.
+
+그 시험을 처음엔 `html.contains("해당 없음")` 으로 썼다가 **고치기 전 코드에서도
+통과했다** — 같은 화면에 있는 대화상자에 다섯 상태가 전부 들어 있어서 언제나
+걸렸다. 행이 그린 것만 보도록 고쳤다.
+
+**어휘 — §4.1 과 §4.3 이 `근거` 를 두 가지에 쓰고 있었다**
+
+자유 입력 칸(`사유`→`근거`)과 `해당 없음` 일 때 고르는 표준값. §4.0 규칙 2 와
+충돌한다. **고르는 것을 `근거`, 적는 것을 `설명`** 으로 갈랐다.
+
+### N5b — `/actions` 두 탭
+- 새 `ActionController`(`/actions`) — `조치` 와 `검토 결과` 두 탭 + 거르개
+- `remediations.html` + `analyses.html` → `actions.html`
+- `/actions` 임시 다리를 지우고 `/remediations`·`/analyses` 를 이리로 보낸다
 
 ### N6 — 계정
 - `AccountService.update(username, displayName, role, enabled, newPasswordOrNull, actor)`

@@ -11,7 +11,7 @@ import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ScanService;
 import kr.sbomsight.service.ZoneService;
 import kr.sbomsight.service.AuditService;
-import kr.sbomsight.service.RiskAcceptanceService;
+import kr.sbomsight.service.FindingAnalysisService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -47,14 +47,14 @@ public class AssetController {
     private final AssetService assetService;
     private final ZoneService zoneService;
     private final AuditService audit;
-    private final RiskAcceptanceService acceptances;
+    private final FindingAnalysisService analyses;
     private final SbomStorage storage;
     private final VulnQuery vulns;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
                            AssetService assetService, ZoneService zoneService, AuditService audit,
-                           RiskAcceptanceService acceptances, SbomStorage storage,
+                           FindingAnalysisService analyses, SbomStorage storage,
                            VulnQuery vulns) {
         this.assets = assets;
         this.scans = scans;
@@ -64,7 +64,7 @@ public class AssetController {
         this.assetService = assetService;
         this.zoneService = zoneService;
         this.audit = audit;
-        this.acceptances = acceptances;
+        this.analyses = analyses;
         this.storage = storage;
         this.vulns = vulns;
     }
@@ -163,7 +163,7 @@ public class AssetController {
         // 기한이 지난 것 = 조치 기한 + 검토 결과의 재검토일. 기둥의 배지와
         // 같은 수를 쓴다 — 두 곳이 다른 수를 보이면 어느 쪽을 믿을지 모른다.
         long overdue = remediations.countOverdue(java.time.LocalDate.now())
-                + acceptances.reviewOverdue().size();
+                + analyses.reviewOverdue().size();
         return new Summary(noScan, stale, overdue, critical, noFix);
     }
 

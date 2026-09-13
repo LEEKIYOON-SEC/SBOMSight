@@ -39,9 +39,19 @@ public enum AuditEvent {
     SCAN_DELETED("스캔 삭제"),
     SCAN_RESCANNED("재검사"),
 
-    // --- 조치 · 수용 ---
+    // --- 조치 · 검토 결과 ---
     REMEDIATION_CREATED("조치 등록"),
     REMEDIATION_UPDATED("조치 변경"),
+    ANALYSIS_RECORDED("검토 결과 기록"),
+
+    /**
+     * 옛 이름 둘. <b>지우지 않는다.</b>
+     *
+     * <p>위험 수용은 검토 결과({@code 해당됨 · 조치 안 함})로 합쳐졌고 표도
+     * 옮겼지만, 이미 쌓인 감사 로그에는 이 이름이 그대로 들어 있다. 여기서
+     * 지우면 그 행을 읽을 때 무슨 일이었는지 알 수 없게 된다. 새로 쌓이지는
+     * 않는다.
+     */
     RISK_ACCEPTED("위험 수용"),
     RISK_ACCEPTANCE_REVOKED("위험 수용 철회"),
 

@@ -11,7 +11,7 @@
       xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 <body>
 
-<div th:fragment="items(rows, showAsset, acceptedKeys)" class="table-scroll">
+<div th:fragment="items(rows, showAsset, analyses)" class="table-scroll">
   <table>
     <thead>
     <tr>
@@ -22,7 +22,13 @@
       <th class="num tight">악용 확률</th>
       <th class="tight">패키지</th>
       <th class="tight">설치 → 수정</th>
-      <th>근거</th>
+      <!--/*
+        두 칸으로 가른다. 앞서 한 칸에 grype 이 준 신호와 우리가 적은 결정이
+        함께 들어 있었다 — grype 이 낸 것은 탐지, 우리가 적는 것은 검토
+        결과이고, 둘을 같은 칸에 두면 누가 말한 것인지 구분되지 않는다.
+      */-->
+      <th class="tight">grype 신호</th>
+      <th>검토 결과</th>
     </tr>
     </thead>
     <tbody>
@@ -84,19 +90,59 @@
         <span th:if="${!f.fixAvailable && !f.noFix}" class="faint">확인 필요</span>
       </td>
 
-      <td th:with="accepted=${acceptedKeys.contains(f.cve + '|' + f.packageName)}">
+      <!-- grype 이 준 것. 우리가 더하거나 빼지 않는다. -->
+      <td class="tight">
         <span th:if="${f.kev != null && f.kev}" class="tag kev">실제 악용 확인</span>
         <span th:if="${f.kevRansomware != null && f.kevRansomware}" class="tag kev">랜섬웨어</span>
-        <!-- 검토 결과는 건수를 줄이지 않는다. 표시만 붙는다 — 줄이면 보고서가
-             실제보다 안전해 보이는 숫자를 말하게 된다. -->
-        <span th:if="${accepted}" class="tag">위험 수용됨</span>
         <span class="faint" th:text="${f.matchType}">exact-direct-match</span>
+      </td>
 
-        <!-- 고칠 수 없는 건에만 수용 버튼을 둔다. 올리면 사라지는 건은
-             수용할 일이 아니라 올릴 일이다. -->
-        <a th:if="${f.noFix && !accepted}" sec:authorize="hasRole('ADMIN')"
-           class="accept-link" href="#"
-           th:attr="data-cve=${f.cve}, data-pkg=${f.packageName}, data-label=${f.displayId}">위험 수용</a>
+      <!--/*
+        우리가 적은 것. **건수를 줄이지 않는다** — 표시만 붙는다. 줄이면
+        보고서가 실제보다 안전해 보이는 숫자를 말하게 된다.
+
+        적기 단추는 모든 행에 둔다. 앞서는 수정 버전이 없는 행에만 있었는데,
+        `해당 없음` 과 `오탐` 은 수정 버전이 있든 없든 적을 수 있어야 한다 —
+        오히려 오탐은 수정 버전이 있는 행에서 더 자주 나온다.
+      */-->
+      <!--/*
+        키를 **화면에 찍는 번호**로 잡는다. grype 이 GHSA 를 주 식별자로 낸
+        건은 f.cve 가 `GHSA-…` 이고 사람이 읽는 것은 함께 온 CVE 번호다.
+        결재도 보고도 CVE 번호로 도는데 우리만 GHSA 로 묶어 두면, 같은 건을
+        적어 놓고도 목록에서는 "아직 안 적음" 으로 보인다 — 실제로 그랬다.
+
+        옛 주 식별자로 적힌 것(위험 수용에서 옮겨 온 행)도 찾아야 하므로
+        두 번호를 모두 본다. grype 의 DB 가 바뀌어 주 식별자가 GHSA 에서
+        CVE 로 옮겨 가도 적어 둔 것이 조용히 떨어져 나가지 않는다.
+      */-->
+      <td th:with="key=${f.scan.asset.id + '|' + f.displayId + '|' + f.packageName},
+                   alt=${f.scan.asset.id + '|' + f.cve + '|' + f.packageName},
+                   a=${analyses.containsKey(key)} ? ${analyses.get(key)} : ${analyses.get(alt)}">
+        <th:block th:if="${a != null and !a.untouched}">
+          <span class="sev" th:classappend="${a.state.name() == 'EXPLOITABLE'} ? 'high'
+                            : (${a.open} ? 'medium' : 'low')"><i></i>
+            <span th:text="${a.state.label()}">해당 없음</span></span>
+          <span th:if="${a.response != null}" class="tag"
+                th:text="${a.response.label()}">조치 안 함 (위험 수용)</span>
+          <div class="faint" th:if="${a.justification != null}"
+               th:text="${a.justification.label()}">취약한 코드가 들어 있지 않음</div>
+          <div class="faint" th:if="${a.reviewOverdue}"
+               th:text="'재검토일 ' + ${a.reviewBy} + ' 지남'">재검토일 지남</div>
+        </th:block>
+
+        <a sec:authorize="hasRole('ADMIN')" class="analysis-link" href="#"
+           th:text="${a != null and !a.untouched} ? '고치기' : '적기'"
+           th:attr="data-asset=${f.scan.asset.id}, data-cve=${f.displayId},
+                    data-pkg=${f.packageName}, data-label=${f.displayId},
+                    data-state=${a != null} ? ${a.state.name()} : 'NOT_SET',
+                    data-justification=${a != null and a.justification != null}
+                                       ? ${a.justification.name()} : '',
+                    data-response=${a != null and a.response != null}
+                                  ? ${a.response.name()} : '',
+                    data-review=${a != null and a.reviewBy != null} ? ${a.reviewBy} : '',
+                    data-note=${a != null} ? ${a.note} : '',
+                    data-control=${a != null} ? ${a.otherControl} : '',
+                    data-doc=${a != null} ? ${a.approvalDoc} : ''">적기</a>
       </td>
     </tr>
     </tbody>

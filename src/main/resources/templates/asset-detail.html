@@ -145,7 +145,8 @@
                 <span>
                   <b th:text="'스캔 ' + ${impact.scanCount()} + '건'">스캔 0건</b> ·
                   <b th:text="'탐지 ' + ${#numbers.formatInteger(impact.findingCount(), 0, 'COMMA')} + '건'">탐지 0건</b> ·
-                  <b th:text="'조치 ' + ${impact.remediationCount()} + '건'">조치 0건</b>
+                  <b th:text="'조치 ' + ${impact.remediationCount()} + '건'">조치 0건</b> ·
+                  <b th:text="'검토 결과 ' + ${impact.analysisCount()} + '건'">검토 결과 0건</b>
                   과 보관된 SBOM·검사 결과 파일이 함께 사라집니다. 되돌릴 수 없습니다.
                 </span>
                 <form method="post" th:action="@{'/assets/' + ${asset.id} + '/delete'}"
@@ -206,7 +207,7 @@
           <div class="resultcount">
             <b th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b><span>건</span>
           </div>
-          <div th:replace="~{fragments/finding-table :: items(${page.content}, false, ${acceptedKeys})}"></div>
+          <div th:replace="~{fragments/finding-table :: items(${page.content}, false, ${analyses})}"></div>
           <div class="pager" th:if="${page.totalPages > 1}">
             <a th:if="${page.hasPrevious()}"
                th:href="@{${links.page(page.number - 1)}}">이전</a>
@@ -225,6 +226,13 @@
                           '/vulns?group=' + ${group}, '전체에서 보기')}"></div>
       </th:block>
     </div>
+
+    <!--/*
+      검토 결과를 적는 칸. `/vulns` 와 **같은 조각**을 쓴다 — 화면마다
+      베껴 두면 한쪽만 고치는 날이 오고, 실제로 그렇게 해서 이미 없앤 말이
+      되살아난 적이 있다.
+    */-->
+    <div th:replace="~{fragments/analysis-dialog :: dialog(${links.here()})}"></div>
   </div>
 
   <!-- ══ 검사 이력 ══════════════════════════════════════════════════ -->

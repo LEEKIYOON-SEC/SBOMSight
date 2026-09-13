@@ -68,6 +68,18 @@ public class LegacyRedirectController {
         return to.toString();
     }
 
+    /**
+     * 위험 수용은 검토 결과에 흡수됐다 (N5).
+     *
+     * <p>'위험 수용' 은 다섯 상태 중 하나({@code 해당됨})와 다섯 대응 중
+     * 하나({@code 조치 안 함})의 조합일 뿐이었다. 표를 따로 두니 나머지
+     * 조합("해당 없음"·"오탐")을 적을 자리가 아예 없었다.
+     */
+    @GetMapping("/acceptances")
+    public String acceptances() {
+        return "redirect:/analyses";
+    }
+
     // --- ② 임시 다리 — 진짜 화면이 생기면 지운다 ----------------------------
 
     /** N5 에서 {@code /actions} 가 생기면 지우고 두 옛 화면을 이리로 보낸다. */

@@ -35,14 +35,14 @@ public class VulnQuery {
     private final FindingRepository findings;
     private final ScanRepository scans;
     private final ZoneService zones;
-    private final RiskAcceptanceService acceptances;
+    private final FindingAnalysisService analyses;
 
     public VulnQuery(FindingRepository findings, ScanRepository scans, ZoneService zones,
-                     RiskAcceptanceService acceptances) {
+                     FindingAnalysisService analyses) {
         this.findings = findings;
         this.scans = scans;
         this.zones = zones;
-        this.acceptances = acceptances;
+        this.analyses = analyses;
     }
 
     /**
@@ -50,9 +50,11 @@ public class VulnQuery {
      *
      * @param label       화면 머리에 그대로 찍는다. 범위를 모르는 목록은 숫자를 잘못 읽게 한다.
      * @param scanIds     이 범위에 해당하는 검사들
-     * @param singleAsset 자산 하나로 좁혀졌으면 그 id — 검토 결과 표시에 쓴다
+     * @param singleAsset 자산 하나로 좁혀졌으면 그 id — 화면 머리와 링크에 쓴다
+     * @param assetIds    이 범위에 걸린 자산 전부 — 검토 결과를 한 번에 끌어온다
      */
-    public record Scope(String label, List<Long> scanIds, Long singleAsset) {
+    public record Scope(String label, List<Long> scanIds, Long singleAsset,
+                        List<Long> assetIds) {
     }
 
     /**
@@ -163,7 +165,8 @@ public class VulnQuery {
         String when = s.getCreatedAt().atZone(java.time.ZoneId.systemDefault())
                        .toLocalDateTime().toString().replace('T', ' ').substring(0, 16);
         return new Scope(s.getAsset().getName() + " · " + when + " 검사",
-                         List.of(s.getId()), s.getAsset().getId());
+                         List.of(s.getId()), s.getAsset().getId(),
+                         List.of(s.getAsset().getId()));
     }
 
     /**
@@ -184,7 +187,8 @@ public class VulnQuery {
         String label = (zoneId == null ? "전체 " : zones.require(zoneId).getName() + " ")
                 + latest.size() + "대 · 최신 검사 기준";
         return new Scope(label, latest.stream().map(Scan::getId).toList(),
-                         latest.size() == 1 ? latest.get(0).getAsset().getId() : null);
+                         latest.size() == 1 ? latest.get(0).getAsset().getId() : null,
+                         latest.stream().map(s -> s.getAsset().getId()).toList());
     }
 
     /** 목록을 모델에 담는다. 묶는 방식에 따라 담기는 값이 다르다. */
@@ -199,7 +203,7 @@ public class VulnQuery {
         model.addAttribute("page", Page.<Finding>empty());
 
         if (scope.scanIds().isEmpty()) {
-            model.addAttribute("acceptedKeys", java.util.Set.of());
+            model.addAttribute("analyses", java.util.Map.of());
             return;
         }
 
@@ -220,11 +224,14 @@ public class VulnQuery {
             }
         }
 
-        // 검토 결과가 붙은 건에 표시를 달기 위한 키 집합. 건마다 물으면
-        // 목록 한 장에 수백 번 왕복한다.
-        model.addAttribute("acceptedKeys", scope.singleAsset() == null
-                ? java.util.Set.of()
-                : acceptances.activeKeys(scope.singleAsset()));
+        // 행마다 검토 결과 표시를 붙이기 위한 것. 건마다 물으면 목록 한 장에
+        // 수백 번 왕복한다.
+        //
+        // 키에 **자산 id 를 넣는다.** 구역·전체 범위는 자산이 섞여 있어서,
+        // (CVE, 패키지명) 으로만 맞추면 web-01 의 검토 결과가 api-01 행에
+        // 붙는다. 자산 하나짜리 범위에서는 눈에 띄지 않다가 범위를 넓히는
+        // 순간 틀리는 종류의 버그다.
+        model.addAttribute("analyses", analyses.byAssetKey(scope.assetIds()));
     }
 
     /**

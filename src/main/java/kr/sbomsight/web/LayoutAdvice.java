@@ -4,7 +4,7 @@ import kr.sbomsight.domain.RemediationStatus;
 import kr.sbomsight.repo.AppUserRepository;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.RemediationRepository;
-import kr.sbomsight.repo.RiskAcceptanceRepository;
+import kr.sbomsight.repo.FindingAnalysisRepository;
 import kr.sbomsight.service.PasswordPolicy;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,16 +35,16 @@ public class LayoutAdvice {
     private final PasswordPolicy policy;
     private final AssetRepository assets;
     private final RemediationRepository remediations;
-    private final RiskAcceptanceRepository acceptances;
+    private final FindingAnalysisRepository analyses;
 
     public LayoutAdvice(AppUserRepository users, PasswordPolicy policy,
                         AssetRepository assets, RemediationRepository remediations,
-                        RiskAcceptanceRepository acceptances) {
+                        FindingAnalysisRepository analyses) {
         this.users = users;
         this.policy = policy;
         this.assets = assets;
         this.remediations = remediations;
-        this.acceptances = acceptances;
+        this.analyses = analyses;
     }
 
     @ModelAttribute
@@ -72,7 +72,7 @@ public class LayoutAdvice {
         // 있어 어느 쪽이 급한지 두 번 봐야 했고, 두 화면을 하나로 합치면서
         // 숫자도 합친다. 기한이 지난 것 = 조치 기한 + 재검토일.
         model.addAttribute("navActionOverdue",
-                remediations.countOverdue(today) + acceptances.countReviewOverdue(today));
+                remediations.countOverdue(today) + analyses.countReviewOverdue(today));
         model.addAttribute("navActionOpen", remediations.countByStatusIn(OPEN));
         model.addAttribute("navInitials", initials(auth.getName()));
     }

@@ -10,7 +10,7 @@ import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.repo.RemediationRepository;
 import kr.sbomsight.repo.ScanRepository;
-import kr.sbomsight.service.RiskAcceptanceService;
+import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,7 +54,7 @@ class PageRenderTest {
     @Autowired ScanRepository scans;
     @Autowired FindingRepository findings;
     @Autowired RemediationRepository remediations;
-    @Autowired RiskAcceptanceService acceptances;
+    @Autowired FindingAnalysisService analyses;
     @Autowired ZoneService zoneService;
 
     private Asset asset;
@@ -102,10 +102,13 @@ class PageRenderTest {
         remediation.setDueDate(LocalDate.now().minusDays(3));
         remediations.saveAndFlush(remediation);
 
-        acceptances.accept(asset, "CVE-2024-2961", "glibc",
-                           "업스트림 수정본 없음. 해당 기능은 외부에 노출되지 않는다.",
-                           "WAF 에서 해당 경로 차단", "정보보호팀장",
-                           LocalDate.now().plusDays(30), "tester");
+        // 앞서의 '위험 수용' 에 해당하는 조합 — 해당됨 · 조치 안 함.
+        analyses.record(asset, "CVE-2024-2961", "glibc",
+                        kr.sbomsight.domain.AnalysisState.EXPLOITABLE, null,
+                        kr.sbomsight.domain.AnalysisResponse.WILL_NOT_FIX,
+                        "업스트림에 수정 버전이 없고 해당 기능은 외부에 노출되지 않습니다",
+                        "WAF 에서 해당 경로 차단", "보안-2026-0143",
+                        LocalDate.now().plusDays(30), "tester");
     }
 
     private String open(String url) throws Exception {
@@ -292,10 +295,11 @@ class PageRenderTest {
     }
 
     @Test
-    @DisplayName("위험 수용")
-    void acceptancePages() throws Exception {
-        assertThat(open("/acceptances")).contains("CVE-2024-2961");
-        open("/acceptances?revoked=true");
+    @DisplayName("검토 결과")
+    void analysisPages() throws Exception {
+        assertThat(open("/analyses")).contains("CVE-2024-2961");
+        // 볼 일이 끝난 것까지 켜서 보는 거르개. 켜고 끄는 것은 이것 하나다.
+        open("/analyses?includeDone=true");
     }
 
     @Test
@@ -389,7 +393,7 @@ class PageRenderTest {
                 "/", "/assets/" + asset.getId(), "/assets/" + asset.getId() + "?tab=vulns",
                 "/vulns", "/vulns?scan=" + scan.getId(), "/vulns/CVE-2024-3094",
                 "/remediations", "/remediations/" + remediation.getId(),
-                "/acceptances", "/report/" + scan.getId(), "/report/zone", "/password" }) {
+                "/analyses", "/report/" + scan.getId(), "/report/zone", "/password" }) {
             mvc.perform(get(url).with(user("viewer").roles("VIEWER")))
                .andExpect(status().isOk());
         }
