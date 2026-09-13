@@ -43,7 +43,7 @@ public interface RiskAcceptanceRepository extends JpaRepository<RiskAcceptance, 
     List<RiskAcceptance> findAllWithAsset(@Param("includeRevoked") boolean includeRevoked,
                                           @Param("zoneId") Long zoneId);
 
-    /** 다시 볼 날이 지난 것. 자산 목록 머리에 기한 지난 조치와 나란히 세운다. */
+    /** 재검토일이 지난 것. 자산 목록 머리에 기한 지난 조치와 나란히 세운다. */
     @Query("""
            SELECT r FROM RiskAcceptance r JOIN FETCH r.asset a JOIN FETCH a.zone
            WHERE r.revokedAt IS NULL AND r.reviewBy < :today
@@ -53,7 +53,7 @@ public interface RiskAcceptanceRepository extends JpaRepository<RiskAcceptance, 
 
     long countByAssetIdAndRevokedAtIsNull(Long assetId);
 
-    /** 사이드바 숫자 — 다시 볼 날이 지난 수용. 수용은 기한이 있어야 방치와 구분된다. */
+    /** 사이드바 숫자 — 재검토일이 지난 수용. 수용은 기한이 있어야 방치와 구분된다. */
     @Query("""
            SELECT COUNT(r) FROM RiskAcceptance r
            WHERE r.revokedAt IS NULL AND r.reviewBy < :today

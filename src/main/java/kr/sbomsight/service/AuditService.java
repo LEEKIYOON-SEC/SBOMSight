@@ -38,7 +38,7 @@ public class AuditService {
         this.logs = logs;
     }
 
-    /** 지금 로그인한 사람이 한 일. */
+    /** 지금 로그인한 계정의 행위. */
     @Transactional(propagation = Propagation.REQUIRED)
     public void record(AuditEvent action, String target, String detail) {
         logs.save(new AuditLog(action, currentActor(), target, detail, clientIp()));

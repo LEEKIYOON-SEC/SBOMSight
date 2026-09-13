@@ -229,7 +229,7 @@
           <th class="num tight">탐지</th>
           <th class="num tight">심각</th>
           <th class="num tight">높음</th>
-          <th class="num tight">바로 닿음</th>
+          <th class="num tight">원격 접근</th>
         </tr>
         </thead>
         <tbody>
@@ -293,7 +293,7 @@
           <th class="num tight">자산</th>
           <th class="tight">현재 → 목표</th>
           <th class="num tight">해소 건수</th>
-          <th class="num tight">바로 닿음</th>
+          <th class="num tight">원격 접근</th>
           <th class="num tight">심각</th>
           <th class="num tight">높음</th>
           <th class="num tight">최고 CVSS</th>
@@ -345,7 +345,7 @@
     <table th:if="${!report.judgement.blocked.isEmpty()}">
       <thead>
       <tr><th class="tight">패키지</th><th class="num tight">자산</th>
-          <th class="num tight">건수</th><th class="num tight">바로 닿음</th>
+          <th class="num tight">건수</th><th class="num tight">원격 접근</th>
           <th class="num tight">최고 CVSS</th></tr>
       </thead>
       <tbody>
@@ -452,7 +452,7 @@
       </th:block>
       <th:block th:if="${report.action.acceptanceReviewOverdue() > 0}">
         수용 <b class="danger-text"
-               th:text="${report.action.acceptanceReviewOverdue()}">0</b>건은 다시 볼 날이 지났습니다.
+               th:text="${report.action.acceptanceReviewOverdue()}">0</b>건은 재검토일이 지났습니다.
       </th:block>
     </p>
   </section>

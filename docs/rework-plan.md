@@ -488,13 +488,40 @@ component (asset_id, scan_id, name, version, type, purl, location)
 - `asset-detail.html` — **탭으로 가르고** 이력 액션 버튼 통일 + SBOM 내려받기
 - **미리보기와 좌우로 대조** (CLAUDE.md 2)
 
-### N4 — 취약점 화면 통합
-- 새 `VulnController`(`/vulns`, `/vulns/{cve}`)
-- `FindingRepository` — CVE별/패키지별 집계, 구역 분포, CVE 단건
+### N4 — 취약점 화면 통합 ✅
+- 새 `VulnController`(`/vulns`, `/vulns/{cve}`, `/vulns/export.csv`)
+- 새 `VulnQuery` — 범위(전체·구역·검사 하나)를 **스캔 id 목록**으로 정하고
+  두 화면이 같은 질의를 쓴다. `FindingRepository.lookup` 은 지웠다 (질의 두 벌 → 한 벌)
+- `FindingRepository` — `findIn`·`findInBySeverity`·`groupByCveIn`·`findByCveIn`·`zoneSpread`
 - 새 `vulns.html` + 묶기 3조각 + `vuln-detail.html`
 - **표 조각은 하나**(`finding-table.html`) — `/vulns` 와 `/assets/{id}?tab=vulns` 가 공유
 - `lookup.html`·`scan.html`·`LookupController` 삭제
 - 시험: 범위 × 묶기 조합 전부 200, 정렬에서 빈 값이 뒤인지
+
+**띄워 보고 찾은 것 둘** (시험 220개가 전부 통과한 채로 남아 있던 것):
+
+- **주소에 빈 이름이 줄줄이 붙었다.** 타임리프의 `@{/vulns(zone=${zone}, …)}` 는
+  값이 없어도 이름을 적는다. 아무것도 안 고르고 묶기 단추만 눌러도
+  `?zone=&scan=&group=cve&q=&severity=&fixable=&kev=` 가 됐다. 동작은 하지만
+  그 주소가 결재 문서에 붙는다. → `VulnQuery.Links` 가 만든다. 고른 것만 붙는다
+- **같은 취약점이 화면마다 다른 번호로 보였다.** 항목별은 `getDisplayId()`(CVE
+  번호 우선)를 찍는데 CVE별 묶기는 `f.cve` 로 묶어서, 같은 건이 한쪽에선
+  `CVE-2021-44228`, 다른 쪽에선 `GHSA-jfh8-c2jp-5v3q` 였다. 한 자산엔 CVE 번호가
+  붙고 다른 자산엔 안 붙어 있으면 **묶음이 갈려 "2대" 가 "1대" 가 된다.**
+  → 묶는 축을 화면에 찍는 식과 같게 맞췄다
+
+**어휘 — 앞서 "전부 고쳤다" 고 보고했으나 남아 있던 것** (§4.1)
+
+`다시 볼 날`(6곳) · `바로 닿음`(4곳) · `한 일`(3곳) · `컴포넌트`(1곳) 이 그대로
+있었다. `vulns.html` 은 이번에 만들면서 옛 화면에서 대화상자를 복사해 와
+`승인한 사람`·`다시 볼 날` 을 **되살려 놓았다.** 눈으로 세는 방식이 샌다는
+뜻이므로 `VocabularyTest` 로 못 박았다 — 화면에 나가는 글자만 보고, 무엇을 왜
+바꿨는지 적은 주석은 건드리지 않는다.
+
+`승인한 사람` 은 N5 로 미루지 않고 여기서 없앴다. 되살려 놓은 것이 나이므로
+다음 단계까지 남겨 둘 이유가 없다. `approvedBy` → `approvalDoc`(결재 문서 번호,
+선택 입력), 기록한 사람은 로그인 계정으로 자동. **열 이름은 아직
+`approved_by` 다** — N5 의 V11 에서 이 표를 다시 만들 때 함께 바꾼다.
 
 ### N5 — 판정 · 대응 통합 ⚠ V11
 - V11 마이그레이션 + `FindingAnalysis` 도메인 (§4 어휘) + `FindingAnalysisService`
@@ -502,8 +529,8 @@ component (asset_id, scan_id, name, version, type, purl, location)
 - 취약점 행 펼침 검토 칸 — **고르면 뜻 한 줄이 아래에 뜬다**,
   `해당 없음` 일 때만 근거가 열린다
 - **`감추기` 체크박스 없음** — 상태로 자동 (§4.5). 거르개는 `검토 끝난 것도 보기`
-- **`승인한 사람` 입력칸 없음** — `기록한 사람`은 로그인 계정으로 자동,
-  `결재 문서 번호`는 선택 입력 (§4.6)
+- ~~**`승인한 사람` 입력칸 없음**~~ — **N4 에서 먼저 했다.** 여기서는 V11 로
+  열 이름(`approved_by` → `approval_doc`)만 마저 바꾼다 (§4.6)
 - `remediations.html`+`acceptances.html` → `actions.html`
 - **`check-migrations.sh` 를 데이터 있는 DB 로 반드시 실행** (CLAUDE.md 5)
 - 시험: 기존 수용 행이 뜻 그대로 옮겨지는지 · **감춰도 보고서 원본 건수가 남는지**

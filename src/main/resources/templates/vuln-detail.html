@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: page(~{::main}, 'vulns', ${cve})}">
+<body>
+<main>
+
+  <!--/*
+    CVE 하나 — 어디에 있고 무엇이 걸려 있나.
+
+    앞서는 목록에서 CVE 번호를 눌러도 갈 곳이 없었다. 긴급 상황에서 번호
+    하나를 받아 들고 "우리한테 있나, 몇 대에 있나" 를 묻는데, 그 답을 보려면
+    자산을 하나씩 열어야 했다.
+  */-->
+  <div class="page-header plain">
+    <div class="page-pretitle"><a th:href="@{/vulns(group='cve')}">취약점</a></div>
+    <div class="page-titlerow">
+      <h1 class="mono" style="font-size:22px" th:text="${cve}">CVE-0000-0000</h1>
+      <span class="sev" th:classappend="${#strings.toLowerCase(first.severity)}"><i></i>
+        <span th:switch="${#strings.toLowerCase(first.severity)}">
+          <th:block th:case="'critical'">심각</th:block>
+          <th:block th:case="'high'">높음</th:block>
+          <th:block th:case="'medium'">보통</th:block>
+          <th:block th:case="'low'">낮음</th:block>
+          <th:block th:case="*" th:text="${#strings.isEmpty(first.severity)} ? '미확인' : ${first.severity}">미확인</th:block>
+        </span></span>
+      <span th:if="${first.kev != null and first.kev}" class="tag kev">실제 악용 확인</span>
+    </div>
+    <div class="page-subtitle">
+      영향 자산 <b th:text="${assetCount}">0</b>대 · 탐지 <b th:text="${rows.size()}">0</b>건
+      <th:block th:each="s, i : ${spread}">
+        <th:block th:if="${i.first}"> · </th:block>
+        <span th:text="${s.zoneName} + ' ' + ${s.assetCount} + '대'">DMZ 2대</span><th:block
+          th:unless="${i.last}"> · </th:block>
+      </th:block>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">grype 이 준 값</h2></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th>CVSS</th>
+              <td>
+                <b th:if="${first.cvssScore != null}" th:text="${first.cvssScore}">10.0</b>
+                <span class="faint" th:if="${first.cvssScore == null}">—</span>
+                <span class="faint mono" th:if="${!#strings.isEmpty(first.cvssVector)}"
+                      th:text="${first.cvssVector}">CVSS:3.1/…</span>
+              </td></tr>
+          <tr><th>악용 확률</th>
+              <td th:text="${first.epss != null}
+                           ? ${#numbers.formatDecimal(first.epss * 100, 1, 2)} + '%  (EPSS)' : '—'">—</td></tr>
+          <tr><th>실제 악용</th>
+              <td>
+                <span class="tag kev" th:if="${first.kev != null and first.kev}">확인됨 (KEV)</span>
+                <span class="faint" th:if="${first.kev == null}">grype 이 주지 않았습니다</span>
+                <span class="faint" th:if="${first.kev != null and !first.kev}">확인된 바 없음</span>
+              </td></tr>
+          <tr th:if="${!#strings.isEmpty(first.secondaryId)}">
+              <th>별칭</th><td class="mono faint" th:text="${first.secondaryId}">GHSA-…</td></tr>
+          <tr th:if="${!#strings.isEmpty(first.dataSource)}">
+              <th>출처</th>
+              <td><a th:href="${first.dataSource}" target="_blank" rel="noreferrer"
+                     th:text="${first.dataSource}">https://…</a></td></tr>
+        </table>
+        <p class="footnote" style="margin-top:12px">
+          전부 grype 이 그 출력에 담아 준 값입니다. 다시 계산하지 않습니다.
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">이 CVE 가 있는 자산</h2>
+        <span class="faint" style="font-size:13px" th:text="${assetCount} + '대'">0대</span></div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th class="tight">자산</th><th class="tight">구역</th>
+            <th class="tight">패키지</th><th class="tight">설치 → 수정</th>
+            <th class="tight">검사 시각</th><th class="tight"></th>
+          </tr></thead>
+          <tbody>
+          <tr th:each="f : ${rows}">
+            <td class="tight"><a th:href="@{'/assets/' + ${f.scan.asset.id}}"
+                                 style="font-weight:600" th:text="${f.scan.asset.name}">web-01</a></td>
+            <td class="tight faint">
+              <i class="zrail" th:style="'background:' + (${#strings.isEmpty(f.scan.asset.zone.color)}
+                                         ? '#6f7e8d' : ${f.scan.asset.zone.color})"></i>
+              <span th:text="${f.scan.asset.zone.name}">DMZ</span></td>
+            <td class="tight">
+              <span th:text="${f.packageName}">openssl</span>
+              <span class="faint" th:text="${f.packageType}">rpm</span></td>
+            <td class="tight mono">
+              <span th:text="${f.packageVersion}">1.0.0</span> →
+              <b th:if="${f.fixAvailable}" th:text="${f.fixedVersion}">2.0.0</b>
+              <span th:if="${f.noFix}" class="tag nofix">수정 버전 없음</span>
+              <span th:if="${!f.fixAvailable && !f.noFix}" class="faint">확인 필요</span></td>
+            <td class="tight faint mono"
+                th:text="${#temporals.format(f.scan.createdAt, 'yyyy-MM-dd')}">—</td>
+            <td class="tight actions">
+              <a class="btn small" th:href="@{'/assets/' + ${f.scan.asset.id}(tab='vulns')}">열기</a></td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>

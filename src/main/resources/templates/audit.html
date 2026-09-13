@@ -23,7 +23,7 @@
     <label>계정
       <input name="actor" th:value="${actor}" autocomplete="off" placeholder="hong.gildong">
     </label>
-    <label>한 일
+    <label>행위
       <select name="action">
         <option value="">전체</option>
         <option th:each="e : ${events}" th:value="${e}" th:text="${e.label()}"
@@ -53,7 +53,7 @@
         <tr>
           <th class="tight">시각</th>
           <th class="tight">계정</th>
-          <th class="tight">한 일</th>
+          <th class="tight">행위</th>
           <th class="tight">대상</th>
           <th>내용</th>
           <th class="tight">접속 IP</th>

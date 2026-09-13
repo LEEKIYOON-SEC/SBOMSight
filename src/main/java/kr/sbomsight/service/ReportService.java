@@ -347,7 +347,7 @@ public class ReportService {
             return accepted.stream().anyMatch(a -> a.getPackageName().equals(packageName));
         }
 
-        /** 다시 볼 날이 지난 수용. 수용은 기한이 있어야 방치와 구분된다. */
+        /** 재검토일이 지난 수용. 수용은 기한이 있어야 방치와 구분된다. */
         public long acceptanceReviewOverdue() {
             return accepted.stream().filter(RiskAcceptance::isReviewOverdue).count();
         }

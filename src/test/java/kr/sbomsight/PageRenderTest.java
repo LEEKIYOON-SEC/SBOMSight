@@ -206,9 +206,8 @@ class PageRenderTest {
 
         open("/?filter=noscan");
         open("/?filter=stale");
+        open("/vulns");
         mvc.perform(get("/actions").with(user("tester").roles("ADMIN")))
-           .andExpect(status().is3xxRedirection());
-        mvc.perform(get("/vulns").with(user("tester").roles("ADMIN")))
            .andExpect(status().is3xxRedirection());
     }
 
@@ -216,7 +215,7 @@ class PageRenderTest {
     @DisplayName("자산 상세 · 취약점 목록")
     void assetAndScan() throws Exception {
         assertThat(open("/assets/" + asset.getId())).contains(asset.getName());
-        assertThat(open("/scans/" + scan.getId())).contains("CVE-2024-3094");
+        assertThat(open("/vulns?scan=" + scan.getId())).contains("CVE-2024-3094");
     }
 
     /**
@@ -240,11 +239,17 @@ class PageRenderTest {
         // 한 칸에서 두 가지 모양이 놀던 자리다. 맨 링크로 되돌아가면 여기서 깨진다.
         assertThat(history)
                 .as("완료된 검사에는 열기·다시 검사가 둘 다 버튼으로 있어야 한다")
-                .contains("class=\"btn small\" href=\"/scans/" + scan.getId() + "\">열기</a>")
+                .contains("class=\"btn small\" href=\"/vulns?scan=" + scan.getId() + "\">열기</a>")
                 .contains("class=\"btn small\"")
                 .contains("다시 검사");
 
         assertThat(open("/assets/" + asset.getId() + "?tab=actions")).contains("xz");
+
+        // 취약점 탭. 자산 상세 안에서 끝나야 한다 — 전체 화면으로 튕기면
+        // 한 자산 이야기를 보러 들어온 사람이 목록으로 쫓겨난다.
+        String vulns = open("/assets/" + asset.getId() + "?tab=vulns");
+        assertThat(vulns).contains("CVE-2024-3094");
+        assertThat(vulns).contains("넓게 보기");
     }
 
     /** 보관해 둔 SBOM 원본을 꺼내 볼 수 있어야 grype 의 판정을 대조할 수 있다. */
@@ -271,10 +276,12 @@ class PageRenderTest {
     }
 
     @Test
-    @DisplayName("전사 조회")
-    void lookup() throws Exception {
-        open("/lookup");
-        assertThat(open("/lookup?q=xz")).contains("CVE-2024-3094");
+    @DisplayName("취약점 — 범위 없이도, 검색어 없이도 답한다")
+    void vulns() throws Exception {
+        // 앞서 전사 조회는 검색어를 넣어야만 답했다. 그래서 "우리 전체에
+        // 심각이 몇 건인가" 를 물을 자리가 없었다.
+        assertThat(open("/vulns")).contains("CVE-2024-3094");
+        assertThat(open("/vulns?q=xz")).contains("CVE-2024-3094");
     }
 
     @Test
@@ -313,14 +320,24 @@ class PageRenderTest {
     @Test
     @DisplayName("기둥의 주소가 전부 어딘가로 이어진다")
     void navLinksAllGoSomewhere() throws Exception {
-        // 영구 — 감사 로그가 설정 안으로 옮겨 갔다.
-        mvc.perform(get("/audit").with(user("tester").roles("ADMIN")))
-           .andExpect(status().is3xxRedirection())
-           .andExpect(redirectedUrl("/settings/audit"));
+        // 영구 — 화면이 자리를 옮겼다. 적어 둔 주소가 죽지 않아야 한다.
+        for (String[] pair : new String[][] {
+                { "/audit", "/settings/audit" },
+                { "/lookup", "/vulns" },
+                { "/lookup?q=xz", "/vulns?q=xz" },
+                { "/lookup/export.csv?q=xz", "/vulns/export.csv?q=xz" },
+                { "/scans/" + scan.getId(), "/vulns?scan=" + scan.getId() } }) {
+            mvc.perform(get(pair[0]).with(user("tester").roles("ADMIN")))
+               .andExpect(status().is3xxRedirection())
+               .andExpect(redirectedUrl(pair[1]));
+        }
+
+        // 한 자산짜리 범위는 통합 화면에 없다 — 그 자산 안에서 끝난다.
+        mvc.perform(get("/vulns?asset=" + asset.getId()).with(user("tester").roles("ADMIN")))
+           .andExpect(redirectedUrl("/assets/" + asset.getId() + "?tab=vulns"));
 
         // 임시 다리 — 해당 단계에서 지우고 반대 방향으로 바꾼다.
         for (String[] pair : new String[][] {
-                { "/vulns", "/lookup" },
                 { "/actions", "/remediations" },
                 { "/reports", "/report/zone" },
                 { "/me", "/password" } }) {
@@ -369,7 +386,8 @@ class PageRenderTest {
     @DisplayName("조회 계정으로도 모든 화면이 열린다")
     void viewerCanOpenEveryPage() throws Exception {
         for (String url : new String[] {
-                "/", "/assets/" + asset.getId(), "/scans/" + scan.getId(), "/lookup",
+                "/", "/assets/" + asset.getId(), "/assets/" + asset.getId() + "?tab=vulns",
+                "/vulns", "/vulns?scan=" + scan.getId(), "/vulns/CVE-2024-3094",
                 "/remediations", "/remediations/" + remediation.getId(),
                 "/acceptances", "/report/" + scan.getId(), "/report/zone", "/password" }) {
             mvc.perform(get(url).with(user("viewer").roles("VIEWER")))

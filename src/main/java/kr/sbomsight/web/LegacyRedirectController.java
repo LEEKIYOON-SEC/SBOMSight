@@ -2,6 +2,10 @@ package kr.sbomsight.web;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.util.UriUtils;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * 옛 주소와 아직 안 만든 주소를 이어 준다.
@@ -32,13 +36,39 @@ public class LegacyRedirectController {
         return "redirect:/settings/audit";
     }
 
-    // --- ② 임시 다리 — 진짜 화면이 생기면 지운다 ----------------------------
-
-    /** N4 에서 {@code /vulns} 가 생기면 지우고 {@code /lookup} 을 이리로 보낸다. */
-    @GetMapping("/vulns")
-    public String vulns() {
-        return "redirect:/lookup";
+    /**
+     * 전사 조회는 취약점 화면에 흡수됐다 (N4).
+     *
+     * <p>검색어를 넣어야만 답하던 화면이었고, 같은 질의를 {@code /scans/{id}}
+     * 와 나눠 가지고 있었다. 범위를 고르는 한 화면으로 합쳤다.
+     */
+    @GetMapping("/lookup")
+    public String lookup(@RequestParam(required = false) String q,
+                         @RequestParam(required = false) Long zone) {
+        return "redirect:/vulns" + carry(q, zone);
     }
+
+    /** 내려받기 주소도 함께 옮겼다. 결재 서류에 붙여 둔 링크가 죽지 않게 남긴다. */
+    @GetMapping("/lookup/export.csv")
+    public String lookupExport(@RequestParam(required = false) String q,
+                               @RequestParam(required = false) Long zone) {
+        return "redirect:/vulns/export.csv" + carry(q, zone);
+    }
+
+    private String carry(String q, Long zone) {
+        StringBuilder to = new StringBuilder();
+        String sep = "?";
+        if (q != null && !q.isBlank()) {
+            to.append(sep).append("q=").append(UriUtils.encodeQueryParam(q, StandardCharsets.UTF_8));
+            sep = "&";
+        }
+        if (zone != null) {
+            to.append(sep).append("zone=").append(zone);
+        }
+        return to.toString();
+    }
+
+    // --- ② 임시 다리 — 진짜 화면이 생기면 지운다 ----------------------------
 
     /** N5 에서 {@code /actions} 가 생기면 지우고 두 옛 화면을 이리로 보낸다. */
     @GetMapping("/actions")

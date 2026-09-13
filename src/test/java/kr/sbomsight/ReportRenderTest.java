@@ -89,7 +89,7 @@ class ReportRenderTest {
         assertThat(html).contains("어떻게 닿을 수 있는가");
         assertThat(html).contains("밖에서 바로");
         // 셋 중 둘이 AV:N/PR:N/UI:N 이다 (requests 는 UI:R).
-        assertThat(html).contains("바로 닿음");
+        assertThat(html).contains("원격 접근");
     }
 
     /**

@@ -37,21 +37,23 @@ public class RiskAcceptanceService {
 
     @Transactional
     public RiskAcceptance accept(Asset asset, String cve, String packageName,
-                                 String reason, String compensating, String approvedBy,
+                                 String reason, String compensating, String approvalDoc,
                                  LocalDate reviewBy, String actor) {
         String cleanReason = reason == null ? "" : reason.trim();
         if (cleanReason.length() < MIN_REASON) {
             throw new IllegalArgumentException("수용 사유를 적어 주세요.");
         }
-        if (approvedBy == null || approvedBy.isBlank()) {
-            throw new IllegalArgumentException("승인한 사람을 적어 주세요.");
-        }
+        // 앞서는 '승인한 사람' 이름을 반드시 받았다. 승인 절차는 없었다 —
+        // 아무나 아무 이름이나 적을 수 있는 칸이었고, 통제가 있는 것처럼
+        // 보이는 만큼 없느니만 못했다. 결재는 사내 결재로 돌고, 여기에는
+        // 그 문서 번호를 적는다. 번호가 아직 없을 수 있으므로 비워 둬도 된다.
+        // 누가 기록했는지는 로그인 계정으로 자동으로 남는다(acceptedBy).
         if (reviewBy == null) {
-            throw new IllegalArgumentException("다시 볼 날짜를 정해 주세요.");
+            throw new IllegalArgumentException("재검토일을 정해 주세요.");
         }
         // 기한 없는 수용은 방치와 구분되지 않는다. 과거 날짜도 같은 뜻이라 막는다.
         if (reviewBy.isBefore(LocalDate.now())) {
-            throw new IllegalArgumentException("다시 볼 날짜는 오늘 이후여야 합니다.");
+            throw new IllegalArgumentException("재검토일은 오늘 이후여야 합니다.");
         }
         acceptances.findActive(asset.getId(), cve, packageName).ifPresent(existing -> {
             throw new IllegalArgumentException("이미 수용된 건입니다.");
@@ -60,13 +62,15 @@ public class RiskAcceptanceService {
         RiskAcceptance acceptance = new RiskAcceptance(asset, cve, packageName);
         acceptance.setReason(cleanReason);
         acceptance.setCompensating(compensating);
-        acceptance.setApprovedBy(approvedBy);
+        acceptance.setApprovalDoc(approvalDoc);
         acceptance.setReviewBy(reviewBy);
         acceptance.setAcceptedBy(actor);
         acceptances.save(acceptance);
 
         audit.record(AuditEvent.RISK_ACCEPTED, asset.getName() + " · " + cve,
-                     packageName + " · 승인 " + acceptance.getApprovedBy()
+                     packageName
+                     + (acceptance.getApprovalDoc().isEmpty()
+                        ? "" : " · 결재 " + acceptance.getApprovalDoc())
                      + " · 재검토 " + reviewBy);
         return acceptance;
     }

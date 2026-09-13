@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      th:replace="~{layout :: page(~{::main}, 'vulns', '취약점')}">
+<body>
+<main>
+
+  <div th:replace="~{fragments/ui :: pagehead('취약점', ${scope.label()}, ~{::actions}, ~{})}"></div>
+  <div th:fragment="actions" th:remove="tag">
+    <a class="btn" th:href="@{${links.csv()}}">CSV 내려받기</a>
+  </div>
+
+  <!--/*
+    범위와 묶기.
+
+    앞서는 `전사 조회`(검색어 필수)와 `/scans/{id}`(검사 하나)가 따로 있었고,
+    둘 다 같은 질의를 불렀다. 그래서 "우리 전체에 심각이 몇 건인가" 를 물을
+    자리가 없었다. 범위를 고르는 한 화면으로 합친다.
+  */-->
+  <form method="get" class="filters">
+    <input type="hidden" name="scan" th:if="${selectedScan != null}" th:value="${selectedScan}">
+
+    <label style="margin:0">범위
+      <select name="zone" onchange="this.form.submit()" th:disabled="${selectedScan != null}">
+        <option value="">전체</option>
+        <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
+                th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>
+      </select>
+    </label>
+
+    <span class="segmented">
+      <a th:href="@{${links.group('item')}}"
+         th:classappend="${group} == 'item' ? 'current' : ''">항목별</a>
+      <a th:href="@{${links.group('cve')}}"
+         th:classappend="${group} == 'cve' ? 'current' : ''">CVE별</a>
+      <a th:href="@{${links.group('package')}}"
+         th:classappend="${group} == 'package' ? 'current' : ''">패키지별</a>
+    </span>
+
+    <input type="hidden" name="group" th:value="${group}">
+
+    <label style="flex:1; min-width:14rem; margin:0">
+      <input type="search" name="q" th:value="${q}" autocomplete="off"
+             placeholder="CVE 번호 · 패키지 이름">
+    </label>
+    <select name="severity" aria-label="심각도">
+      <option value="">심각도 전체</option>
+      <option value="Critical" th:selected="${severity} == 'Critical'">심각</option>
+      <option value="High" th:selected="${severity} == 'High'">높음</option>
+      <option value="Medium" th:selected="${severity} == 'Medium'">보통</option>
+      <option value="Low" th:selected="${severity} == 'Low'">낮음</option>
+    </select>
+    <select name="fixable" aria-label="수정 버전">
+      <option value="">수정 버전 전체</option>
+      <option value="true" th:selected="${fixable != null and fixable}">있음</option>
+      <option value="false" th:selected="${fixable != null and !fixable}">없음</option>
+    </select>
+    <select name="kev" aria-label="실제 악용">
+      <option value="">실제 악용 전체</option>
+      <option value="true" th:selected="${kev != null and kev}">확인됨</option>
+    </select>
+    <button class="btn primary" type="submit">찾기</button>
+  </form>
+
+  <div class="body flush">
+
+    <!-- ══ 항목별 ═══════════════════════════════════════════════════ -->
+    <th:block th:if="${group} == 'item'">
+      <th:block th:if="${page.totalElements == 0}">
+        <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
+                          ${links.clear()}, '거르개 지우기')}"></div>
+      </th:block>
+
+      <th:block th:if="${page.totalElements > 0}">
+        <div class="resultcount">
+          <b th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>
+          <span>건</span>
+          <span class="faint" th:if="${page.totalPages > 1}"
+                th:text="${page.number * page.size + 1} + '–' + ${page.number * page.size + page.numberOfElements} + '번째'"></span>
+          <span class="spacer" style="flex:1"></span>
+          <span class="faint" style="font-size:13px">정렬</span>
+          <span class="segmented">
+            <a th:each="s : ${ {'severity','cvss','epss','package','cve'} }"
+               th:href="@{${links.sort(s)}}"
+               th:classappend="${sort} == ${s} ? 'current' : ''"
+               th:text="${s} == 'severity' ? '심각도' : (${s} == 'cvss' ? 'CVSS'
+                        : (${s} == 'epss' ? '악용 확률' : (${s} == 'package' ? '패키지' : 'CVE')))">심각도</a>
+          </span>
+        </div>
+
+        <div th:replace="~{fragments/finding-table :: items(${page.content},
+                          ${selectedScan == null}, ${acceptedKeys})}"></div>
+
+        <div class="pager" th:if="${page.totalPages > 1}">
+          <a th:if="${page.hasPrevious()}"
+             th:href="@{${links.page(page.number - 1)}}">이전</a>
+          <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
+          <a th:if="${page.hasNext()}"
+             th:href="@{${links.page(page.number + 1)}}">다음</a>
+        </div>
+      </th:block>
+    </th:block>
+
+    <!--/*
+      ══ CVE별 ════════════════════════════════════════════════════════
+      "이 취약점이 몇 대에 있나". 긴급 상황에서 가장 먼저 묻는 것이고,
+      항목별 목록은 같은 CVE 가 자산 수만큼 반복되어 그 답을 세기 어렵다.
+    */-->
+    <th:block th:if="${group} == 'cve'">
+      <th:block th:if="${cveGroups.isEmpty()}">
+        <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
+                          ${links.clear()}, '거르개 지우기')}"></div>
+      </th:block>
+      <th:block th:unless="${cveGroups.isEmpty()}">
+        <div class="resultcount">
+          <b th:text="${#numbers.formatInteger(cveGroups.size(), 0, 'COMMA')}">0</b>
+          <span>가지 취약점</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th class="tight">취약점</th><th class="tight">심각도</th>
+              <th class="num tight">CVSS</th><th class="num tight">악용 확률</th>
+              <th class="num tight">영향 자산</th><th class="num tight">탐지</th>
+              <th class="tight">패키지</th><th class="tight">수정 버전</th>
+            </tr></thead>
+            <tbody>
+            <tr th:each="g : ${cveGroups}">
+              <td class="tight mono"><a th:href="@{'/vulns/' + ${g.cve}}" th:text="${g.cve}">CVE-0000-0000</a></td>
+              <td class="tight">
+                <span class="sev" th:classappend="${#strings.toLowerCase(g.severity)}"><i></i>
+                  <span th:switch="${#strings.toLowerCase(g.severity)}">
+                    <th:block th:case="'critical'">심각</th:block>
+                    <th:block th:case="'high'">높음</th:block>
+                    <th:block th:case="'medium'">보통</th:block>
+                    <th:block th:case="'low'">낮음</th:block>
+                    <th:block th:case="*" th:text="${#strings.isEmpty(g.severity)} ? '미확인' : ${g.severity}">미확인</th:block>
+                  </span></span>
+                <span th:if="${g.kevCount > 0}" class="tag kev">실제 악용</span>
+              </td>
+              <td class="num tight" th:text="${g.maxCvss != null} ? ${g.maxCvss} : '—'">—</td>
+              <td class="num tight"
+                  th:text="${g.maxEpss != null} ? ${#numbers.formatDecimal(g.maxEpss * 100, 1, 2)} + '%' : '—'">—</td>
+              <td class="num tight"><b th:text="${g.assetCount}">0</b>대</td>
+              <td class="num tight" th:text="${g.total}">0</td>
+              <td class="tight">
+                <span th:text="${g.anyPackage}">openssl</span>
+                <span class="faint" th:if="${g.packageCount > 1}"
+                      th:text="'외 ' + ${g.packageCount - 1}">외 0</span>
+              </td>
+              <td class="tight">
+                <span class="tag fix" th:if="${g.fixable == g.total}">전부 있음</span>
+                <span class="tag nofix" th:if="${g.fixable == 0}">없음</span>
+                <span class="faint" th:if="${g.fixable > 0 and g.fixable < g.total}"
+                      th:text="${g.fixable} + ' / ' + ${g.total}">0 / 0</span>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </th:block>
+    </th:block>
+
+    <!--/*
+      ══ 패키지별 ═════════════════════════════════════════════════════
+      실무자가 실제로 실행하는 단위는 패키지 업데이트다. "무엇을 올리면
+      몇 건이 사라지나" 에 답한다.
+    */-->
+    <th:block th:if="${group} == 'package'">
+      <th:block th:if="${packageGroups.isEmpty()}">
+        <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
+                          ${links.clear()}, '거르개 지우기')}"></div>
+      </th:block>
+      <th:block th:unless="${packageGroups.isEmpty()}">
+        <div class="resultcount">
+          <b th:text="${#numbers.formatInteger(packageGroups.size(), 0, 'COMMA')}">0</b>
+          <span>개 패키지</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th class="tight">패키지</th><th class="tight">유형</th>
+              <th class="num tight">영향 자산</th><th class="num tight">탐지</th>
+              <th class="num tight">해소 가능</th><th class="tight">최고 심각도</th>
+              <th class="tight">목표 버전</th>
+            </tr></thead>
+            <tbody>
+            <tr th:each="g : ${packageGroups}">
+              <td class="tight"><b th:text="${g.packageName}">openssl</b></td>
+              <td class="tight faint" th:text="${g.packageType}">rpm</td>
+              <td class="num tight"><b th:text="${g.assetCount}">0</b>대</td>
+              <td class="num tight" th:text="${g.total}">0</td>
+              <td class="num tight">
+                <b th:if="${g.fixable > 0}" th:text="${g.fixable}">0</b>
+                <span class="faint" th:if="${g.fixable == 0}">—</span>
+              </td>
+              <td class="tight">
+                <span class="sev critical" th:if="${g.criticalCount > 0}"><i></i>심각</span>
+                <span class="sev high" th:if="${g.criticalCount == 0 and g.highCount > 0}"><i></i>높음</span>
+                <span class="faint" th:if="${g.criticalCount == 0 and g.highCount == 0}">—</span>
+                <span th:if="${g.kevCount > 0}" class="tag kev">실제 악용</span>
+              </td>
+              <!--/*
+                설치된 판이 자산마다 다르면 목표 버전을 단정하지 않는다.
+                하나로 적으면 그 버전으로 올려도 안 되는 자산이 생긴다.
+              */-->
+              <td class="tight mono">
+                <span th:if="${g.versionCount == 1}" th:text="${g.anyVersion}">3.0.7</span>
+                <span class="faint" th:if="${g.versionCount != 1}"
+                      th:text="'설치 판 ' + ${g.versionCount} + '가지'">설치 판 2가지</span>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </th:block>
+    </th:block>
+  </div>
+
+  <!--/*
+    위험 수용. N5 에서 검토 결과(VEX 어휘)로 다시 만든다 — 그때까지 이
+    입구가 사라지면 고칠 수 없는 건을 기록할 길이 없어진다.
+  */-->
+  <dialog id="accept-dialog" sec:authorize="hasRole('ADMIN')"
+          th:if="${scope.singleAsset() != null}">
+    <form method="post" th:action="@{/acceptances}">
+      <h2>위험 수용</h2>
+      <input type="hidden" name="assetId" th:value="${scope.singleAsset()}">
+      <input type="hidden" name="cve" id="accept-cve">
+      <input type="hidden" name="packageName" id="accept-pkg">
+      <input type="hidden" name="back" value="/vulns">
+      <p class="lede" id="accept-what">—</p>
+      <label>수용 사유</label>
+      <textarea name="reason" rows="3" required
+                placeholder="업스트림에 수정 버전이 없고, 해당 기능을 쓰지 않음"></textarea>
+      <label>대신하는 통제</label>
+      <input name="compensating" placeholder="내부망에서만 접근 · WAF 규칙 적용">
+      <!--/*
+        앞서 여기에 '승인한 사람' 칸이 있었다. 이 도구에는 승인 절차가 없다 —
+        아무나 아무 이름이나 적을 수 있는 칸이었고, 통제가 있는 것처럼 보이는
+        만큼 없느니만 못했다. 결재는 사내 결재로 돌고 여기엔 번호만 적는다.
+        기록한 사람은 로그인 계정으로 자동으로 남으므로 묻지 않는다.
+      */-->
+      <label>결재 문서 번호 <span class="faint">선택</span></label>
+      <input name="approvalDoc" placeholder="보안-2026-0143">
+      <label>재검토일</label>
+      <input type="date" name="reviewBy" required>
+      <p class="footnote" th:text="'기록한 사람 ' + ${#authentication.name}
+                                   + ' — 로그인 계정으로 자동으로 남습니다'">기록한 사람 admin</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-close>취소</button>
+        <button type="submit" class="btn primary">수용 기록</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    (function () {
+      const dialog = document.querySelector('#accept-dialog');
+      document.addEventListener('click', function (e) {
+        const link = e.target.closest('.accept-link');
+        if (link && dialog) {
+          e.preventDefault();
+          document.querySelector('#accept-cve').value = link.dataset.cve;
+          document.querySelector('#accept-pkg').value = link.dataset.pkg;
+          document.querySelector('#accept-what').textContent =
+              link.dataset.label + ' · ' + link.dataset.pkg;
+          dialog.showModal();
+          return;
+        }
+        const close = e.target.closest('[data-close]');
+        if (close) { close.closest('dialog').close(); }
+      });
+    })();
+  </script>
+
+</main>
+</body>
+</html>

@@ -17,7 +17,7 @@
 
   <th:block th:if="${remediations.isEmpty()}">
     <div th:replace="~{fragments/ui :: empty('등록된 조치가 없습니다',
-                      '취약점 화면에서 패키지를 골라 조치로 올립니다.', '/lookup', '취약점 보기')}"></div>
+                      '취약점 화면에서 패키지를 골라 조치로 올립니다.', '/vulns', '취약점 보기')}"></div>
   </th:block>
 
   <div class="table-scroll" th:unless="${remediations.isEmpty()}">

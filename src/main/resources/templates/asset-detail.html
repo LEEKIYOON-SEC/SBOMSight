@@ -21,8 +21,6 @@
       <span class="tag" th:if="${asset.archivedAt != null}">보관됨</span>
       <div class="btn-list">
         <a th:if="${latest != null}" class="btn" th:href="@{'/report/' + ${latest.id}}">보고서</a>
-        <a th:if="${latest != null}" class="btn primary" th:href="@{'/scans/' + ${latest.id}}"
-           th:text="'취약점 ' + ${#numbers.formatInteger(latest.findingCount, 0, 'COMMA')} + '건'">취약점 98건</a>
       </div>
     </div>
 
@@ -43,6 +41,9 @@
 
     <div class="tabs">
       <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id}, '개요', null, ${tab} == 'overview')}"></a>
+      <a th:if="${latest != null}"
+         th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=vulns', '취약점',
+                       ${latest != null} ? ${latest.findingCount} : 0, ${tab} == 'vulns')}"></a>
       <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=history', '검사 이력',
                        ${history.size()}, ${tab} == 'history')}"></a>
       <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=actions', '조치·검토',
@@ -160,6 +161,72 @@
     </div>
   </div>
 
+  <!--/*
+    ══ 취약점 ══════════════════════════════════════════════════════
+    전체 취약점 화면과 **같은 서비스·같은 조각**을 쓴다. 한 자산 이야기는
+    그 자산 안에서 끝난다 — 밖으로 나갔다 돌아오게 두지 않는다.
+  */-->
+  <div th:if="${tab} == 'vulns'">
+    <form method="get" class="filters">
+      <input type="hidden" name="tab" value="vulns">
+      <span class="segmented">
+        <a th:each="g : ${ {'item','cve','package'} }"
+           th:href="@{'/assets/' + ${asset.id}(tab='vulns', group=${g}, q=${q},
+                      severity=${severityFilter}, fixable=${fixable}, kev=${kev})}"
+           th:classappend="${group} == ${g} ? 'current' : ''"
+           th:text="${g} == 'item' ? '항목별' : (${g} == 'cve' ? 'CVE별' : '패키지별')">항목별</a>
+      </span>
+      <input type="hidden" name="group" th:value="${group}">
+      <label style="flex:1; min-width:12rem; margin:0">
+        <input type="search" name="q" th:value="${q}" autocomplete="off"
+               placeholder="CVE 번호 · 패키지 이름"></label>
+      <select name="severity" aria-label="심각도">
+        <option value="">심각도 전체</option>
+        <option value="Critical" th:selected="${severityFilter} == 'Critical'">심각</option>
+        <option value="High" th:selected="${severityFilter} == 'High'">높음</option>
+        <option value="Medium" th:selected="${severityFilter} == 'Medium'">보통</option>
+        <option value="Low" th:selected="${severityFilter} == 'Low'">낮음</option>
+      </select>
+      <select name="fixable" aria-label="수정 버전">
+        <option value="">수정 버전 전체</option>
+        <option value="true" th:selected="${fixable != null and fixable}">있음</option>
+        <option value="false" th:selected="${fixable != null and !fixable}">없음</option>
+      </select>
+      <button class="btn primary" type="submit">찾기</button>
+      <a class="btn" th:href="@{/vulns(scan=${latest.id})}" title="전체 취약점 화면에서 같은 범위로 보기">넓게 보기</a>
+    </form>
+
+    <div class="body flush">
+      <th:block th:if="${group} == 'item'">
+        <th:block th:if="${page.totalElements == 0}">
+          <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
+                            ${links.clear()}, '거르개 지우기')}"></div>
+        </th:block>
+        <th:block th:if="${page.totalElements > 0}">
+          <div class="resultcount">
+            <b th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b><span>건</span>
+          </div>
+          <div th:replace="~{fragments/finding-table :: items(${page.content}, false, ${acceptedKeys})}"></div>
+          <div class="pager" th:if="${page.totalPages > 1}">
+            <a th:if="${page.hasPrevious()}"
+               th:href="@{${links.page(page.number - 1)}}">이전</a>
+            <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
+            <a th:if="${page.hasNext()}"
+               th:href="@{${links.page(page.number + 1)}}">다음</a>
+          </div>
+        </th:block>
+      </th:block>
+
+      <!-- CVE별·패키지별은 전체 화면에서 본다. 자산 하나로 좁히면 CVE 마다
+           자산 수가 언제나 1 이라 묶는 뜻이 없다. -->
+      <th:block th:if="${group} != 'item'">
+        <div th:replace="~{fragments/ui :: empty('이 묶음은 전체 화면에서 봅니다',
+                          '자산 하나로 좁히면 CVE 마다 자산 수가 언제나 1 이라 묶는 뜻이 없습니다.',
+                          '/vulns?group=' + ${group}, '전체에서 보기')}"></div>
+      </th:block>
+    </div>
+  </div>
+
   <!-- ══ 검사 이력 ══════════════════════════════════════════════════ -->
   <div class="body flush" th:if="${tab} == 'history'">
     <th:block th:if="${history.isEmpty()}">
@@ -217,7 +284,7 @@
           */-->
           <td class="tight actions">
             <a class="btn small" th:if="${s.status.name() == 'DONE'}"
-               th:href="@{'/scans/' + ${s.id}}">열기</a>
+               th:href="@{/vulns(scan=${s.id})}">열기</a>
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
                   th:if="${s.status.name() == 'DONE'}" sec:authorize="hasRole('ADMIN')">
               <button type="submit" class="btn small"
@@ -243,7 +310,8 @@
     <th:block th:if="${remediations.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('등록된 조치가 없습니다',
                         '취약점 화면에서 패키지를 골라 조치로 올립니다.',
-                        ${latest != null} ? '/scans/' + ${latest.id} : null, '취약점 보기')}"></div>
+                        ${latest != null} ? '/assets/' + ${asset.id} + '?tab=vulns' : null,
+                        '취약점 보기')}"></div>
     </th:block>
 
     <div class="card" th:unless="${remediations.isEmpty()}">
@@ -303,7 +371,7 @@
 
         if (p.done) {
           const open = el('open');
-          open.href = '/scans/' + p.scanId;
+          open.href = '/vulns?scan=' + p.scanId;
           open.hidden = false;
         }
         box.classList.toggle('failed', !!p.failed);

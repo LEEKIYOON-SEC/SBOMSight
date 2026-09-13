@@ -90,7 +90,7 @@ public final class CsvWriter {
      */
     public static void writeAuditLog(OutputStream out, List<AuditLog> rows) throws IOException {
         try (Writer writer = start(out)) {
-            row(writer, "시각", "계정", "한 일", "대상", "내용", "접속 IP");
+            row(writer, "시각", "계정", "행위", "대상", "내용", "접속 IP");
             for (AuditLog a : rows) {
                 row(writer,
                     SECONDS.format(a.getAt()),

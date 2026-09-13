@@ -75,18 +75,34 @@ class RiskAcceptanceTest {
                 .hasMessageContaining("사유");
     }
 
+    /**
+     * 결재 문서 번호는 비워 둘 수 있다.
+     *
+     * <p>앞서는 '승인한 사람' 이름을 <b>반드시</b> 받았다. 그런데 이 도구에는
+     * 승인 절차가 없다 — 아무나 아무 이름이나 적을 수 있는 칸이었고, 통제가
+     * 있는 것처럼 보이는 만큼 없느니만 못했다. 결재는 사내 결재로 돈다.
+     *
+     * <p>대신 <b>기록한 사람은 로그인 계정으로 자동으로 남는다.</b> 시스템이
+     * 아는 값은 묻지 않고 적고, 모르는 값은 아는 척하지 않는다.
+     */
     @Test
-    @DisplayName("승인한 사람 없이는 수용할 수 없다")
-    void requiresAnApprover() {
-        assertThatThrownBy(() -> service.accept(asset, "CVE-1", "openssl", "충분히 긴 사유입니다",
-                                                "", "  ", future(), "tester"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("승인한 사람");
+    @DisplayName("결재 문서 번호는 비워 둘 수 있고, 기록한 사람은 계정으로 남는다")
+    void approvalDocIsOptionalAndTheRecorderIsTheAccount() {
+        RiskAcceptance blank = service.accept(asset, "CVE-1", "openssl", "충분히 긴 사유입니다",
+                                              "", "  ", future(), "tester");
+        assertThat(blank.getApprovalDoc()).isEmpty();
+        assertThat(blank.getAcceptedBy())
+                .as("기록한 사람이 로그인 계정으로 남지 않았다")
+                .isEqualTo("tester");
+
+        RiskAcceptance withDoc = service.accept(asset, "CVE-2", "openssl", "충분히 긴 사유입니다",
+                                                "", " 보안-2026-0143 ", future(), "tester");
+        assertThat(withDoc.getApprovalDoc()).isEqualTo("보안-2026-0143");
     }
 
     /** 기한 없는 수용은 방치와 구분되지 않는다. 과거 날짜도 같은 뜻이다. */
     @Test
-    @DisplayName("다시 볼 날은 미래여야 한다")
+    @DisplayName("재검토일은 미래여야 한다")
     void requiresAFutureReviewDate() {
         assertThatThrownBy(() -> service.accept(asset, "CVE-1", "openssl", "충분히 긴 사유입니다",
                                                 "", "홍길동", LocalDate.now().minusDays(1), "tester"))
@@ -130,7 +146,7 @@ class RiskAcceptanceTest {
     }
 
     @Test
-    @DisplayName("다시 볼 날이 지나면 기한 경과로 잡힌다")
+    @DisplayName("재검토일이 지나면 기한 경과로 잡힌다")
     void surfacesOverdueReviews() {
         RiskAcceptance acceptance = accept("CVE-1", "openssl");
         acceptance.setReviewBy(LocalDate.now().minusDays(3));
@@ -208,7 +224,7 @@ class RiskAcceptanceTest {
         mvc.perform(post("/acceptances").with(user("viewer").roles("VIEWER")).with(csrf())
                         .param("assetId", asset.getId().toString())
                         .param("cve", "CVE-1").param("packageName", "openssl")
-                        .param("reason", "충분히 긴 사유입니다").param("approvedBy", "홍길동")
+                        .param("reason", "충분히 긴 사유입니다").param("approvalDoc", "홍길동")
                         .param("reviewBy", future().toString()))
            .andExpect(status().isForbidden());
     }
@@ -223,7 +239,7 @@ class RiskAcceptanceTest {
         mvc.perform(post("/acceptances").with(user("admin2").roles("ADMIN")).with(csrf())
                         .param("assetId", asset.getId().toString())
                         .param("cve", "CVE-9").param("packageName", "openssl")
-                        .param("reason", "충분히 긴 사유입니다").param("approvedBy", "홍길동")
+                        .param("reason", "충분히 긴 사유입니다").param("approvalDoc", "홍길동")
                         .param("reviewBy", future().toString())
                         .param("back", "//evil.example.com/"))
            .andExpect(redirectedUrl("/acceptances"));

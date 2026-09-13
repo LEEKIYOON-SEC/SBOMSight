@@ -56,7 +56,7 @@ public class RiskAcceptanceController {
                          @RequestParam String packageName,
                          @RequestParam String reason,
                          @RequestParam(required = false) String compensating,
-                         @RequestParam String approvedBy,
+                         @RequestParam(required = false) String approvalDoc,
                          @RequestParam String reviewBy,
                          @RequestParam(required = false) String back,
                          Principal principal,
@@ -64,7 +64,7 @@ public class RiskAcceptanceController {
         Asset asset = assets.findWithZone(assetId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "자산을 찾을 수 없습니다."));
         try {
-            acceptances.accept(asset, cve, packageName, reason, compensating, approvedBy,
+            acceptances.accept(asset, cve, packageName, reason, compensating, approvalDoc,
                                LocalDate.parse(reviewBy), principal.getName());
             flash.addFlashAttribute("message", cve + " 를 수용 기록에 남겼습니다.");
         } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
@@ -89,7 +89,7 @@ public class RiskAcceptanceController {
 
     private String message(Exception e) {
         return e instanceof java.time.format.DateTimeParseException
-                ? "다시 볼 날짜를 정해 주세요."
+                ? "재검토일을 정해 주세요."
                 : e.getMessage();
     }
 

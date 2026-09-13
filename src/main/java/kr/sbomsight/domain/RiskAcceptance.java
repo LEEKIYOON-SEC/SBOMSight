@@ -45,9 +45,21 @@ public class RiskAcceptance {
     @Column(nullable = false, length = 1000)
     private String compensating = "";
 
-    /** 승인한 사람. 계정 이름이 아니라 결재한 사람의 이름이다. */
+    /**
+     * 사내 결재 문서 번호. 비어 있을 수 있다.
+     *
+     * <p>앞서 이 칸은 <b>'승인한 사람'</b> 이었고 반드시 받았다. 그런데 이
+     * 도구에는 승인 절차가 없다 — 아무나 아무 이름이나 적을 수 있는 칸이었고,
+     * 통제가 있는 것처럼 보이는 만큼 없느니만 못했다. 결재는 사내 결재로
+     * 돌고, 여기에는 그 문서 번호만 적는다. <b>누가 기록했는지는 로그인
+     * 계정으로 자동으로 남는다</b>({@link #acceptedBy}).
+     *
+     * <p>열 이름은 아직 {@code approved_by} 다. N5 의 V11 에서 이 표를 통째로
+     * 다시 만들면서 함께 바꾼다 — 이름만 바꾸자고 마이그레이션을 하나 더
+     * 얹지 않는다.
+     */
     @Column(name = "approved_by", nullable = false, length = 128)
-    private String approvedBy = "";
+    private String approvalDoc = "";
 
     @Column(name = "accepted_at", nullable = false)
     private Instant acceptedAt = Instant.now();
@@ -55,7 +67,7 @@ public class RiskAcceptance {
     @Column(name = "accepted_by", nullable = false, length = 64)
     private String acceptedBy = "";
 
-    /** 다시 볼 날. 기한 없는 수용은 방치와 구분되지 않는다. */
+    /** 재검토일. 기한 없는 수용은 방치와 구분되지 않는다. */
     @Column(name = "review_by", nullable = false)
     private LocalDate reviewBy;
 
@@ -82,7 +94,7 @@ public class RiskAcceptance {
         return revokedAt == null;
     }
 
-    /** 다시 볼 날이 지났는가. 철회된 것은 해당 없다. */
+    /** 재검토일이 지났는가. 철회된 것은 해당 없다. */
     public boolean isReviewOverdue() {
         return isActive() && reviewBy != null && reviewBy.isBefore(LocalDate.now());
     }
@@ -124,12 +136,12 @@ public class RiskAcceptance {
         this.compensating = compensating == null ? "" : compensating.trim();
     }
 
-    public String getApprovedBy() {
-        return approvedBy;
+    public String getApprovalDoc() {
+        return approvalDoc;
     }
 
-    public void setApprovedBy(String approvedBy) {
-        this.approvedBy = approvedBy == null ? "" : approvedBy.trim();
+    public void setApprovalDoc(String approvalDoc) {
+        this.approvalDoc = approvalDoc == null ? "" : approvalDoc.trim();
     }
 
     public Instant getAcceptedAt() {

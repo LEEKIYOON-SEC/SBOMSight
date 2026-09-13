@@ -107,62 +107,207 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
            """)
     List<ExposureRow> exposureRows(@Param("scanId") Long scanId);
 
+    // --- 통합 취약점 화면 (/vulns) -----------------------------------------
+    //
+    // 전사 조회의 질의(lookup)가 여기 있었다. "각 자산의 최신 완료 검사만
+    // 본다" 는 조건이 질의 안에 박혀 있어서, 검사 하나만 보는 화면은 그
+    // 질의를 쓸 수 없었고 따로 한 벌을 더 들고 있었다. 지금은 <b>범위를
+    // 스캔 id 목록으로 받는다</b> — 무엇이 범위인지는 VulnQuery 가 정하고,
+    // 여기는 그 목록 안에서만 센다. 질의가 한 벌로 줄었다.
+
     /**
-     * 전사 조회 — "이 취약점이 어느 서버에 있나".
+     * 범위 안의 탐지 한 페이지.
      *
-     * <p>보안팀이 긴급 상황에서 가장 먼저 하는 질문이고, 자산을 하나씩 열어
-     * 보는 것으로는 답이 나오지 않는다.
+     * <p>범위를 <b>스캔 id 목록으로 받는다.</b> 검사 하나든, 한 구역의 최신
+     * 검사들이든, 전체든 부르는 쪽이 정해서 넘긴다 — 질의를 세 벌 두지 않는다.
      *
-     * <p><b>각 자산의 최신 완료 스캔만 본다.</b> 이력 전체에서 찾으면 이미
-     * 조치가 끝난 옛 스캔이 섞여 나와 "아직 있다" 고 말하게 된다 — 그 답을
-     * 믿고 서버에 들어가면 없다. 시각이 같은 스캔이 둘일 때는 id 로 갈라
-     * 자산 하나당 한 스캔만 남긴다.
+     * <p><b>검색어는 있어도 되고 없어도 된다.</b> 앞서 전사 조회는 검색어가
+     * 없으면 아무것도 보여 주지 않았는데, 그러면 "우리 전체에 심각이 몇 건인가"
+     * 를 물을 수가 없다.
+     *
+     * <p>자산·구역을 {@code JOIN FETCH} 로 함께 끌어온다. {@code open-in-view}
+     * 가 꺼져 있어 화면에서 {@code f.scan.asset.zone.name} 을 읽는 순간 세션이
+     * 없으면 터진다.
      */
     @Query(value = """
            SELECT f FROM Finding f
-             JOIN FETCH f.scan s
-             JOIN FETCH s.asset a
-             JOIN FETCH a.zone z
-           WHERE s.status = 'DONE'
-             AND NOT EXISTS (SELECT 1 FROM Scan x
-                             WHERE x.asset.id = s.asset.id AND x.status = 'DONE'
-                               AND (x.createdAt > s.createdAt
-                                    OR (x.createdAt = s.createdAt AND x.id > s.id)))
-             AND (:zoneId IS NULL OR z.id = :zoneId)
+             JOIN FETCH f.scan s JOIN FETCH s.asset a JOIN FETCH a.zone
+           WHERE s.id IN :scanIds
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
                   OR (:fixable = FALSE AND f.fixState <> 'fixed'))
-             AND (LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
-                  OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
-                  OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:kev IS NULL OR f.kev = :kev)
+             AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+           """,
+           countQuery = """
+           SELECT COUNT(f) FROM Finding f JOIN f.scan s
+           WHERE s.id IN :scanIds
+             AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
+             AND (:fixable IS NULL
+                  OR (:fixable = TRUE  AND f.fixState = 'fixed')
+                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+             AND (:kev IS NULL OR f.kev = :kev)
+             AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+           """)
+    Page<Finding> findIn(@Param("scanIds") Collection<Long> scanIds,
+                         @Param("q") String q,
+                         @Param("severity") String severity,
+                         @Param("fixable") Boolean fixable,
+                         @Param("kev") Boolean kev,
+                         Pageable pageable);
+
+    /**
+     * 심각도 순으로 정렬한 같은 목록.
+     *
+     * <p>왜 질의를 따로 두는가 — 심각도는 <b>글자</b>다. {@code Critical} 이
+     * {@code High} 보다 앞이라는 것은 알파벳 순서가 아니라 우리가 아는 뜻이고,
+     * 그 순서는 {@code ORDER BY CASE} 로만 낼 수 있다. Pageable 의 Sort 로는
+     * 표현되지 않으므로 질의에 박아 둔다.
+     *
+     * <p>순위를 열로 저장해 두는 방법도 있지만, 그러면 grype 이 준 단계를
+     * 우리가 한 번 더 옮겨 적는 자리가 생긴다. 옮겨 적는 자리는 틀어진다.
+     */
+    @Query(value = """
+           SELECT f FROM Finding f
+             JOIN FETCH f.scan s JOIN FETCH s.asset a JOIN FETCH a.zone
+           WHERE s.id IN :scanIds
+             AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
+             AND (:fixable IS NULL
+                  OR (:fixable = TRUE  AND f.fixState = 'fixed')
+                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+             AND (:kev IS NULL OR f.kev = :kev)
+             AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
            ORDER BY CASE LOWER(f.severity)
                       WHEN 'critical' THEN 0 WHEN 'high' THEN 1
                       WHEN 'medium'   THEN 2 WHEN 'low'  THEN 3 ELSE 4 END,
-                    f.packageName ASC, a.name ASC, f.cve ASC
+                    f.cvssScore DESC NULLS LAST, f.packageName ASC, f.cve ASC
            """,
            countQuery = """
-           SELECT COUNT(f) FROM Finding f
-             JOIN f.scan s JOIN s.asset a JOIN a.zone z
-           WHERE s.status = 'DONE'
-             AND NOT EXISTS (SELECT 1 FROM Scan x
-                             WHERE x.asset.id = s.asset.id AND x.status = 'DONE'
-                               AND (x.createdAt > s.createdAt
-                                    OR (x.createdAt = s.createdAt AND x.id > s.id)))
-             AND (:zoneId IS NULL OR z.id = :zoneId)
+           SELECT COUNT(f) FROM Finding f JOIN f.scan s
+           WHERE s.id IN :scanIds
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
                   OR (:fixable = FALSE AND f.fixState <> 'fixed'))
-             AND (LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
-                  OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
-                  OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:kev IS NULL OR f.kev = :kev)
+             AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
            """)
-    Page<Finding> lookup(@Param("q") String q,
-                         @Param("zoneId") Long zoneId,
-                         @Param("severity") String severity,
-                         @Param("fixable") Boolean fixable,
-                         Pageable pageable);
+    Page<Finding> findInBySeverity(@Param("scanIds") Collection<Long> scanIds,
+                                   @Param("q") String q,
+                                   @Param("severity") String severity,
+                                   @Param("fixable") Boolean fixable,
+                                   @Param("kev") Boolean kev,
+                                   Pageable pageable);
+
+    /**
+     * CVE 로 묶어 본다 — "이 취약점이 몇 대에 있나".
+     *
+     * <p>긴급 상황에서 가장 먼저 묻는 것이다. 항목별 목록은 같은 CVE 가 자산
+     * 수만큼 반복되어 그 답을 세기 어렵다.
+     *
+     * <p>심각도를 묶음 키에 넣는다. grype 은 취약점 하나에 심각도 하나를
+     * 주므로 보통 갈리지 않지만, 갈리면 <b>갈린 채로 보여 준다</b> — 하나로
+     * 합치려면 어느 쪽을 버릴지 우리가 정해야 하고 그건 grype 의 판정을
+     * 바꾸는 일이다.
+     *
+     * <p><b>묶는 축은 화면에 찍는 번호와 같아야 한다.</b> 항목별 목록은
+     * {@link kr.sbomsight.domain.Finding#getDisplayId()} 를 찍는데(있으면
+     * CVE 번호, 없으면 grype 의 식별자), 여기서 {@code f.cve} 로만 묶으면 같은
+     * 취약점이 한 화면에서는 {@code CVE-2021-44228}, 다른 화면에서는
+     * {@code GHSA-jfh8-c2jp-5v3q} 로 보인다. 결재와 보고는 CVE 번호로 도는데
+     * 목록마다 번호가 달라지면 대조가 안 된다. 같은 식을 쓴다.
+     */
+    @Query("""
+           SELECT CASE WHEN f.relatedCve <> '' THEN f.relatedCve ELSE f.cve END AS cve,
+                  f.severity AS severity,
+                  MAX(f.cvssScore) AS maxCvss, MAX(f.epss) AS maxEpss,
+                  COUNT(f) AS total,
+                  COUNT(DISTINCT f.scan.asset.id) AS assetCount,
+                  COUNT(DISTINCT f.packageName) AS packageCount,
+                  MIN(f.packageName) AS anyPackage,
+                  SUM(CASE WHEN f.fixState = 'fixed' THEN 1 ELSE 0 END) AS fixable,
+                  SUM(CASE WHEN f.kev = TRUE THEN 1 ELSE 0 END) AS kevCount
+           FROM Finding f
+           WHERE f.scan.id IN :scanIds
+             AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
+             AND (:fixable IS NULL
+                  OR (:fixable = TRUE  AND f.fixState = 'fixed')
+                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+             AND (:kev IS NULL OR f.kev = :kev)
+             AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+           GROUP BY CASE WHEN f.relatedCve <> '' THEN f.relatedCve ELSE f.cve END,
+                    f.severity
+           ORDER BY CASE LOWER(f.severity)
+                      WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                      WHEN 'medium'   THEN 2 WHEN 'low'  THEN 3 ELSE 4 END,
+                    MAX(f.cvssScore) DESC,
+                    CASE WHEN f.relatedCve <> '' THEN f.relatedCve ELSE f.cve END ASC
+           """)
+    List<CveGroup> groupByCveIn(@Param("scanIds") Collection<Long> scanIds,
+                                @Param("q") String q,
+                                @Param("severity") String severity,
+                                @Param("fixable") Boolean fixable,
+                                @Param("kev") Boolean kev);
+
+    /** CVE 상세 — 이 CVE 가 걸린 자산 전부. */
+    @Query("""
+           SELECT f FROM Finding f
+             JOIN FETCH f.scan s JOIN FETCH s.asset a JOIN FETCH a.zone
+           WHERE s.id IN :scanIds AND (f.cve = :cve OR f.relatedCve = :cve)
+           ORDER BY a.name ASC, f.packageName ASC
+           """)
+    List<Finding> findByCveIn(@Param("scanIds") Collection<Long> scanIds,
+                              @Param("cve") String cve);
+
+    /** 구역 분포 — "어디까지 번졌나". 자산 수를 구역 이름별로 센다. */
+    @Query("""
+           SELECT z.name AS zoneName, COUNT(DISTINCT a.id) AS assetCount
+           FROM Finding f JOIN f.scan s JOIN s.asset a JOIN a.zone z
+           WHERE s.id IN :scanIds AND (f.cve = :cve OR f.relatedCve = :cve)
+           GROUP BY z.name ORDER BY z.name
+           """)
+    List<ZoneSpread> zoneSpread(@Param("scanIds") Collection<Long> scanIds,
+                                @Param("cve") String cve);
+
+    interface CveGroup {
+        String getCve();
+
+        String getSeverity();
+
+        java.math.BigDecimal getMaxCvss();
+
+        java.math.BigDecimal getMaxEpss();
+
+        long getTotal();
+
+        /** 이 CVE 가 걸린 자산 수. CVE별 보기의 핵심 숫자다. */
+        long getAssetCount();
+
+        long getPackageCount();
+
+        String getAnyPackage();
+
+        long getFixable();
+
+        long getKevCount();
+    }
+
+    interface ZoneSpread {
+        String getZoneName();
+
+        long getAssetCount();
+    }
 
     /** 이력 대조용. 버전이 바뀌면 키도 바뀌므로 (CVE, 패키지명) 으로 본다. */
     @Query("SELECT CONCAT(f.cve, '|', f.packageName) FROM Finding f WHERE f.scan.id = :scanId")

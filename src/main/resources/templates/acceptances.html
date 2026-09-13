@@ -12,10 +12,10 @@
 
   <div class="body flush">
 
-  <!-- 다시 볼 날이 지난 것은 목록보다 먼저 보여야 한다. 표 어딘가에
+  <!-- 재검토일이 지난 것은 목록보다 먼저 보여야 한다. 표 어딘가에
        섞여 있으면 지났다는 사실 자체를 못 보고 지나간다. -->
   <div th:if="${!overdue.isEmpty()}" class="banner danger">
-    <b th:text="'다시 볼 날이 지난 수용 ' + ${overdue.size()} + '건'">재검토 기한 경과</b>
+    <b th:text="'재검토일이 지난 수용 ' + ${overdue.size()} + '건'">재검토 기한 경과</b>
     <span th:each="r, i : ${overdue}" th:if="${i.index < 5}">
       <span th:text="${r.asset.name} + ' · ' + ${r.packageName}">web-01 · openssl</span><th:block
         th:if="${!i.last && i.index < 4}"> · </th:block>
@@ -41,7 +41,7 @@
 
   <th:block th:if="${rows.isEmpty()}">
     <div th:replace="~{fragments/ui :: empty('수용 기록이 없습니다',
-                      '취약점 화면에서 고칠 수 없는 항목을 골라 기록합니다.', '/lookup', '취약점 보기')}"></div>
+                      '취약점 화면에서 고칠 수 없는 항목을 골라 기록합니다.', '/vulns', '취약점 보기')}"></div>
   </th:block>
 
   <div class="table-scroll" th:unless="${rows.isEmpty()}">
@@ -53,8 +53,8 @@
           <th class="tight">취약점</th>
           <th class="tight">패키지</th>
           <th>사유 · 대신하는 통제</th>
-          <th class="tight">승인</th>
-          <th class="tight">다시 볼 날</th>
+          <th class="tight">기록</th>
+          <th class="tight">재검토일</th>
           <th class="tight"></th>
         </tr>
         </thead>
@@ -73,8 +73,14 @@
                           + (${#strings.isEmpty(r.revokeNote)} ? '' : ' — ' + ${r.revokeNote})"></div>
           </td>
           <td class="tight">
-            <div th:text="${r.approvedBy}">홍길동</div>
+            <!--/*
+              시스템이 아는 것만 적는다 — 로그인 계정과 시각. 결재 문서
+              번호는 사람이 적는 칸이라 비어 있을 수 있다.
+            */-->
+            <div th:text="${r.acceptedBy}">admin</div>
             <div class="faint num" th:text="${#temporals.format(r.acceptedAt, 'yyyy-MM-dd')}">—</div>
+            <div class="faint" th:if="${!#strings.isEmpty(r.approvalDoc)}"
+                 th:text="'결재 ' + ${r.approvalDoc}">결재 보안-2026-0143</div>
           </td>
           <td class="tight num" th:classappend="${r.reviewOverdue} ? 'overdue' : ''"
               th:text="${#temporals.format(r.reviewBy, 'yyyy-MM-dd')}">—</td>

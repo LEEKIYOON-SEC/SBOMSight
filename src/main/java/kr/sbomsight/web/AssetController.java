@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.service.AssetService;
 import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.SbomStorage;
+import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ScanService;
 import kr.sbomsight.service.ZoneService;
 import kr.sbomsight.service.AuditService;
@@ -48,11 +49,13 @@ public class AssetController {
     private final AuditService audit;
     private final RiskAcceptanceService acceptances;
     private final SbomStorage storage;
+    private final VulnQuery vulns;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
                            AssetService assetService, ZoneService zoneService, AuditService audit,
-                           RiskAcceptanceService acceptances, SbomStorage storage) {
+                           RiskAcceptanceService acceptances, SbomStorage storage,
+                           VulnQuery vulns) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
@@ -63,6 +66,7 @@ public class AssetController {
         this.audit = audit;
         this.acceptances = acceptances;
         this.storage = storage;
+        this.vulns = vulns;
     }
 
     /** 마지막 검사가 이보다 오래되면 "오래됐다" 고 센다. */
@@ -248,6 +252,13 @@ public class AssetController {
     @GetMapping("assets/{id}")
     public String detail(@PathVariable Long id,
                          @RequestParam(defaultValue = "overview") String tab,
+                         @RequestParam(defaultValue = "item") String group,
+                         @RequestParam(required = false) String q,
+                         @RequestParam(name = "severity", required = false) String severityFilter,
+                         @RequestParam(required = false) Boolean fixable,
+                         @RequestParam(required = false) Boolean kev,
+                         @RequestParam(defaultValue = "0") int page,
+                         @RequestParam(defaultValue = "severity") String sort,
                          Model model) {
         model.addAttribute("tab", tab);
         Asset asset = asset(id);
@@ -271,6 +282,27 @@ public class AssetController {
                 remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id));
         // 지우면 무엇이 함께 사라지는지 확인 문구에 그대로 쓴다.
         model.addAttribute("impact", assetService.impactOf(asset));
+
+        // 취약점 탭. 전체 취약점 화면과 **같은 서비스·같은 조각**을 쓴다 —
+        // 각자 자기 질의를 부르게 두면 한쪽만 고치는 날이 오고, 그때부터
+        // 같은 데이터가 화면마다 다르게 보인다.
+        if ("vulns".equals(tab) && latest != null) {
+            model.addAttribute("scope", vulns.ofScan(latest.getId()));
+            vulns.fill(model, vulns.ofScan(latest.getId()), group, q, severityFilter,
+                       fixable, kev, page, sort);
+            // 이 탭은 언제나 tab=vulns 를 달고 다닌다. 나머지는 고른 것만 붙는다.
+            model.addAttribute("links",
+                    new VulnQuery.Links("/assets/" + id, "tab=vulns")
+                            .with("group", group).with("q", q)
+                            .with("severity", severityFilter)
+                            .with("fixable", fixable).with("kev", kev).with("sort", sort));
+            model.addAttribute("group", group);
+            model.addAttribute("q", q);
+            model.addAttribute("fixable", fixable);
+            model.addAttribute("kev", kev);
+            model.addAttribute("sort", sort);
+            model.addAttribute("severityFilter", severityFilter);
+        }
         return "asset-detail";
     }
 
@@ -488,34 +520,14 @@ public class AssetController {
     }
 
     /** 취약점 목록. 정렬·필터·페이징은 전부 SQL 에서 끝난다. */
+    /**
+     * 검사 하나의 취약점 — 이제 통합 화면이 그린다.
+     *
+     * <p>적어 둔 주소와 즐겨찾기가 죽지 않게 넘겨 준다.
+     */
     @GetMapping("scans/{scanId}")
-    public String scan(@PathVariable Long scanId,
-                       @RequestParam(required = false) String severity,
-                       @RequestParam(required = false) Boolean fixable,
-                       @RequestParam(required = false) Boolean kev,
-                       @RequestParam(required = false) String q,
-                       @RequestParam(defaultValue = "0") int page,
-                       @RequestParam(defaultValue = "cvss") String sort,
-                       Model model) {
-        Scan scan = scans.findWithAsset(scanId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
-
-        Page<Finding> result = findings.search(scanId, blankToNull(severity), fixable, kev,
-                                               blankToNull(q), PageRequest.of(page, 100, order(sort)));
-
-        model.addAttribute("scan", scan);
-        model.addAttribute("page", result);
-        model.addAttribute("severity", severity);
-        model.addAttribute("fixable", fixable);
-        model.addAttribute("kev", kev);
-        model.addAttribute("q", q);
-        model.addAttribute("sort", sort);
-        model.addAttribute("severityCounts", severityMap(scanId));
-        // 수용된 건에 표시를 붙이기 위한 키 집합. 건마다 질의하면 목록 한
-        // 장에 수백 번 왕복한다.
-        model.addAttribute("acceptedKeys",
-                acceptances.activeKeys(scan.getAsset().getId()));
-        return "scan";
+    public String scan(@PathVariable Long scanId) {
+        return "redirect:/vulns?scan=" + scanId;
     }
 
     /**
