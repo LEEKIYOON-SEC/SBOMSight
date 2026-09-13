@@ -19,6 +19,7 @@ public enum AuditEvent {
     PASSWORD_CHANGED("비밀번호 변경"),
     USER_CREATED("계정 생성"),
     USER_DELETED("계정 삭제"),
+    USER_UPDATED("계정 수정"),
     USER_ROLE_CHANGED("권한 변경"),
     USER_PASSWORD_RESET("비밀번호 초기화"),
     USER_UNLOCKED("계정 잠금 해제"),

@@ -71,7 +71,8 @@ class PasswordPolicyTest {
         user.setMustChange(false);
         user.setFailedAttempts(0);
         user.setLockedAt(null);
-        user.setLastLoginAt(Instant.now());
+        user.recordLogin(Instant.now().minus(30, ChronoUnit.DAYS));
+        user.recordLogin(Instant.now());
         user.setPasswordChangedAt(Instant.now());
         users.saveAndFlush(user);
     }
@@ -111,15 +112,24 @@ class PasswordPolicyTest {
         assertThat(policy.mustChange(reload())).isFalse();
     }
 
+    /**
+     * 처음 받은 계정이 <b>방금 로그인한 상태</b>에서도 '최초 로그인' 이어야
+     * 한다. 이 화면은 로그인 다음 요청에서 뜨므로 그때 이미 이번 로그인
+     * 시각은 박혀 있다 — 그것으로 가르면 여기서 틀린다.
+     */
     @Test
-    @DisplayName("한 번도 로그인한 적 없으면 '최초 로그인' 이다")
+    @DisplayName("처음 받은 계정은 방금 로그인했어도 '최초 로그인' 이다")
     void firstLoginIsItsOwnCase() {
-        AppUser user = reload();
-        user.setMustChange(true);
-        user.setLastLoginAt(null);
-        users.save(user);
+        // 갓 만든 계정 — 두 칸이 다 비어 있다. 손으로 비우지 않고 실제로
+        // 새로 만든다. 비우는 setter 를 두면 시험만 지나가는 길이 생긴다.
+        AppUser fresh = new AppUser("fresh-" + System.nanoTime(),
+                                    encoder.encode(PASSWORD), Role.VIEWER);
+        fresh.setMustChange(true);
+        // 지금 막 로그인했다. 비밀번호 화면은 이 다음 요청에서 뜬다.
+        fresh.recordLogin(Instant.now());
+        users.saveAndFlush(fresh);
 
-        assertThat(policy.forcedReason(reload())).isEqualTo(PasswordChangeReason.FIRST_LOGIN);
+        assertThat(policy.forcedReason(fresh)).isEqualTo(PasswordChangeReason.FIRST_LOGIN);
     }
 
     @Test
@@ -127,7 +137,8 @@ class PasswordPolicyTest {
     void resetIsTemporary() {
         AppUser user = reload();
         user.setMustChange(true);
-        user.setLastLoginAt(Instant.now());
+        // 예전에 들어온 적이 있고, 지금 또 들어왔다.
+        user.recordLogin(Instant.now());
         users.save(user);
 
         assertThat(policy.forcedReason(reload())).isEqualTo(PasswordChangeReason.TEMPORARY);

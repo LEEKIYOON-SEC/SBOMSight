@@ -9,7 +9,8 @@
 |---|---|
 | JDBC 드라이버 교체 | mysql-connector-j 는 GPL-2.0. MariaDB Connector/J 는 LGPL-2.1 (§11) |
 | 마이그레이션 V11 | 판정(VEX) 어휘 (§4) |
-| 마이그레이션 V12 | 패키지 인벤토리 (§3.3) |
+| 마이그레이션 V12 | 마지막·그 전 로그인 (N6) |
+| 마이그레이션 V13 | 패키지 인벤토리 (§3.3) |
 
 ---
 
@@ -452,7 +453,7 @@ finding_analysis_event  (analysis_id, at, actor, field_name, before_value, after
 아니므로 `미검토` 로 두고, 수용했다가 거뒀다는 사실은 **변경 이력에** 그때 시각
 그대로 남긴다. 같은 키에 철회분이 여럿이면 가장 나중 것 하나만 행이 된다.
 
-### V12 — 컴포넌트 (N9)
+### V13 — 패키지 인벤토리 (N9)
 
 ```
 component (asset_id, scan_id, name, version, type, purl, location)
@@ -592,22 +593,46 @@ component (asset_id, scan_id, name, version, type, purl, location)
 > 헷갈릴 수 있다. 없애고 검토 결과로 모으려면 값이 DB 에 글자로 들어 있어
 > 마이그레이션이 필요하다 — 화면을 합치는 단계에서 함께 하지 않았다.
 
-### N6 — 계정
+### N6 — 계정 ⚠ V12 ✅
 - `AccountService.update(username, displayName, role, enabled, newPasswordOrNull, actor)`
-  — 마지막 관리자 보호는 기존 `requireAnotherAdmin` 재사용
-- 새 `MeController`(`/me`), `me.html` 카드 둘
-- `settings.html` 탭 넷 + 계정 `[수정]` 팝업, 드롭다운 즉시 저장 제거
+  — `changeRole` 과 `setEnabled` 를 여기로 합쳤다. 권한을 바꾸는 길이 둘이면
+  한쪽에만 '마지막 관리자' 보호가 걸린 채로 남는 날이 온다
+- 새 `MeController`(`/me`), `me.html` 카드 둘. `/me` 임시 다리 제거
+- `settings.html` 계정 `[수정]` 팝업. **권한 드롭다운 즉시 저장 제거** —
+  실수로 스친 것과 정말 바꾼 것을 가르지 못했고 되돌릴 자리도 없었다
 - `AuditEvent.USER_UPDATED`
-- **`users.last_login_at` 이 한 번도 채워지지 않는다** — N1 에서 앱을 띄워 로그인하다
-  발견. `AuthEventListener.onSuccess` 가 감사 로그만 남기고 이 칸을 건드리지 않아
-  `setLastLoginAt` 은 코드 어디서도 불리지 않는다. 두 군데가 망가져 있다:
-  ① 설정의 `마지막 로그인` 이 언제나 `없음`
-  ② `PasswordPolicy.forcedReason` 이 `lastLoginAt == null` 로
-     "처음 받은 계정" 과 "관리자가 초기화한 계정" 을 가르는데, 늘 null 이라
-     **초기화된 계정도 언제나 "처음 받은 계정" 문구가 뜬다**
-  `LoginAttemptService.onSuccess` 가 이미 그 계정을 불러 저장하므로 거기서 채운다.
-  시험: 로그인하면 값이 박히는지 · 초기화된 계정이 TEMPORARY 로 갈리는지
-- 시험: 이름만·권한만·비밀번호만 · 마지막 관리자 강등 거부 · 8자 미만 거부
+- 비밀번호 칸은 **비우면 안 건드린다.** 정해 주면 본인이 받아서 곧바로 다시
+  바꾸게 한다(`mustChange`) — 관리자가 아는 비밀번호를 그대로 쓰게 두지 않는다
+
+**`users.last_login_at` 이 한 번도 채워지지 않았다** (N1 에서 발견). 열은 V1
+부터 있었고 화면 둘이 그 값을 읽고 있었는데 `setLastLoginAt` 을 부르는 곳이
+코드 어디에도 없었다.
+
+> **그런데 로그인할 때 채우기만 하면 반대로 뒤집힌다.** 비밀번호 변경 화면은
+> `lastLoginAt == null` 로 "최초 로그인" 과 "관리자가 초기화함" 을 갈랐는데,
+> 그 화면은 로그인 **다음 요청**에서 뜬다 — 이미 이번 로그인 시각이 박혀 있어
+> 이번에는 전부 '임시 비밀번호' 가 된다. 순서로는 풀리지 않는다.
+
+**V12 — 사실 두 개를 두 칸에 나눠 적는다.**
+
+```
+last_login_at      이번에 들어온 시각     → 설정의 '마지막 로그인'
+previous_login_at  그 전에 들어온 시각    → NULL 이면 이번이 처음
+```
+
+날짜 하나로 눈치껏 가르려 하면(만든 시각과 비교한다든지) 언젠가 틀리고
+틀린 줄도 모른다. 이미 쓰던 설치는 **감사 로그의 로그인 성공 기록으로
+채운다** — 지어내는 것이 아니라 우리가 이미 가지고 있는 값이다.
+
+`LoginAttemptService.onSuccess` 가 `recordLogin(now)` 으로 한 칸 민다.
+두 칸을 따로 세팅하게 두지 않는다 — 한쪽만 건드리면 '그 전 로그인' 이
+이번 로그인과 같아지거나 영영 비어 있게 된다.
+
+> **마이그레이션 번호가 하나 밀렸다.** 패키지 인벤토리(N9)는 V12 → **V13**.
+
+시험은 `LoginFlowTest` 에 둔다 — **실제 필터 체인으로** 로그인해야 이 자리를
+지나간다. `.with(user(...))` 로 주체를 꽂는 시험은 이 버그를 잡지 못했고,
+실제로 시험 229개가 전부 통과한 채로 망가져 있었다.
 
 ### N7 — 보고서 재작성
 - `ReportService` — `Chapter1~4` → `DocumentInfo`/`Overview`/`Summary`/`FixTargets`/
@@ -628,8 +653,8 @@ component (asset_id, scan_id, name, version, type, purl, location)
 - 라벨·대비·포커스
 - `PageRenderTest` 를 새 주소 전부 × 두 권한으로
 
-### N9 — 패키지 인벤토리 ⚠ V12
-- V12 마이그레이션 · `SbomStorage` 가 세는 김에 담기 · 교체 로직
+### N9 — 패키지 인벤토리 ⚠ V13
+- V13 마이그레이션 · `SbomStorage` 가 세는 김에 담기 · 교체 로직
 - 새 `PackageController`(`/packages`) + `packages.html` (§3.3 의 취약 버전 표시)
 - 자산 상세 `패키지` 탭
 - 시험: 재검사해도 행이 두 배 되지 않는지 · 자산/스캔 삭제 시 함께 지워지는지 ·

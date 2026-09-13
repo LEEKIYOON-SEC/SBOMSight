@@ -108,9 +108,4 @@ public class LegacyRedirectController {
         return "redirect:/report/zone";
     }
 
-    /** N6 에서 {@code /me} 가 생기면 지운다. */
-    @GetMapping("/me")
-    public String me() {
-        return "redirect:/password";
-    }
 }

@@ -76,6 +76,88 @@ class LoginFlowTest {
         return session == null ? builder : builder.session(session);
     }
 
+    // --- 로그인 시각 -----------------------------------------------------
+
+    /**
+     * <b>로그인하면 그 시각이 계정에 남아야 한다.</b>
+     *
+     * <p>{@code last_login_at} 열은 V1 부터 있었고 화면 둘이 그 값을 읽고
+     * 있었는데, <b>채우는 코드가 아무 데도 없었다.</b> 설정의 '마지막 로그인'
+     * 은 모든 계정에서 언제나 '없음' 이었다.
+     *
+     * <p>이 시험이 그것을 잡는다. {@code .with(user(...))} 로 주체를 꽂는
+     * 시험은 이 자리를 지나가지 않는다 — 그래서 여기 있다.
+     */
+    @Test
+    @DisplayName("로그인하면 마지막 로그인 시각이 남는다")
+    void loginStampsTheTime() throws Exception {
+        assertThat(users.findByUsername(username).orElseThrow().getLastLoginAt())
+                .as("아직 로그인 전인데 시각이 있다")
+                .isNull();
+
+        mvc.perform(login(new MockHttpSession()));
+
+        AppUser after = users.findByUsername(username).orElseThrow();
+        assertThat(after.getLastLoginAt()).as("로그인했는데 시각이 안 남았다").isNotNull();
+        // 이번이 처음이므로 '그 전 로그인' 은 비어 있어야 한다.
+        assertThat(after.getPreviousLoginAt()).isNull();
+        assertThat(after.isFirstLogin()).isTrue();
+    }
+
+    /**
+     * 두 번째 로그인에서 앞의 것이 한 칸 밀린다.
+     *
+     * <p>이것이 '최초 로그인' 과 '관리자가 초기화함' 을 가르는 값이다.
+     * 비밀번호 변경 화면은 로그인 <b>다음 요청</b>에서 뜨므로, 이번 로그인
+     * 시각만 남기면 첫 로그인도 "이미 들어온 적 있음" 으로 보인다.
+     */
+    @Test
+    @DisplayName("두 번째 로그인부터 '그 전 로그인' 이 찬다")
+    void theSecondLoginPushesThePreviousOne() throws Exception {
+        mvc.perform(login(new MockHttpSession()));
+        AppUser first = users.findByUsername(username).orElseThrow();
+        java.time.Instant firstAt = first.getLastLoginAt();
+
+        mvc.perform(login(new MockHttpSession()));
+
+        AppUser second = users.findByUsername(username).orElseThrow();
+        assertThat(second.getPreviousLoginAt())
+                .as("그 전 로그인이 첫 로그인 시각이어야 한다")
+                .isEqualTo(firstAt);
+        assertThat(second.isFirstLogin()).isFalse();
+    }
+
+    /**
+     * 관리자가 초기화한 계정은 <b>'임시 비밀번호'</b> 라고 말해야 한다.
+     *
+     * <p>앞서는 {@code lastLoginAt} 이 늘 비어 있어서 초기화된 계정에도
+     * "최초 로그인입니다" 가 떴다 — 쓰던 계정인데.
+     */
+    @Test
+    @DisplayName("쓰던 계정을 초기화하면 '임시 비밀번호' 라고 말한다")
+    void aResetAccountIsToldItIsTemporary() throws Exception {
+        // 한 번 쓰던 계정이 된다.
+        mvc.perform(login(new MockHttpSession()));
+
+        // 관리자가 초기화 — 비밀번호가 계정 이름과 같아진다.
+        AppUser user = users.findByUsername(username).orElseThrow();
+        user.setPasswordHash(encoder.encode(username));
+        user.setMustChange(true);
+        users.saveAndFlush(user);
+
+        MockHttpSession session = new MockHttpSession();
+        mvc.perform(loginWith(session, username, username));
+
+        String html = mvc.perform(get("/password").session(session))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+
+        assertThat(html)
+                .as("쓰던 계정을 초기화했는데 '최초 로그인' 이라고 말한다")
+                .contains("임시 비밀번호로 로그인하셨습니다")
+                .doesNotContain("최초 로그인입니다");
+    }
+
     // --- 정적 파일 -------------------------------------------------------
 
     /**

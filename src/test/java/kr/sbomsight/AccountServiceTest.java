@@ -73,6 +73,103 @@ class AccountServiceTest {
 
     // --- 관리자를 잃지 않는다 ------------------------------------------------
 
+    // --- 수정 ---------------------------------------------------------------
+
+    /**
+     * <b>칸마다 따로 바뀐다.</b> 이름만 고치려다 권한이 함께 바뀌거나,
+     * 비밀번호 칸을 비워 뒀는데 비밀번호가 지워지면 안 된다.
+     */
+    @Test
+    @DisplayName("이름만 바꾸면 이름만 바뀐다")
+    void renamingTouchesNothingElse() {
+        accounts.create("bob", "bob-password", Role.VIEWER, "옛 이름");
+        AppUser before = users.findByUsername("bob").orElseThrow();
+        String hash = before.getPasswordHash();
+
+        String changed = accounts.update("bob", "새 이름", Role.VIEWER, true, null, "root");
+
+        AppUser after = users.findByUsername("bob").orElseThrow();
+        assertThat(changed).isEqualTo("이름");
+        assertThat(after.getDisplayName()).isEqualTo("새 이름");
+        assertThat(after.getRole()).isEqualTo(Role.VIEWER);
+        assertThat(after.getPasswordHash())
+                .as("비밀번호 칸을 비웠는데 비밀번호가 바뀌었다")
+                .isEqualTo(hash);
+        assertThat(after.isMustChange())
+                .as("건드리지도 않았는데 변경을 강제하게 됐다")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("권한만 바꾸면 권한만 바뀐다")
+    void changingTheRoleTouchesNothingElse() {
+        accounts.create("carol", "carol-password", Role.VIEWER, "캐롤");
+        String changed = accounts.update("carol", "캐롤", Role.ADMIN, true, null, "root");
+
+        AppUser after = users.findByUsername("carol").orElseThrow();
+        assertThat(changed).isEqualTo("권한 관리자");
+        assertThat(after.getRole()).isEqualTo(Role.ADMIN);
+        assertThat(after.getDisplayName()).isEqualTo("캐롤");
+    }
+
+    /**
+     * 관리자가 정해 준 비밀번호는 <b>본인이 받아서 곧바로 바꾸게</b> 한다.
+     * 관리자가 아는 비밀번호를 그대로 쓰게 두지 않는다.
+     */
+    @Test
+    @DisplayName("새 비밀번호를 주면 본인이 다시 바꾸게 된다")
+    void anAdminSetPasswordMustBeChangedAgain() {
+        accounts.create("dave", "dave-password", Role.VIEWER, "");
+        String changed = accounts.update("dave", "", Role.VIEWER, true, "새비밀번호1234", "root");
+
+        AppUser after = users.findByUsername("dave").orElseThrow();
+        assertThat(changed).isEqualTo("비밀번호");
+        assertThat(encoder.matches("새비밀번호1234", after.getPasswordHash())).isTrue();
+        assertThat(after.isMustChange()).isTrue();
+    }
+
+    @Test
+    @DisplayName("8자 미만 비밀번호는 거절한다")
+    void refusesAShortPassword() {
+        accounts.create("erin", "erin-password", Role.VIEWER, "");
+        assertThatThrownBy(() -> accounts.update("erin", "", Role.VIEWER, true, "1234567", "root"))
+                .isInstanceOf(AccountService.AccountException.class)
+                .hasMessageContaining("8자 이상");
+    }
+
+    /** 잠긴 계정에 새 비밀번호를 줬는데 잠긴 채면 아무 효과가 없다. */
+    @Test
+    @DisplayName("새 비밀번호를 주면 잠금도 함께 풀린다")
+    void aNewPasswordAlsoUnlocks() {
+        accounts.create("frank", "frank-password", Role.VIEWER, "");
+        AppUser locked = users.findByUsername("frank").orElseThrow();
+        locked.setFailedAttempts(5);
+        locked.setLockedAt(java.time.Instant.now());
+        users.saveAndFlush(locked);
+
+        accounts.update("frank", "", Role.VIEWER, true, "새비밀번호1234", "root");
+
+        AppUser after = users.findByUsername("frank").orElseThrow();
+        assertThat(after.getLockedAt()).isNull();
+        assertThat(after.getFailedAttempts()).isZero();
+    }
+
+    @Test
+    @DisplayName("바뀐 것이 없으면 빈 문자열을 준다")
+    void nothingChangedSaysSo() {
+        accounts.create("grace", "grace-password", Role.VIEWER, "그레이스");
+        assertThat(accounts.update("grace", "그레이스", Role.VIEWER, true, null, "root")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("자기 계정은 정지할 수 없다")
+    void cannotDisableYourself() {
+        accounts.create("heidi", "heidi-password", Role.ADMIN, "");
+        assertThatThrownBy(() -> accounts.update("heidi", "", Role.ADMIN, false, null, "heidi"))
+                .isInstanceOf(AccountService.AccountException.class)
+                .hasMessageContaining("자기 계정");
+    }
+
     @Test
     @DisplayName("마지막 관리자는 지울 수 없다")
     void keepsTheLastAdmin() {
@@ -85,7 +182,7 @@ class AccountServiceTest {
     @Test
     @DisplayName("마지막 관리자는 강등할 수 없다")
     void cannotDemoteTheLastAdmin() {
-        assertThatThrownBy(() -> accounts.changeRole("root", Role.VIEWER, "root"))
+        assertThatThrownBy(() -> accounts.update("root", "", Role.VIEWER, true, null, "root"))
                 .isInstanceOf(AccountService.AccountException.class)
                 .hasMessageContaining("마지막 관리자");
     }
@@ -93,7 +190,7 @@ class AccountServiceTest {
     @Test
     @DisplayName("마지막 관리자는 정지할 수 없다")
     void cannotDisableTheLastAdmin() {
-        assertThatThrownBy(() -> accounts.setEnabled("root", false, "root"))
+        assertThatThrownBy(() -> accounts.update("root", "", Role.ADMIN, false, null, "admin2"))
                 .isInstanceOf(AccountService.AccountException.class)
                 .hasMessageContaining("마지막 관리자");
     }

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: page(~{::main}, 'me', '내 계정')}">
+<body>
+<main>
+
+  <!--/*
+    내 계정.
+
+    앞서는 기둥의 계정 이름이 곧바로 비밀번호 변경으로 갔다. 계정에 대해
+    알 수 있는 것이 아무 데도 없었다 — 내 권한이 무엇인지, 마지막으로
+    언제 들어왔는지, 비밀번호를 언제 바꿨는지.
+
+    스스로 바꿀 수 있는 것은 표시 이름 하나뿐이다. 권한과 사용 여부는
+    관리자가 정한다 — 본인이 자기 권한을 올릴 수 있으면 권한이 아니다.
+  */-->
+  <div th:replace="~{fragments/ui :: pagehead('내 계정', ${me.username}, ~{}, ~{})}"></div>
+
+  <div class="body">
+
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">계정 정보</h2></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th style="width:8rem">계정</th>
+              <td class="mono" th:text="${me.username}">admin</td>
+              <th style="width:8rem">권한</th>
+              <td th:text="${me.role.label()}">관리자</td></tr>
+          <tr><th>마지막 로그인</th>
+              <td th:text="${me.lastLoginAt != null}
+                           ? ${#temporals.format(me.lastLoginAt, 'yyyy-MM-dd HH:mm')} : '—'">—</td>
+              <th>그 전 로그인</th>
+              <!-- 처음 들어온 계정은 여기가 비어 있다. 그것이 '최초 로그인'
+                   과 '관리자가 초기화함' 을 가르는 값이기도 하다. -->
+              <td th:text="${me.previousLoginAt != null}
+                           ? ${#temporals.format(me.previousLoginAt, 'yyyy-MM-dd HH:mm')}
+                           : '이번이 처음입니다'">—</td></tr>
+          <tr><th>계정 만든 날</th>
+              <td th:text="${#temporals.format(me.createdAt, 'yyyy-MM-dd')}">—</td>
+              <th></th><td></td></tr>
+        </table>
+
+        <form method="post" th:action="@{/me}" class="inline-form" style="margin-top:16px">
+          <label style="margin:0">표시 이름
+            <input name="displayName" th:value="${me.displayName}" autocomplete="off"
+                   placeholder="홍길동 · 인프라운영팀">
+          </label>
+          <button class="btn primary" type="submit">저장</button>
+        </form>
+        <p class="footnote">
+          목록과 기록에 이 이름이 함께 찍힙니다. 계정 이름은 바꿀 수 없습니다.
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">비밀번호</h2></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th style="width:8rem">마지막 변경</th>
+              <td th:text="${me.passwordChangedAt != null}
+                           ? ${#temporals.format(me.passwordChangedAt, 'yyyy-MM-dd')} : '—'">—</td>
+              <th style="width:8rem">바꾼 지</th>
+              <td th:text="${daysSinceChange >= 0} ? ${daysSinceChange} + '일' : '—'">—</td></tr>
+          <tr th:if="${maxAgeDays > 0}">
+              <th>변경 주기</th>
+              <td th:text="${maxAgeDays} + '일'">90일</td>
+              <th>남은 기간</th>
+              <td>
+                <span th:if="${daysUntilExpiry > 0}"
+                      th:text="${daysUntilExpiry} + '일'">0일</span>
+                <b class="danger-text" th:if="${daysUntilExpiry <= 0 and daysUntilExpiry != -1}">지났습니다</b>
+                <span class="faint" th:if="${daysUntilExpiry == -1}">—</span>
+              </td></tr>
+        </table>
+
+        <div th:if="${reason.isForced()}" class="banner warn" style="margin-top:12px"
+             th:text="${reason.lede()}">지금 바꿔야 합니다.</div>
+
+        <div class="btn-list" style="margin-top:16px">
+          <a class="btn primary" href="/password">비밀번호 변경</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>

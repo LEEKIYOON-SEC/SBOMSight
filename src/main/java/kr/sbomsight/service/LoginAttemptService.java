@@ -74,19 +74,30 @@ public class LoginAttemptService {
     }
 
     /**
-     * 성공 한 번 — 횟수를 되돌린다.
+     * 성공 한 번 — 횟수를 되돌리고 <b>로그인 시각을 남긴다.</b>
      *
      * <p>자동 해제 시간이 지나 통과한 경우 잠금 표시도 함께 지운다. 남겨 두면
      * 다음 실패 한 번에 곧바로 다시 잠긴 것으로 보인다.
+     *
+     * <p><b>앞서 로그인 시각을 아무도 남기지 않았다.</b> 열은 V1 부터 있었고
+     * 화면 둘이 그 값을 읽고 있었는데, 채우는 코드가 없어 설정의 '마지막
+     * 로그인' 은 언제나 '없음' 이었고 비밀번호 변경 화면은 초기화된 계정에도
+     * '최초 로그인입니다' 라고 말했다.
      */
     @Transactional
     public void onSuccess(String username) {
         users.findByUsername(username).ifPresent(user -> {
-            if (user.getFailedAttempts() != 0 || user.getLockedAt() != null) {
-                user.setFailedAttempts(0);
-                user.setLockedAt(null);
-                users.save(user);
-            }
+            user.setFailedAttempts(0);
+            user.setLockedAt(null);
+            // 로그인 시각을 여기서 남긴다. 인증이 실제로 통과한 자리는 여기
+            // 하나뿐이고, 이 계정을 이미 불러 두었다.
+            //
+            // **이번 시각을 넣으면서 앞의 것을 한 칸 민다.** 비밀번호 변경
+            // 화면이 "최초 로그인" 과 "관리자가 초기화함" 을 갈라 말해야
+            // 하는데 그 화면은 다음 요청에서 뜨므로, 이번 시각만 남기면
+            // 첫 로그인도 "이미 로그인한 적 있음" 으로 보인다.
+            user.recordLogin(Instant.now());
+            users.save(user);
         });
     }
 

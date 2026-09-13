@@ -97,13 +97,29 @@ public class SettingsController {
         return "redirect:/settings";
     }
 
-    @PostMapping("/users/{username}/role")
-    public String changeRole(@PathVariable String username, @RequestParam Role role,
+    /**
+     * 계정 하나를 고친다 — 이름 · 권한 · 사용 여부 · (원하면) 새 비밀번호.
+     *
+     * <p>앞서는 권한 드롭다운이 <b>고르는 즉시 저장</b>됐고 이름과 비밀번호는
+     * 바꿀 길이 아예 없었다. 즉시 저장은 실수로 스친 것과 정말 바꾼 것을
+     * 가르지 못한다.
+     */
+    @PostMapping("/users/{username}")
+    public String updateUser(@PathVariable String username,
+                             @RequestParam(required = false) String displayName,
+                             @RequestParam Role role,
+                             @RequestParam(defaultValue = "false") boolean enabled,
+                             @RequestParam(required = false) String newPassword,
                              Principal principal, RedirectAttributes flash) {
         try {
-            accounts.changeRole(username, role, principal.getName());
-            audit.record(AuditEvent.USER_ROLE_CHANGED, username, "권한 " + role.label());
-            flash.addFlashAttribute("message", username + " 의 권한을 바꿨습니다.");
+            String changed = accounts.update(username, displayName, role, enabled,
+                                             newPassword, principal.getName());
+            if (changed.isEmpty()) {
+                flash.addFlashAttribute("message", "바뀐 것이 없습니다.");
+            } else {
+                audit.record(AuditEvent.USER_UPDATED, username, changed);
+                flash.addFlashAttribute("message", username + " 계정을 고쳤습니다: " + changed);
+            }
         } catch (AccountService.AccountException e) {
             flash.addFlashAttribute("error", e.getMessage());
         }

@@ -53,8 +53,29 @@ public class AppUser {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /**
+     * 이번에 들어온 시각. 설정의 '마지막 로그인' 이 이것이다.
+     *
+     * <p>V1 부터 열은 있었지만 <b>한 번도 채워지지 않았다</b> —
+     * {@code setLastLoginAt} 을 부르는 곳이 없었다. 이제
+     * {@link kr.sbomsight.service.LoginAttemptService#onSuccess} 가 채운다.
+     */
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
+
+    /**
+     * 그 전에 들어온 시각. <b>{@code null} 이면 이번이 처음이다.</b>
+     *
+     * <p>왜 칸을 하나 더 두는가. 비밀번호 변경 화면은 "최초 로그인" 과
+     * "관리자가 초기화함" 을 갈라 말해야 하는데, 그 화면은 로그인 <b>다음
+     * 요청</b>에서 뜬다. 그래서 {@code lastLoginAt} 하나만 보면 이미 이번
+     * 로그인 시각이 박혀 있어 둘을 가를 수 없다 — 순서로는 풀리지 않는다.
+     *
+     * <p>날짜 하나로 눈치껏 가르려 하면(만든 시각과 비교한다든지) 언젠가
+     * 틀리고, 틀린 줄도 모른다. 사실 두 개를 두 칸에 나눠 적는다.
+     */
+    @Column(name = "previous_login_at")
+    private Instant previousLoginAt;
 
     protected AppUser() {
     }
@@ -161,7 +182,23 @@ public class AppUser {
         return lastLoginAt;
     }
 
-    public void setLastLoginAt(Instant lastLoginAt) {
-        this.lastLoginAt = lastLoginAt;
+    public Instant getPreviousLoginAt() {
+        return previousLoginAt;
+    }
+
+    /**
+     * 로그인 한 번을 기록한다 — 이번 시각을 넣고 앞의 것을 한 칸 밀어 둔다.
+     *
+     * <p>두 칸을 따로 세팅하게 두지 않는다. 한쪽만 건드리면 "그 전 로그인"
+     * 이 이번 로그인과 같아지거나 영영 비어 있게 된다.
+     */
+    public void recordLogin(Instant at) {
+        this.previousLoginAt = this.lastLoginAt;
+        this.lastLoginAt = at;
+    }
+
+    /** 이번이 첫 로그인인가 — 앞선 로그인이 없다. */
+    public boolean isFirstLogin() {
+        return previousLoginAt == null;
     }
 }

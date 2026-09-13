@@ -33,25 +33,28 @@
           <span class="faint" th:if="${!#strings.isEmpty(u.displayName)}"
                 th:text="${u.displayName}">최초 관리자</span>
         </td>
-        <td class="tight">
-          <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/role'}" class="inline">
-            <select name="role" onchange="this.form.submit()">
-              <option th:each="r : ${roles}" th:value="${r}" th:text="${r.label()}"
-                      th:selected="${r == u.role}">관리자</option>
-            </select>
-          </form>
-        </td>
+        <!--/*
+          앞서 여기에 권한 드롭다운이 있었고 **고르는 즉시 저장**됐다. 실수로
+          스친 것과 정말 바꾼 것을 가르지 못했고, 되돌릴 자리도 없었다.
+          바꾸는 일은 전부 [수정] 팝업에서 한 번에 한다.
+        */-->
+        <td class="tight" th:text="${u.role.label()}">관리자</td>
         <td class="tight faint"
             th:text="${u.lastLoginAt != null} ? ${#temporals.format(u.lastLoginAt, 'yyyy-MM-dd HH:mm')} : '없음'">없음</td>
         <td class="tight">
+          <span th:unless="${u.enabled}" class="tag nofix">정지</span>
           <span th:if="${row.locked}" class="tag kev"
                 th:text="'잠김 ' + ${row.remainingText()}">잠김</span>
-          <span th:if="${u.mustChange}" class="tag nofix">초기화됨</span>
-          <span th:if="${!row.locked && !u.mustChange && u.failedAttempts > 0}" class="faint"
-                th:text="'실패 ' + ${u.failedAttempts} + '회'">실패 0회</span>
-          <span th:if="${!row.locked && !u.mustChange && u.failedAttempts == 0}" class="faint">—</span>
+          <span th:if="${u.mustChange}" class="tag nofix">비밀번호 변경 필요</span>
+          <span th:if="${u.enabled && !row.locked && !u.mustChange && u.failedAttempts > 0}"
+                class="faint" th:text="'실패 ' + ${u.failedAttempts} + '회'">실패 0회</span>
+          <span th:if="${u.enabled && !row.locked && !u.mustChange && u.failedAttempts == 0}"
+                class="faint">—</span>
         </td>
         <td class="actions">
+          <button type="button" class="btn small edit-user"
+                  th:attr="data-username=${u.username}, data-display=${u.displayName},
+                           data-role=${u.role.name()}, data-enabled=${u.enabled}">수정</button>
           <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/unlock'}" class="inline"
                 th:if="${row.locked}">
             <button type="submit" class="btn small">잠금 해제</button>
@@ -148,6 +151,77 @@
     </p>
   </div>
   </div>
+
+  <!--/*
+    계정 수정.
+
+    한 번에 받고 한 번에 저장한다. 비밀번호 칸은 **비워 두면 안 건드린다** —
+    빈 칸을 "빈 비밀번호로 바꾸라" 로 읽으면 안 된다.
+  */-->
+  <dialog id="user-dialog">
+    <!--/*
+      th:action 이 있어야 타임리프가 CSRF 토큰 칸을 넣어 준다. 주소는 계정마다
+      다르므로 자바스크립트가 다시 채우지만, 토큰이 없으면 그 순간 403 이다 —
+      화면은 멀쩡히 뜨고 저장만 안 된다.
+    */-->
+    <form method="post" id="user-form" th:action="@{/settings/users}">
+      <h2>계정 수정</h2>
+      <p class="lede mono" id="user-name">—</p>
+
+      <label for="user-display">이름</label>
+      <input name="displayName" id="user-display" autocomplete="off"
+             placeholder="홍길동 · 인프라운영팀">
+
+      <label for="user-role">권한</label>
+      <select name="role" id="user-role">
+        <option th:each="r : ${roles}" th:value="${r.name()}" th:text="${r.label()}">관리자</option>
+      </select>
+
+      <label class="check" style="margin-top:12px">
+        <input type="checkbox" name="enabled" value="true" id="user-enabled" checked>
+        이 계정으로 로그인할 수 있음
+      </label>
+
+      <label for="user-password">새 비밀번호 <span class="faint">비우면 안 바꿈</span></label>
+      <input name="newPassword" id="user-password" type="password" minlength="8"
+             autocomplete="new-password">
+      <p class="footnote">
+        정해 주면 본인이 로그인할 때 <b>곧바로 다시 바꾸게</b> 됩니다.
+        관리자가 아는 비밀번호를 그대로 쓰게 두지 않습니다.
+      </p>
+
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-close>취소</button>
+        <button type="submit" class="btn primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    (function () {
+      const dialog = document.querySelector('#user-dialog');
+      if (!dialog) return;
+      const form = dialog.querySelector('#user-form');
+
+      document.addEventListener('click', function (e) {
+        const button = e.target.closest('.edit-user');
+        if (button) {
+          // 주소는 계정마다 다르다. 폼 하나를 옮겨 쓴다.
+          form.action = '/settings/users/' + encodeURIComponent(button.dataset.username);
+          dialog.querySelector('#user-name').textContent = button.dataset.username;
+          dialog.querySelector('#user-display').value = button.dataset.display || '';
+          dialog.querySelector('#user-role').value = button.dataset.role;
+          dialog.querySelector('#user-enabled').checked = button.dataset.enabled === 'true';
+          // 열 때마다 비운다. 남아 있으면 이름만 고치려다 비밀번호까지 바뀐다.
+          dialog.querySelector('#user-password').value = '';
+          dialog.showModal();
+          return;
+        }
+        const close = e.target.closest('[data-close]');
+        if (close) { close.closest('dialog').close(); }
+      });
+    })();
+  </script>
 
 </main>
 </body>

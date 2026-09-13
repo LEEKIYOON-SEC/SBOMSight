@@ -36,9 +36,15 @@ public class PasswordPolicy {
      */
     public PasswordChangeReason forcedReason(AppUser user) {
         if (user.isMustChange()) {
-            // 한 번도 로그인한 적이 없으면 처음 받은 계정이고, 있으면
-            // 관리자가 쓰던 계정을 초기화한 것이다.
-            return user.getLastLoginAt() == null
+            // 이번 로그인 앞에 로그인한 적이 없으면 처음 받은 계정이고,
+            // 있으면 관리자가 쓰던 계정을 초기화한 것이다.
+            //
+            // **lastLoginAt 이 아니라 previousLoginAt 을 본다.** 이 화면은
+            // 로그인 다음 요청에서 뜨므로 lastLoginAt 에는 이미 이번 로그인
+            // 시각이 박혀 있다 — 그것으로 가르면 첫 로그인도 '임시 비밀번호'
+            // 가 된다. 앞서는 반대로 lastLoginAt 을 아무도 채우지 않아서
+            // 초기화된 계정도 전부 '최초 로그인' 이었다.
+            return user.isFirstLogin()
                     ? PasswordChangeReason.FIRST_LOGIN
                     : PasswordChangeReason.TEMPORARY;
         }

@@ -75,6 +75,23 @@ for f in $MIGRATIONS; do
     # 옮길 것이 있는 상태에서 태워야 한다 — 빈 표를 옮기는 것은 아무것도
     # 확인하지 못한다. 경계 사례를 일부러 섞는다:
     #   살아 있는 것 / 철회된 것 / 같은 키에 철회분이 둘
+    # V12 가 감사 로그의 로그인 기록으로 마지막·그 전 로그인을 채운다.
+    # 채울 것이 있는 상태에서 태워야 한다. V6 이 audit_log 를, V7 이 users 의
+    # 잠금 칸을 만든다 — 둘 다 있는 자리가 V7 직후다.
+    case "$(basename "$f")" in V7__*)
+        run "$DB" -e "
+        INSERT INTO users (username, password_hash, role, enabled, must_change,
+                           failed_attempts, password_changed_at, created_at)
+        VALUES ('oldtimer','x','ADMIN',1,0,0,NOW(6),NOW(6)),
+               ('newbie','x','VIEWER',1,1,0,NOW(6),NOW(6));
+        INSERT INTO audit_log (at, actor, action, target, detail, client_ip) VALUES
+         (NOW(6) - INTERVAL 10 DAY, 'oldtimer','LOGIN_SUCCESS','','',''),
+         (NOW(6) - INTERVAL 3 DAY,  'oldtimer','LOGIN_SUCCESS','','',''),
+         (NOW(6) - INTERVAL 1 DAY,  'oldtimer','LOGIN_SUCCESS','','',''),
+         (NOW(6) - INTERVAL 2 DAY,  'oldtimer','LOGIN_FAILURE','','','');"
+        echo "  └ 계정 2개와 로그인 기록을 넣었다 (성공 3 · 실패 1)" ;;
+    esac
+
     case "$(basename "$f")" in V9__*)
         run "$DB" -e "
         INSERT INTO risk_acceptances
@@ -159,6 +176,28 @@ WITHDRAWN=$(run "$DB" -N -e "
     SELECT COUNT(*) FROM finding_analysis_event WHERE after_value='미검토';")
 [ "$WITHDRAWN" = "3" ] || { echo "  철회 이력이 $WITHDRAWN 줄 (3 이어야 함)"; exit 1; }
 echo "  수용·철회 이력 $EVENTS 줄이 그때 시각 그대로 남음"
+
+# --- V12: 마지막 로그인 · 그 전 로그인 -----------------------------------
+#
+# last_login_at 은 V1 부터 있었는데 채우는 코드가 없어 늘 비어 있었다. 이미
+# 쓰던 설치는 감사 로그의 로그인 기록으로 채운다 — 지어내는 것이 아니라
+# 우리가 이미 가지고 있는 값이다.
+
+LOGINS=$(run "$DB" -N -e "
+    SELECT CONCAT(DATE(last_login_at),'|',DATE(previous_login_at))
+    FROM users WHERE username='oldtimer';")
+WANT="$(date -d '1 day ago' +%F)|$(date -d '3 days ago' +%F)"
+[ "$LOGINS" = "$WANT" ] || {
+    echo "  옛 계정의 로그인 시각이 '$LOGINS' 입니다 (기대 '$WANT')"; exit 1; }
+echo "  감사 로그에서 마지막·그 전 로그인을 채움 (실패 기록은 안 셈)"
+
+# 로그인한 적 없는 계정은 둘 다 비어 있어야 한다. 채워 넣으면 '최초 로그인'
+# 인데 '임시 비밀번호' 라고 말하게 된다.
+FRESH=$(run "$DB" -N -e "
+    SELECT CONCAT(IFNULL(last_login_at,'-'),'|',IFNULL(previous_login_at,'-'))
+    FROM users WHERE username='newbie';")
+[ "$FRESH" = "-|-" ] || { echo "  로그인한 적 없는 계정에 시각이 찼습니다: '$FRESH'"; exit 1; }
+echo "  로그인한 적 없는 계정은 둘 다 비어 있음"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

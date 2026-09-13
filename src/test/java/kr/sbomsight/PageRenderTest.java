@@ -56,6 +56,7 @@ class PageRenderTest {
     @Autowired RemediationRepository remediations;
     @Autowired FindingAnalysisService analyses;
     @Autowired ZoneService zoneService;
+    @Autowired kr.sbomsight.repo.AppUserRepository appUsers;
 
     private Asset asset;
     private Scan scan;
@@ -63,6 +64,17 @@ class PageRenderTest {
 
     @BeforeEach
     void seed() {
+        // `.with(user("tester"))` 는 인증된 주체를 꽂을 뿐 계정을 만들지 않는다.
+        // 내 계정 화면은 진짜 계정을 찾으므로 여기 하나 둔다.
+        if (!appUsers.existsByUsername("tester")) {
+            appUsers.saveAndFlush(new kr.sbomsight.domain.AppUser(
+                    "tester", "{noop}unused", kr.sbomsight.domain.Role.ADMIN));
+        }
+        if (!appUsers.existsByUsername("viewer")) {
+            appUsers.saveAndFlush(new kr.sbomsight.domain.AppUser(
+                    "viewer", "{noop}unused", kr.sbomsight.domain.Role.VIEWER));
+        }
+
         Zone zone = zoneService.create("구역-" + System.nanoTime(), "#a71922", "대외 구간");
 
         asset = new Asset();
@@ -351,8 +363,7 @@ class PageRenderTest {
 
         // 임시 다리 — 해당 단계에서 지우고 반대 방향으로 바꾼다.
         for (String[] pair : new String[][] {
-                { "/reports", "/report/zone" },
-                { "/me", "/password" } }) {
+                { "/reports", "/report/zone" } }) {
             mvc.perform(get(pair[0]).with(user("tester").roles("ADMIN")))
                .andExpect(status().is3xxRedirection())
                .andExpect(redirectedUrl(pair[1]));
@@ -368,10 +379,14 @@ class PageRenderTest {
     }
 
     @Test
-    @DisplayName("로그인 · 비밀번호 변경")
+    @DisplayName("로그인 · 비밀번호 변경 · 내 계정")
     void gatePages() throws Exception {
         mvc.perform(get("/login")).andExpect(status().isOk());
         assertThat(open("/password")).contains("새 비밀번호");
+
+        // 앞서 기둥의 계정 이름이 곧바로 비밀번호 변경으로 갔다. 이제 갈 곳이 있다.
+        String me = open("/me");
+        assertThat(me).contains("계정 정보").contains("마지막 로그인").contains("그 전 로그인");
     }
 
     // --- 내려받기 -------------------------------------------------------------
@@ -404,7 +419,7 @@ class PageRenderTest {
                 "/", "/assets/" + asset.getId(), "/assets/" + asset.getId() + "?tab=vulns",
                 "/vulns", "/vulns?scan=" + scan.getId(), "/vulns/CVE-2024-3094",
                 "/actions", "/actions/" + remediation.getId(), "/actions?tab=analyses",
-                "/report/" + scan.getId(), "/report/zone", "/password" }) {
+                "/report/" + scan.getId(), "/report/zone", "/password", "/me" }) {
             mvc.perform(get(url).with(user("viewer").roles("VIEWER")))
                .andExpect(status().isOk());
         }

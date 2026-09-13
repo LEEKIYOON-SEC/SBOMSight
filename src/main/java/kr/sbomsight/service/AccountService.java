@@ -67,15 +67,74 @@ public class AccountService {
         return users.save(user);
     }
 
+    /**
+     * 계정 하나를 고친다 — 이름 · 권한 · 사용 여부 · (원하면) 새 비밀번호.
+     *
+     * <p><b>왜 한 번에 받는가.</b> 앞서는 권한만 드롭다운으로 <b>고르는 즉시
+     * 저장</b>됐고, 이름과 비밀번호는 아예 바꿀 길이 없었다. 즉시 저장은
+     * 실수로 스친 것과 정말 바꾼 것을 가르지 못한다 — 되돌릴 자리도 없다.
+     *
+     * @param newPassword 비우면 <b>비밀번호를 건드리지 않는다.</b> 빈 칸을
+     *                    "빈 비밀번호로 바꾸라" 로 읽으면 안 된다.
+     * @return 무엇이 바뀌었는지 사람이 읽을 한 줄. 아무것도 안 바뀌면 빈 문자열.
+     */
     @Transactional
-    public void changeRole(String username, Role role, String actor) {
+    public String update(String username, String displayName, Role role, boolean enabled,
+                         String newPassword, String actor) {
         AppUser user = require(username);
-        if (user.getRole() == Role.ADMIN && role != Role.ADMIN) {
-            requireAnotherAdmin(username);
+        List<String> changed = new java.util.ArrayList<>();
+
+        String name = displayName == null ? "" : displayName.trim();
+        if (!name.equals(user.getDisplayName())) {
+            user.setDisplayName(name);
+            changed.add("이름");
         }
-        user.setRole(role);
+
+        if (role != null && role != user.getRole()) {
+            // 마지막 관리자를 잃으면 웹으로는 되돌릴 수 없다.
+            if (user.getRole() == Role.ADMIN) {
+                requireAnotherAdmin(username);
+            }
+            user.setRole(role);
+            changed.add("권한 " + role.label());
+        }
+
+        if (enabled != user.isEnabled()) {
+            if (!enabled) {
+                if (username.equals(actor)) {
+                    throw new AccountException("자기 계정은 정지할 수 없습니다.");
+                }
+                if (user.getRole() == Role.ADMIN) {
+                    requireAnotherAdmin(username);
+                }
+            }
+            user.setEnabled(enabled);
+            changed.add(enabled ? "사용" : "정지");
+        }
+
+        if (newPassword != null && !newPassword.isBlank()) {
+            if (newPassword.length() < MIN_PASSWORD_LENGTH) {
+                throw new AccountException(MIN_PASSWORD_LENGTH + "자 이상으로 정해 주세요.");
+            }
+            user.setPasswordHash(encoder.encode(newPassword));
+            // 관리자가 정해 준 비밀번호다. 본인이 받아서 곧바로 바꾸게 한다 —
+            // 관리자가 아는 비밀번호를 그대로 쓰게 두지 않는다.
+            user.setMustChange(true);
+            user.setPasswordChangedAt(java.time.Instant.now());
+            // 잠겨 있었다면 함께 푼다. 비밀번호를 새로 줬는데 잠긴 채면
+            // 아무 효과가 없다.
+            user.setFailedAttempts(0);
+            user.setLockedAt(null);
+            changed.add("비밀번호");
+        }
+
+        if (changed.isEmpty()) {
+            return "";
+        }
         users.save(user);
-        log.info("{} 의 권한을 {} 로 바꿨습니다 ({})", username, role, actor);
+        String summary = String.join(" · ", changed);
+        log.info("{} 계정을 고쳤습니다: {} ({})", username, summary, actor);
+        return summary;
     }
 
     @Transactional
@@ -115,16 +174,8 @@ public class AccountService {
         log.info("{} 의 비밀번호를 초기화했습니다 ({})", username, actor);
     }
 
-    @Transactional
-    public void setEnabled(String username, boolean enabled, String actor) {
-        AppUser user = require(username);
-        if (!enabled && user.getRole() == Role.ADMIN) {
-            requireAnotherAdmin(username);
-        }
-        user.setEnabled(enabled);
-        users.save(user);
-        log.info("{} 계정을 {} 했습니다 ({})", username, enabled ? "사용" : "정지", actor);
-    }
+    // changeRole · setEnabled 는 update 로 합쳤다. 권한을 바꾸는 길이 둘이면
+    // 한쪽에만 '마지막 관리자' 보호가 걸린 채로 남는 날이 온다.
 
     private AppUser require(String username) {
         return users.findByUsername(username)
