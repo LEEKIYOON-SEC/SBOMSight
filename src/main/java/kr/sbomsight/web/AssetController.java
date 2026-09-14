@@ -446,14 +446,17 @@ public class AssetController {
         String name = asset.getName();
         String zoneName = asset.getZone().getName();
         AssetService.Impact impact = assetService.delete(asset, principal.getName());
+        // **검토 결과 건수를 빼지 않는다.** 누르기 전 확인 상자는 이것을
+        // 세어 보여 주는데, 감사 로그와 완료 안내에는 빠져 있었다 — 지운
+        // 기록이 실제보다 적게 남는다는 뜻이고, 점검에서 답이 어긋난다.
+        String counted = "스캔 " + impact.scanCount() + "건 · 탐지 " + impact.findingCount()
+                         + "건 · 조치 " + impact.remediationCount()
+                         + "건 · 검토 결과 " + impact.analysisCount() + "건";
         audit.record(AuditEvent.ASSET_DELETED, name,
-                     "구역 " + zoneName + " · 스캔 " + impact.scanCount()
-                     + "건 · 탐지 " + impact.findingCount()
-                     + "건 · 조치 " + impact.remediationCount() + "건 함께 삭제");
+                     "구역 " + zoneName + " · " + counted + " 함께 삭제");
         flash.addFlashAttribute("message",
-                asset.getName() + " 자산을 지웠습니다 — 스캔 " + impact.scanCount() + "건 · 탐지 "
-                + impact.findingCount() + "건 · 조치 " + impact.remediationCount()
-                + "건과 보관된 SBOM·검사 결과가 함께 삭제되었습니다.");
+                name + " 자산을 지웠습니다 — " + counted
+                + "과 보관된 SBOM·검사 결과가 함께 삭제되었습니다.");
         return "redirect:/";
     }
 

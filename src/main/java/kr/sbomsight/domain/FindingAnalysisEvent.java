@@ -20,7 +20,9 @@ public class FindingAnalysisEvent {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    /** 검토 결과를 지우면 그 이력도 함께 (V14 에서 FK 에도 넣었다). */
     @JoinColumn(name = "analysis_id", nullable = false)
+    @org.hibernate.annotations.OnDelete(action = org.hibernate.annotations.OnDeleteAction.CASCADE)
     private FindingAnalysis analysis;
 
     @Column(nullable = false)

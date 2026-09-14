@@ -29,7 +29,19 @@ public class Finding {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    /**
+     * <b>{@code @OnDelete} 가 왜 필요한가.</b> {@code V1__init.sql} 의 FK 에는
+     * {@code ON DELETE CASCADE} 가 붙어 있는데, 시험은 H2 에
+     * {@code ddl-auto=create-drop} 으로 돌아 <b>스키마를 하이버네이트가 만든다</b>
+     * — 이 표시가 없으면 CASCADE 없는 FK 가 나온다.
+     *
+     * <p>그래서 "검사를 지우면 탐지도 사라지는가" 를 시험으로 지킬 수 없었다.
+     * 운영은 되고 H2 에서만 참조 제약 위반이 났으므로, 그 삭제를 도는 시험을
+     * 아무도 쓸 수 없었다 — 실제로 {@code AssetService.delete} 를 지나가는
+     * 시험이 하나도 없었다.
+     */
     @JoinColumn(name = "scan_id", nullable = false)
+    @org.hibernate.annotations.OnDelete(action = org.hibernate.annotations.OnDeleteAction.CASCADE)
     private Scan scan;
 
     /** {@code CVE|패키지|버전|purl}. 이력 대조와 중복 제거의 축이다. */

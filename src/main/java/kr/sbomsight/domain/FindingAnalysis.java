@@ -36,7 +36,9 @@ public class FindingAnalysis {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    /** 자산을 지우면 그 자산의 검토 결과도 사라진다 (V14 에서 FK 에도 넣었다). */
     @JoinColumn(name = "asset_id", nullable = false)
+    @org.hibernate.annotations.OnDelete(action = org.hibernate.annotations.OnDeleteAction.CASCADE)
     private Asset asset;
 
     @Column(nullable = false, length = 64)

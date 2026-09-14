@@ -27,7 +27,9 @@ public class Remediation {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    /** {@code V1__init.sql} 의 FK 와 같게 — 자산을 지우면 조치도 사라진다. */
     @JoinColumn(name = "asset_id", nullable = false)
+    @org.hibernate.annotations.OnDelete(action = org.hibernate.annotations.OnDeleteAction.CASCADE)
     private Asset asset;
 
     @Column(name = "package_name", nullable = false, length = 255)

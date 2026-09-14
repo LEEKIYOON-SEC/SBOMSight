@@ -14,7 +14,9 @@ public class RemediationEvent {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    /** 조치를 지우면 그 이력도 함께. {@code V1__init.sql} 의 FK 와 같게 둔다. */
     @JoinColumn(name = "remediation_id", nullable = false)
+    @org.hibernate.annotations.OnDelete(action = org.hibernate.annotations.OnDeleteAction.CASCADE)
     private Remediation remediation;
 
     @Column(nullable = false)
