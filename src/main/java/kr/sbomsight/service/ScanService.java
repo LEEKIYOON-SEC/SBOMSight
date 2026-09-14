@@ -124,10 +124,44 @@ public class ScanService {
         } catch (Exception e) {
             log.error("스캔 {} 실패", scanId, e);
             markFailed(scanId, e.getMessage());
+            // **담다가 실패한 인벤토리를 버린다.** 담기는 쓰는 대로 커밋되고
+            // `makeCurrent` 는 다 담은 뒤에 부르므로, 중간에 터지면 새 검사
+            // 것과 이전 검사 것이 그 자산에 함께 남는다 — 패키지 화면이 한
+            // 패키지를 두 버전으로 보여 주고, 그것이 "두 대에 다르게 깔렸다"
+            // 와 구분되지 않는다.
+            //
+            // 실제로 그랬다. 판정 트랜잭션 문제로 검사가 READING 에서 실패한
+            // 뒤 79행이 남아 화면에 떠 있었고, 손으로 지웠다.
+            inventory.discard(scanId);
         }
     }
 
-    @Transactional
+    /**
+     * <b>여기에는 트랜잭션이 없다. 일부러 없다.</b>
+     *
+     * <p>앞서 {@code @Transactional} 이 붙어 있었는데 <b>적용되지 않았다</b> —
+     * {@link #runAsync} 가 같은 빈의 이 메서드를 부르므로 프록시를 지나지
+     * 않는다. 즉 표시만 있고 효력이 없었고, 그 표시를 믿고 짠 자리가 생겼다
+     * ({@link #reapStale} 의 주석이 그랬다). 그래서 지웠다.
+     *
+     * <p><b>살려도 안 된다.</b> 이 메서드의 대부분은 grype 이 도는 시간이고,
+     * 서버 한 대치 SBOM 이면 몇 분이다. 그 시간 내내 DB 트랜잭션을 붙잡으면
+     * 진행 상태를 묻는 다른 요청이 커밋 전 값을 못 보고, 단계가 하나씩 뜨는
+     * 것이 아니라 끝나는 순간 한꺼번에 뜬다 — {@code ScanRepository.updateStage}
+     * 가 {@code REQUIRES_NEW} 인 이유가 그것이다.
+     *
+     * <p>그래서 <b>쓰기마다 제 트랜잭션으로 끝낸다.</b> 그 결과 중간에
+     * 실패하면 거기까지 쓴 것이 남는다. 남아도 되는 이유는 셋이다.
+     *
+     * <ul>
+     *   <li>그 검사는 {@code FAILED} 로 남고, 화면·보고서는 <b>자산마다 최신
+     *       완료 검사만</b> 본다 — 실패한 검사의 숫자가 어디에도 섞이지 않는다.</li>
+     *   <li>탐지 저장은 {@code saveAll} 한 번이라 그 안에서는 전부 들어가거나
+     *       전부 안 들어간다.</li>
+     *   <li>패키지 인벤토리는 실패 시 {@link ComponentInventoryService#discard}
+     *       로 버린다 ({@link #reapStale} 과 {@link #runAsync} 양쪽에서).</li>
+     * </ul>
+     */
     public void run(Long scanId) throws IOException {
         Scan scan = scans.findById(scanId).orElseThrow();
         scan.setStatus(ScanStatus.RUNNING);
@@ -235,10 +269,14 @@ public class ScanService {
     /**
      * 서버가 죽었다 살아났을 때 남아 있는 진행 중 스캔을 정리한다.
      *
-     * <p>그 스캔에서 온 <b>인벤토리도 버린다.</b> {@link #run} 이 한
-     * 트랜잭션이라 프로세스가 죽으면 대개 함께 되돌려지지만, 커밋 직후에
-     * 죽었다면 남아 있을 수 있다 — 실패한 검사의 패키지 목록을 "지금 깔려
-     * 있는 것" 으로 보여 주면 안 된다.
+     * <p>그 스캔에서 온 <b>인벤토리도 버린다.</b> {@link #run} 은 쓰기마다 제
+     * 트랜잭션으로 끝내므로, 프로세스가 죽으면 <b>거기까지 담긴 것이 그대로
+     * 남는다</b> — 실패한 검사의 패키지 목록을 "지금 깔려 있는 것" 으로 보여
+     * 주면 안 된다.
+     *
+     * <p>앞서 이 주석은 "{@code run} 이 한 트랜잭션이라 대개 함께 되돌려진다"
+     * 고 적고 있었다. <b>그 전제가 틀렸다</b> — {@code @Transactional} 은
+     * 자기 호출이라 적용되지 않았고, 되돌려지는 일은 처음부터 없었다.
      */
     @Transactional
     public int reapStale() {

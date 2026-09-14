@@ -58,6 +58,7 @@ class ComponentInventoryTest {
     @Autowired FindingRepository findings;
     @Autowired ZoneService zoneService;
     @Autowired PackageService packages;
+    @Autowired kr.sbomsight.service.ScanService scanService;
 
     // --- 거들 -----------------------------------------------------------------
 
@@ -93,6 +94,21 @@ class ComponentInventoryTest {
     }
 
     // --- 형식 셋 ---------------------------------------------------------------
+
+    /**
+     * 트랜잭션 없이 도는 시험 전용 픽스처.
+     *
+     * <p><b>이름이 달라야 한다.</b> {@code SYFT_JSON} 은 {@code log4j-core} 를
+     * 담고 있고, 트랜잭션 없는 시험은 실제로 커밋한다 — 그래서 "log4j-core 가
+     * 몇 대에 깔렸나" 를 세는 다른 시험이 흔들렸다(2대인데 3대로 보였다).
+     */
+    private static final String FAILED_FIXTURE = """
+            { "artifacts": [
+                { "name": "notx-openssl", "version": "3.0.7-24", "type": "rpm",
+                  "purl": "pkg:rpm/rocky/notx-openssl@3.0.7-24" },
+                { "name": "notx-log4j", "version": "2.14.1",
+                  "purl": "pkg:maven/org.apache.logging.log4j/notx-log4j@2.14.1" } ] }
+            """;
 
     private static final String SYFT_JSON = """
             { "artifacts": [
@@ -416,14 +432,14 @@ class ComponentInventoryTest {
             // 담기 — 이쪽은 순수 JDBC 라 트랜잭션이 없어도 들어간다.
             try (ComponentInventoryService.Sink sink =
                          inventory.open(asset.getId(), first.getId())) {
-                storage.inspect(write(SYFT_JSON), sink);
+                storage.inspect(write(FAILED_FIXTURE), sink);
             }
             assertThat(components.countByAssetId(asset.getId())).isEqualTo(2);
 
             // 기준 바꾸기 — @Modifying 질의. 여기가 터지던 자리다.
             try (ComponentInventoryService.Sink sink =
                          inventory.open(asset.getId(), second.getId())) {
-                storage.inspect(write(SYFT_JSON), sink);
+                storage.inspect(write(FAILED_FIXTURE), sink);
             }
             inventory.makeCurrent(asset.getId(), second.getId());
             assertThat(components.countByAssetId(asset.getId()))
@@ -489,6 +505,70 @@ class ComponentInventoryTest {
         assertThat(subtitle("/packages?q=head-&mixed=true"))
                 .as("머리에 적힌 수가 표에 실린 줄 수와 다르면 어느 쪽이 맞는지 물어볼 자리가 없다")
                 .isEqualTo("2개 중 1개");
+    }
+
+    // --- 실패한 검사 -----------------------------------------------------------
+
+    /**
+     * <b>담다가 실패하면 그 검사에서 온 행이 남지 않는가.</b>
+     *
+     * <p>담기는 쓰는 대로 커밋되고 {@code makeCurrent} 는 다 담은 뒤에 부른다.
+     * 그래서 중간에 터지면 <b>새 검사 것과 이전 검사 것이 그 자산에 함께
+     * 남는다</b> — 패키지 화면이 한 패키지를 두 버전으로 보여 주고, 그것이
+     * "두 대에 다르게 깔렸다" 와 구분되지 않는다.
+     *
+     * <p>실제로 그랬다. 검사가 {@code READING} 에서 실패한 뒤 79행이 남아
+     * 화면에 떠 있었고 손으로 지웠다. {@code runAsync} 의 실패 처리에
+     * {@code discard} 가 없었다.
+     */
+    @Test
+    @DisplayName("검사가 실패하면 담다 만 인벤토리를 버린다")
+    void failedScanLeavesNoInventory() throws IOException, InterruptedException {
+        Asset asset = asset("failed");
+        Scan good = doneScan(asset);
+        Scan broken = scans.saveAndFlush(new Scan(asset, "tester"));
+        try {
+            ingest(asset, good, FAILED_FIXTURE);
+
+            // 읽다가 터질 검사 — SBOM 경로가 없다. 담기는 시작된 셈으로 두어
+            // 그 검사에서 온 행을 미리 넣는다.
+            try (ComponentInventoryService.Sink sink =
+                         inventory.open(asset.getId(), broken.getId())) {
+                storage.inspect(write(FAILED_FIXTURE), sink);
+            }
+            assertThat(components.countByAssetId(asset.getId()))
+                    .as("담는 중이라 두 검사 것이 함께 있다")
+                    .isEqualTo(4);
+
+            // 실제 실패 경로. run 이 inflate 에서 터지고 catch 가 치운다.
+            //
+            // `runAsync` 는 이름 그대로 **다른 스레드**에서 돈다(@Async).
+            // 그리고 그 catch 는 `markFailed` 를 먼저, `discard` 를 나중에
+            // 부른다 — 상태만 보고 기다리면 **discard 전에 깨어난다.**
+            // 처음에 그렇게 짰다가 전체 시험에서만 어긋났다. 재어야 하는 것은
+            // 상태가 아니라 남은 행이다.
+            scanService.runAsync(broken.getId());
+            long remaining = 4;
+            for (int i = 0; i < 100 && remaining != 2; i++) {
+                Thread.sleep(50);
+                remaining = components.countByAssetId(asset.getId());
+            }
+
+            assertThat(scans.findById(broken.getId()).orElseThrow().getStatus())
+                    .isEqualTo(ScanStatus.FAILED);
+            assertThat(remaining)
+                    .as("실패한 검사의 패키지가 남아 한 패키지가 두 버전으로 보인다")
+                    .isEqualTo(2);
+            assertThat(components.findByAsset(asset.getId(), null))
+                    .allMatch(c -> c.getScan().getId().equals(good.getId()));
+        } finally {
+            // 트랜잭션이 없으니 롤백도 없다. 실패해도 치운다 — 남기면 다른
+            // 시험이 흔들린다.
+            inventory.discard(good.getId());
+            inventory.discard(broken.getId());
+            scans.deleteAll(List.of(good, broken));
+            assets.delete(asset);
+        }
     }
 
     // --- CSV 내보내기 -----------------------------------------------------------
