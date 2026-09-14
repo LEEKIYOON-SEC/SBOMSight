@@ -57,7 +57,7 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
            SELECT r FROM Remediation r JOIN FETCH r.asset a JOIN FETCH a.zone z
            WHERE r.status IN :statuses
              AND (:zoneId IS NULL OR z.id = :zoneId)
-           ORDER BY CASE WHEN r.status IN ('DONE', 'ACCEPTED') THEN 2
+           ORDER BY CASE WHEN r.status = 'DONE' THEN 2
                          WHEN r.dueDate < :today THEN 0
                          ELSE 1 END,
                     r.dueDate ASC NULLS LAST, a.name ASC, r.packageName ASC

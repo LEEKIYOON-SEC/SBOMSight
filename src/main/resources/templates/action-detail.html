@@ -64,6 +64,16 @@
       </label>
       <button class="btn primary" type="submit">저장</button>
     </form>
+    <!--/*
+      **없앤 상태를 찾는 사람에게 어디로 가라고 말한다.** 앞서 상태에
+      `하지 않고 닫음` 이 있었는데, 근거도 재검토일도 없이 아무나 눌러 닫을
+      수 있어서 통제가 있는 것처럼 보이는 만큼 없느니만 못했다. 그 결정은
+      검토 결과에 적는다 — 거기서는 재검토일을 반드시 받는다(V14).
+    */-->
+    <p class="footnote">
+      ※ 안 고치기로 한 결정은 여기가 아니라 <b>취약점의 검토 결과</b>에.
+      근거 · 재검토일 · 결재 문서 번호가 함께 남음.
+    </p>
     <table class="kv" sec:authorize="!hasRole('ADMIN')">
       <tr><th>상태</th><td th:text="${remediation.status.label()}">대기</td></tr>
       <tr><th>담당</th><td th:text="${#strings.isEmpty(remediation.owner)} ? '—' : ${remediation.owner}">—</td></tr>

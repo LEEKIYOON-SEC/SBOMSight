@@ -92,6 +92,24 @@ for f in $MIGRATIONS; do
         echo "  └ 계정 2개와 로그인 기록을 넣었다 (성공 3 · 실패 1)" ;;
     esac
 
+    # V14 가 ACCEPTED(하지 않고 닫음) 조치를 대기로 되돌린다. 되돌릴 것이
+    # 있는 상태에서 태워야 한다 — 빈 표를 옮기는 것은 아무것도 확인하지
+    # 못한다. 메모가 있는 것과 없는 것을 함께 넣는다(메모를 이어 붙인다).
+    case "$(basename "$f")" in V13__*)
+        run "$DB" -e "
+        INSERT INTO remediations
+          (asset_id, package_name, from_version, to_version, status, owner,
+           due_date, opened_count, note, created_at, created_by, updated_at, updated_by)
+        VALUES
+         (1,'openssl','3.0.1','3.0.7','ACCEPTED','인프라운영팀',
+          '2026-01-31', 3, '', NOW(6),'admin',NOW(6),'admin'),
+         (2,'glibc','2.34','','ACCEPTED','',
+          NULL, 1, '업무 영향 확인 중', NOW(6),'admin',NOW(6),'admin'),
+         (3,'zlib','1.2.11','1.2.13','DONE','',
+          NULL, 1, '', NOW(6),'admin',NOW(6),'admin');"
+        echo "  └ 조치 3행을 넣었다 (하지 않고 닫음 2 · 완료 1)" ;;
+    esac
+
     case "$(basename "$f")" in V9__*)
         run "$DB" -e "
         INSERT INTO risk_acceptances
@@ -233,6 +251,45 @@ AFTER=$(run "$DB" -N -e "SELECT COUNT(*) FROM component;")
 [ "$AFTER" = "0" ] || {
     echo "  스캔을 지웠는데 인벤토리 $AFTER 행이 남았습니다"; exit 1; }
 echo "  스캔을 지우면 그 스캔에서 온 인벤토리도 사라짐"
+
+# --- V14: 조치의 `하지 않고 닫음` 을 없앴다 --------------------------------
+#
+# 같은 결정이 두 곳에 적힐 수 있었다 — 조치 상태의 ACCEPTED 와 검토 결과의
+# will_not_fix. 남길 쪽은 검토 결과다(근거·재검토일·결재 번호가 거기 있다).
+#
+# 이미 닫아 둔 행은 **대기로 되돌리고 그 사실을 메모와 이력에 남긴다.**
+# DONE 으로 바꾸면 하지 않은 일을 했다고 적는 셈이고, 조용히 지우면 누가
+# 언제 닫았는지가 사라진다.
+
+LEFT=$(run "$DB" -N -e "SELECT COUNT(*) FROM remediations WHERE status='ACCEPTED';")
+[ "$LEFT" = "0" ] || { echo "  ACCEPTED 조치가 $LEFT 행 남았습니다"; exit 1; }
+echo "  ACCEPTED 조치가 남지 않음"
+
+REOPENED=$(run "$DB" -N -e "
+    SELECT COUNT(*) FROM remediations
+    WHERE status='OPEN' AND note LIKE '%[V14]%';")
+[ "$REOPENED" = "2" ] || {
+    echo "  되돌려진 조치가 $REOPENED 행입니다 (2행이어야 함)"; exit 1; }
+echo "  닫혀 있던 2행이 대기로 돌아오고 메모에 남음"
+
+# 메모가 있던 행은 **이어 붙여야** 한다. 덮어쓰면 사람이 적어 둔 것이 사라진다.
+KEPT=$(run "$DB" -N -e "
+    SELECT COUNT(*) FROM remediations
+    WHERE note LIKE '%업무 영향 확인 중%' AND note LIKE '%[V14]%';")
+[ "$KEPT" = "1" ] || { echo "  사람이 적은 메모가 덮여 없어졌습니다"; exit 1; }
+echo "  사람이 적어 둔 메모는 지우지 않고 이어 붙임"
+
+EVENTS=$(run "$DB" -N -e "
+    SELECT COUNT(*) FROM remediation_events
+    WHERE from_status='ACCEPTED' AND to_status='OPEN' AND actor='system';")
+[ "$EVENTS" = "2" ] || {
+    echo "  되돌린 이력이 $EVENTS 줄입니다 (2줄이어야 함)"; exit 1; }
+echo "  되돌린 사실이 이력 2줄로 남음 (from ACCEPTED → to OPEN)"
+
+# 완료였던 것은 건드리지 않는다.
+DONE_KEPT=$(run "$DB" -N -e "SELECT COUNT(*) FROM remediations WHERE status='DONE';")
+[ "$DONE_KEPT" = "1" ] || { echo "  완료 조치가 $DONE_KEPT 행입니다"; exit 1; }
+echo "  완료였던 조치는 그대로"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo
