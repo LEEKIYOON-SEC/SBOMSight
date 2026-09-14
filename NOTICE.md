@@ -21,7 +21,7 @@ scripts/make-notice.sh          # SBOM 을 다시 뽑아 이 파일을 다시 �
 |---|---|---|
 | angus-activation | `2.0.2` | EDL-1.0 |
 | antlr4-runtime | `4.13.0` | BSD-3-Clause |
-| aspectjweaver | `1.9.22.1` | EPL-2.0 |
+| aspectjweaver | `1.9.24` | EPL-2.0 |
 | attoparser | `2.0.7.RELEASE` | Apache-2.0 |
 | byte-buddy | `1.14.19` | Apache-2.0 |
 | caffeine | `3.1.8` | Apache-2.0 |
@@ -33,16 +33,16 @@ scripts/make-notice.sh          # SBOM 을 다시 뽑아 이 파일을 다시 �
 | gson | `2.10.1` | Apache-2.0 |
 | hibernate-commons-annotations | `6.0.6.Final` | LGPL-2.1-or-later |
 | hibernate-core | `6.5.3.Final` | LGPL-2.1-or-later |
-| hibernate-validator | `8.0.1.Final` | Apache-2.0 |
+| hibernate-validator | `8.0.2.Final` | Apache-2.0 |
 | HikariCP | `5.1.0` | Apache-2.0 |
 | istack-commons-runtime | `4.1.2` | EDL-1.0 |
-| jackson-annotations | `2.17.2` | Apache-2.0 |
-| jackson-core | `2.17.2` | Apache-2.0 |
-| jackson-databind | `2.17.2` | Apache-2.0 |
-| jackson-dataformat-toml | `2.17.2` | Apache-2.0 |
-| jackson-datatype-jdk8 | `2.17.2` | Apache-2.0 |
-| jackson-datatype-jsr310 | `2.17.2` | Apache-2.0 |
-| jackson-module-parameter-names | `2.17.2` | Apache-2.0 |
+| jackson-annotations | `2.18.6` | Apache-2.0 |
+| jackson-core | `2.18.6` | Apache-2.0 |
+| jackson-databind | `2.18.6` | Apache-2.0 |
+| jackson-dataformat-toml | `2.18.6` | Apache-2.0 |
+| jackson-datatype-jdk8 | `2.18.6` | Apache-2.0 |
+| jackson-datatype-jsr310 | `2.18.6` | Apache-2.0 |
+| jackson-module-parameter-names | `2.18.6` | Apache-2.0 |
 | jakarta.activation-api | `2.1.3` | EDL-1.0 |
 | jakarta.annotation-api | `2.1.1` | EPL-2.0 OR GPL-2.0-with-classpath-exception |
 | jakarta.inject-api | `2.0.1` | Apache-2.0 |
@@ -54,46 +54,46 @@ scripts/make-notice.sh          # SBOM 을 다시 뽑아 이 파일을 다시 �
 | jaxb-core | `4.0.5` | EDL-1.0 |
 | jaxb-runtime | `4.0.5` | EDL-1.0 |
 | jboss-logging | `3.5.3.Final` | Apache-2.0 |
-| jcl-over-slf4j | `2.0.16` | Apache-2.0 |
+| jcl-over-slf4j | `2.0.17` | Apache-2.0 |
 | jna | `5.13.0` | LGPL-2.1-or-later OR Apache-2.0 |
 | jna-platform | `5.13.0` | LGPL-2.1-or-later OR Apache-2.0 |
-| jul-to-slf4j | `2.0.16` | MIT |
+| jul-to-slf4j | `2.0.17` | MIT |
 | log4j-api | `2.23.1` | Apache-2.0 |
 | log4j-to-slf4j | `2.23.1` | Apache-2.0 |
-| logback-classic | `1.5.11` | EPL-1.0 OR LGPL-2.1 |
-| logback-core | `1.5.11` | EPL-1.0 OR LGPL-2.1 |
-| mariadb-java-client | `3.3.3` | LGPL-2.1 |
-| micrometer-commons | `1.13.6` | Apache-2.0 |
-| micrometer-observation | `1.13.6` | Apache-2.0 |
-| slf4j-api | `2.0.16` | MIT |
+| logback-classic | `1.5.25` | EPL-1.0 OR LGPL-2.1 |
+| logback-core | `1.5.25` | EPL-1.0 OR LGPL-2.1 |
+| mariadb-java-client | `3.3.4` | LGPL-2.1 |
+| micrometer-commons | `1.13.15` | Apache-2.0 |
+| micrometer-observation | `1.13.15` | Apache-2.0 |
+| slf4j-api | `2.0.17` | MIT |
 | snakeyaml | `2.2` | Apache-2.0 |
-| spring-aop | `6.1.14` | Apache-2.0 |
-| spring-aspects | `6.1.14` | Apache-2.0 |
-| spring-beans | `6.1.14` | Apache-2.0 |
-| spring-boot | `3.3.5` | Apache-2.0 |
-| spring-boot-autoconfigure | `3.3.5` | Apache-2.0 |
-| spring-boot-jarmode-tools | `3.3.5` | Apache-2.0 |
-| spring-context | `6.1.14` | Apache-2.0 |
-| spring-core | `6.1.14` | Apache-2.0 |
-| spring-data-commons | `3.3.5` | Apache-2.0 |
-| spring-data-jpa | `3.3.5` | Apache-2.0 |
-| spring-expression | `6.1.14` | Apache-2.0 |
-| spring-jcl | `6.1.14` | Apache-2.0 |
-| spring-jdbc | `6.1.14` | Apache-2.0 |
-| spring-orm | `6.1.14` | Apache-2.0 |
-| spring-security-config | `6.3.4` | Apache-2.0 |
-| spring-security-core | `6.3.4` | Apache-2.0 |
-| spring-security-crypto | `6.3.4` | Apache-2.0 |
-| spring-security-web | `6.3.4` | Apache-2.0 |
-| spring-tx | `6.1.14` | Apache-2.0 |
-| spring-web | `6.1.14` | Apache-2.0 |
-| spring-webmvc | `6.1.14` | Apache-2.0 |
-| thymeleaf | `3.1.2.RELEASE` | Apache-2.0 |
-| thymeleaf-extras-springsecurity6 | `3.1.2.RELEASE` | Apache-2.0 |
-| thymeleaf-spring6 | `3.1.2.RELEASE` | Apache-2.0 |
-| tomcat-embed-core | `10.1.31` | Apache-2.0 |
-| tomcat-embed-el | `10.1.31` | Apache-2.0 |
-| tomcat-embed-websocket | `10.1.31` | Apache-2.0 |
+| spring-aop | `6.1.21` | Apache-2.0 |
+| spring-aspects | `6.1.21` | Apache-2.0 |
+| spring-beans | `6.1.21` | Apache-2.0 |
+| spring-boot | `3.3.13` | Apache-2.0 |
+| spring-boot-autoconfigure | `3.3.13` | Apache-2.0 |
+| spring-boot-jarmode-tools | `3.3.13` | Apache-2.0 |
+| spring-context | `6.1.21` | Apache-2.0 |
+| spring-core | `6.1.21` | Apache-2.0 |
+| spring-data-commons | `3.3.13` | Apache-2.0 |
+| spring-data-jpa | `3.3.13` | Apache-2.0 |
+| spring-expression | `6.1.21` | Apache-2.0 |
+| spring-jcl | `6.1.21` | Apache-2.0 |
+| spring-jdbc | `6.1.21` | Apache-2.0 |
+| spring-orm | `6.1.21` | Apache-2.0 |
+| spring-security-config | `6.3.10` | Apache-2.0 |
+| spring-security-core | `6.3.10` | Apache-2.0 |
+| spring-security-crypto | `6.3.10` | Apache-2.0 |
+| spring-security-web | `6.3.10` | Apache-2.0 |
+| spring-tx | `6.1.21` | Apache-2.0 |
+| spring-web | `6.1.21` | Apache-2.0 |
+| spring-webmvc | `6.1.21` | Apache-2.0 |
+| thymeleaf | `3.1.3.RELEASE` | Apache-2.0 |
+| thymeleaf-extras-springsecurity6 | `3.1.3.RELEASE` | Apache-2.0 |
+| thymeleaf-spring6 | `3.1.3.RELEASE` | Apache-2.0 |
+| tomcat-embed-core | `10.1.49` | Apache-2.0 |
+| tomcat-embed-el | `10.1.49` | Apache-2.0 |
+| tomcat-embed-websocket | `10.1.49` | Apache-2.0 |
 | txw2 | `4.0.5` | EDL-1.0 |
 | unbescape | `1.1.6.RELEASE` | Apache-2.0 |
 | waffle-jna | `3.3.0` | MIT |
