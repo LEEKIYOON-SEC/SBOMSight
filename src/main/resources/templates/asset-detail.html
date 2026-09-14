@@ -177,9 +177,10 @@
     <form method="get" class="filters">
       <input type="hidden" name="tab" value="vulns">
       <span class="segmented">
+        <!-- `links` 로 만든다. `@{…(group=${g}, q=${q}, …)}` 는 값이 없어도
+             이름을 적어서 `&q=&severity=&fixable=&kev=` 가 따라붙었다(N12). -->
         <a th:each="g : ${ {'item','cve','package'} }"
-           th:href="@{'/assets/' + ${asset.id}(tab='vulns', group=${g}, q=${q},
-                      severity=${severityFilter}, fixable=${fixable}, kev=${kev})}"
+           th:href="@{${links.group(g)}}"
            th:classappend="${group} == ${g} ? 'current' : ''"
            th:text="${g} == 'item' ? '항목별' : (${g} == 'cve' ? 'CVE별' : '패키지별')">항목별</a>
       </span>

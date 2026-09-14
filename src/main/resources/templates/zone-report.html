@@ -35,9 +35,9 @@
     <label>종료 <input type="date" name="to" th:value="${to}"></label>
     <button class="btn primary" type="submit">보기</button>
     <span class="spacer"></span>
-    <a class="btn small" th:href="@{/reports/zone(zone=${selectedZone}, from=${thisMonth}, to=${today})}">이번 달</a>
-    <a class="btn small" th:href="@{/reports/zone(zone=${selectedZone}, from=${lastMonthFrom}, to=${lastMonthTo})}">지난 달</a>
-    <a class="btn small" th:href="@{/reports/zone(zone=${selectedZone}, from=${quarterFrom}, to=${today})}">최근 3개월</a>
+    <a class="btn small" th:href="@{${thisMonthLink}}">이번 달</a>
+    <a class="btn small" th:href="@{${lastMonthLink}}">지난 달</a>
+    <a class="btn small" th:href="@{${quarterLink}}">최근 3개월</a>
   </form>
 
   <div class="report-title">

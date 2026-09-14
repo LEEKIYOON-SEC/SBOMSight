@@ -14,8 +14,7 @@
   */-->
   <th:block th:remove="all">
     <div th:fragment="actions">
-      <a class="btn" th:href="@{/settings/audit/export.csv(actor=${actor}, action=${action},
-         from=${from}, to=${to}, q=${q})}">CSV 내려받기</a>
+      <a class="btn" th:href="@{${csv}}">CSV 내려받기</a>
     </div>
   </th:block>
   <div class="page-header" style="padding-top:0">
@@ -87,13 +86,9 @@
     </div>
 
     <div class="pager" th:if="${page.totalPages > 1}">
-      <a th:if="${page.hasPrevious()}"
-         th:href="@{/settings/audit(page=${page.number - 1}, actor=${actor}, action=${action},
-                    from=${from}, to=${to}, q=${q})}">이전</a>
+      <a th:if="${prevLink != null}" th:href="@{${prevLink}}">이전</a>
       <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
-      <a th:if="${page.hasNext()}"
-         th:href="@{/settings/audit(page=${page.number + 1}, actor=${actor}, action=${action},
-                    from=${from}, to=${to}, q=${q})}">다음</a>
+      <a th:if="${nextLink != null}" th:href="@{${nextLink}}">다음</a>
     </div>
   </div>
   </div>

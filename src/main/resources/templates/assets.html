@@ -51,11 +51,11 @@
   */-->
   <div class="filters">
     <a class="chip" th:classappend="${selectedZone == null} ? 'on' : ''"
-       th:href="@{/(filter=${filter}, view=${view}, sort=${sort}, dir=${dir}, archived=${archived})}">
+       th:href="@{${links.copy().with('zone', null).here()}}">
       전체 <span class="n" th:text="${totalCount}">0</span></a>
     <a th:each="z : ${zones}" class="chip"
        th:classappend="${selectedZone != null and selectedZone == z.id} ? 'on' : ''"
-       th:href="@{/(zone=${z.id}, filter=${filter}, view=${view}, sort=${sort}, dir=${dir}, archived=${archived})}">
+       th:href="@{${links.copy().with('zone', z.id).here()}}">
       <i class="zrail" th:style="'background:' + (${#strings.isEmpty(z.color)} ? '#6f7e8d' : ${z.color})"></i>
       <span th:text="${z.name}">DMZ</span>
       <span class="n" th:text="${zoneCounts.getOrDefault(z.id, 0)}">0</span></a>
@@ -64,7 +64,7 @@
 
     <!-- 거른 것이 있으면 무엇으로 걸렀는지 보이고, 푸는 길이 그 자리에 있어야 한다. -->
     <a th:if="${filter != null and !#strings.isEmpty(filter)}" class="chip on"
-       th:href="@{/(zone=${selectedZone}, view=${view}, sort=${sort}, dir=${dir}, archived=${archived})}"
+       th:href="@{${links.copy().with('filter', null).here()}}"
        th:text="(${filter} == 'noscan' ? '검사 안 한 자산' : '30일 넘은 자산') + ' ✕'">거름 ✕</a>
 
     <!-- 같은 것을 인라인 style 로 따로 적어 두고 있었다. 클래스로 모은다. -->
@@ -72,9 +72,11 @@
       <input type="checkbox" id="archived-toggle" th:checked="${archived}"> 보관된 자산도</label>
 
     <span class="segmented">
-      <a th:href="@{/(zone=${selectedZone}, filter=${filter}, view='table', sort=${sort}, dir=${dir}, archived=${archived})}"
+      <!-- 표 보기가 기본이라 `view` 를 안 적는다 — 주소가 짧아지고, 적어도
+           같은 화면이다. 구역 보기는 정렬이 없으므로 함께 뗀다. -->
+      <a th:href="@{${links.copy().with('view', null).here()}}"
          th:classappend="${view} != 'zones' ? 'current' : ''">표</a>
-      <a th:href="@{/(zone=${selectedZone}, filter=${filter}, view='zones', archived=${archived})}"
+      <a th:href="@{${links.copy().with('view', 'zones').with('sort', null).with('dir', null).here()}}"
          th:classappend="${view} == 'zones' ? 'current' : ''">구역</a>
     </span>
   </div>
@@ -107,22 +109,23 @@
       제각각이 되어 세로로 눈이 내려가지 않는다 — 자산이 하나뿐인 구역의
       '탐지' 칸과 열 대짜리 구역의 '탐지' 칸이 다른 자리에 선다.
     */-->
-    <div class="table-scroll" th:if="${view != 'zones' and assetCount > 0}"
-         th:with="q=${'zone=' + (selectedZone == null ? '' : selectedZone)
-                      + '&amp;filter=' + (filter == null ? '' : filter)
-                      + '&amp;archived=' + archived + '&amp;sort='}">
+    <!--/*
+      정렬 머리의 주소를 문자열로 짜고 있었다 — 그래서 고르지 않은 값도
+      `filter=&archived=false` 로 따라붙었다. `links` 로 만든다(N12).
+    */-->
+    <div class="table-scroll" th:if="${view != 'zones' and assetCount > 0}">
       <table class="asset-table">
         <thead>
         <tr>
           <th class="tight sortable">
-            <a th:href="@{'/?' + ${q} + 'name&dir=' + (${sort == 'name' and dir == 'asc'} ? 'desc' : 'asc')}">자산
+            <a th:href="@{${links.copy().with('sort', 'name').with('dir', sort == 'name' and dir == 'asc' ? 'desc' : 'asc').here()}}">자산
               <span class="sortmark" th:if="${sort == 'name'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↑</span></a></th>
           <th class="tight">운영체제</th>
           <th class="tight sortable">
-            <a th:href="@{'/?' + ${q} + 'scanned&dir=' + (${sort == 'scanned' and dir == 'desc'} ? 'asc' : 'desc')}">마지막 검사
+            <a th:href="@{${links.copy().with('sort', 'scanned').with('dir', sort == 'scanned' and dir == 'desc' ? 'asc' : 'desc').here()}}">마지막 검사
               <span class="sortmark" th:if="${sort == 'scanned'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↓</span></a></th>
           <th class="num tight sortable">
-            <a th:href="@{'/?' + ${q} + 'findings&dir=' + (${sort == 'findings' and dir == 'asc'} ? 'desc' : 'asc')}">탐지
+            <a th:href="@{${links.copy().with('sort', 'findings').with('dir', sort == 'findings' and dir == 'asc' ? 'desc' : 'asc').here()}}">탐지
               <span class="sortmark" th:if="${sort == 'findings'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↓</span></a></th>
           <th class="tight">심각도</th>
           <th class="num tight">대응</th>

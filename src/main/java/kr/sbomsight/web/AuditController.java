@@ -5,6 +5,7 @@ import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.AuditLog;
 import kr.sbomsight.repo.AuditLogRepository;
 import kr.sbomsight.service.CsvWriter;
+import kr.sbomsight.service.VulnQuery;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -59,6 +60,20 @@ public class AuditController {
         model.addAttribute("from", from);
         model.addAttribute("to", to);
         model.addAttribute("q", q);
+
+        // CSV·쪽 넘김 주소를 자바에서 만든다. `@{/settings/audit(actor=${actor},
+        // …)}` 는 값이 없어도 이름을 적어서 `?actor=&action=&from=&to=&q=` 가
+        // 됐다 — 감사 기록을 남기는 화면의 주소가 읽히지 않는 것은 특히
+        // 곤란하다. 점검에서 "무엇으로 걸러 본 것이냐" 를 묻는다(N12).
+        VulnQuery.Links filters = new VulnQuery.Links("/settings/audit", null)
+                .with("actor", actor).with("action", action)
+                .with("from", from).with("to", to).with("q", q);
+        model.addAttribute("csv",
+                filters.copy("/settings/audit/export.csv").here());
+        model.addAttribute("prevLink",
+                result.hasPrevious() ? filters.copy().page(result.getNumber() - 1) : null);
+        model.addAttribute("nextLink",
+                result.hasNext() ? filters.copy().page(result.getNumber() + 1) : null);
         return "audit";
     }
 

@@ -7,6 +7,7 @@ import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.RemediationService;
+import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -74,6 +75,16 @@ public class ActionController {
         model.addAttribute("status", status);
         model.addAttribute("statuses", RemediationStatus.values());
         model.addAttribute("includeDone", includeDone);
+
+        // CSV 링크를 자바에서 만든다. `@{/actions/export.csv(zone=${zone}, …)}`
+        // 는 값이 없어도 이름을 적어서 `?zone=&status=&includeDone=false` 가
+        // 됐다 — `includeDone=false` 는 안 고른 것이 아니라 "볼 일 끝난 것은
+        // 빼기로 골랐다" 고 읽힌다(N12).
+        model.addAttribute("csv", new VulnQuery.Links("/actions/export.csv", null)
+                .with("tab", "analyses".equals(tab) ? "analyses" : null)
+                .with("zone", zone)
+                .with("status", status)
+                .with("includeDone", includeDone ? "true" : null));
 
         if ("analyses".equals(tab)) {
             model.addAttribute("analyses", analyses.list(includeDone, zone));

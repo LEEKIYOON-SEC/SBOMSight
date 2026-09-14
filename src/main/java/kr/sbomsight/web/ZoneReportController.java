@@ -1,5 +1,6 @@
 package kr.sbomsight.web;
 
+import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneReportService;
 import kr.sbomsight.service.ZoneService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -62,6 +63,20 @@ public class ZoneReportController {
         model.addAttribute("lastMonthTo", today.withDayOfMonth(1).minusDays(1));
         model.addAttribute("quarterFrom", today.minusMonths(2).withDayOfMonth(1));
         model.addAttribute("today", today);
+
+        // 기간 단추의 주소를 자바에서 만든다. `@{/reports/zone(zone=${zone}, …)}`
+        // 는 값이 없어도 이름을 적어서, 구역을 안 고른 전체 범위에서 `zone=`
+        // 이 빈 값으로 붙었다 — 그 주소가 결재 문서에 붙는다(N12).
+        VulnQuery.Links period = new VulnQuery.Links("/reports/zone", null)
+                .with("zone", zone);
+        model.addAttribute("thisMonthLink",
+                period.copy().with("from", today.withDayOfMonth(1)).with("to", today).here());
+        model.addAttribute("lastMonthLink",
+                period.copy().with("from", today.minusMonths(1).withDayOfMonth(1))
+                      .with("to", today.withDayOfMonth(1).minusDays(1)).here());
+        model.addAttribute("quarterLink",
+                period.copy().with("from", today.minusMonths(2).withDayOfMonth(1))
+                      .with("to", today).here());
         if (swapped) {
             model.addAttribute("message", "시작일이 종료일보다 늦어 두 날짜를 바꿨습니다.");
         }

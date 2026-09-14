@@ -148,6 +148,21 @@ public class AssetController {
         model.addAttribute("totalCount", all.size());
         model.addAttribute("filter", filter);
         model.addAttribute("view", view);
+
+        // 화면 안의 링크를 자바에서 만든다. 타임리프의 `@{/(zone=${zone}, …)}`
+        // 는 값이 없어도 이름을 적어서, 아무것도 고르지 않은 목록의 링크가
+        // `/?zone=&filter=&view=table&sort=name&dir=asc&archived=false` 가 된다.
+        // 동작은 하지만 그 주소가 결재 문서에 붙고 옆자리에 전달된다.
+        //
+        // **기본값은 적지 않는다.** `archived=false` 는 안 고른 것이 아니라
+        // "보관된 것은 빼기로 골랐다" 고 읽힌다.
+        model.addAttribute("links", new VulnQuery.Links("/", null)
+                .with("zone", zone)
+                .with("filter", filter)
+                .with("view", "zones".equals(view) ? "zones" : null)
+                .with("sort", "name".equals(sort) ? null : sort)
+                .with("dir", "asc".equals(dir) ? null : dir)
+                .with("archived", archived ? "true" : null));
         model.addAttribute("sort", sort);
         model.addAttribute("dir", dir);
         model.addAttribute("archived", archived);

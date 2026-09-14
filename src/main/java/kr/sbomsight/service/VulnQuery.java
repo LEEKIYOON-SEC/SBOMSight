@@ -86,6 +86,35 @@ public class VulnQuery {
             return this;
         }
 
+        /**
+         * 같은 것을 들고 있는 새 벌. <b>원본을 건드리지 않는다.</b>
+         *
+         * <p>화면 하나에 링크가 여럿이고 각자 한두 가지만 다를 때 쓴다 —
+         * 목록의 정렬 머리, 구역 고르개, 보기 바꾸개가 그렇다.
+         * {@link #with} 는 제 자리에서 값을 바꾸므로 한 벌을 돌려 쓰면
+         * 앞 링크가 뒤 링크에 새어 들어간다.
+         *
+         * <pre>
+         * ${links.copy().with('sort','name').with('dir','desc').here()}
+         * </pre>
+         */
+        public Links copy() {
+            return copy(path);
+        }
+
+        /**
+         * 고른 것을 그대로 들고 <b>다른 경로로</b> 가는 새 벌.
+         *
+         * <p>내려받기 주소가 그렇다 — 화면에 걸어 둔 거르개를 그대로 들고
+         * {@code /export.csv} 로 간다. 보던 것과 다른 파일이 떨어지면 어느
+         * 쪽이 맞는지 물어볼 자리가 없다.
+         */
+        public Links copy(String otherPath) {
+            Links clone = new Links(otherPath, fixed);
+            clone.current.putAll(current);
+            return clone;
+        }
+
         /** 지금 고른 것 그대로. 거르개를 지우는 '처음으로' 링크는 {@link #clear()}. */
         public String here() {
             return build(null, null);
