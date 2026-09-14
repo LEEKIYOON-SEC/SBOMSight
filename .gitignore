@@ -10,6 +10,11 @@ config/*.p12
 config/*.pfx
 config/*.jks
 application-prod.yml
+# 서비스로 돌 때의 기록. install-service.ps1 이 만들고 10MB 마다 밀어 둔다.
+logs/
+# install-service.ps1 이 등록할 때 만든다 — 그 PC 의 경로가 박혀 있어서
+# 저장소에 올리면 다른 PC 에서 틀린 경로로 돈다.
+scripts/service-launch.ps1
 
 # --- 파이썬 판(교체 대상) ---
 __pycache__/

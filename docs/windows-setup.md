@@ -524,6 +524,9 @@ grype 도 몇 분 걸린다.
 다른 PC 에서 그 주소를 열면 로그인 화면이 뜬다. **설정 → 계정** 에서 팀원
 계정을 만들어 준다.
 
+> 이 기동은 터미널 창에 매달려 있다 — 창을 닫거나 PC 를 재부팅하면 내려간다.
+> 팀에서 함께 쓰려면 14단계로 이어 간다.
+
 ### 허용 IP 좁히기
 
 로그인만으로 부족하면 **설정 → 접근 IP** 에서 대역을 지정한다. 목록 밖에서는
@@ -540,10 +543,62 @@ grype 도 몇 분 걸린다.
 
 ---
 
+## 14단계 — 재부팅해도 올라오게
+
+13단계까지는 터미널 창에 매달려 돈다. **작업 스케줄러에 등록해 서비스처럼
+올린다** — 윈도우에 들어 있는 것이라 폐쇄망에 따로 반입할 것이 없다.
+
+> **11단계(첫 로그인)를 먼저 끝내라.** 최초 관리자 비밀번호는 계정이 하나도
+> 없는 첫 기동에 한 번만 찍히고, 서비스에는 창이 없어서 그 줄이
+> `logs\service.log` 안으로 들어간다.
+
+관리자 PowerShell 에서:
+
+```powershell
+.\scripts\install-service.ps1
+```
+
+| | |
+|---|---|
+| 작업 이름 | `SBOMSight` |
+| 트리거 | 시스템 시작 **1분 뒤** (DB 가 먼저 올라와야 한다) |
+| 계정 | `SYSTEM` — 로그온하지 않아도 돈다 |
+| 실패 시 | 1분 뒤 다시 시작, 세 번까지 |
+| 기록 | `logs\service.log` |
+
+등록하면 바로 띄우고 포트를 듣는지 확인해 접속 주소를 낸다. 내리고 띄우는
+것도 같은 스크립트다.
+
+```powershell
+.\scripts\install-service.ps1 -Stop      # 내린다 (판올림 전에 반드시)
+.\scripts\install-service.ps1 -Start     # 띄운다
+.\scripts\install-service.ps1 -Remove    # 등록을 지운다
+```
+
+### 확인
+
+```powershell
+(Get-ScheduledTaskInfo -TaskName SBOMSight).LastTaskResult   # 0
+Get-Content .\logs\service.log -Tail 30
+```
+
+**그리고 한 번 재부팅해 보라.** 저절로 열리는 것이 이 단계의 목적이다.
+
+> **SYSTEM 은 로그인 계정의 폴더를 보지 않는다.** grype 취약점 DB 도 PATH 도
+> 다르다. `config\env.ps1` 에 자리를 못 박아 두라 —
+> `$env:GRYPE_DB_CACHE_DIR = 'C:\work\grype-db'`.
+> 운영 절차 전체는 [`docs/operations.md`](operations.md) 에 있다.
+
+---
+
 ## 갱신받기
+
+서비스로 등록해 두었다면 **먼저 내린다.** 도는 동안에는 jar 가 잠겨 있어
+빌드가 그 파일을 지우지 못하고 실패한다.
 
 ```powershell
 cd C:\work\SBOMSight
+.\scripts\install-service.ps1 -Stop
 ```
 
 **DB 를 먼저 백업한다.** 마이그레이션이 표 구조를 바꾸고, 되돌리는 길은 백업
@@ -559,10 +614,15 @@ mysqldump -u root -p --single-transaction --routines sbomsight > C:\work\backup-
 ```powershell
 git pull
 .\mvnw.cmd clean package
-.\scripts\run-server.ps1
+.\scripts\install-service.ps1 -Start     # 서비스로 등록했다면
+.\scripts\run-server.ps1                 # 아니면 이쪽
 ```
 
 표 변경은 첫 기동 때 Flyway 가 알아서 적용한다.
+
+올라온 뒤 **로그아웃하고 다시 로그인해 본다.** 그리고 `패키지` 화면이 비어
+있으면 자산마다 `다시 검사` 를 한 번 누른다 — 패키지 목록은 검사할 때 SBOM
+에서 담기고, 판올림이 이미 쌓인 SBOM 을 되읽지는 않는다.
 
 ---
 
@@ -577,6 +637,9 @@ git pull
 
 `data\` 에는 서버에 설치된 패키지 목록이 통째로 들어 있다. 백업 매체도 같은
 등급으로 다뤄야 한다.
+
+받는 명령과 **되살려 보는 절차**는 [`docs/operations.md` 7절](operations.md#7-백업)
+에 있다. 받아 둔 것이 실제로 열리는지는 복구해 보기 전까지 알 수 없다.
 
 ---
 
@@ -675,6 +738,7 @@ ALTER DATABASE sbomsight CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 | 문서 | 내용 |
 |---|---|
+| [`docs/operations.md`](operations.md) | **올린 뒤 — 서비스 다루기 · 운영 리듬 · 백업 · 판올림** |
 | [`README.md`](../README.md) | 설계에서 지키는 것 · 설정 변수 전체 |
 | [`docs/offline-operations.md`](offline-operations.md) | 폐쇄망 패치 절차 · 오프라인 취약점 DB 반입 |
 | [`scripts/env.example.ps1`](../scripts/env.example.ps1) | 설정 값과 각각의 뜻 |

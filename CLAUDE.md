@@ -169,5 +169,6 @@ DB_PORT=13306 ./scripts/check-migrations.sh   # 마이그레이션만
 | **지금 하고 있는 개편** | **`docs/rework-plan.md`** |
 | **승인받은 화면 시안** | **`docs/preview.html`** |
 | 설치 절차 | `docs/windows-setup.md` |
+| 올린 뒤 운영 | `docs/operations.md` |
 | 폐쇄망 운영 | `docs/offline-operations.md` |
 | 설계에서 지키는 것 | `README.md` |

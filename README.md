@@ -109,6 +109,20 @@ Linux 다(`setcap 'cap_net_bind_service=+ep' $(which java)`). Windows 에서
 **첫 기동 때 관리자 계정과 임시 비밀번호가 콘솔에 한 번만 표시된다.**
 로그인하면 곧바로 새 비밀번호를 정해야 한다.
 
+### 5. 재부팅해도 올라오게 (Windows)
+
+위 기동은 터미널 창에 매달려 있다. 팀이 함께 쓰려면 작업 스케줄러에 등록한다 —
+윈도우에 들어 있는 것이라 폐쇄망에 따로 반입할 것이 없다.
+
+```powershell
+.\scripts\install-service.ps1            # 관리자 PowerShell · 등록하고 띄운다
+.\scripts\install-service.ps1 -Stop      # 판올림 전에 내린다 (jar 가 잠긴다)
+```
+
+창이 없으니 콘솔에 찍히던 것은 `logs\service.log` 로 간다. 운영 절차 전체 —
+서비스 다루기 · 운영 리듬 · 백업 · 판올림 — 는
+[`docs/operations.md`](docs/operations.md) 에 있다.
+
 ---
 
 ## 쓰는 법

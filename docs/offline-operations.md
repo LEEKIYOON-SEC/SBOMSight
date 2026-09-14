@@ -155,6 +155,19 @@ $env:GRYPE_DB_MAX_ALLOWED_BUILT_AGE = '720h'
 따로 넘기는 것이 아니라 상속이므로, 같은 터미널에서 `grype db status` 로 확인한
 결과가 곧 검사에 쓰이는 상태다.
 
+> **서비스로 돌리면 `GRYPE_DB_CACHE_DIR` 은 선택이 아니라 필수다.** 작업
+> 스케줄러가 SYSTEM 으로 띄우고, SYSTEM 의 `%LOCALAPPDATA%` 는 로그인 계정의
+> 것이 아니다(`C:\Windows\System32\config\systemprofile\AppData\Local`). 위처럼
+> 자리를 못 박지 않으면 **내가 받아 둔 DB 를 서비스가 못 본다.** 반입도 그
+> 자리로 하고, 확인할 때도 같은 값을 준 셸에서 한다:
+>
+> ```powershell
+> $env:GRYPE_DB_CACHE_DIR = 'C:\work\grype-db'
+> grype db status
+> ```
+>
+> 서비스 등록은 [`docs/operations.md`](operations.md) 1절이다.
+
 ### 확인
 
 ```powershell
@@ -239,3 +252,4 @@ DB 기준일은 찍히므로 보고서를 받는 사람이 읽을 수 있다. �
 
 설정 전체는 [`README.md`](../README.md) 와
 [`scripts/env.example.ps1`](../scripts/env.example.ps1) 에 있다.
+운영 절차(서비스 · 리듬 · 백업 · 판올림)는 [`docs/operations.md`](operations.md) 다.
