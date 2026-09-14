@@ -67,7 +67,8 @@
        th:href="@{/(zone=${selectedZone}, view=${view}, sort=${sort}, dir=${dir}, archived=${archived})}"
        th:text="(${filter} == 'noscan' ? '검사 안 한 자산' : '30일 넘은 자산') + ' ✕'">거름 ✕</a>
 
-    <label style="margin:0; display:inline-flex; align-items:center; gap:6px; color:var(--fg-faint)">
+    <!-- 같은 것을 인라인 style 로 따로 적어 두고 있었다. 클래스로 모은다. -->
+    <label class="check">
       <input type="checkbox" id="archived-toggle" th:checked="${archived}"> 보관된 자산도</label>
 
     <span class="segmented">

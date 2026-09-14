@@ -105,6 +105,17 @@ public class VulnQuery {
             return build("page", page);
         }
 
+        /**
+         * 지금 고른 것에서 <b>한 가지만 바꾼 주소.</b> {@code null} 을 주면
+         * 그 값을 뺀다 — 펼친 것을 접는 링크가 그렇게 만들어진다.
+         *
+         * <p>패키지 화면의 `자산 보기`/`접기` 와 `취약점` 링크가 쓴다. 같은
+         * 일을 하는 링크 만들기를 두 벌로 두면 한쪽만 고치는 날이 온다.
+         */
+        public String change(String name, Object value) {
+            return build(name, value);
+        }
+
         /** 거르개를 전부 지운다. 범위와 묶기는 남긴다 — 지금 보던 자리는 그대로다. */
         public String clear() {
             Links bare = new Links(path, fixed);

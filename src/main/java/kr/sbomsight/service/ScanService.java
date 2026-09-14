@@ -40,10 +40,11 @@ public class ScanService {
     private final GrypeMapper mapper;
     private final ObjectMapper json;
     private final SbomSightProperties properties;
+    private final ComponentInventoryService inventory;
 
     public ScanService(ScanRepository scans, FindingRepository findings, SbomStorage storage,
                        GrypeRunner grype, GrypeMapper mapper, ObjectMapper json,
-                       SbomSightProperties properties) {
+                       SbomSightProperties properties, ComponentInventoryService inventory) {
         this.scans = scans;
         this.findings = findings;
         this.storage = storage;
@@ -51,6 +52,7 @@ public class ScanService {
         this.mapper = mapper;
         this.json = json;
         this.properties = properties;
+        this.inventory = inventory;
     }
 
     /**
@@ -141,7 +143,19 @@ public class ScanService {
             // grype 은 파일을 직접 읽는다. 압축본을 잠깐 풀어 준다.
             plainSbom = storage.inflate(Path.of(scan.getSbomPath()), dir, "sbom.json");
 
-            SbomStorage.SbomInfo info = storage.inspect(plainSbom);
+            // 세는 김에 담는다. 앞서는 컴포넌트 수만 세고 버렸는데, 그래서
+            // 취약점이 붙은 패키지만 알 수 있었다 — log4j 가 어디 깔려 있는지는
+            // CVE 가 터진 다음에야 찾게 됐다.
+            //
+            // 넣은 뒤에 이전 것을 지운다. 읽다가 터지면 이전 인벤토리가 그대로
+            // 남아 있어야 한다.
+            SbomStorage.SbomInfo info;
+            try (ComponentInventoryService.Sink sink =
+                         inventory.open(scan.getAsset().getId(), scan.getId())) {
+                info = storage.inspect(plainSbom, sink);
+            }
+            inventory.makeCurrent(scan.getAsset().getId(), scan.getId());
+
             scan.setSbomFormat(info.format());
             scan.setComponentCount(info.componentCount());
 
@@ -218,7 +232,14 @@ public class ScanService {
         storage.deleteScanDir(assetId, scanId);
     }
 
-    /** 서버가 죽었다 살아났을 때 남아 있는 진행 중 스캔을 정리한다. */
+    /**
+     * 서버가 죽었다 살아났을 때 남아 있는 진행 중 스캔을 정리한다.
+     *
+     * <p>그 스캔에서 온 <b>인벤토리도 버린다.</b> {@link #run} 이 한
+     * 트랜잭션이라 프로세스가 죽으면 대개 함께 되돌려지지만, 커밋 직후에
+     * 죽었다면 남아 있을 수 있다 — 실패한 검사의 패키지 목록을 "지금 깔려
+     * 있는 것" 으로 보여 주면 안 된다.
+     */
     @Transactional
     public int reapStale() {
         List<Scan> stuck = scans.findByStatusIn(List.of(ScanStatus.QUEUED, ScanStatus.RUNNING));
@@ -226,6 +247,7 @@ public class ScanService {
             scan.setStatus(ScanStatus.FAILED);
             scan.setErrorMessage("서버가 다시 시작되어 중단되었습니다. 다시 올려 주세요.");
             scan.setFinishedAt(Instant.now());
+            inventory.discard(scan.getId());
         });
         scans.saveAll(stuck);
         return stuck.size();

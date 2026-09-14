@@ -3,6 +3,7 @@ package kr.sbomsight.service;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import kr.sbomsight.config.SbomSightProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +14,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.function.Consumer;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -32,7 +34,14 @@ public class SbomStorage {
     private static final int BUFFER = 1 << 16;
 
     private final SbomSightProperties properties;
-    private final JsonFactory jsonFactory = new JsonFactory();
+
+    /**
+     * 코덱을 붙여 둔다 — {@code readValueAsTree()} 가 이것을 쓴다.
+     *
+     * <p>붙이지 않으면 원소를 하나씩 읽을 수 없고, 손으로 토큰을 걸어야 한다.
+     * 그 코드는 형식이 셋(syft · CycloneDX · SPDX)이라 곧 읽을 수 없게 된다.
+     */
+    private final JsonFactory jsonFactory = new JsonFactory().setCodec(new ObjectMapper());
 
     public SbomStorage(SbomSightProperties properties) {
         this.properties = properties;
@@ -118,13 +127,26 @@ public class SbomStorage {
         }
     }
 
-    /**
-     * SBOM 의 형식과 컴포넌트 수.
-     *
-     * <p>파일을 통째로 올리지 않고 <b>앞에서부터 흘려 읽으며</b> 필요한 것만
-     * 센다. 10GB 짜리라도 어느 순간 메모리에 있는 것은 버퍼 하나뿐이다.
-     */
+    /** 형식과 컴포넌트 수만. 담을 것이 없을 때 쓴다. */
     public SbomInfo inspect(Path plainJson) {
+        return inspect(plainJson, null);
+    }
+
+    /**
+     * SBOM 의 형식과 컴포넌트 수 — <b>세는 김에 담는다.</b>
+     *
+     * <p>파일을 통째로 올리지 않고 앞에서부터 흘려 읽는다. 10GB 짜리라도 어느
+     * 순간 메모리에 있는 것은 버퍼 하나와 컴포넌트 하나뿐이다.
+     *
+     * <p>{@code sink} 를 주면 컴포넌트를 하나씩 넘긴다. <b>모아서 돌려주지
+     * 않는다</b> — 12만 개를 리스트에 담으면 스트리밍으로 읽은 뜻이 없어진다.
+     * 받는 쪽이 배치로 흘려보내야 한다.
+     *
+     * <p>세는 것은 {@code sink} 가 있든 없든 같다. 담다가 sink 가 터지면
+     * 그것은 그대로 올린다 — 인벤토리가 절반만 들어간 채로 "완료" 가 되면
+     * 안 된다.
+     */
+    public SbomInfo inspect(Path plainJson, Consumer<ParsedComponent> sink) {
         String format = "";
         int components = 0;
 
@@ -153,7 +175,7 @@ public class SbomStorage {
                 }
 
                 if (token == JsonToken.START_ARRAY && countingField != null) {
-                    components = countArray(parser);
+                    components = readArray(parser, countingField, sink);
                     countingField = null;
                     continue;
                 }
@@ -171,17 +193,41 @@ public class SbomStorage {
         return new SbomInfo(format, components);
     }
 
-    /** 배열 원소 수만 센다. 원소 내용은 건너뛴다 — 셀 수만 알면 된다. */
-    private int countArray(JsonParser parser) throws IOException {
+    /**
+     * 배열 원소를 세고, {@code sink} 가 있으면 하나씩 넘긴다.
+     *
+     * <p>원소를 <b>하나씩</b> 트리로 읽는다. 컴포넌트 하나는 수백 바이트라
+     * 곧바로 버려지고, 12만 개를 읽어도 동시에 살아 있는 것은 하나다.
+     * {@code sink} 가 없으면 내용을 아예 건너뛴다 — 셀 수만 알면 된다.
+     */
+    private int readArray(JsonParser parser, String field, Consumer<ParsedComponent> sink)
+            throws IOException {
         int count = 0;
         while (parser.nextToken() != JsonToken.END_ARRAY) {
             if (parser.currentToken() == null) {
                 break;
             }
             count++;
-            parser.skipChildren();
+            if (sink == null || parser.currentToken() != JsonToken.START_OBJECT) {
+                parser.skipChildren();
+                continue;
+            }
+            ParsedComponent parsed = ComponentReader.read(parser.readValueAsTree(), field);
+            if (parsed != null) {
+                sink.accept(parsed);
+            }
         }
         return count;
+    }
+
+    /**
+     * SBOM 이 담아 온 패키지 하나.
+     *
+     * <p>{@link kr.sbomsight.domain.Component} 로 가기 전의 날것이다. 엔티티를
+     * 여기서 만들지 않는 이유는 자산·스캔을 이 클래스가 모르기 때문이다.
+     */
+    public record ParsedComponent(String name, String version, String type,
+                                  String purl, String location) {
     }
 
     public record SbomInfo(String format, int componentCount) {

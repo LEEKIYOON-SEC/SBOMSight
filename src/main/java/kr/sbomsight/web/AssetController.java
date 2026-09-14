@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.service.AssetService;
 import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.SbomStorage;
+import kr.sbomsight.service.PackageService;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ScanService;
 import kr.sbomsight.service.ZoneService;
@@ -50,12 +51,15 @@ public class AssetController {
     private final FindingAnalysisService analyses;
     private final SbomStorage storage;
     private final VulnQuery vulns;
+    private final ComponentRepository components;
+    private final PackageService packages;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
                            AssetService assetService, ZoneService zoneService, AuditService audit,
                            FindingAnalysisService analyses, SbomStorage storage,
-                           VulnQuery vulns) {
+                           VulnQuery vulns, ComponentRepository components,
+                           PackageService packages) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
@@ -67,6 +71,8 @@ public class AssetController {
         this.analyses = analyses;
         this.storage = storage;
         this.vulns = vulns;
+        this.components = components;
+        this.packages = packages;
     }
 
     /** 마지막 검사가 이보다 오래되면 "오래됐다" 고 센다. */
@@ -305,6 +311,15 @@ public class AssetController {
             model.addAttribute("kev", kev);
             model.addAttribute("sort", sort);
             model.addAttribute("severityFilter", severityFilter);
+        }
+
+        // 패키지 탭. 그 자산에 깔린 것 전부 — 취약점이 없는 것도 있다.
+        // **빈 것과 안 본 것을 구분해서 말한다**: V13 은 이미 쌓인 SBOM 을
+        // 되읽지 않으므로, 다시 검사하기 전에는 인벤토리가 비어 있다.
+        model.addAttribute("packageCount", components.countByAssetId(id));
+        if ("packages".equals(tab)) {
+            model.addAttribute("assetPackages", packages.ofAsset(id, q));
+            model.addAttribute("q", q);
         }
         return "asset-detail";
     }

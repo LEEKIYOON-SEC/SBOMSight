@@ -396,7 +396,7 @@ Rocky Linux 9.3 · 대외 웹 · 마지막 검사 2026-09-10 14:22
 | `/scans/{id}` | → `/vulns?scan={id}` (302) |
 | `/vulns?asset={id}` | → `/assets/{id}?tab=vulns` (302) |
 | — | `/vulns/{cve}` 새로 |
-| — | `/packages`, `/packages/export.csv` 새로 |
+| — | `/packages`, `/packages/export.csv` 새로 ✅ N9 |
 | `/remediations`, `/remediations/{id}` | → `/actions`, `/actions/{id}` (302) |
 | `/acceptances`, `/analyses` | → `/actions?tab=analyses` (302) |
 | `/report/{scanId}` | → `/reports/scan/{scanId}` (302) ✅ N7 |
@@ -750,12 +750,92 @@ python3 scripts/check-table-width.py 1024     # 노트북 폭 — 아래 참조
 - 대비(contrast) 측정 — 색을 건드리는 일이고, 지금 팔레트는 승인받은 시안에서
   온 것이라 따로 확인이 필요하다
 
-### N9 — 패키지 인벤토리 ⚠ V13
-- V13 마이그레이션 · `SbomStorage` 가 세는 김에 담기 · 교체 로직
-- 새 `PackageController`(`/packages`) + `packages.html` (§3.3 의 취약 버전 표시)
-- 자산 상세 `패키지` 탭
-- 시험: 재검사해도 행이 두 배 되지 않는지 · 자산/스캔 삭제 시 함께 지워지는지 ·
-  **취약한 버전과 안전한 버전이 섞인 패키지가 표시되는지**
+### N9 — 패키지 인벤토리 ✅ V13
+
+**왜 있는가.** 취약점 화면은 grype 이 **매치를 낸 것만** 답한다. 그래서
+`log4j` 가 어디 깔려 있는지는 CVE 가 터진 다음에야, 그것도 매치가 난 자산에서만
+알 수 있었다. SBOM 에는 처음부터 전부 들어 있었다 — 세고 나서 버리고 있었다.
+
+| 요구 | 어디 |
+|---|---|
+| V13 마이그레이션 | `db/migration/V13__component_inventory.sql` — FK 둘 다 `ON DELETE CASCADE` |
+| `SbomStorage` 가 **세는 김에** 담기 | `SbomStorage.java:149` `inspect(Path, Consumer<ParsedComponent>)` · `:215` 한 원소씩 흘려 보낸다 (10GB SBOM 을 메모리에 올리지 않는다) |
+| 형식 셋 읽기 | `ComponentReader.java` — syft-json `artifacts` · CycloneDX `components` · SPDX `packages` |
+| 교체 로직 | `ComponentInventoryService.java` — `open` → `makeCurrent`(담은 **뒤에** 옛 스캔 것을 지운다) · `discard` |
+| 검사 흐름에 물리기 | `ScanService.java:154` · `:157` · `:250`(버려진 검사) |
+| 새 `/packages` | `PackageController.java` · `packages.html` |
+| §3.3 취약 버전 표시 | `PackageService.java` `VersionSlice` — `▮`+등급 색 / `○`+회색, 올리면 등급별 건수 |
+| 자산 상세 `패키지` 탭 | `AssetController.java:319-321` · `asset-detail.html:252` |
+| §6 `/packages/export.csv` | `PackageController.java` `export` · `CsvWriter.writePackages` · `PackageService.export` |
+| 시험 | `ComponentInventoryTest` 12개 — 형식 셋 · 재검사 · 삭제 · **섞인 버전** · 머리의 수 · CSV |
+
+**심각도 순서를 한 군데로 모았다.** `Critical` 이 `High` 보다 앞이라는 것은
+알파벳이 아니라 뜻이다. 보고서 두 곳과 이 화면이 각자 배열을 들고 있었으므로
+`Severity` 하나로 합쳤다 — `RANKED`·`KEYS`·`of(String)`. grype 이 낸 글자를
+그대로 담고, **어느 등급이 가장 높은가만 고른다**(§11 — 다시 매기지 않는다).
+
+**V13 은 이미 쌓인 SBOM 을 되읽지 않는다.** 그래서 다시 검사하기 전에는
+인벤토리가 비어 있고, 그 상태를 "패키지가 없습니다" 라고 말하면 거짓이다 —
+없는 것이 아니라 **아직 안 본 것**이다. 두 문구를 갈라 두었다
+(`PackageController.java:62` `inventoryEmpty` · 시험
+`PageRenderTest#emptyInventorySaysNotYetRead`).
+
+**띄워 보고 찾은 것** (시험 265개가 전부 통과한 채로 있던 것들)
+
+| | 무엇 | 어디 |
+|---|---|---|
+| 1 | `label.check` **클래스에 CSS 가 하나도 없었다** — 거르개 체크박스가 글자 위에 쌓이고 폭 100% 로 늘어났다. 세 화면이 쓰고 있었고 `assets.html` 은 같은 것을 인라인 style 로 두고 있었다 | `app.css` `label.check` 추가 · `assets.html` 을 클래스로 교체 |
+| 2 | 머리에 **거르개 전 이름 수**를 찍어, `버전이 갈린 것만` 을 켜서 한 줄만 남은 화면에 `6개` 가 적혔다 | `PackageService.java:152` `Listing.label()` · 시험 `ComponentInventoryTest#headCountMatchesTheRowsOnScreen` |
+| 3 | 표 폭 측정 스크립트의 화면 목록에 **N9 가 만든 화면이 빠져 있었다** — 새 화면을 만들며 목록에 한 줄을 안 더한 것이라 "넘치는 표 0개" 가 그 화면을 본 적이 없었다 | `scripts/check-table-width.py` 에 `/packages` 셋 · `?tab=packages` 추가 |
+| 4 | 이 화면의 링크가 전부 `?zone=&type=&q=&vulnerable=false&mixed=false&open=glibc` 였다. `vulnerable=false` 는 안 고른 것이 아니라 **끄기로 골랐다**고 읽힌다 | `PackageController` 에서 `VulnQuery.Links` 로 만든다 → `/packages?open=glibc` |
+| 5 | §6 가 적어 둔 **`/packages/export.csv` 를 안 만들었다** — 결재와 공유는 엑셀로 돈다 | `PackageController.export` · `CsvWriter.writePackages` |
+
+#### 주소가 사람이 읽을 수 있는가 (새 스크립트)
+
+`VulnQuery.Links` 는 바로 이 문제를 고치려고 N4 에 만든 것인데, **지키는 것이
+없어서 새 화면에서 똑같이 되살아났다.** 링크는 그려진 뒤의 모양을 봐야 아는
+것이라 시험이 아니라 스크립트로 둔다.
+
+```bash
+python3 scripts/check-links.py
+```
+
+`=false` 는 저절로 틀린 것이 아니다 — `/vulns?fixable=false`(수정 버전 없는
+것만)는 뜻이 있는 값이다. 그래서 **빈 값**과 **`false`** 를 따로 센다.
+
+> **다른 화면 다섯 곳에 같은 것이 남아 있다** — `/`(자산 목록·구역 카드) ·
+> `/assets/{id}?tab=vulns`(묶기 링크) · `/actions`(CSV) ·
+> `/reports/zone`(기간 단추) · `/settings/audit`(CSV). 빈 값 21개 · `false` 16개.
+> N9 가 만든 것이 아니고 한 커밋에 한 가지만 들어가야 되돌릴 수 있어
+> 손대지 않았다. 고치는 법은 위와 같다 (`Links` 로 옮긴다).
+
+**시험이 잡은 것** — 앞 단계에 만든 가늠막이 이번 것을 걸렀다.
+
+| | 무엇 | 어디 |
+|---|---|---|
+| 1 | N8 의 `FormLabelTest` 가 **N9 의 새 검색칸을 잡았다** — 이름 없는 입력칸 | `packages.html` · `asset-detail.html` 에 `aria-label` |
+| 2 | H2 가 만든 스키마에 `ON DELETE CASCADE` 가 없어 삭제 시험이 참조 무결성 위반으로 떨어졌다 (§10 — Flyway 와 어긋나는 자리) | `Component.java` 의 `@ManyToOne` 둘에 `@OnDelete(CASCADE)` |
+
+```
+./mvnw -B test                                  267개 통과
+DB_PORT=13306 ./scripts/check-mariadb.sh        267개 통과 (MariaDB + Flyway)
+DB_PORT=13306 ./scripts/check-migrations.sh     통과 — component FK 둘 다 CASCADE ·
+                                                스캔 삭제 시 인벤토리 함께 사라짐
+python3 scripts/check-table-width.py 1280       넘치는 표 0개
+python3 scripts/check-links.py                  /packages 에 빈 값 0개 (다른 화면은 위 참조)
+```
+
+> **grype 을 못 돌려 봤다.** 이 컨테이너에 grype 이 없어서 업로드→검사→인벤토리
+> 전 구간을 손으로 태우지 못했다. 담는 쪽은 `ComponentInventoryTest` 11개가
+> 보고, 화면은 개발 DB 에 인벤토리를 넣어 확인했다 — **실 PC 에서 §9 로 한 번
+> 태워야 하는 자리다**(N11).
+
+#### 안 한 것
+
+- 이미 쌓인 SBOM 되읽기(백필) — 보관해 둔 원본을 전부 다시 읽는 일이고,
+  자산마다 다시 검사하면 자연히 채워진다. 되돌리기 비용이 큰 쪽이라 따로 둔다
+- `Finding` 의 FK 도 `Component` 가 방금 고친 것과 **같은 H2-Flyway 어긋남**이
+  있다. 한 커밋에 한 가지만 들어가야 되돌릴 수 있어 손대지 않고 적어 둔다
 
 ### N10 — [선택] 조치 기한 규칙
 심각도별 기한(심각 7일 · 높음 30일 …)을 설정에 두고 조치 등록 시 자동 계산.

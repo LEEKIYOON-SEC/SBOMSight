@@ -271,6 +271,19 @@ input[type="color"] {
 .inline-form label { margin-bottom: 0; }
 .inline-form input, .inline-form select { width: auto; min-width: 10rem; }
 
+/* 체크칸 — 상자와 글자가 한 줄에 나란히.
+   `label { display: block }` 과 `input { width: 100% }` 가 그대로 걸려 있어서
+   상자가 글자 위에 올라앉고 폭까지 늘어나 있었다. `.check` 라는 클래스는
+   세 화면에서 쓰고 있었는데 **정의가 아예 없었고**, 자산 화면만 같은 것을
+   인라인 style 로 따로 적어 두고 있었다. */
+label.check {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-bottom: 0; white-space: nowrap; cursor: pointer;
+}
+label.check input[type="checkbox"] {
+  width: auto; margin: 0; flex-shrink: 0; cursor: pointer;
+}
+
 /* 찾기 칸. 돋보기와 한 몸으로 둔다. */
 .search {
   display: flex; align-items: center; gap: 8px;
@@ -483,6 +496,35 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 .mark.high     { background: var(--high); }
 .mark.medium   { background: var(--medium); }
 .mark.low      { background: var(--low); }
+
+/* ── 버전 분포 (패키지 화면) ──────────────────────────────────────────
+   한 패키지에 어느 버전이 몇 대에 깔려 있고, 그 버전에 무엇이 걸렸나.
+
+   **색만으로 가르지 않는다(§5-15).** 걸린 것이 있는 버전은 `▮` 채운
+   사각형 + 그 등급 색이고, 걸린 것이 없는 버전은 `○` 속 빈 동그라미 +
+   회색이다. 색을 못 보는 사람에게도 모양이 다르게 보여야 한다. */
+.vslice {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-right: 14px; white-space: nowrap; font-size: 13px;
+}
+.vmark { display: inline-block; width: 8px; height: 8px; flex-shrink: 0; }
+.vmark.critical { background: var(--critical);  border-radius: 2px; }
+.vmark.high     { background: var(--high);      border-radius: 2px; }
+.vmark.medium   { background: var(--medium);    border-radius: 2px; }
+.vmark.low      { background: var(--low);       border-radius: 2px; }
+.vmark.negligible, .vmark.unknown {
+  background: var(--fg-faint); border-radius: 2px;
+}
+/* 걸린 것이 없는 버전 — 속이 비고 둥글다. */
+.vmark.none {
+  background: transparent; border: 1.5px solid var(--fg-faint); border-radius: 50%;
+}
+/* 취약한 버전은 글자도 그 색을 쓴다. 안전한 버전은 기본색 그대로. */
+.sevtext[data-sev="critical"] { color: var(--critical); font-weight: 600; }
+.sevtext[data-sev="high"]     { color: var(--high);     font-weight: 600; }
+.sevtext[data-sev="medium"]   { color: var(--medium);   font-weight: 600; }
+.sevtext[data-sev="low"]      { color: var(--low); }
+.sevtext[data-sev="negligible"], .sevtext[data-sev="unknown"] { color: var(--fg-muted); }
 
 /* 심각도 딱지 */
 .sev {

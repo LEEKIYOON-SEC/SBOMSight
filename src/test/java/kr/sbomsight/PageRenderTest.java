@@ -374,6 +374,23 @@ class PageRenderTest {
            .andExpect(status().isOk());
     }
 
+    /**
+     * 패키지 화면 — <b>빈 것과 안 본 것을 구분해서 말하는가.</b>
+     *
+     * <p>V13 은 이미 쌓인 SBOM 을 되읽지 않으므로 다시 검사하기 전에는
+     * 인벤토리가 비어 있다. 그 상태를 "패키지가 없습니다" 라고 말하면 거짓이다 —
+     * 없는 것이 아니라 아직 안 본 것이다.
+     */
+    @Test
+    @DisplayName("인벤토리가 비면 '없다' 가 아니라 '아직 안 담겼다' 고 말한다")
+    void emptyInventorySaysNotYetRead() throws Exception {
+        String html = open("/packages");
+        assertThat(html).contains("아직 담긴 패키지가 없습니다");
+        assertThat(html)
+                .as("담긴 것이 없는 것과 패키지가 없는 것은 다른 말이다")
+                .doesNotContain("걸리는 패키지가 없습니다");
+    }
+
     @Test
     @DisplayName("보고서 두 가지")
     void reportPages() throws Exception {
@@ -411,6 +428,13 @@ class PageRenderTest {
         // 내려받기는 보고 있는 탭의 것이다.
         mvc.perform(get("/actions/export.csv?tab=analyses").with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
+        // 패키지 — 거르개를 들고 가는 주소도 열려야 한다. 인벤토리가 비어
+        // 있어도 빈 파일이 나와야 하고 500 이면 안 된다.
+        mvc.perform(get("/packages/export.csv").with(user("tester").roles("ADMIN")))
+           .andExpect(status().isOk());
+        mvc.perform(get("/packages/export.csv?mixed=true&vulnerable=true&q=xz")
+                            .with(user("tester").roles("ADMIN")))
+           .andExpect(status().isOk());
         mvc.perform(get("/assets/import/template.csv").with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
     }
@@ -434,6 +458,7 @@ class PageRenderTest {
         var heads = java.util.Map.of(
                 "/vulns", "CSV 내려받기",
                 "/actions", "CSV 내려받기",
+                "/packages", "CSV 내려받기",
                 "/settings/audit", "CSV 내려받기",
                 "/assets/import", "CSV 서식 내려받기");
 
@@ -483,6 +508,10 @@ class PageRenderTest {
                 "/vulns?group=package",
                 "/vulns?group=cve",
                 "/vulns/CVE-2024-3094",
+                "/packages",
+                "/packages?vulnerable=true",
+                "/packages?mixed=true",
+                "/assets/" + asset.getId() + "?tab=packages",
                 "/actions",
                 "/actions/" + remediation.getId(),
                 "/actions?tab=analyses",

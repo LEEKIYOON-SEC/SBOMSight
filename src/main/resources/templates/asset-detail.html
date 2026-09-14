@@ -44,6 +44,12 @@
       <a th:if="${latest != null}"
          th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=vulns', '취약점',
                        ${latest != null} ? ${latest.findingCount} : 0, ${tab} == 'vulns')}"></a>
+      <!--/*
+        패키지 탭. 취약점 탭은 grype 이 매치를 낸 것만 보여 주므로 "이 서버에
+        openssl 이 몇 버전으로 깔려 있나" 를 물을 자리가 없었다.
+      */-->
+      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=packages', '패키지',
+                       ${packageCount}, ${tab} == 'packages')}"></a>
       <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=history', '검사 이력',
                        ${history.size()}, ${tab} == 'history')}"></a>
       <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=actions', '조치·검토 결과',
@@ -233,6 +239,63 @@
       되살아난 적이 있다.
     */-->
     <div th:replace="~{fragments/analysis-dialog :: dialog(${links.here()})}"></div>
+  </div>
+
+  <!--/*
+    ══ 패키지 ══════════════════════════════════════════════════════════
+    이 자산에 깔린 것 전부 — 취약점이 없는 것도 있다. 설치 경로까지 낸다.
+
+    **빈 것과 안 본 것을 구분해서 말한다.** V13 은 이미 쌓인 SBOM 을 되읽지
+    않으므로, 다시 검사하기 전에는 인벤토리가 비어 있다. 그 상태를 "패키지가
+    없습니다" 라고 말하면 거짓이다.
+  */-->
+  <div class="body flush" th:if="${tab} == 'packages'">
+    <th:block th:if="${assetPackages == null or assetPackages.isEmpty()}">
+      <div th:replace="~{fragments/ui :: empty('아직 담긴 패키지가 없습니다',
+                        '패키지 목록은 검사할 때 SBOM 에서 담깁니다. 이 자산을 다시 검사하면 채워집니다.',
+                        '/assets/' + ${asset.id} + '?tab=history', '검사 이력')}"></div>
+    </th:block>
+
+    <div class="card" th:if="${assetPackages != null and !assetPackages.isEmpty()}">
+      <div class="card-header">
+        <h2 class="card-title">깔려 있는 패키지</h2>
+        <form method="get" class="inline">
+          <input type="hidden" name="tab" value="packages">
+          <span class="search">
+            <input name="q" th:value="${q}" placeholder="패키지 이름" aria-label="패키지 이름" autocomplete="off">
+          </span>
+          <button class="btn small" type="submit">찾기</button>
+        </form>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+          <tr>
+            <th>패키지</th><th class="tight">유형</th>
+            <th class="tight">버전</th><th>설치 경로</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="c : ${assetPackages}">
+            <td>
+              <a th:href="@{/packages(q=${c.name}, open=${c.name})}" th:text="${c.name}">openssl-libs</a>
+            </td>
+            <td class="tight faint" th:text="${#strings.isEmpty(c.type)} ? '—' : ${c.type}">rpm</td>
+            <td class="tight mono" th:text="${c.versionOrDash()}">3.0.7-24</td>
+            <!-- 비어 있는 것은 "경로가 없는 패키지" 가 아니라 SBOM 이 안
+                 담은 것이다. 그렇게 말한다. -->
+            <td class="mono faint"
+                th:text="${#strings.isEmpty(c.location)} ? 'SBOM 에 없음' : ${c.location}">/usr/…</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footnote">
+        ※ 기준 — 이 자산의 최신 검사
+        (<span th:text="${#numbers.formatInteger(packageCount, 0, 'COMMA')}">0</span>개).
+        같은 패키지가 다른 자산에 몇 버전으로 깔렸는지는 패키지 화면에서.
+      </p>
+    </div>
   </div>
 
   <!-- ══ 검사 이력 ══════════════════════════════════════════════════ -->

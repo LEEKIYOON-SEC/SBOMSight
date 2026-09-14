@@ -432,6 +432,55 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         String getPackageName();
     }
 
+    /**
+     * 패키지 인벤토리의 <b>버전별 심각도</b> — {@code /packages} 의 버전 분포.
+     *
+     * <p>{@code (이름, 버전)} 마다 심각도별 건수를 낸다. 이것으로 <b>취약한
+     * 버전과 안전한 버전을 눈으로 가른다</b> — 같은 패키지 안에 둘이 섞여
+     * 있으면 "이미 올린 자산이 있는데 안 올린 자산이 남았다" 는 뜻이고,
+     * 그것이 이 화면에서 가장 중요한 신호다.
+     *
+     * <p>목록에 뜬 이름만 물어 본다. 전부 가져오면 자산 백 대 × 12만 개에서
+     * 수백만 행이 된다.
+     */
+    @Query("""
+           SELECT f.packageName AS packageName, f.packageVersion AS packageVersion,
+                  LOWER(f.severity) AS severity, COUNT(f) AS total
+           FROM Finding f
+           WHERE f.scan.id IN :scanIds AND f.packageName IN :names
+           GROUP BY f.packageName, f.packageVersion, LOWER(f.severity)
+           """)
+    List<PackageVersionSeverity> severityByPackageVersion(
+            @Param("scanIds") Collection<Long> scanIds, @Param("names") Collection<String> names);
+
+    /**
+     * 위와 같은 것을 <b>이름 목록 없이</b>. CSV 내보내기가 쓴다.
+     *
+     * <p>화면은 앞 200개만 싣지만 내보내기는 거른 것 전부를 낸다 — 200개에서
+     * 잘린 파일이 결재 문서에 붙으면 그 수를 아무도 의심하지 않는다. 이름을
+     * 수천 개 넘기면 {@code IN} 절이 그만큼 길어지므로 여기서는 조건을 뺀다.
+     * 탐지 건수만큼이라 인벤토리 전체보다 훨씬 작다.
+     */
+    @Query("""
+           SELECT f.packageName AS packageName, f.packageVersion AS packageVersion,
+                  LOWER(f.severity) AS severity, COUNT(f) AS total
+           FROM Finding f
+           WHERE f.scan.id IN :scanIds
+           GROUP BY f.packageName, f.packageVersion, LOWER(f.severity)
+           """)
+    List<PackageVersionSeverity> severityByPackageVersion(
+            @Param("scanIds") Collection<Long> scanIds);
+
+    interface PackageVersionSeverity {
+        String getPackageName();
+
+        String getPackageVersion();
+
+        String getSeverity();
+
+        long getTotal();
+    }
+
     interface SeverityCount {
         String getSeverity();
 

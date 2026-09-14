@@ -167,6 +167,33 @@ public final class CsvWriter {
         }
     }
 
+    /**
+     * 패키지 인벤토리.
+     *
+     * <p>한 줄이 {@code (패키지, 버전)} 하나다 — 화면의 버전 조각 하나. 버전
+     * 분포를 한 칸에 몰아 넣으면 엑셀에서 거르지도 정렬하지도 못한다.
+     *
+     * <p><b>등급은 grype 이 낸 것 중 가장 높은 것</b>이고, 걸린 것이 없으면
+     * 빈 칸이다 — {@code 없음} 이라고 적으면 아무도 내리지 않은 판정이 된다.
+     * 건수 0 은 값이다(최신 검사에서 매치가 없었다).
+     */
+    public static void writePackages(OutputStream out, List<PackageService.ExportRow> rows)
+            throws IOException {
+        try (Writer writer = start(out)) {
+            row(writer, "패키지", "유형", "버전", "자산 수", "취약점", "최고 등급");
+            for (PackageService.ExportRow r : rows) {
+                var version = r.version();
+                row(writer,
+                    r.name(),
+                    r.type(),
+                    version.version(),
+                    String.valueOf(version.assetCount()),
+                    String.valueOf(version.total()),
+                    version.worst() == null ? "" : version.worst().label());
+            }
+        }
+    }
+
     private static Writer start(OutputStream out) throws IOException {
         Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
         writer.write('﻿');   // BOM — 엑셀이 UTF-8 로 읽게 하는 유일한 방법

@@ -161,7 +161,8 @@ public class ReportService {
 
     private Summary summary(Scan scan, Exposure exposure) {
         Map<String, Long> severity = new LinkedHashMap<>();
-        for (String key : List.of("critical", "high", "medium", "low", "negligible", "unknown")) {
+        // 순서는 Severity 한곳에 있다. 여기 다시 적으면 곧 갈라진다.
+        for (String key : Severity.KEYS) {
             severity.put(key, 0L);
         }
         findings.countBySeverity(scan.getId())

@@ -5,6 +5,7 @@ import kr.sbomsight.domain.CvssVector;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.FindingAnalysis;
 import kr.sbomsight.domain.Scan;
+import kr.sbomsight.domain.Severity;
 import kr.sbomsight.domain.Zone;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.FindingRepository;
@@ -182,7 +183,8 @@ public class ZoneReportService {
     private Aggregate aggregate(List<Scan> current, Exposure exposure,
                                 List<Asset> inScope, List<Asset> notScanned) {
         Map<String, Long> severity = new LinkedHashMap<>();
-        for (String key : List.of("critical", "high", "medium", "low", "negligible", "unknown")) {
+        // 순서는 Severity 한곳에 있다. 여기 다시 적으면 곧 갈라진다.
+        for (String key : Severity.KEYS) {
             severity.put(key, 0L);
         }
         Map<String, Long> fixState = new LinkedHashMap<>();

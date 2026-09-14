@@ -199,6 +199,41 @@ FRESH=$(run "$DB" -N -e "
 [ "$FRESH" = "-|-" ] || { echo "  로그인한 적 없는 계정에 시각이 찼습니다: '$FRESH'"; exit 1; }
 echo "  로그인한 적 없는 계정은 둘 다 비어 있음"
 
+# --- V13: 패키지 인벤토리 --------------------------------------------------
+#
+# 새 표라 옮길 데이터는 없다. 확인할 것은 **FK 가 제대로 걸렸는가** 다 —
+# 자산이나 스캔을 지웠을 때 함께 사라지지 않으면 없는 자산의 패키지 목록이
+# 화면에 남는다. H2 시험은 하이버네이트가 만든 스키마로 도므로 여기서
+# 진짜 제약을 태워 본다.
+
+CASCADES=$(run "$DB" -N -e "
+    SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA='$DB' AND TABLE_NAME='component'
+      AND DELETE_RULE='CASCADE';")
+[ "$CASCADES" = "2" ] || {
+    echo "  component 의 CASCADE FK 가 $CASCADES 개입니다 (자산·스캔 둘이어야 함)"; exit 1; }
+echo "  component FK 둘 다 ON DELETE CASCADE"
+
+# 실제로 지워 본다. 제약 이름만 보고 넘어가면 방향이 뒤집혀 있어도 통과한다.
+ASSET_ID=$(run "$DB" -N -e "SELECT id FROM assets LIMIT 1;")
+run "$DB" -e "
+INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename)
+VALUES ($ASSET_ID, 'DONE', NOW(6), 'migcheck', 'sbom.json');"
+SCAN_ID=$(run "$DB" -N -e "SELECT id FROM scans WHERE created_by='migcheck';")
+run "$DB" -e "
+INSERT INTO component (asset_id, scan_id, name, version, type, purl, location) VALUES
+ ($ASSET_ID, $SCAN_ID, 'openssl-libs', '3.0.7-24', 'rpm',
+  'pkg:rpm/rocky/openssl-libs@3.0.7-24', '/usr/lib64/libssl.so.3'),
+ ($ASSET_ID, $SCAN_ID, 'glibc', '2.34-83', 'rpm', 'pkg:rpm/rocky/glibc@2.34-83', '');"
+BEFORE=$(run "$DB" -N -e "SELECT COUNT(*) FROM component;")
+[ "$BEFORE" = "2" ] || { echo "  인벤토리 2행이 안 들어갔습니다 ($BEFORE)"; exit 1; }
+
+run "$DB" -e "DELETE FROM scans WHERE id=$SCAN_ID;"
+AFTER=$(run "$DB" -N -e "SELECT COUNT(*) FROM component;")
+[ "$AFTER" = "0" ] || {
+    echo "  스캔을 지웠는데 인벤토리 $AFTER 행이 남았습니다"; exit 1; }
+echo "  스캔을 지우면 그 스캔에서 온 인벤토리도 사라짐"
+
 run -e "DROP DATABASE \`$DB\`;"
 echo
 echo "마이그레이션 확인 통과"

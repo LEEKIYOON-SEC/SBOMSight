@@ -17,8 +17,11 @@ import sys
 from playwright.sync_api import sync_playwright
 
 SCREENS = ["/", "/?view=zones", "/assets/1", "/assets/1?tab=vulns", "/assets/1?tab=scans",
-           "/assets/1?tab=actions", "/vulns", "/vulns?group=cve", "/vulns?group=package",
-           "/vulns/CVE-2021-44228", "/actions", "/actions?tab=analyses", "/actions/1",
+           "/assets/1?tab=actions", "/assets/1?tab=packages", "/vulns", "/vulns?group=cve",
+           "/vulns?group=package", "/vulns/CVE-2021-44228",
+           # 펼친 줄은 표 안에 표를 둔다 — 바깥 표에 자리가 없으면 안쪽이 눌린다.
+           "/packages", "/packages?vulnerable=true", "/packages?open=jackson-databind",
+           "/actions", "/actions?tab=analyses", "/actions/1",
            "/reports", "/reports/scan/3", "/reports/zone", "/settings", "/settings?tab=ips",
            "/settings?tab=tools", "/settings/audit", "/me", "/assets/import"]
 WIDTH = int(sys.argv[1]) if len(sys.argv) > 1 else 1280
