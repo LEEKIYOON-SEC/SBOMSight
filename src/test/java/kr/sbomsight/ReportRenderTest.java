@@ -173,8 +173,10 @@ class ReportRenderTest {
         assertThat(html).contains("1대는 이 기간에 검사 기록이 없습니다");
         assertThat(html).contains(missed.getName());
         // 구역 단위로만 나오는 값 — 같은 패키지가 몇 대에 걸려 있는가.
+        // 표가 `2대` 로 쓰므로 각주도 `2대 이상 공통` 이다. 한쪽은 `두 대`,
+        // 다른 쪽은 `2대` 로 쓰면 같은 것을 두 모양으로 부르게 된다 (§4.0.2).
         assertThat(html).contains("2대");
-        assertThat(html).contains("두 대 이상에 공통");
+        assertThat(html).contains("2대 이상 공통");
     }
 
     @Test

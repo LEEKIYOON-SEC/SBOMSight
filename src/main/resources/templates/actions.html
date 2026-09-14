@@ -16,10 +16,19 @@
     보면서 적는다 — 목록만 보고 무엇을 조치할지 고를 수는 없다.
   */-->
   <div th:replace="~{fragments/ui :: pagehead('대응', null, ~{::actions}, ~{})}"></div>
-  <div th:fragment="actions" th:remove="tag">
-    <a class="btn" th:href="@{/actions/export.csv(tab=${tab}, zone=${selectedZone},
-                             status=${status}, includeDone=${includeDone})}">CSV 내려받기</a>
-  </div>
+  <!--/*
+    버튼 묶음은 페이지 머리로 들어간다. **정의한 자리에서는 그리지 않는다** —
+    `th:remove="tag"` 는 감싼 태그만 없애고 그 안의 단추는 문서에 그대로
+    남긴다. 그래서 같은 단추가 머리에 한 번, 그 아래에 또 한 번 찍혀 있었다
+    (모든 화면에서). 바깥을 `th:remove="all"` 로 통째로 지운다 —
+    `~{::actions}` 는 템플릿을 다시 훑어 조각을 찾으므로 영향을 받지 않는다.
+  */-->
+  <th:block th:remove="all">
+    <div th:fragment="actions">
+      <a class="btn" th:href="@{/actions/export.csv(tab=${tab}, zone=${selectedZone},
+                               status=${status}, includeDone=${includeDone})}">CSV 내려받기</a>
+    </div>
+  </th:block>
 
   <div class="tabs">
     <a th:replace="~{fragments/ui :: tab('/actions', '조치',
@@ -136,10 +145,14 @@
           <tr>
             <th class="tight">자산</th><th class="tight">구역</th>
             <th class="tight">취약점</th><th class="tight">패키지</th>
-            <th class="tight">상태</th><th class="tight">대응</th>
+            <th class="tight">상태</th><th>대응</th>
             <!-- 한 칸에 두 가지를 넣지 않는다. 고르는 것(근거)과 적는 것(설명)은
-                 다른 것이라 열을 가른다. -->
-            <th class="tight">근거</th><th>설명</th>
+                 다른 것이라 열을 가른다.
+
+                 근거에는 `tight` 를 주지 않는다 — 아홉 가지 중 긴 것
+                 ("취약한 코드가 들어 있지 않음")이 줄바꿈 없이 들어가면 표가
+                 칸을 넘고, 넘은 만큼 오른쪽 칸이 잘린다. -->
+            <th>근거</th><th>설명</th>
             <th class="tight">기록</th><th class="tight">재검토일</th>
           </tr>
           </thead>
@@ -160,12 +173,14 @@
                                 : (${a.open} ? 'medium' : 'low')"><i></i>
                 <span th:text="${a.state.label()}">해당됨</span></span>
             </td>
-            <td class="tight">
+            <!-- 대응 이름 중 긴 것("조치 안 함 (위험 수용)")이 줄바꿈 없이
+                 들어가면 표가 칸을 넘는다. 여기도 `tight` 를 주지 않는다. -->
+            <td>
               <span th:if="${a.response != null}"
                     th:text="${a.response.label()}">조치 안 함 (위험 수용)</span>
               <span class="faint" th:if="${a.response == null}">—</span>
             </td>
-            <td class="tight faint">
+            <td class="faint">
               <span th:if="${a.justification != null}"
                     th:text="${a.justification.label()}">취약한 코드가 들어 있지 않음</span>
               <span th:if="${a.justification == null}">—</span>

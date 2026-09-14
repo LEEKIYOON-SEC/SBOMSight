@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -414,7 +415,92 @@ class PageRenderTest {
            .andExpect(status().isOk());
     }
 
-    // --- 조회 권한 -------------------------------------------------------------
+    // --- 페이지 머리 (§5-12) ---------------------------------------------------
+
+    /**
+     * 머리의 버튼 묶음이 <b>한 번만</b> 그려지는가.
+     *
+     * <p>모든 화면에서 두 번 그려지고 있었다. 원인은
+     * {@code <div th:fragment="actions" th:remove="tag">} 였다 —
+     * {@code th:remove="tag"} 는 감싼 태그만 없애고 <b>그 안의 단추는 문서에
+     * 그대로 남긴다.</b> 그래서 같은 단추가 머리에 한 번, 그 아래에 또 한 번
+     * 찍혔다. 화면은 멀쩡히 뜨고 시험 249개가 전부 통과했다 — 띄워 보고서야
+     * 찾았다.
+     */
+    @Test
+    @DisplayName("머리의 버튼이 한 번만 그려진다")
+    void pageHeadActionsRenderOnce() throws Exception {
+        // 화면 → 그 화면 머리에만 있는 단추 글자
+        var heads = java.util.Map.of(
+                "/vulns", "CSV 내려받기",
+                "/actions", "CSV 내려받기",
+                "/settings/audit", "CSV 내려받기",
+                "/assets/import", "CSV 서식 내려받기");
+
+        for (var head : heads.entrySet()) {
+            String html = open(head.getKey());
+            assertThat(count(html, head.getValue()))
+                    .as("%s 의 '%s' 단추", head.getKey(), head.getValue())
+                    .isEqualTo(1);
+            // 머리 줄 자체도 하나여야 한다.
+            assertThat(count(html, "page-titlerow"))
+                    .as("%s 의 페이지 머리", head.getKey())
+                    .isEqualTo(1);
+        }
+    }
+
+    private static int count(String text, String needle) {
+        int n = 0;
+        for (int i = text.indexOf(needle); i >= 0; i = text.indexOf(needle, i + needle.length())) {
+            n++;
+        }
+        return n;
+    }
+
+    // --- 두 권한 × 전 주소 -----------------------------------------------------
+
+    /**
+     * <b>두 권한이 도는 주소 목록은 하나다.</b>
+     *
+     * <p>앞서 관리자용 걸음과 조회용 걸음이 각자 목록을 들고 있었다. 새 화면을
+     * 하나 만들면 한쪽에만 넣게 되고, 어느 쪽이 빠졌는지는 아무도 모른다.
+     * 목록을 한 군데 두어 둘이 갈라지지 않게 한다 (N8).
+     *
+     * <p>관리자만 쓰는 주소({@code /settings*})는 여기 넣지 않는다 — 조회
+     * 계정에는 403 이 정답이고, 그것은 {@link #viewerIsRefusedAdminPages()}
+     * 가 따로 본다.
+     */
+    private List<String> everyScreen() {
+        return List.of(
+                "/",
+                "/?view=zones",
+                "/assets/" + asset.getId(),
+                "/assets/" + asset.getId() + "?tab=vulns",
+                "/assets/" + asset.getId() + "?tab=scans",
+                "/assets/" + asset.getId() + "?tab=actions",
+                "/vulns",
+                "/vulns?scan=" + scan.getId(),
+                "/vulns?group=package",
+                "/vulns?group=cve",
+                "/vulns/CVE-2024-3094",
+                "/actions",
+                "/actions/" + remediation.getId(),
+                "/actions?tab=analyses",
+                "/reports",
+                "/reports/scan/" + scan.getId(),
+                "/reports/zone",
+                "/password",
+                "/me");
+    }
+
+    @Test
+    @DisplayName("관리자 계정으로 전 화면이 열린다")
+    void adminCanOpenEveryScreen() throws Exception {
+        for (String url : everyScreen()) {
+            mvc.perform(get(url).with(user("tester").roles("ADMIN")))
+               .andExpect(status().isOk());
+        }
+    }
 
     /**
      * 조회 계정으로도 화면이 열려야 한다. 관리자에게만 있는 조각을
@@ -422,16 +508,22 @@ class PageRenderTest {
      * 조회 계정에서만 터진다 — 관리자로 시험하면 끝까지 안 보인다.
      */
     @Test
-    @DisplayName("조회 계정으로도 모든 화면이 열린다")
+    @DisplayName("조회 계정으로도 전 화면이 열린다")
     void viewerCanOpenEveryPage() throws Exception {
-        for (String url : new String[] {
-                "/", "/assets/" + asset.getId(), "/assets/" + asset.getId() + "?tab=vulns",
-                "/vulns", "/vulns?scan=" + scan.getId(), "/vulns/CVE-2024-3094",
-                "/actions", "/actions/" + remediation.getId(), "/actions?tab=analyses",
-                "/reports", "/reports/scan/" + scan.getId(), "/reports/zone",
-                "/password", "/me" }) {
+        for (String url : everyScreen()) {
             mvc.perform(get(url).with(user("viewer").roles("VIEWER")))
                .andExpect(status().isOk());
+        }
+    }
+
+    /** 조회 계정에 관리자 화면은 열리지 않는다. 여기서는 403 이 정답이다. */
+    @Test
+    @DisplayName("조회 계정에 관리자 화면은 막힌다")
+    void viewerIsRefusedAdminPages() throws Exception {
+        for (String url : new String[] { "/settings", "/settings?tab=ips",
+                                         "/settings?tab=tools", "/settings/audit" }) {
+            mvc.perform(get(url).with(user("viewer").roles("VIEWER")))
+               .andExpect(status().isForbidden());
         }
     }
 }

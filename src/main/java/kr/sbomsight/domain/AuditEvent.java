@@ -38,7 +38,7 @@ public enum AuditEvent {
     ASSET_UNARCHIVED("자산 보관 해제"),
     SBOM_UPLOADED("SBOM 업로드"),
     SCAN_DELETED("스캔 삭제"),
-    SCAN_RESCANNED("재검사"),
+    SCAN_RESCANNED("다시 검사"),
 
     // --- 조치 · 검토 결과 ---
     REMEDIATION_CREATED("조치 등록"),

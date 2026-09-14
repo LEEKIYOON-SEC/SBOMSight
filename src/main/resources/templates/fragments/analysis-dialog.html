@@ -36,7 +36,12 @@
               th:attr="data-gloss=${s.gloss()}, data-needs-justification=${s.needsJustification()}"
               th:selected="${s.name() == 'NOT_SET'}">미검토</option>
     </select>
-    <p class="footnote" id="analysis-state-gloss">아직 보지 않았습니다.</p>
+    <!--/*
+      고르면 뜨는 **뜻 한 줄**(§4.2~4.4). 각주가 아니라서 `gloss` 다 —
+      각주는 개조식이어야 하지만 이 줄은 계획이 정한 문장 그대로여야 한다.
+      둘이 `footnote` 한 클래스를 같이 쓰고 있었다.
+    */-->
+    <p class="gloss" id="analysis-state-gloss">아직 보지 않았습니다.</p>
 
     <!-- 근거는 `해당 없음` 일 때만 연다. 다른 상태에서 물으면 고를 것이 없다. -->
     <div id="analysis-justification-row" hidden>
@@ -47,8 +52,7 @@
                 th:value="${j.name()}" th:text="${j.label()}">취약한 코드가 들어 있지 않음</option>
       </select>
       <p class="footnote">
-        해당 없다고만 적고 끝내면 점검에서 답할 것이 없습니다. 고를 수 없다면
-        아직 해당 없다고 말할 단계가 아닙니다.
+        ※ 근거를 고를 수 없으면 아직 해당 없음으로 둘 단계가 아님.
       </p>
     </div>
 
@@ -59,7 +63,7 @@
               th:value="${r.name()}" th:text="${r.label()}"
               th:attr="data-gloss=${r.gloss()}, data-needs-review=${r.needsReviewDate()}">버전 올려 조치</option>
     </select>
-    <p class="footnote" id="analysis-response-gloss"></p>
+    <p class="gloss" id="analysis-response-gloss"></p>
 
     <!-- 고치지 않고 두기로 한 것에만 기한을 받는다. 기한 없이 남겨 둔 것은
          방치와 구분되지 않는다. -->
@@ -72,7 +76,12 @@
     <textarea name="note" id="analysis-note" rows="3"
               placeholder="업스트림에 수정 버전이 없고, 해당 기능을 쓰지 않습니다"></textarea>
 
-    <label for="analysis-control">다른 통제 <span class="faint">선택</span></label>
+    <!--/*
+      `선택` 한 글자만 두면 "고르라" 는 지시로 읽힌다 — 실제로 칸 이름이
+      `다른 통제 선택` 으로 붙어 보였다. 안 적어도 된다는 뜻이므로
+      `(선택 사항)` 으로 푼다 (§4.0.4 — 줄여서 뜻이 흐려지면 줄이지 않는다).
+    */-->
+    <label for="analysis-control">다른 통제 <span class="faint">(선택 사항)</span></label>
     <input name="otherControl" id="analysis-control" placeholder="내부망에서만 접근 · WAF 규칙 적용">
 
     <!--/*
@@ -80,11 +89,11 @@
       아무 이름이나 적을 수 있었고, 통제가 있는 것처럼 보이는 만큼 없느니만
       못했다. 실제 승인은 사내 결재에서 나고 여기엔 번호만 적는다.
     */-->
-    <label for="analysis-doc">결재 문서 번호 <span class="faint">선택</span></label>
+    <label for="analysis-doc">결재 문서 번호 <span class="faint">(선택 사항)</span></label>
     <input name="approvalDoc" id="analysis-doc" placeholder="보안-2026-0143">
 
-    <p class="footnote" th:text="'기록한 사람 ' + ${#authentication.name}
-                                 + ' — 로그인 계정으로 자동으로 남습니다'">기록한 사람 admin</p>
+    <p class="footnote" th:text="'※ 기록한 사람 ' + ${#authentication.name}
+                                 + ' — 로그인 계정으로 자동 기록'">※ 기록한 사람 admin</p>
 
     <div class="dialog-actions">
       <button type="button" class="btn" data-close>취소</button>

@@ -4,10 +4,16 @@
 <body>
 <main>
 
-  <div class="page-head">
-    <h1>자산 일괄 등록</h1>
-    <a class="btn" th:href="@{/assets/import/template.csv}">서식 내려받기</a>
-  </div>
+  <!--/*
+    머리는 조각으로 그린다 (§5-12). 이 화면만 `<div class="page-head">` 를
+    직접 쓰고 있어서 제목 크기와 단추 자리가 다른 화면과 어긋나 있었다.
+  */-->
+  <div th:replace="~{fragments/ui :: pagehead('자산 일괄 등록', null, ~{::actions}, ~{})}"></div>
+  <th:block th:remove="all">
+    <div th:fragment="actions">
+      <a class="btn" th:href="@{/assets/import/template.csv}">CSV 서식 내려받기</a>
+    </div>
+  </th:block>
 
   <div class="body">
 
@@ -28,9 +34,9 @@
     <th:block th:unless="${preview.isEmpty()}">
       <div class="card">
         <p style="margin-top:0">
-          <b class="num" th:text="${preview.importable()}">0</b>대를 등록합니다.
+          등록 <b class="num" th:text="${preview.importable()} + '대'">0대</b>
           <span th:if="${preview.skipped() > 0}" class="danger-text"
-                th:text="${preview.skipped()} + '줄은 건너뜁니다.'"></span>
+                th:text="' · 건너뜀 ' + ${preview.skipped()} + '줄'"></span>
         </p>
         <p class="faint" style="margin-bottom:0">
           <span th:text="${filename}">assets.csv</span> ·
@@ -50,12 +56,12 @@
           <table>
             <thead>
             <tr>
-              <th class="num tight">줄</th>
-              <th class="tight">서버 이름</th>
+              <th class="num tight">줄 번호</th>
+              <th class="tight">자산 이름</th>
               <th class="tight">구역</th>
               <th class="tight">운영체제</th>
               <th>비고</th>
-              <th class="tight">판정</th>
+              <th class="tight">결과</th>
             </tr>
             </thead>
             <tbody>

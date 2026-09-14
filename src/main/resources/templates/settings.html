@@ -135,7 +135,7 @@
             <b th:if="${!#strings.isEmpty(grype.version())}" th:text="${grype.version()}">0.87.0</b>
           </th:block>
           <th:block th:unless="${grype.available()}">
-            <span class="tag nofix">실행할 수 없습니다</span>
+            <span class="tag nofix">실행 불가</span>
             <span class="faint" th:text="${grype.message()}"></span>
           </th:block>
         </td>
@@ -186,8 +186,8 @@
       <input name="newPassword" id="user-password" type="password" minlength="8"
              autocomplete="new-password">
       <p class="footnote">
-        정해 주면 본인이 로그인할 때 <b>곧바로 다시 바꾸게</b> 됩니다.
-        관리자가 아는 비밀번호를 그대로 쓰게 두지 않습니다.
+        ※ 정해 주면 본인이 로그인할 때 <b>곧바로 다시 변경</b> —
+        관리자가 아는 비밀번호를 그대로 두지 않음.
       </p>
 
       <div class="dialog-actions">

@@ -6,11 +6,20 @@
 <main>
 
   <div th:replace="~{fragments/ui :: pagehead('자산', null, ~{::actions}, ~{})}"></div>
-  <div th:fragment="actions" th:remove="tag" sec:authorize="hasRole('ADMIN')">
-    <button type="button" class="btn" id="open-zones">구역 관리</button>
-    <a class="btn" th:href="@{/assets/import}">일괄 등록</a>
-    <button type="button" class="btn primary" id="open-add">자산 등록</button>
-  </div>
+  <!--/*
+    버튼 묶음은 페이지 머리로 들어간다. **정의한 자리에서는 그리지 않는다** —
+    `th:remove="tag"` 는 감싼 태그만 없애고 그 안의 단추는 문서에 그대로
+    남긴다. 그래서 같은 단추가 머리에 한 번, 그 아래에 또 한 번 찍혀 있었다
+    (모든 화면에서). 바깥을 `th:remove="all"` 로 통째로 지운다 —
+    `~{::actions}` 는 템플릿을 다시 훑어 조각을 찾으므로 영향을 받지 않는다.
+  */-->
+  <th:block th:remove="all">
+    <div th:fragment="actions" sec:authorize="hasRole('ADMIN')">
+      <button type="button" class="btn" id="open-zones">구역 관리</button>
+      <a class="btn" th:href="@{/assets/import}">일괄 등록</a>
+      <button type="button" class="btn primary" id="open-add">자산 등록</button>
+    </div>
+  </th:block>
 
   <!--/*
     지금 무엇이 급한가. **한 줄이다.**
@@ -229,7 +238,7 @@
           <td class="tight">
             <form method="post" th:action="@{'/zones/' + ${z.id} + '/rename'}" class="inline"
                   th:unless="${z.isUnassigned()}">
-              <input name="name" th:value="${z.name}" required maxlength="64">
+              <input name="name" th:value="${z.name}" required maxlength="64" aria-label="구역 이름">
               <button type="submit" class="btn small">이름</button>
             </form>
             <b th:if="${z.isUnassigned()}" th:text="${z.name}">미분류</b>
@@ -237,7 +246,7 @@
           <td class="num tight" th:text="${zoneCounts.getOrDefault(z.id, 0)}">0</td>
           <td class="tight">
             <form method="post" th:action="@{'/zones/' + ${z.id} + '/color'}" class="inline">
-              <input type="color" name="color"
+              <input type="color" name="color" aria-label="구역 색"
                      th:value="${#strings.isEmpty(z.color)} ? '#6f7e8d' : ${z.color}"
                      onchange="this.form.submit()">
             </form>
@@ -260,7 +269,7 @@
         <label style="flex:1">구역 추가
           <input name="name" required maxlength="64" autocomplete="off" placeholder="DMZ">
         </label>
-        <input type="color" name="color" value="#2262bb">
+        <input type="color" name="color" value="#2262bb" aria-label="구역 색">
         <button type="submit" class="btn">추가</button>
       </form>
 

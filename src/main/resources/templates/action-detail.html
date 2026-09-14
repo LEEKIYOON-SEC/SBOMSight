@@ -5,14 +5,23 @@
 <body>
 <main>
 
-  <div class="page-head">
-    <div class="page-pretitle"><a th:href="@{/actions}">대응</a></div>
-    <h1>
-      <a th:href="@{'/assets/' + ${remediation.asset.id}}" th:text="${remediation.asset.name}">web-01</a>
+  <!--/*
+    머리는 조각으로 그린다 (§5-12): 상위 라벨 → 제목 → 부제.
+
+    이 화면만 `<div class="page-head">` 를 직접 쓰면서 자산 이름과 패키지
+    이름을 한 `<h1>` 에 넣어 두었다. **제목은 이 화면이 무엇에 대한
+    것인가**이고, 그것은 패키지다. 자산은 어디에 걸린 것인지를 말하는
+    상위 라벨이라 위로 올린다.
+  */-->
+  <div th:replace="~{fragments/ui :: pagehead(${remediation.packageName}, null, ~{}, ~{::where})}"></div>
+  <th:block th:remove="all">
+    <div th:fragment="where">
+      <a th:href="@{/actions}">대응</a>
       <span class="faint"> · </span>
-      <span th:text="${remediation.packageName}">openssl</span>
-    </h1>
-  </div>
+      <a th:href="@{'/assets/' + ${remediation.asset.id}}"
+         th:text="${remediation.asset.name}">web-01</a>
+    </div>
+  </th:block>
 
   <div class="body">
 
@@ -22,11 +31,11 @@
   <div class="card" th:if="${latest != null}">
     <span th:if="${remaining == 0}" class="banner ok" style="margin:0;display:block">
       최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
-      이 패키지의 탐지가 <b>0건</b>입니다. 확인 후 완료로 넘기세요.
+      이 패키지 탐지 <b>0건</b> — 확인 후 완료로 넘기세요.
     </span>
     <span th:if="${remaining > 0}" class="muted">
       최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
-      이 패키지는 아직 <b th:text="${remaining}">0</b>건입니다.
+      이 패키지 탐지 <b th:text="${remaining} + '건'">0건</b>.
     </span>
   </div>
 

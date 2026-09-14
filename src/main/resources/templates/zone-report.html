@@ -128,7 +128,7 @@
         <b th:text="${report.scope.notScanned.size()} + '대는 이 기간에 검사 기록이 없습니다.'">—</b>
         아래 숫자는 검사한
         <span th:text="${report.scope.assetsScanned}">0</span>대
-        (<span th:text="${report.scope.coveragePercent()}">0</span>%)에 대한 것입니다.
+        (<span th:text="${report.scope.coveragePercent()}">0</span>%) 기준입니다.
         <br>
         <span th:each="a, i : ${report.scope.notScanned}">
           <a class="no-print" th:href="@{'/assets/' + ${a.id}}" th:text="${a.name}">web-01</a>
@@ -138,19 +138,23 @@
       </th:block>
     </p>
 
+    <!--/*
+      각주는 **개조식**으로 쓴다. 서술형 종결(`…입니다`)을 붙이는 순간 표
+      아래 한 줄이 설명 문단이 된다 — 점검 보고서에 들어갈 글이 아니다.
+      `ReportProseTest` 가 기계로 막는다.
+    */-->
     <p class="footnote" th:if="${report.scope.assetsScanned > 0}">
-      자산마다 이 기간의 마지막 검사를 기준으로 삼았습니다
+      ※ 기준 — 자산마다 이 기간의 마지막 검사
       (<span th:text="${#temporals.format(report.scope.oldestScan, 'yyyy-MM-dd HH:mm')}">—</span>
       ~ <span th:text="${#temporals.format(report.scope.newestScan, 'yyyy-MM-dd HH:mm')}">—</span>).
       <!--/*
-        기간 동안 grype 이 바뀌었으면 증감의 일부는 서버가 아니라 도구가
-        움직인 것이다. 적지 않으면 "9월에 40건 늘었다" 가 서버가 나빠진
+        기간 동안 grype 이 바뀌었으면 증감의 일부는 자산이 아니라 도구가
+        움직인 것이다. 적지 않으면 "9월에 40건 늘었다" 가 자산이 나빠진
         것으로만 읽힌다.
       */-->
-      <th:block th:if="${report.scope.toolChanged()}">
-        이 기간의 검사가 서로 다른 grype 판 또는 서로 다른 취약점 DB 기준일로
-        돌았습니다 — 증감의 일부는 도구 변화일 수 있습니다.
-      </th:block>
+      <b th:if="${report.scope.toolChanged()}" class="danger-text">
+        기간 중 grype 판 · DB 기준일 변경 — 증감에 도구 변화분 포함.
+      </b>
     </p>
   </section>
 
@@ -183,7 +187,7 @@
       </tr>
       <tr class="total">
         <td class="tight">합계</td>
-        <td class="num tight"><b th:text="${report.aggregate.total}">0</b></td>
+        <td class="num tight"><b th:text="${#numbers.formatInteger(report.aggregate.total, 0, 'COMMA')}">0</b></td>
         <td class="num tight faint" th:text="${report.aggregate.total > 0} ? '100%' : '—'">100%</td>
       </tr>
       </tbody>
@@ -230,8 +234,8 @@
       </tbody>
     </table>
     <p class="footnote">
-      원격 접근 = CVSS 벡터가 AV:N / PR:N / UI:N 인 건. 권한 경계를 넘음 = S:C.
-      판단 불가 = 벡터가 없거나 3.x 가 아니어서 읽지 못한 건.
+      ※ grype CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
+      권한 경계를 넘음 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
     </p>
   </section>
 
@@ -280,9 +284,10 @@
       </table>
     </div>
     <p class="footnote">
-      심각·높음을 한 건이라도 가진 자산
-      <b th:text="${report.aggregate.assetsWithUrgent()} + '대'">0대</b>.
-      건수가 많은 자산부터 실었습니다.
+      ※ 심각 · 높음 보유 자산
+      <b th:text="${report.aggregate.assetsWithUrgent()} + '대'">0대</b> /
+      <span th:text="${report.scope.assetsScanned} + '대'">0대</span>.
+      정렬 — 심각 → 높음 → 원격 접근.
     </p>
   </section>
 
@@ -360,7 +365,7 @@
           <td>합계</td>
           <td class="num tight"></td>
           <td></td>
-          <td class="num tight"><b th:text="${report.judgement.resolvableFindings()}">0</b></td>
+          <td class="num tight"><b th:text="${#numbers.formatInteger(report.judgement.resolvableFindings(), 0, 'COMMA')}">0</b></td>
           <td class="num tight" th:text="${report.judgement.resolvableReach() > 0}
               ? ${report.judgement.resolvableReach()} : '—'">—</td>
           <td class="num tight"></td><td class="num tight"></td>
@@ -370,18 +375,12 @@
       </table>
     </div>
     <p class="footnote" th:if="${report.judgement.actions.isEmpty()}">
-      패키지 업데이트로 해소되는 건이 없습니다.
+      ※ 버전을 올려 해소되는 건 없음.
     </p>
     <p class="footnote" th:if="${!report.judgement.actions.isEmpty()}">
-      순위는 원격 접근 건수 → 실제 악용 → 걸린 자산 수 → 최고 CVSS → 건수 순으로
-      정렬한 것입니다. grype 이 낸 심각도와 건수는 그대로입니다.
-      상위 5개가 덮는 건수
-      <b th:text="${report.judgement.topFiveCoverage()}">0</b>건.
-      <th:block th:if="${!report.judgement.shared().isEmpty()}">
-        두 대 이상에 공통으로 걸린 패키지
-        <b th:text="${report.judgement.shared().size()} + '개'">0개</b> — 한 번의 판단으로
-        여러 대를 함께 정리할 수 있습니다.
-      </th:block>
+      ※ 순위 기준 — 원격 접근 → 실제 악용 → 자산 수 → 최고 CVSS → 건수.
+      상위 5개가 덮는 건수 <b th:text="${report.judgement.topFiveCoverage()}">0</b>건 ·
+      2대 이상 공통 <b th:text="${report.judgement.shared().size()} + '개'">0개</b>.
     </p>
   </section>
 
@@ -419,21 +418,18 @@
       </tr>
       <tr class="total">
         <td class="tight">합계</td><td class="num tight"></td>
-        <td class="num tight"><b th:text="${report.action.residualFindings()}">0</b></td>
+        <td class="num tight"><b th:text="${#numbers.formatInteger(report.action.residualFindings(), 0, 'COMMA')}">0</b></td>
         <td class="num tight"></td><td class="num tight"></td><td class="tight"></td>
       </tr>
       </tbody>
     </table>
     <p class="footnote">
-      업스트림에 수정 버전이 없어 업데이트로는 해소되지 않는 항목입니다.
-      한 건이라도 올릴 수 있는 패키지는 4장에 있고, 그 줄의 비고에 남은 건수를
-      적었습니다. 조치 계획이 아니라 수용 여부에 대한 판단이 필요합니다.
+      ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 4장 비고.
+      검토 결과 = 검토 결과를 적은 자산 수.
       <b th:if="${report.action.unexplained() > 0}" class="danger-text"
-         th:text="'검토 결과가 없는 패키지 ' + ${report.action.unexplained()} + '개'">—</b>
-      <th:block th:if="${report.action.reviewOverdue() > 0}">
-        · 재검토일이 지난 검토 결과
-        <b class="danger-text" th:text="${report.action.reviewOverdue()} + '건'">0건</b>
-      </th:block>
+         th:text="'검토 결과 없음 ' + ${report.action.unexplained()} + '개'">—</b>
+      <b th:if="${report.action.reviewOverdue() > 0}" class="danger-text"
+         th:text="' · 재검토일 지남 ' + ${report.action.reviewOverdue()} + '건'">—</b>
     </p>
   </section>
 
@@ -498,27 +494,31 @@
       </tbody>
     </table>
     <p class="footnote" th:unless="${report.judgement.movement.comparable()}">
-      이 기간 이전의 검사 기록이 없어 증감을 대조하지 못했습니다.
+      ※ 기간 이전 검사 기록 없음 — 증감 대조 불가.
     </p>
     <p class="footnote" th:if="${report.judgement.movement.comparable()}">
-      대조 축은 (자산, 취약점 번호, 패키지명)입니다. 버전을 넣으면 패치한 건이
-      "해소 1건 + 신규 1건"으로 갈라져 보입니다.
+      ※ 대조 축 = (자산, 취약점 번호, 패키지명). 버전 제외 — 넣으면 패치한 건이
+      해소 1건 + 신규 1건으로 이중 계상.
       <!--/*
         기준선이 없는 자산을 대조에 넣으면 "새로 본 것" 이 "새로 생긴 것" 이
         되어 증감이 부풀려진다. 뺐다는 사실과 몇 대인지를 밝힌다.
       */-->
-      <th:block th:if="${report.judgement.movement.assetsWithoutBase > 0}">
-        <b th:text="${report.judgement.movement.assetsWithoutBase} + '대'">0대</b>는 이 기간에
-        처음 검사되어 대조에서 제외했습니다 — 새로 본 것이지 새로 생긴 것이 아닙니다.
-      </th:block>
+      <b th:if="${report.judgement.movement.assetsWithoutBase > 0}"
+         th:text="'기간 중 첫 검사 ' + ${report.judgement.movement.assetsWithoutBase}
+                  + '대는 대조 제외 — 신규로 계상하면 증감이 부풀려짐.'">—</b>
     </p>
   </section>
 
   </th:block>
 
+  <!--/*
+    문서 전체에 걸리는 한 줄. 장(section) 밖에 둔다.
+
+    **grype 이 낸 것은 `탐지`, 우리가 적는 것은 `검토 결과`.** 앞서 둘 다
+    `판정` 이라 불렀다(§4.1).
+  */-->
   <p class="footnote" th:if="${report.scope.assetsInScope > 0}">
-    이 보고서의 판정은 전부 grype 이 낸 것을 그대로 옮긴 것입니다. 심각도 ·
-    CVSS · 수정 버전을 다시 계산하거나 조정하지 않았습니다.
+    ※ 탐지 · 심각도 · CVSS · 수정 버전은 grype 원본. 재계산 · 조정 없음.
   </p>
   </div>
 

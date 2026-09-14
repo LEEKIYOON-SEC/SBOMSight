@@ -82,7 +82,7 @@
           <td class="num tight">
             <b th:text="${#numbers.formatInteger(report.overview.findingCount, 0, 'COMMA')}">0</b>건</td></tr>
       <tr><td>고유 취약점</td>
-          <td class="num tight" th:text="${report.overview.distinctVulnerabilities} + '가지'">0가지</td></tr>
+          <td class="num tight" th:text="${#numbers.formatInteger(report.overview.distinctVulnerabilities, 0, 'COMMA')} + '가지'">0가지</td></tr>
       <tr><td>영향 패키지</td>
           <td class="num tight" th:text="${report.overview.affectedPackages} + '개'">0개</td></tr>
       <!--/*
@@ -93,15 +93,20 @@
       <tr th:if="${report.overview.excludedByAnalysis > 0}">
           <td>검토를 마쳐 목록에서 제외</td>
           <td class="num tight"
-              th:text="${report.overview.excludedByAnalysis} + '건'">0건</td></tr>
+              th:text="${#numbers.formatInteger(report.overview.excludedByAnalysis, 0, 'COMMA')} + '건'">0건</td></tr>
       </tbody>
     </table>
+    <!--/*
+      각주는 **개조식**으로 쓴다. 서술형 종결(`…입니다`)을 붙이는 순간 표
+      아래 한 줄이 설명 문단이 된다 — 점검 보고서에 들어갈 글이 아니다.
+      `ReportProseTest` 가 기계로 막는다.
+    */-->
     <p class="footnote" th:if="${report.overview.excludedByAnalysis > 0}">
-      제외된 건도 위 탐지 건수에는 포함되어 있습니다. 검토 결과(해당 없음·오탐)를
-      적은 건만 목록에서 빠집니다.
+      ※ 제외된 건도 탐지 건수에 포함. 검토 결과가 <b>해당 없음 · 오탐</b>인 건만 목록에서 제외.
     </p>
     <p class="footnote" th:if="${report.overview.hasAccountingNote()}">
-      grype 원본 <span th:text="${report.overview.matchCount}">0</span>건 ·
+      ※ grype 원본
+      <span th:text="${#numbers.formatInteger(report.overview.matchCount, 0, 'COMMA')}">0</span>건 ·
       중복 합침 <span th:text="${report.overview.mergedCount}">0</span>건 ·
       식별자 없어 제외 <span th:text="${report.overview.droppedCount}">0</span>건.
       <span th:unless="${report.overview.balanced}" class="tag nofix">건수 불일치 — 원본 대조 필요</span>
@@ -135,8 +140,13 @@
       </tr>
       <tr class="total">
         <td class="tight">합계</td>
-        <td class="num tight"><b th:text="${report.summary.total}">0</b></td>
-        <td class="num tight faint">100%</td>
+        <td class="num tight"><b th:text="${#numbers.formatInteger(report.summary.total, 0, 'COMMA')}">0</b></td>
+        <!--/*
+          탐지가 0건이면 `100%` 가 아니다. 비율이 없는 것이지 전부인 것이
+          아니다 — 0 이나 100 으로 채우면 세어 본 적 없는 숫자가 표에 앉는다
+          (§5-4). 구역 보고서는 이미 이렇게 하고 있었고 여기만 박혀 있었다.
+        */-->
+        <td class="num tight faint" th:text="${report.summary.total > 0} ? '100%' : '—'">100%</td>
       </tr>
       </tbody>
     </table>
@@ -163,7 +173,7 @@
       </tbody>
     </table>
     <p class="footnote" th:unless="${report.summary.kevKnown}">
-      실제 악용 여부는 이 grype 판이 제공하지 않아 세지 않았습니다.
+      ※ 실제 악용 여부 — 이 grype 판이 제공하지 않아 미집계.
     </p>
 
     <h3 th:if="${report.summary.exposure.measured()}">2.3 접근 경로</h3>
@@ -189,8 +199,8 @@
       </tbody>
     </table>
     <p class="footnote" th:if="${report.summary.exposure.measured()}">
-      원격 접근 = CVSS 벡터가 AV:N / PR:N / UI:N 인 건. 권한 경계를 넘음 = S:C.
-      판단 불가 = 벡터가 없거나 3.x 가 아니어서 읽지 못한 건.
+      ※ grype CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
+      권한 경계를 넘음 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
     </p>
   </section>
 
@@ -262,7 +272,7 @@
         <td class="num tight"></td>
         <td>합계</td>
         <td></td>
-        <td class="num tight"><b th:text="${report.targets.resolvableFindings()}">0</b></td>
+        <td class="num tight"><b th:text="${#numbers.formatInteger(report.targets.resolvableFindings(), 0, 'COMMA')}">0</b></td>
         <td class="num tight" th:text="${report.targets.resolvableReach() > 0}
             ? ${report.targets.resolvableReach()} : '—'">—</td>
         <td class="num tight"></td><td class="num tight"></td><td class="num tight"></td>
@@ -272,11 +282,11 @@
       </tbody>
     </table>
     <p class="footnote" th:if="${report.targets.fixTargets.isEmpty()}">
-      패키지 업데이트로 해소되는 건이 없습니다.
+      ※ 버전을 올려 해소되는 건 없음.
     </p>
     <p class="footnote" th:if="${!report.targets.fixTargets.isEmpty()}">
-      순위는 원격 접근 건수 → 실제 악용 → 최고 CVSS → 건수 순으로 정렬한 것입니다.
-      grype 이 낸 심각도와 건수는 그대로입니다.
+      ※ 순위 기준 — 원격 접근 → 실제 악용 → 최고 CVSS → 건수.
+      심각도 · 건수 · 수정 버전은 grype 원본.
     </p>
   </section>
 
@@ -321,7 +331,7 @@
       </tr>
       <tr class="total">
         <td class="tight">합계</td><td class="tight"></td>
-        <td class="num tight"><b th:text="${report.targets.blockedFindings()}">0</b></td>
+        <td class="num tight"><b th:text="${#numbers.formatInteger(report.targets.blockedFindings(), 0, 'COMMA')}">0</b></td>
         <td class="num tight"></td><td class="tight"></td>
         <td></td><td class="tight"></td>
       </tr>
@@ -334,11 +344,9 @@
       어디 갔냐" 를 점검에서 듣는다.
     */-->
     <p class="footnote">
-      업스트림에 수정 버전이 없어 업데이트로는 해소되지 않는 항목입니다.
-      한 건이라도 올릴 수 있는 패키지는 3장에 있고, 그 줄의 비고에 남은 건수를
-      적었습니다.
+      ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 3장 비고.
       <b th:if="${report.progress.unexplained() > 0}" class="danger-text"
-         th:text="'검토 결과가 없는 패키지 ' + ${report.progress.unexplained()} + '개'">—</b>
+         th:text="'검토 결과 없음 ' + ${report.progress.unexplained()} + '개'">—</b>
     </p>
   </section>
 
@@ -370,14 +378,12 @@
       </tbody>
     </table>
     <p class="footnote">
-      등록 <span th:text="${report.progress.tracked}">0</span>개 ·
+      ※ 등록 <span th:text="${report.progress.tracked}">0</span>개 ·
       미등록 <span th:text="${report.progress.untracked}">0</span>개
       <b th:if="${report.progress.overdue > 0}" class="danger-text"
          th:text="' · 기한 지남 ' + ${report.progress.overdue} + '개'">—</b>
-      <th:block th:if="${report.progress.reviewOverdue() > 0}">
-        · 재검토일 지난 검토 결과
-        <b class="danger-text" th:text="${report.progress.reviewOverdue()} + '건'">0건</b>
-      </th:block>
+      <b th:if="${report.progress.reviewOverdue() > 0}" class="danger-text"
+         th:text="' · 재검토일 지남 ' + ${report.progress.reviewOverdue()} + '건'">—</b>
     </p>
   </section>
 
@@ -387,27 +393,47 @@
     <table th:if="${report.targets.diff.hasPrevious()}">
       <thead><tr><th class="tight">구분</th><th class="num tight">건수</th></tr></thead>
       <tbody>
+      <!--/*
+        Rocky 9 한 대면 네 자리가 예사다. 세 자리 쉼표를 빼먹으면 1847 과
+        18470 이 눈으로 구분되지 않는다 (§5-9).
+      */-->
       <tr><td class="tight">이전 검사
             (<span th:text="${#temporals.format(report.targets.diff.previous.createdAt, 'yyyy-MM-dd')}">—</span>)</td>
-          <td class="num tight" th:text="${report.targets.diff.previous.findingCount}">0</td></tr>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.targets.diff.previous.findingCount, 0, 'COMMA')}">0</td></tr>
       <tr><td class="tight">신규</td>
-          <td class="num tight" th:text="${report.targets.diff.added}">0</td></tr>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.targets.diff.added, 0, 'COMMA')}">0</td></tr>
       <tr><td class="tight">해소</td>
-          <td class="num tight" th:text="${report.targets.diff.resolved}">0</td></tr>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.targets.diff.resolved, 0, 'COMMA')}">0</td></tr>
       <tr><td class="tight">유지</td>
-          <td class="num tight" th:text="${report.targets.diff.kept}">0</td></tr>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.targets.diff.kept, 0, 'COMMA')}">0</td></tr>
       <tr class="total"><td class="tight">이번 검사</td>
-          <td class="num tight"><b th:text="${report.overview.findingCount}">0</b></td></tr>
+          <td class="num tight">
+            <b th:text="${#numbers.formatInteger(report.overview.findingCount, 0, 'COMMA')}">0</b></td></tr>
       </tbody>
     </table>
     <p class="footnote" th:unless="${report.targets.diff.hasPrevious()}">
-      이 자산의 첫 검사입니다. 다음 검사부터 신규·해소를 대조합니다.
+      ※ 이 자산의 첫 검사 — 대조할 이전 검사 없음.
     </p>
     <p class="footnote" th:if="${report.targets.diff.hasPrevious()}">
-      대조 축은 (취약점 번호, 패키지명)입니다. 버전을 넣으면 패치한 건이
-      "해소 1건 + 신규 1건"으로 갈라져 보입니다.
+      ※ 대조 축 = (취약점 번호, 패키지명). 버전 제외 — 넣으면 패치한 건이
+      해소 1건 + 신규 1건으로 이중 계상.
     </p>
   </section>
+
+  <!--/*
+    문서 전체에 걸리는 한 줄. 장(section) 밖에 둔다 — 어느 한 장의 각주가
+    아니고, 장마다 문단을 둘까지만 두는 규칙에도 걸리지 않는다.
+
+    **grype 이 낸 것은 `탐지`, 우리가 적는 것은 `검토 결과`.** 앞서 둘 다
+    `판정` 이라 불렀다(§4.1).
+  */-->
+  <p class="footnote">
+    ※ 탐지 · 심각도 · CVSS · 수정 버전은 grype 원본. 재계산 · 조정 없음.
+  </p>
 
   </div>
 

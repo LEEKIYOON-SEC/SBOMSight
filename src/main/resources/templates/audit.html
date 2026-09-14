@@ -5,10 +5,19 @@
 <main>
 
   <div th:replace="~{fragments/ui :: pagehead('감사 로그', null, ~{::actions}, ~{})}"></div>
-  <div th:fragment="actions" th:remove="tag">
-    <a class="btn" th:href="@{/settings/audit/export.csv(actor=${actor}, action=${action},
-       from=${from}, to=${to}, q=${q})}">CSV 내려받기</a>
-  </div>
+  <!--/*
+    버튼 묶음은 페이지 머리로 들어간다. **정의한 자리에서는 그리지 않는다** —
+    `th:remove="tag"` 는 감싼 태그만 없애고 그 안의 단추는 문서에 그대로
+    남긴다. 그래서 같은 단추가 머리에 한 번, 그 아래에 또 한 번 찍혀 있었다
+    (모든 화면에서). 바깥을 `th:remove="all"` 로 통째로 지운다 —
+    `~{::actions}` 는 템플릿을 다시 훑어 조각을 찾으므로 영향을 받지 않는다.
+  */-->
+  <th:block th:remove="all">
+    <div th:fragment="actions">
+      <a class="btn" th:href="@{/settings/audit/export.csv(actor=${actor}, action=${action},
+         from=${from}, to=${to}, q=${q})}">CSV 내려받기</a>
+    </div>
+  </th:block>
   <div class="page-header" style="padding-top:0">
     <!-- 설정과 같은 탭 줄. 여기로 들어온 뒤 돌아갈 길이 있어야 한다. -->
     <div class="tabs">

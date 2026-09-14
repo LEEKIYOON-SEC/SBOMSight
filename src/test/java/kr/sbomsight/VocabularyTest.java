@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -34,7 +35,29 @@ class VocabularyTest {
             "바로 닿음", "원격 접근",
             "한 일", "행위",
             "감춤", "(상태로 가른다)",
-            "컴포넌트", "패키지");
+            "컴포넌트", "패키지",
+            "수정본", "수정 버전",
+            "재검사", "다시 검사");
+
+    /**
+     * <b>열 머리에서만</b> 쓰지 않는 말.
+     *
+     * <p>낱말 자체는 멀쩡한데 열 이름으로 쓰면 안 되는 것들이다.
+     * {@code 서버} 는 "이 서버에서 grype 이 돈다" 처럼 본문에 쓸 자리가 있고,
+     * {@code 판정} 은 주석에서 "아무도 확인하지 않은 판정" 이라고 쓸 수 있다.
+     * 금지되는 것은 <b>표의 열 이름</b>이다 — 한 가지를 두 이름으로 부르는
+     * 자리가 거기다.
+     *
+     * <p>실제로 {@code 서버 이름}/{@code 자산},
+     * {@code 설치 → 수정}/{@code 현재 → 목표} 가 섞여 있었다.
+     */
+    private static final Map<String, String> BANNED_HEADERS = Map.of(
+            "서버", "자산",
+            "판정", "검토 결과 (grype 이 낸 것은 탐지)",
+            "설치 → 수정", "현재 → 목표",
+            "뜻", "열 자체를 없앤다 — 설명은 각주로",
+            "줄", "줄 번호",
+            "처리", "변경 내용");
 
     // '뜻' 과 '줄' 은 여기 넣지 않는다. 한 글자짜리 흔한 낱말이라 '그런 뜻이다'
     // 같은 멀쩡한 설명문에까지 걸린다. 그 둘은 열 이름이 문제였고 그 열은
@@ -86,6 +109,43 @@ class VocabularyTest {
 
         assertThat(hits)
                 .as("docs/rework-plan.md §4.1 의 어휘표대로 고칩니다. 새 말을 짓지 않습니다.")
+                .isEmpty();
+    }
+
+    /**
+     * 표의 열 이름.
+     *
+     * <p>한 가지를 두 이름으로 부르는 일은 거의 언제나 여기서 생긴다 — 새
+     * 화면을 만들면서 옛 표를 베껴 오고, 베껴 온 열 이름만 손대지 않는다.
+     * 실제로 {@code 설치 → 수정} 과 {@code 현재 → 목표} 가 같은 칸을
+     * 가리킨 채로 둘 다 살아 있었다.
+     */
+    @Test
+    @DisplayName("표의 열 이름이 어휘표를 따른다")
+    void columnHeadersFollowTheVocabulary() throws IOException {
+        Path templates = Path.of("src/main/resources/templates");
+        Pattern header = Pattern.compile("<th[^>]*>\\s*([^<]*?)\\s*</th>");
+        List<String> hits = new ArrayList<>();
+
+        try (Stream<Path> files = Files.walk(templates)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".html")).sorted().toList()) {
+                List<String> lines = visibleLines(file);
+                for (int i = 0; i < lines.size(); i++) {
+                    Matcher m = header.matcher(lines.get(i));
+                    while (m.find()) {
+                        String name = m.group(1);
+                        String replacement = BANNED_HEADERS.get(name);
+                        if (replacement != null) {
+                            hits.add("%s:%d  열 이름 '%s' → '%s'".formatted(
+                                    templates.relativize(file), i + 1, name, replacement));
+                        }
+                    }
+                }
+            }
+        }
+
+        assertThat(hits)
+                .as("docs/rework-plan.md §4.1. 같은 것을 두 이름으로 부르지 않습니다.")
                 .isEmpty();
     }
 }

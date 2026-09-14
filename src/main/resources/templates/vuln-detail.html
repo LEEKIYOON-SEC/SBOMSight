@@ -59,13 +59,22 @@
               </td></tr>
           <tr th:if="${!#strings.isEmpty(first.secondaryId)}">
               <th>별칭</th><td class="mono faint" th:text="${first.secondaryId}">GHSA-…</td></tr>
+          <!--/*
+            grype 이 이 건을 어떤 방식으로 맞췄는가. 목록에서 내려왔다 —
+            줄마다 같은 값(`exact-direct-match`)이 찍혀 아무것도 말해 주지
+            않으면서 칸을 먹었고, 그만큼 오른쪽의 `검토 결과` 칸과 `적기`
+            단추가 화면 밖으로 밀려 있었다. **지우지는 않는다** — grype 이
+            낸 값이고 한 건을 따져 볼 때 필요한 자리가 여기다.
+          */-->
+          <tr th:if="${!#strings.isEmpty(first.matchType)}">
+              <th>매칭 방식</th><td class="mono faint" th:text="${first.matchType}">exact-direct-match</td></tr>
           <tr th:if="${!#strings.isEmpty(first.dataSource)}">
               <th>출처</th>
               <td><a th:href="${first.dataSource}" target="_blank" rel="noreferrer"
                      th:text="${first.dataSource}">https://…</a></td></tr>
         </table>
         <p class="footnote" style="margin-top:12px">
-          전부 grype 이 그 출력에 담아 준 값입니다. 다시 계산하지 않습니다.
+          ※ 전부 grype 출력 원본. 재계산 · 조정 없음.
         </p>
       </div>
     </div>
@@ -77,7 +86,7 @@
         <table>
           <thead><tr>
             <th class="tight">자산</th><th class="tight">구역</th>
-            <th class="tight">패키지</th><th class="tight">설치 → 수정</th>
+            <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
             <th class="tight">검사 시각</th><th class="tight"></th>
           </tr></thead>
           <tbody>

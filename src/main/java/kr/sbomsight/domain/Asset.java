@@ -25,7 +25,7 @@ public class Asset {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "서버 이름을 입력하세요.")
+    @NotBlank(message = "자산 이름을 입력하세요.")
     @Size(max = 128)
     @Pattern(regexp = "^[A-Za-z0-9][A-Za-z0-9._-]*$",
              message = "영문·숫자로 시작하고 . _ - 만 쓸 수 있습니다.")

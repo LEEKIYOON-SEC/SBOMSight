@@ -110,7 +110,7 @@ public class ScanStatusController {
         return switch (stage) {
             case UPLOADED -> scan.getSbomFilename();
             case READING -> scan.getComponentCount() > 0
-                    ? String.format("컴포넌트 %,d개", scan.getComponentCount())
+                    ? String.format("패키지 %,d개", scan.getComponentCount())
                     : stage.detail();
             case SAVING -> scan.getStatus() == ScanStatus.DONE
                     ? String.format("탐지 %,d건", scan.getFindingCount())
