@@ -83,7 +83,17 @@ public class AssetImportController {
         return "redirect:/";
     }
 
-    /** 서식 내려받기 — 무엇을 어떤 순서로 적어야 하는지 파일로 준다. */
+    /**
+     * 서식 내려받기 — 무엇을 어떤 순서로 적어야 하는지 파일로 준다.
+     *
+     * <p>첫 줄은 <b>{@code 자산 이름}</b> 이다. N8 의 어휘 정리에서 화면의 열
+     * 머리는 고쳤는데 이 파일은 {@code 서버 이름} 으로 남아 있었다 — 시험이
+     * 템플릿의 {@code <th>} 만 보고 있어서 자바 문자열은 지나갔다. 사람이
+     * 실제로 채워 넣는 것은 이 파일이다.
+     *
+     * <p>읽는 쪽({@code AssetImportService})은 두 이름을 다 받으므로, 옛 서식을
+     * 들고 있는 사람도 그대로 올릴 수 있다.
+     */
     @GetMapping("template.csv")
     public void template(HttpServletResponse response) throws IOException {
         response.setContentType(MediaType.TEXT_PLAIN_VALUE + "; charset=UTF-8");
@@ -91,7 +101,7 @@ public class AssetImportController {
         // BOM 을 붙여야 엑셀이 UTF-8 로 연다. 없으면 한글 제목이 깨진 채로 뜬다.
         response.getOutputStream().write(new byte[] { (byte) 0xEF, (byte) 0xBB, (byte) 0xBF });
         response.getOutputStream().write("""
-                서버 이름,구역,운영체제,비고
+                자산 이름,구역,운영체제,비고
                 web-01,DMZ,Rocky Linux 9.3,대외 웹
                 api-02,DMZ,Rocky Linux 9.3,API 게이트웨이
                 db-01,내부업무,Rocky Linux 8.9,원장 DB

@@ -267,6 +267,30 @@ class PageRenderTest {
         assertThat(vulns).contains("넓게 보기");
     }
 
+    /**
+     * 모르는 탭 이름이 와도 <b>빈 화면이 뜨지 않는가.</b>
+     *
+     * <p>화면이 {@code th:if} 로 갈라져 있어서 아무 것에도 맞지 않는 값이 오면
+     * 탭 줄만 있고 본문이 없는 화면이 <b>200 으로</b> 뜬다. 실제로
+     * {@code ?tab=scans}(이력 탭의 이름은 {@code history} 다)로 그랬고,
+     * {@link #everyScreen()} 이 그 주소를 들고 있었으면서 200 만 보고 있었다 —
+     * 즉 <b>이력 탭은 한 번도 열어 본 적이 없었다.</b>
+     */
+    @Test
+    @DisplayName("모르는 탭 이름은 개요로 되돌린다 (빈 화면 금지)")
+    void unknownTabFallsBackToOverview() throws Exception {
+        String bogus = open("/assets/" + asset.getId() + "?tab=scans");
+        assertThat(bogus)
+                .as("본문이 없는 화면이 200 으로 떴다")
+                .contains("기본 정보")
+                .contains("SBOM 올리기");
+
+        // 이력 탭은 이름이 history 다. 내용이 실제로 있어야 한다.
+        assertThat(open("/assets/" + asset.getId() + "?tab=history"))
+                .contains("이전 대비")
+                .contains("0.87.0");
+    }
+
     /** 보관해 둔 SBOM 원본을 꺼내 볼 수 있어야 grype 의 판정을 대조할 수 있다. */
     @Test
     @DisplayName("보관된 SBOM 이 없으면 404, 있으면 파일로 나온다")
@@ -501,7 +525,7 @@ class PageRenderTest {
                 "/?view=zones",
                 "/assets/" + asset.getId(),
                 "/assets/" + asset.getId() + "?tab=vulns",
-                "/assets/" + asset.getId() + "?tab=scans",
+                "/assets/" + asset.getId() + "?tab=history",
                 "/assets/" + asset.getId() + "?tab=actions",
                 "/vulns",
                 "/vulns?scan=" + scan.getId(),

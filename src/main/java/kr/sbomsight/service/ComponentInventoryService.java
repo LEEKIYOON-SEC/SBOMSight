@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,7 +60,16 @@ public class ComponentInventoryService {
      *
      * <p>넣기 전에 지우지 않고 넣은 뒤에 지운다. 읽다가 터지면 이전 인벤토리가
      * 그대로 남아 있어야 한다.
+     *
+     * <p><b>트랜잭션을 제 것으로 연다.</b> 부르는 쪽({@code ScanService.run})에는
+     * {@code @Transactional} 이 붙어 있지만 {@code runAsync} 가 같은 빈의
+     * {@code run} 을 부르기 때문에 프록시를 지나지 않는다 — 그 자리에 트랜잭션이
+     * 없고, {@code @Modifying} 질의는 트랜잭션 없이 돌지 못한다. 이것이 없어서
+     * 실제 업로드가 {@code READING} 단계에서
+     * {@code Executing an update/delete query} 로 실패했다. 시험 11개가 전부
+     * 통과한 채로 — 시험이 트랜잭션을 대신 열어 주고 있었다.
      */
+    @Transactional
     public void makeCurrent(long assetId, long scanId) {
         int removed = components.deleteOtherScans(assetId, scanId);
         if (removed > 0) {
@@ -68,7 +78,13 @@ public class ComponentInventoryService {
         }
     }
 
-    /** 이 검사에서 온 행을 버린다 — 읽다가 실패했을 때. */
+    /**
+     * 이 검사에서 온 행을 버린다 — 읽다가 실패했을 때.
+     *
+     * <p>여기도 제 트랜잭션이 필요하다. 없으면 <b>실패를 되돌리는 길이 같은
+     * 이유로 또 실패</b>하고, 실패한 검사의 인벤토리가 화면에 남는다.
+     */
+    @Transactional
     public void discard(long scanId) {
         int removed = components.deleteByScanId(scanId);
         if (removed > 0) {

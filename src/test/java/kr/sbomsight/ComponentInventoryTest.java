@@ -390,6 +390,60 @@ class ComponentInventoryTest {
                 .doesNotContain("glibc");
     }
 
+    // --- 트랜잭션 -------------------------------------------------------------
+
+    /**
+     * <b>바깥 트랜잭션이 없어도 인벤토리를 바꿀 수 있는가.</b>
+     *
+     * <p>이 시험에는 {@code @Transactional} 이 없다. <b>일부러 없다.</b> 실제
+     * 검사는 {@code @Async} 로 돌고, {@code ScanService.runAsync} 가 같은 빈의
+     * {@code run} 을 부르기 때문에 프록시를 지나지 않는다 — 즉 그 자리에
+     * 트랜잭션이 없다. 그래서 {@code @Modifying} 질의가
+     * {@code Executing an update/delete query} 로 터진다.
+     *
+     * <p>다른 시험들은 메서드에 {@code @Transactional} 이 붙어 있어서 시험이
+     * 트랜잭션을 대신 열어 준다. 운영에 없는 것을 시험이 주고 있었으므로,
+     * <b>시험 11개가 전부 통과한 채로 실제 업로드는 READING 단계에서
+     * 실패했다.</b>
+     */
+    @Test
+    @DisplayName("바깥 트랜잭션이 없어도 인벤토리를 바꾼다 (@Async 와 같은 조건)")
+    void managesItsOwnTransaction() throws IOException {
+        Asset asset = asset("no-tx");
+        Scan first = doneScan(asset);
+        Scan second = doneScan(asset);
+        try {
+            // 담기 — 이쪽은 순수 JDBC 라 트랜잭션이 없어도 들어간다.
+            try (ComponentInventoryService.Sink sink =
+                         inventory.open(asset.getId(), first.getId())) {
+                storage.inspect(write(SYFT_JSON), sink);
+            }
+            assertThat(components.countByAssetId(asset.getId())).isEqualTo(2);
+
+            // 기준 바꾸기 — @Modifying 질의. 여기가 터지던 자리다.
+            try (ComponentInventoryService.Sink sink =
+                         inventory.open(asset.getId(), second.getId())) {
+                storage.inspect(write(SYFT_JSON), sink);
+            }
+            inventory.makeCurrent(asset.getId(), second.getId());
+            assertThat(components.countByAssetId(asset.getId()))
+                    .as("이전 검사 것이 남았다 — 다시 검사할 때마다 행이 두 배가 된다")
+                    .isEqualTo(2);
+
+            // 버리기 — 실패한 검사를 되돌리는 자리. 여기도 같은 질의다.
+            inventory.discard(second.getId());
+            assertThat(components.countByAssetId(asset.getId()))
+                    .as("실패한 검사의 인벤토리가 화면에 남는다")
+                    .isZero();
+        } finally {
+            // 트랜잭션이 없으니 롤백도 없다. 손으로 치운다.
+            inventory.discard(first.getId());
+            inventory.discard(second.getId());
+            scans.deleteAll(List.of(first, second));
+            assets.delete(asset);
+        }
+    }
+
     // --- 머리의 수 -------------------------------------------------------------
 
     /**

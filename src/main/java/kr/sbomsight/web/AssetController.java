@@ -79,6 +79,15 @@ public class AssetController {
     private static final int STALE_DAYS = 30;
 
     /**
+     * 자산 상세의 탭 이름. <b>화면(`asset-detail.html`)의 `th:if` 와 같아야 한다.</b>
+     *
+     * <p>여기 없는 값이 오면 개요로 되돌린다 — 그러지 않으면 탭 줄만 있고
+     * 본문이 빈 화면이 200 으로 뜬다.
+     */
+    private static final java.util.Set<String> TABS =
+            java.util.Set.of("overview", "vulns", "packages", "history", "actions");
+
+    /**
      * 자산 목록.
      *
      * <p>맨 위 한 줄이 "지금 무엇이 급한가" 에 답하고, 그 숫자를 누르면 그
@@ -266,6 +275,11 @@ public class AssetController {
                          @RequestParam(defaultValue = "0") int page,
                          @RequestParam(defaultValue = "severity") String sort,
                          Model model) {
+        // 모르는 탭 이름은 개요로 되돌린다. 화면은 `th:if` 로 갈라져 있어서,
+        // 아무 것에도 맞지 않는 값이 오면 **탭 줄만 있고 본문이 빈 화면**이
+        // 뜬다 — 200 이라 시험도 통과한다. `?tab=scans` 로 실제 그랬다
+        // (이력 탭의 이름은 `history` 다).
+        tab = TABS.contains(tab) ? tab : "overview";
         model.addAttribute("tab", tab);
         Asset asset = asset(id);
         List<Scan> history = scans.findByAssetIdOrderByCreatedAtDesc(id);

@@ -841,11 +841,72 @@ python3 scripts/check-links.py                  /packages 에 빈 값 0개 (다�
 심각도별 기한(심각 7일 · 높음 30일 …)을 설정에 두고 조치 등록 시 자동 계산.
 기준을 화면과 보고서에 같이 찍는다.
 
-### N11 — 검증 · 라이선스 · 문서
-- §9 전 경로 사람이 직접 확인
-- `./mvnw -B test` · `check-mariadb.sh` · `check-migrations.sh`
-- **이 도구로 이 도구의 SBOM 을 뽑아 `NOTICE.md` 를 만든다** (§11)
-- `docs/windows-setup.md`·`offline-operations.md`·`README.md` 갱신
+### N11 — 검증 · 라이선스 · 문서 ✅
+
+**이번에는 grype 을 실제로 돌렸다.** 앞 단계들에서 "grype 이 없어 전 구간을
+태우지 못했다" 고 적어 둔 자리를 닫았다 — syft 1.19.0 · grype 0.87.0 ·
+취약점 DB 2026-03-09 기준. **올린 것은 이 도구가 자기 자신에게서 뽑은 SBOM**
+이고, grype 이 우리 jar 에서 29건을 냈다.
+
+| 요구 | 결과 |
+|---|---|
+| §9 전 15 경로 | 아래 표 — 15/15 확인 |
+| `./mvnw -B test` | **270개 통과** |
+| `check-mariadb.sh` | 270개 통과 (MariaDB + Flyway) |
+| `check-migrations.sh` | 통과 (빈 DB · 데이터 있는 DB 양쪽) |
+| `NOTICE.md` (§11) | `scripts/make-notice.sh` + `make-notice.py` — 제3자 78개, `확인 필요` 0개 |
+| 문서 갱신 | `windows-setup.md` 12단계 · `offline-operations.md` · `README.md` |
+
+#### 띄워 보고 찾은 것 — **이것이 N11 의 수확이다**
+
+시험 269개가 전부 통과한 채로 있던 것들. 앞 세 가지는 **실제로 SBOM 을 올려
+보지 않으면 절대 안 보이는** 종류다.
+
+| | 무엇 | 어디 |
+|---|---|---|
+| 1 | **실제 업로드가 `READING` 단계에서 전부 실패했다.** `Executing an update/delete query` — `ScanService.runAsync` 가 같은 빈의 `run` 을 불러 프록시를 지나지 않으므로 그 자리에 트랜잭션이 없고, N9 가 더한 `@Modifying` 삭제가 트랜잭션 없이 돌 수 없었다. **시험 13개는 메서드에 `@Transactional` 이 붙어 있어 시험이 트랜잭션을 대신 열어 주고 있었다** | `ComponentInventoryService.makeCurrent` · `discard` 에 `@Transactional` · 시험 `ComponentInventoryTest#managesItsOwnTransaction`(일부러 `@Transactional` 없이 돈다) |
+| 2 | 같은 이유로 **실패를 되돌리는 길도 함께 막혀 있었다** — 실패한 검사의 인벤토리 79행이 화면에 남았다 | 위와 같은 고침. 남은 행은 손으로 치웠다 |
+| 3 | `?tab=scans` 가 **탭 줄만 있고 본문이 빈 화면**을 200 으로 냈다(이력 탭의 이름은 `history`). `PageRenderTest.everyScreen()` 이 그 주소를 들고 200 만 보고 있었으므로 **이력 탭은 한 번도 열어 본 적이 없었다** | `AssetController.TABS` 로 모르는 탭은 개요로 · 시험 `PageRenderTest#unknownTabFallsBackToOverview` |
+| 4 | 일괄 등록 **서식 파일**의 첫 줄이 `서버 이름` 이었다 — N8 이 화면의 열 머리는 고쳤는데 자바 문자열은 지나갔다. 사람이 실제로 채워 넣는 것은 그 파일이다 | `AssetImportController.template` · 시험 `VocabularyTest#csvHeadersFollowTheVocabulary` |
+| 5 | `내 계정` 의 각주가 `※ 목록과 기록에 함께 찍히는 이름` 이라고 **없는 것을 말했다.** 표시 이름이 보이는 곳은 `설정 → 계정` 목록 하나고, 기록에는 로그인 계정 이름이 남는다(§4.6 · §12) | `me.html` 각주 |
+
+> **4번 시험을 처음 짰을 때 고치기 전 코드에서 통과했다.** 금지 낱말이 `서버`
+> 인데 적혀 있던 것은 `서버 이름` 이었고, 정확히 같은 것만 찾고 있었다.
+> 규칙 8 — 실패를 확인하지 않은 시험은 아무것도 지키지 못한다.
+
+#### §9 15 경로
+
+| | 확인한 것 | 결과 |
+|---|---|---|
+| 1 | 로그아웃 → 재로그인 | 계정 메뉴 → 로그아웃 → `/login?logout` → 재로그인 → 자산 화면. **떨어진 파일 없음** |
+| 2 | 요약 줄의 숫자 | `1 기한 지난 대응`→`/actions` · `9 심각`→`/vulns?severity=Critical` · `5 수정 버전 없음`→`/vulns?fixable=false` 전부 200 |
+| 3 | 구역 보기 ↔ 표 보기 | 카드 3개 ↔ 표(구역 머리 3 + 자산 3 + 빈 구역 1줄) |
+| 4 | **실제 SBOM 업로드 → 진행 → 완료** | 패키지 79개 → grype → 탐지 29건. 진행 표시가 `검사 없음` → `패키지 79` → `취약점 29` 로 바뀌는 것을 폴링으로 확인 |
+| 5 | 취약점 범위·묶기·정렬·CSV·상세 | 전체 45건 / 검사 하나 6건 · 묶기 3종(45·35·14행) · 정렬 4종 · CSV · `/vulns/CVE-2021-44228` |
+| 6 | 판정 → 뜻이 뜬다 → 대응에 뜬다 | 고르개 `미검토·검토 중·해당됨·해당 없음·오탐`, 고르면 그 뜻이 아래에 |
+| 7 | **판정으로 감춘 뒤 탐지 건수** | 점검한 패키지 79 · **탐지 29건** · 고유 29 · 영향 패키지 10 — 판정 전후 동일. `검토를 마쳐 목록에서 제외 1건` 줄만 늘었다 |
+| 8 | 이력의 네 단추 | 전부 `btn small`(삭제만 `danger` 색) · 열기 200 · SBOM 내려받기 · **다시 검사로 grype 재실행** · 삭제(확인 문구 → 2→1행) |
+| 9 | 계정 메뉴 → 내 계정 | 메뉴 3줄 · 표시 이름 저장됨 · 비밀번호 변경 후 새 비밀번호로 재로그인 |
+| 10 | 설정 → 계정 → 수정 팝업 | 계정 생성 · 팝업 칸 `displayName·role·enabled·newPassword` · 저장 반영 |
+| 11 | 보고서 3종 · 인쇄 | 자산(표 8개) · 구역(2개) · 전체(10개) — **인쇄 폭에서 넘치는 표 0개**, PDF 3개 생성 |
+| 12 | 패키지에서 검색 | `openssl-libs` 두 버전 모두 `○`(걸린 것 없음) · `tomcat-embed-core` 는 `▮critical`, 같은 tomcat 의 `-el`·`-websocket` 은 `○` |
+| 13 | 옛 주소 9개 | `/lookup`·`/acceptances`·`/analyses`·`/scans/3`·`/remediations`·`/report/3`·`/report/zone`·`/audit` 전부 새 주소로 |
+| 14 | 조회 권한 | 13화면에서 **등록·수정·삭제·올리기·다시 검사·보관·적기 단추 0개** · `/settings*`·`/assets/import` 는 403 · 첫 로그인에 비밀번호 변경 강제 |
+| 15 | 진짜 DB 로 전체 시험 | `check-mariadb.sh` 270개 통과 |
+
+#### 안 한 것 · 적어 두는 것
+
+- **우리 jar 에 심각 1건이 있다.** `tomcat-embed-core 10.1.31` →
+  `CVE-2025-24813`(CVSS 9.8). 스프링 부트 판올림이라 N11 의 일이 아니고,
+  **이 도구가 자기 자신에게서 찾아낸 것**이라 그대로 적어 둔다. 목표 버전은
+  10.1.49 (grype 이 낸 수정 버전 중 최고).
+- `ScanService.run` 의 `@Transactional` 은 **죽은 표시다.** `runAsync` 가 같은
+  빈에서 부르므로 적용되지 않는다. 지우면 "원자적이라고 오해할 자리" 가
+  없어지지만, 붙여서 살리면 grype 이 도는 몇 분간 트랜잭션을 붙잡는다 —
+  판단이 필요한 자리라 손대지 않았다
+- `Finding` 의 FK 도 `Component` 가 N9 에서 고친 것과 같은 H2-Flyway 어긋남이 있다
+- 다른 화면 다섯 곳의 주소에 빈 값이 붙는다 (N9 §8 참조)
+- 1024px(노트북)에서 표 일곱 개가 넘친다 (N8 참조)
 
 ---
 

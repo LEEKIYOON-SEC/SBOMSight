@@ -148,4 +148,52 @@ class VocabularyTest {
                 .as("docs/rework-plan.md §4.1. 같은 것을 두 이름으로 부르지 않습니다.")
                 .isEmpty();
     }
+
+    /**
+     * <b>파일로 나가는 열 이름도 화면과 같아야 한다.</b>
+     *
+     * <p>위 시험은 템플릿의 {@code <th>} 만 본다. 그래서 N8 에서 화면의
+     * {@code 서버 이름} 을 {@code 자산 이름} 으로 고쳤는데, <b>사람이 실제로
+     * 채워 넣는 일괄 등록 서식</b>은 자바 문자열이라 그대로 남아 있었다 —
+     * 화면과 내려받은 파일이 같은 칸을 다른 이름으로 부르고 있었다.
+     *
+     * <p>CSV 를 만드는 자리는 {@code CsvWriter} 와 서식 하나다. 그 두 곳의
+     * 첫 줄만 본다.
+     */
+    @Test
+    @DisplayName("내보내는 CSV 의 열 이름도 어휘표를 따른다")
+    void csvHeadersFollowTheVocabulary() throws IOException {
+        List<String> hits = new ArrayList<>();
+        for (Path file : List.of(Path.of("src/main/java/kr/sbomsight/service/CsvWriter.java"),
+                                 Path.of("src/main/java/kr/sbomsight/web/AssetImportController.java"))) {
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                // 주석은 넘긴다 — 무엇을 왜 바꿨는지 적을 자리가 필요하다.
+                if (line.stripLeading().startsWith("*") || line.stripLeading().startsWith("//")) {
+                    continue;
+                }
+                for (var banned : BANNED_HEADERS.entrySet()) {
+                    // 열 이름으로 쓰인 것만 본다: 큰따옴표로 감싼 값이거나
+                    // CSV 첫 줄의 쉼표 사이 값.
+                    //
+                    // **그 낱말로 시작하는 것까지 잡는다.** 금지 낱말은 `서버`
+                    // 인데 실제로 적혀 있던 것은 `서버 이름` 이었다. 정확히
+                    // 같은 것만 찾으면 그대로 지나간다 — 처음에 그렇게 짰고,
+                    // 고치기 전 코드에서 시험이 통과해 버렸다.
+                    String word = Pattern.quote(banned.getKey());
+                    String cell = word + "(\\s+\\S+)?";
+                    if (line.matches(".*\"" + cell + "\".*")
+                            || line.matches(".*(^|,)\\s*" + cell + "\\s*(,|$).*")) {
+                        hits.add("%s:%d  열 이름 '%s' → '%s'".formatted(
+                                file.getFileName(), i + 1, banned.getKey(), banned.getValue()));
+                    }
+                }
+            }
+        }
+
+        assertThat(hits)
+                .as("화면과 내려받은 파일이 같은 칸을 다른 이름으로 부르면 안 됩니다.")
+                .isEmpty();
+    }
 }
