@@ -9,17 +9,44 @@
 @import url("/css/fonts.css");
 
 :root {
+  /* ── 대비 ──────────────────────────────────────────────────────────────
+     `scripts/check-contrast.py` 로 전 화면의 **그려진 색**을 재어 WCAG 2.1 AA
+     (보통 글자 4.5:1)에 못 미치는 자리를 찾았다. 아흔 곳이 나왔는데 값으로는
+     다섯 개였다 — 옅은 회색 하나와 심각도 색 넷.
+
+     색상은 그대로 두고 **필요한 만큼만 진하게** 했다. 시안에서 온 팔레트라
+     느낌을 바꾸지 않는 선에서 멈춘다.
+
+       --fg-faint  #8a919b → #6a6f77   2.84 → 4.52  (가장 많이 걸린 자리)
+       --high      #c3571a → #b45018   3.97 → 4.52
+       --medium    #b4821b → #916916   3.11 → 4.54
+       --low       #6f7e8d → #64717f   3.77 → 4.50
+       --ok        #1b854f → #1a7f4b   4.17 → 4.50
+
+     `--critical` 은 이미 넘었다(#a71922). 건드리지 않았다.
+     ────────────────────────────────────────────────────────────────────── */
+
   /* 심각도. grype 이 주는 단계를 그대로 쓴다 — 다시 나누지 않는다. */
   --critical: #a71922; --critical-bg: #fdecea; --critical-line: #f6c9c3;
-  --high:     #c3571a; --high-bg:     #fdefe3; --high-line:     #f6d0b0;
-  --medium:   #b4821b; --medium-bg:   #fcf4e0; --medium-line:   #efd9a6;
-  --low:      #6f7e8d; --low-bg:      #f1f4f7; --low-line:      #dae0e7;
+  --high:     #b45018; --high-bg:     #fdefe3; --high-line:     #f6d0b0;
+  --medium:   #916916; --medium-bg:   #fcf4e0; --medium-line:   #efd9a6;
+  --low:      #64717f; --low-bg:      #f1f4f7; --low-line:      #dae0e7;
   --accent:   #2262bb; --accent-bg:   #ecf3fd; --accent-line:   #c2d8f5;
-  --ok:       #1b854f; --ok-bg:       #e8f6ed; --ok-line:       #bcdfc8;
+  --ok:       #1a7f4b; --ok-bg:       #e8f6ed; --ok-line:       #bcdfc8;
 
-  --fg: #14161a; --fg-muted: #5a616b; --fg-faint: #8a919b;
+  --fg: #14161a; --fg-muted: #5a616b; --fg-faint: #6a6f77;
   --line: #e6e9ed; --line-strong: #d6dae0;
   --bg: #ffffff; --sunken: #fafbfc; --subtle: #f4f6f8; --hover: #f0f2f5;
+
+  /* 눌렀을 때·올렸을 때의 한 칸 진한 색. 앞서 쓰는 자리에 값을 직접
+     적어 두어서, 팔레트를 바꾸면 그 자리만 옛 색으로 남았다. */
+  --accent-strong: #1a4f9c;    /* 링크에 올렸을 때 */
+  --fg-strong:     #2a2e35;    /* 진한 단추에 올렸을 때 */
+  --critical-wash: #fffafa;    /* 되돌릴 수 없는 자리의 아주 옅은 바탕 */
+
+  /* 진한 바탕 위의 글자. `--bg` 와 값은 같지만 뜻이 다르다 — 배경이 아니라
+     글자색이고, 팔레트에서 배경을 바꿔도 이쪽은 따라가지 않는다. */
+  --on-dark: #ffffff;
 
   /* 옛 이름들. 화면 곳곳이 아직 이 이름으로 부른다. */
   --bg-soft: var(--subtle);
@@ -49,7 +76,7 @@ body {
 }
 
 a { color: var(--accent); text-decoration: none; }
-a:hover { color: #1a4f9c; }
+a:hover { color: var(--accent-strong); }
 
 code, .mono, .path {
   font-family: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -240,8 +267,8 @@ form.inline { display: inline; margin: 0; }
 .btn:hover { background: var(--subtle); color: var(--fg); }
 /* 으뜸 동작은 파랑이 아니라 먹색이다. 파란 버튼은 링크와 섞여 어느 쪽이
    '지금 할 일'인지 흐려진다. */
-.btn.primary { background: var(--fg); border-color: var(--fg); color: #fff; font-weight: 500; }
-.btn.primary:hover { background: #2a2e35; color: #fff; }
+.btn.primary { background: var(--fg); border-color: var(--fg); color: var(--on-dark); font-weight: 500; }
+.btn.primary:hover { background: var(--fg-strong); color: var(--on-dark); }
 .btn.small { font-size: 13px; padding: 5px 10px; border-radius: 6px; }
 .btn.danger { border-color: var(--critical-line); color: var(--critical); background: var(--bg); }
 .btn.danger:hover { background: var(--critical-bg); color: var(--critical); }
@@ -316,7 +343,7 @@ label.check input[type="checkbox"] {
   border: 1px solid var(--line-strong); background: var(--bg); color: var(--fg-muted);
 }
 .chip:hover { background: var(--subtle); color: var(--fg); }
-.chip.on { border-color: var(--fg); background: var(--fg); color: #fff; font-weight: 500; }
+.chip.on { border-color: var(--fg); background: var(--fg); color: var(--on-dark); font-weight: 500; }
 
 /* ============================================================
    요약 줄 · 구역 카드
@@ -412,6 +439,56 @@ th.tight, td.tight { width: 1%; white-space: nowrap; }
 .asset-table td:last-child, .asset-table th:last-child { width: auto; min-width: 11rem; }
 
 .table-scroll { overflow-x: auto; }
+
+/* ── 좁은 화면(노트북 1366×768 이 흔하다)의 표 ──────────────────────────────
+   **들어가지 않는다. 억지로 넣지 않는다.** 취약점 표는 아홉 칸이고 CVE 번호
+   하나가 110px 쯤을 쓴다. 1024px 에서 표에 주어지는 폭은 788px 이라, 아홉
+   칸을 넣으려면 칸마다 87px 이다 — 번호 한 개도 못 넣는다.
+
+   그래서 세 갈래 중에서 고른다.
+
+     칸을 줄인다   좁을 때 칸을 감춘다 → 값이 사라진다. 이 도구는 감추지 않는다
+     접는다        `줄바꿈 금지`를 풀어 두 줄로 → **해 보고 버렸다.** `tight` 는
+                   `width:1%` 도 함께 걸고 있어서, 줄바꿈을 풀면 칸이 내용의
+                   최소 폭까지 줄어든다. 거기에 긴 식별자를 끊어 주면
+                   `CVE-2021-44228` 이 한 글자씩 세로로 쪼개진다. 표는 칸 안에
+                   들어가고 화면은 못 읽게 된다 — 재기만 통과한 셈이다
+     고정한다      ← 이것. 가로로 밀되 **첫 칸이 따라 움직이지 않게** 한다
+
+   미는 것 자체는 문제가 아니었다. 밀면 어느 줄을 보고 있었는지 잃는 것이
+   문제였다. 첫 칸(자산 · 취약점 번호)을 붙여 두면 오른쪽 끝의 `적기` 까지
+   밀어도 그 줄이 무엇인지 계속 보인다. */
+@media (max-width: 1200px) {
+  .table-scroll > table > thead th:first-child,
+  .table-scroll > table > tbody > tr > td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    /* 비치면 뒤 글자와 겹쳐 읽힌다. 바탕을 깔아 둔다. */
+    background: var(--bg);
+  }
+  /* 표 머리는 이미 `position: sticky; top: 0; z-index: 2` 로 붙어 있다.
+     그래서 첫 칸에 z-index 1 만 주면 **옆 칸이 위에 덮여 첫 칸 글자가
+     사라진다** — 실제로 `자산` 이 안 보였다. 머리의 첫 칸은 위·왼쪽 양쪽에
+     붙으므로 형제보다 높아야 한다. */
+  .table-scroll > table > thead th:first-child {
+    background: var(--sunken);
+    z-index: 3;
+  }
+  .table-scroll > table > tbody > tr:hover > td:first-child { background: var(--hover); }
+  /* 펼친 줄은 한 칸이 표 전체를 덮는다. 그것까지 붙이면 의미가 없다. */
+  .table-scroll > table > tbody > tr.zone-row > td:first-child { position: static; }
+
+  /* **눌리는 대신 밀리게 한다.** `tight` 가 아닌 칸은 남는 폭을 나눠 쓰는데,
+     표가 칸보다 넓으면 그 칸들이 최소 폭까지 줄어든다. 한국어는 글자 단위로
+     줄바꿈되므로 `조치 안 함(위험 수용)` 이 한 글자씩 세로로 쪼개졌다 —
+     표는 칸 안에 들어가고 사람은 못 읽는다.
+
+     최소 폭을 주면 표가 칸을 넘고, 넘으면 `.table-scroll` 이 밀어 준다.
+     첫 칸은 위에서 붙여 두었으니 밀어도 어느 줄인지 잃지 않는다. */
+  .table-scroll > table > thead th:not(.tight):not(.num),
+  .table-scroll > table > tbody > tr > td:not(.tight):not(.num) { min-width: 7rem; }
+}
 
 /* 이름표와 값이 짝을 이루는 표. 이름표 칸에 회색 바탕을 깔면 표 머리처럼
    보여서, 값이 아래가 아니라 오른쪽에 있다는 것을 한 번 더 읽어야 한다. */
@@ -596,7 +673,7 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 
 /* 되돌릴 수 없는 동작. 실수로 누르는 자리가 아니라 마음먹고 찾아오는
    자리여야 한다. */
-.danger-zone { border-color: var(--critical-line); background: #fffafa; }
+.danger-zone { border-color: var(--critical-line); background: var(--critical-wash); }
 .danger-zone p { margin-top: 0; }
 
 /* ============================================================
@@ -668,7 +745,7 @@ td form.inline select, td form.inline input { width: auto; min-width: 8rem; marg
 }
 .done-mark::after {
   content: ""; position: absolute; left: 6px; top: 3px;
-  width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0;
+  width: 5px; height: 10px; border: solid var(--on-dark); border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
 

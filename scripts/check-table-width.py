@@ -12,6 +12,14 @@
 넘치는 표마다 몇 px 넘쳤고 각 칸이 몇 px 를 먹고 있는지 낸다. 고치는 법은
 대개 하나다 — **글자가 들어가는 칸에서 `tight`(줄바꿈 금지)를 뺀다.** 모든
 칸이 `tight` 면 표에 줄어들 자리가 없다.
+
+**1200px 이하에서 넘치는 것은 고장이 아니라 결정이다.** 취약점 표는 아홉 칸이고
+CVE 번호 하나가 110px 쯤을 쓴다 — 1024px 에서 표에 주어지는 폭은 788px 이라
+물리적으로 안 들어간다. 억지로 넣으면 한국어가 한 글자씩 세로로 쪼개진다(해 봤다).
+그래서 좁을 때는 **밀되 첫 칸을 붙여 둔다** (`app.css` 의 `@media (max-width:1200px)`).
+
+그러므로 **봐야 하는 폭은 1280px 이상**이다. 거기서 넘치면 고칠 것이 있다는 뜻이고,
+1024px 의 숫자는 "밀어서 보는 표가 몇 개인가" 로 읽는다.
 """
 import sys
 from playwright.sync_api import sync_playwright
@@ -58,5 +66,10 @@ with sync_playwright() as p:
             over += 1
             print(f"  {url}  표#{row['i']}  {row['w']} > {row['avail']}  ({row['w']-row['avail']}px 넘침)")
             print(f"      {row['cols']}")
-    print(f"\n폭 {WIDTH}px — 넘치는 표 {over}개")
+    if WIDTH >= 1280:
+        print(f"\n폭 {WIDTH}px — 넘치는 표 {over}개"
+              + ("  (고칠 것이 있다)" if over else "  (좋다)"))
+    else:
+        print(f"\n폭 {WIDTH}px — 밀어서 보는 표 {over}개"
+              " (1200px 이하는 결정된 동작 — 첫 칸이 붙어 있다)")
     b.close()
