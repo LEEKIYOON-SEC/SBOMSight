@@ -85,7 +85,7 @@ GRANT ALL PRIVILEGES ON sbomsight.* TO 'sbomsight'@'localhost';
 Copy-Item scripts\env.example.ps1 config\env.ps1
 notepad config\env.ps1          # 비밀번호 채우기
 
-.\mvnw.cmd clean package
+.\mvnw.cmd clean package -DskipTests   # 시험은 개발에서 돈다
 .\scripts\run-server.ps1 -Check     # 준비 상태만 확인
 .\scripts\run-server.ps1 -Listen    # 방화벽까지 열고 기동 (관리자 PowerShell)
 ```
@@ -96,7 +96,7 @@ export SBOMSIGHT_DB_URL='jdbc:mariadb://localhost:3306/sbomsight?...'
 export SBOMSIGHT_DB_PASSWORD='<비밀번호>'
 export SBOMSIGHT_KEYSTORE_PASSWORD='<키스토어비밀번호>'
 
-./mvnw clean package
+./mvnw clean package -DskipTests
 java -jar target/sbomsight-1.0.0.jar
 ```
 

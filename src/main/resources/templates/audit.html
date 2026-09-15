@@ -18,7 +18,7 @@
     </div>
   </th:block>
   <div class="page-header" style="padding-top:0">
-    <!-- 설정과 같은 탭 줄. 여기로 들어온 뒤 돌아갈 길이 있어야 한다. -->
+    <!--/* 설정과 같은 탭 줄. 여기로 들어온 뒤 돌아갈 길이 있어야 한다. */-->
     <div class="tabs">
       <a th:replace="~{fragments/ui :: tab('/settings', '계정', null, false)}"></a>
       <a th:replace="~{fragments/ui :: tab('/settings?tab=ips', '접근 IP', null, false)}"></a>
@@ -69,7 +69,7 @@
         </thead>
         <tbody>
         <tr th:each="a : ${page.content}">
-          <!-- 초까지 찍는다. 같은 분 안에 여러 일이 일어나고, 점검에서 순서를 묻는다. -->
+          <!--/* 초까지 찍는다. 같은 분 안에 여러 일이 일어나고, 점검에서 순서를 묻는다. */-->
           <td class="tight num" th:text="${#temporals.format(a.at, 'yyyy-MM-dd HH:mm:ss')}">—</td>
           <td class="tight" th:text="${#strings.isEmpty(a.actor)} ? '—' : ${a.actor}">—</td>
           <td class="tight">

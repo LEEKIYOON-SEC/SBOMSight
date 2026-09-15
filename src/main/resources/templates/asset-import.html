@@ -40,7 +40,7 @@
         </p>
         <p class="faint" style="margin-bottom:0">
           <span th:text="${filename}">assets.csv</span> ·
-          <!-- 어떤 인코딩으로 읽었는지 밝힌다. 한글이 깨져 보이면 여기부터 본다. -->
+          <!--/* 어떤 인코딩으로 읽었는지 밝힌다. 한글이 깨져 보이면 여기부터 본다. */-->
           <span th:text="${preview.charsetName()} + ' 로 읽음'">UTF-8 로 읽음</span>
           <span th:if="${preview.headerSkipped()}"> · 첫 줄은 제목으로 보고 건너뜀</span>
         </p>
@@ -65,8 +65,8 @@
             </tr>
             </thead>
             <tbody>
-            <!-- 걸러진 줄을 감추지 않는다. "30줄 중 24줄 등록" 만 말하면
-                 나머지 여섯이 무엇이었는지 알 수 없다. -->
+            <!--/* 걸러진 줄을 감추지 않는다. "30줄 중 24줄 등록" 만 말하면
+                 나머지 여섯이 무엇이었는지 알 수 없다. */-->
             <tr th:each="r : ${preview.rows()}"
                 th:style="${r.state().importable()} ? '' : 'opacity:.6'">
               <td class="num tight" th:text="${r.line()}">1</td>

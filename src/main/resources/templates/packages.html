@@ -173,8 +173,8 @@
                                                  ? '#6f7e8d' : ${c.asset.zone.color})"></i>
                       <span th:text="${c.asset.zone.name}">DMZ</span></td>
                     <td class="tight mono" th:text="${c.versionOrDash()}">3.0.7-24</td>
-                    <!-- 비어 있는 것은 "경로가 없는 패키지" 가 아니라 SBOM 이
-                         안 담은 것이다. 그렇게 말한다. -->
+                    <!--/* 비어 있는 것은 "경로가 없는 패키지" 가 아니라 SBOM 이
+                         안 담은 것이다. 그렇게 말한다. */-->
                     <td class="mono faint"
                         th:text="${#strings.isEmpty(c.location)} ? 'SBOM 에 없음' : ${c.location}">/usr/…</td>
                     <td class="tight faint"

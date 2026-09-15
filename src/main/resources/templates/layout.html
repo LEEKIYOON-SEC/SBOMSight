@@ -24,27 +24,27 @@
 
 <div class="shell">
 
-  <!-- 초기 비밀번호에 붙잡혀 있으면 기둥을 통째로 감춘다. 어차피 눌러도
+  <!--/* 초기 비밀번호에 붙잡혀 있으면 기둥을 통째로 감춘다. 어차피 눌러도
        비밀번호 화면으로 되돌아온다 — 되돌아오는 링크를 보여 주면 고장으로
-       읽힌다. -->
+       읽힌다. */-->
   <aside class="side" sec:authorize="isAuthenticated()" th:unless="${passwordLocked}">
     <div class="brand"><a href="/">SBOMSight</a></div>
 
-    <!-- 기둥에 올릴 자격은 "자산을 거치지 않고 물을 수 있는 질문" 이다.
+    <!--/* 기둥에 올릴 자격은 "자산을 거치지 않고 물을 수 있는 질문" 이다.
          "이 CVE 가 어디 있나"(취약점) · "기한 지난 게 있나"(대응) ·
          "보고서 뽑자"(보고서) 는 자격이 있다. "DMZ 자산 보여 줘" 는 자산
-         화면의 거르개이지 기둥이 아니다 — 그래서 ZONE 목록을 걷어냈다. -->
+         화면의 거르개이지 기둥이 아니다 — 그래서 ZONE 목록을 걷어냈다. */-->
     <nav>
       <a href="/" th:classappend="${active} == 'assets' ? 'current' : ''">자산
         <span class="badge" th:text="${navAssetCount}">0</span></a>
       <a href="/vulns" th:classappend="${active} == 'vulns' ? 'current' : ''">취약점</a>
-      <!-- 자산을 거치지 않고 물을 수 있는 질문이라 기둥에 있다 —
-           "openssl 이 어디 깔려 있나". 취약점이 붙기 전에도 답해야 한다. -->
+      <!--/* 자산을 거치지 않고 물을 수 있는 질문이라 기둥에 있다 —
+           "openssl 이 어디 깔려 있나". 취약점이 붙기 전에도 답해야 한다. */-->
       <a href="/packages" th:classappend="${active} == 'packages' ? 'current' : ''">패키지</a>
       <a href="/actions" th:classappend="${active} == 'actions' ? 'current' : ''">대응
-        <!-- 기한이 지난 것이 있으면 그 수를 붉게. 화면을 열기 전에 알아야 한다.
+        <!--/* 기한이 지난 것이 있으면 그 수를 붉게. 화면을 열기 전에 알아야 한다.
              조치 기한과 재검토일을 한 숫자로 합친다 — 기둥에서 갈라 놓으면
-             어느 쪽이 급한지 두 번 보게 된다. -->
+             어느 쪽이 급한지 두 번 보게 된다. */-->
         <span class="badge alert" th:if="${navActionOverdue > 0}"
               th:text="${navActionOverdue}">0</span>
         <span class="badge" th:if="${navActionOverdue == 0 && navActionOpen > 0}"
@@ -56,9 +56,9 @@
 
     <div class="spacer"></div>
 
-    <!-- 누를 곳 하나에 갈 곳이 셋이면 그건 링크가 아니라 메뉴다.
+    <!--/* 누를 곳 하나에 갈 곳이 셋이면 그건 링크가 아니라 메뉴다.
          앞서는 계정 이름이 곧바로 /password 로 가서 "왜 비밀번호 변경으로
-         가지?" 가 됐다. -->
+         가지?" 가 됐다. */-->
     <div class="me">
       <details class="menu">
         <summary>
@@ -74,8 +74,8 @@
           <a href="/me">내 계정</a>
           <a href="/password">비밀번호 변경</a>
           <hr>
-          <!-- 로그아웃은 POST 다. GET 이면 링크를 미리 읽는 도구가 세션을 끊는다.
-               CSRF 토큰은 타임리프가 폼에 자동으로 넣는다. -->
+          <!--/* 로그아웃은 POST 다. GET 이면 링크를 미리 읽는 도구가 세션을 끊는다.
+               CSRF 토큰은 타임리프가 폼에 자동으로 넣는다. */-->
           <form th:action="@{/logout}" method="post">
             <button type="submit">로그아웃</button>
           </form>

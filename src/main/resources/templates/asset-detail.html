@@ -57,7 +57,7 @@
     </div>
   </div>
 
-  <!-- ══ 개요 ══════════════════════════════════════════════════════ -->
+  <!--/* ══ 개요 ══════════════════════════════════════════════════════ */-->
   <div class="body" th:if="${tab} == 'overview'">
 
     <!--/*
@@ -102,8 +102,8 @@
       </div>
     </div>
 
-    <!-- SBOM 업로드는 자산 안에 있다. 어느 자산 것인지 나중에 정하는 길을
-         열어 두면, 어디에도 속하지 않는 결과가 쌓인다. -->
+    <!--/* SBOM 업로드는 자산 안에 있다. 어느 자산 것인지 나중에 정하는 길을
+         열어 두면, 어디에도 속하지 않는 결과가 쌓인다. */-->
     <div class="card" sec:authorize="hasRole('ADMIN')">
       <div class="card-header"><h2 class="card-title">SBOM 올리기</h2></div>
       <div class="card-body">
@@ -177,8 +177,8 @@
     <form method="get" class="filters">
       <input type="hidden" name="tab" value="vulns">
       <span class="segmented">
-        <!-- `links` 로 만든다. `@{…(group=${g}, q=${q}, …)}` 는 값이 없어도
-             이름을 적어서 `&q=&severity=&fixable=&kev=` 가 따라붙었다(N12). -->
+        <!--/* `links` 로 만든다. `@{…(group=${g}, q=${q}, …)}` 는 값이 없어도
+             이름을 적어서 `&q=&severity=&fixable=&kev=` 가 따라붙었다(N12). */-->
         <a th:each="g : ${ {'item','cve','package'} }"
            th:href="@{${links.group(g)}}"
            th:classappend="${group} == ${g} ? 'current' : ''"
@@ -225,8 +225,8 @@
         </th:block>
       </th:block>
 
-      <!-- CVE별·패키지별은 전체 화면에서 본다. 자산 하나로 좁히면 CVE 마다
-           자산 수가 언제나 1 이라 묶는 뜻이 없다. -->
+      <!--/* CVE별·패키지별은 전체 화면에서 본다. 자산 하나로 좁히면 CVE 마다
+           자산 수가 언제나 1 이라 묶는 뜻이 없다. */-->
       <th:block th:if="${group} != 'item'">
         <div th:replace="~{fragments/ui :: empty('이 묶음은 전체 화면에서 봅니다',
                           '자산 하나로 좁히면 CVE 마다 자산 수가 언제나 1 이라 묶는 뜻이 없습니다.',
@@ -283,8 +283,8 @@
             </td>
             <td class="tight faint" th:text="${#strings.isEmpty(c.type)} ? '—' : ${c.type}">rpm</td>
             <td class="tight mono" th:text="${c.versionOrDash()}">3.0.7-24</td>
-            <!-- 비어 있는 것은 "경로가 없는 패키지" 가 아니라 SBOM 이 안
-                 담은 것이다. 그렇게 말한다. -->
+            <!--/* 비어 있는 것은 "경로가 없는 패키지" 가 아니라 SBOM 이 안
+                 담은 것이다. 그렇게 말한다. */-->
             <td class="mono faint"
                 th:text="${#strings.isEmpty(c.location)} ? 'SBOM 에 없음' : ${c.location}">/usr/…</td>
           </tr>
@@ -299,7 +299,7 @@
     </div>
   </div>
 
-  <!-- ══ 검사 이력 ══════════════════════════════════════════════════ -->
+  <!--/* ══ 검사 이력 ══════════════════════════════════════════════════ */-->
   <div class="body flush" th:if="${tab} == 'history'">
     <th:block th:if="${history.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('아직 검사가 없습니다',
@@ -322,7 +322,7 @@
         <tr th:each="s : ${history}">
           <td class="tight">
             <span class="mono" th:text="${#temporals.format(s.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
-            <!-- 자산이 바뀐 것과 취약점 DB 가 바뀐 것은 완전히 다른 이야기다. -->
+            <!--/* 자산이 바뀐 것과 취약점 DB 가 바뀐 것은 완전히 다른 이야기다. */-->
             <div class="faint" th:if="${s.isRescan()}"
                  th:text="'다시 검사 (원본 ' + ${s.rescanOf} + ')'">다시 검사</div>
           </td>

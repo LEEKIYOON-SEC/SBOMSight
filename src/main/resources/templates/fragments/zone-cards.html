@@ -22,13 +22,13 @@
       <b th:text="${g.zone.name}">DMZ</b>
       <span class="faint num" th:text="${g.serverCount()} + '대'">0대</span>
       <span class="spacer"></span>
-      <!-- 검사가 없는 자산이 섞여 있으면 그 수부터 알려 준다. 탐지 0건과
-           "아직 안 봤다" 는 완전히 다른 이야기다. -->
+      <!--/* 검사가 없는 자산이 섞여 있으면 그 수부터 알려 준다. 탐지 0건과
+           "아직 안 봤다" 는 완전히 다른 이야기다. */-->
       <span class="tag nofix" th:if="${g.unscannedCount() > 0}"
             th:text="'검사 없음 ' + ${g.unscannedCount()}">검사 없음 0</span>
     </div>
 
-    <!-- 큰 수치 하나. 먼저 볼 것은 '심각 + 높음' 이다. -->
+    <!--/* 큰 수치 하나. 먼저 볼 것은 '심각 + 높음' 이다. */-->
     <div class="stat">
       <b th:text="${g.severityCount('critical') + g.severityCount('high')}">0</b>
       <span>심각 · 높음</span>
@@ -51,7 +51,7 @@
         <i class="mark low"></i>낮음 <b th:text="${g.severityCount('low')}">0</b></span>
     </div>
 
-    <!-- 카드의 요점. 자산이 여기 있으니 눌러서 다른 화면으로 튕기지 않는다. -->
+    <!--/* 카드의 요점. 자산이 여기 있으니 눌러서 다른 화면으로 튕기지 않는다. */-->
     <div class="servers" th:unless="${g.isEmpty()}">
       <a th:each="row : ${g.rows}" th:href="@{'/assets/' + ${row.asset.id}}">
         <b th:text="${row.asset.name}">web-01</b>

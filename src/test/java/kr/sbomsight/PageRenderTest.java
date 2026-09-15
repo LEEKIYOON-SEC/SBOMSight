@@ -569,6 +569,32 @@ class PageRenderTest {
         }
     }
 
+    /**
+     * 화면 소스에 <b>우리끼리 하는 이야기</b>가 실려 나가지 않는다.
+     *
+     * <p>타임리프에서 {@code <!-- ... -->} 는 그대로 브라우저로 간다. 한 화면에
+     * 백 개가 넘게 실려 있었고, 그 안에는 시험 클래스 이름과 "그때 이래서 이렇게
+     * 고쳤다" 같은 개발 메모가 들어 있었다. 쓰는 사람에게는 보이지 않지만
+     * <b>소스 보기를 누르면 그대로 보인다</b> — 납품물에 개발 노트가 붙어 있는
+     * 셈이다.
+     *
+     * <p>여는 자리를 {@code <!--} 대신 {@code <!--}+{@code /*} 로 적으면(닫는 자리도
+     * 짝을 맞춘다) 타임리프가 파싱하면서 걷어내므로 <b>소스에는 남고 화면에는
+     * 나가지 않는다.</b> 주석을 지우는 것이 아니라 나가는 곳만 막는 것이다.
+     */
+    @Test
+    @DisplayName("화면 소스에 개발자 주석이 실려 나가지 않는다")
+    void noDeveloperCommentsReachTheBrowser() throws Exception {
+        for (String url : everyScreen()) {
+            String html = mvc.perform(get(url).with(user("tester").roles("ADMIN")))
+                    .andReturn().getResponse().getContentAsString();
+
+            assertThat(html)
+                    .as("%s 의 소스에 주석이 남아 있다 — <!--/* 로 적으면 나가지 않는다", url)
+                    .doesNotContain("<!--");
+        }
+    }
+
     /** 조회 계정에 관리자 화면은 열리지 않는다. 여기서는 403 이 정답이다. */
     @Test
     @DisplayName("조회 계정에 관리자 화면은 막힌다")

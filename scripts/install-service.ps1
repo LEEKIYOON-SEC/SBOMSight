@@ -27,7 +27,7 @@
 
 .PARAMETER Stop
     지금 내린다. **판올림 전에 반드시 한다** — 도는 동안에는 jar 가 잠겨 있어
-    `.\mvnw.cmd clean package` 가 그 파일을 지우지 못하고 빌드가 실패한다.
+    `.\mvnw.cmd clean package -DskipTests` 가 그 파일을 지우지 못하고 빌드가 실패한다.
 
 .EXAMPLE
     관리자 PowerShell 에서:
@@ -166,7 +166,7 @@ if ($Start) {
 
 # --- 등록 ------------------------------------------------------------------
 if (-not (Test-Path $Jar)) {
-    throw "$Jar 가 없습니다. .\mvnw.cmd clean package 를 먼저 실행하세요."
+    throw "$Jar 가 없습니다. .\mvnw.cmd clean package -DskipTests 를 먼저 실행하세요."
 }
 
 # 자바를 전체 경로로 못 박는다. SYSTEM 의 PATH 는 로그인 계정의 것과 다르다.

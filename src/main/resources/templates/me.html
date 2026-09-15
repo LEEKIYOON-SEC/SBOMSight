@@ -30,8 +30,8 @@
               <td th:text="${me.lastLoginAt != null}
                            ? ${#temporals.format(me.lastLoginAt, 'yyyy-MM-dd HH:mm')} : '—'">—</td>
               <th>그 전 로그인</th>
-              <!-- 처음 들어온 계정은 여기가 비어 있다. 그것이 '최초 로그인'
-                   과 '관리자가 초기화함' 을 가르는 값이기도 하다. -->
+              <!--/* 처음 들어온 계정은 여기가 비어 있다. 그것이 '최초 로그인'
+                   과 '관리자가 초기화함' 을 가르는 값이기도 하다. */-->
               <td th:text="${me.previousLoginAt != null}
                            ? ${#temporals.format(me.previousLoginAt, 'yyyy-MM-dd HH:mm')}
                            : '이번이 처음입니다'">—</td></tr>

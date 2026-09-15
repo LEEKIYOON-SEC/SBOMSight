@@ -46,7 +46,7 @@
       </select>
     </label>
 
-    <!-- 조치 탭의 거르개 -->
+    <!--/* 조치 탭의 거르개 */-->
     <label th:if="${tab} != 'analyses'">상태
       <select name="status" onchange="this.form.submit()">
         <option value="">전체</option>
@@ -71,7 +71,7 @@
 
   <div class="body flush">
 
-    <!-- ══ 조치 ══════════════════════════════════════════════════════ -->
+    <!--/* ══ 조치 ══════════════════════════════════════════════════════ */-->
     <th:block th:if="${tab} != 'analyses'">
       <div th:if="${!overdue.isEmpty()}" class="banner warn">
         <b th:text="'기한이 지난 조치 ' + ${overdue.size()} + '건'">기한 경과</b>
@@ -122,7 +122,7 @@
       </div>
     </th:block>
 
-    <!-- ══ 검토 결과 ══════════════════════════════════════════════════ -->
+    <!--/* ══ 검토 결과 ══════════════════════════════════════════════════ */-->
     <th:block th:if="${tab} == 'analyses'">
       <div th:if="${!overdue.isEmpty()}" class="banner danger">
         <b th:text="'재검토일이 지난 것 ' + ${overdue.size()} + '건'">재검토 기한 경과</b>
@@ -145,12 +145,12 @@
             <th class="tight">자산</th><th class="tight">구역</th>
             <th class="tight">취약점</th><th class="tight">패키지</th>
             <th class="tight">상태</th><th>대응</th>
-            <!-- 한 칸에 두 가지를 넣지 않는다. 고르는 것(근거)과 적는 것(설명)은
+            <!--/* 한 칸에 두 가지를 넣지 않는다. 고르는 것(근거)과 적는 것(설명)은
                  다른 것이라 열을 가른다.
 
                  근거에는 `tight` 를 주지 않는다 — 아홉 가지 중 긴 것
                  ("취약한 코드가 들어 있지 않음")이 줄바꿈 없이 들어가면 표가
-                 칸을 넘고, 넘은 만큼 오른쪽 칸이 잘린다. -->
+                 칸을 넘고, 넘은 만큼 오른쪽 칸이 잘린다. */-->
             <th>근거</th><th>설명</th>
             <th class="tight">기록</th><th class="tight">재검토일</th>
           </tr>
@@ -172,8 +172,8 @@
                                 : (${a.open} ? 'medium' : 'low')"><i></i>
                 <span th:text="${a.state.label()}">해당됨</span></span>
             </td>
-            <!-- 대응 이름 중 긴 것("조치 안 함 (위험 수용)")이 줄바꿈 없이
-                 들어가면 표가 칸을 넘는다. 여기도 `tight` 를 주지 않는다. -->
+            <!--/* 대응 이름 중 긴 것("조치 안 함 (위험 수용)")이 줄바꿈 없이
+                 들어가면 표가 칸을 넘는다. 여기도 `tight` 를 주지 않는다. */-->
             <td>
               <span th:if="${a.response != null}"
                     th:text="${a.response.label()}">조치 안 함 (위험 수용)</span>
@@ -190,8 +190,8 @@
                    th:text="'다른 통제: ' + ${a.otherControl}"></div>
             </td>
 
-            <!-- 시스템이 아는 것만 적는다 — 로그인 계정과 시각. 결재 문서
-                 번호는 사람이 적는 칸이라 비어 있을 수 있다. -->
+            <!--/* 시스템이 아는 것만 적는다 — 로그인 계정과 시각. 결재 문서
+                 번호는 사람이 적는 칸이라 비어 있을 수 있다. */-->
             <td class="tight">
               <div th:text="${a.updatedBy}">admin</div>
               <div class="faint num"
