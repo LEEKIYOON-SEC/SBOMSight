@@ -242,11 +242,16 @@ $env:SBOMSIGHT_GRYPE = "$env:LOCALAPPDATA\SBOMSight\bin\grype.exe"
 ## 7단계 — 빌드
 
 ```powershell
-.\mvnw.cmd clean package
+.\mvnw.cmd clean package -DskipTests
 ```
 
 처음에는 Maven 과 의존성을 받느라 몇 분 걸린다. 끝나면
 `target\sbomsight-1.0.0.jar` 가 생긴다.
+
+> **`-DskipTests` 가 붙는 이유.** 시험은 개발에서 도는 것이고, 운영 PC 에서
+> 필요한 것은 결과물뿐이다. 빼면 시험 274개가 함께 돌면서 화면이 몇 분 동안
+> 시험 클래스 이름으로 채워진다 — 빌드가 느려지고, 무엇을 설치하고 있는지도
+> 잘 안 보인다. **컴파일은 그대로 한다** — 코드가 깨졌으면 여기서 멈춘다.
 
 ### 확인
 
@@ -254,8 +259,8 @@ $env:SBOMSIGHT_GRYPE = "$env:LOCALAPPDATA\SBOMSight\bin\grype.exe"
 Test-Path target\sbomsight-1.0.0.jar
 ```
 
-> 시험까지 돌려 보려면 `.\mvnw.cmd test`. H2 메모리 DB 로 돌기 때문에 DB 를
-> 건드리지 않는다.
+> 시험까지 돌려 보고 싶으면 `.\mvnw.cmd test`. H2 메모리 DB 로 돌기 때문에
+> 이 PC 의 DB 를 건드리지 않는다. 설치에 필요한 절차는 아니다.
 
 ---
 
@@ -444,7 +449,7 @@ CycloneDX · SPDX · syft 자체 형식 모두 받는다. grype 이 읽을 수 �
 나온다.
 
 ```powershell
-syft registry:python:3.10-slim -o cyclonedx-json > test-sbom.json
+syft registry:python:3.10-slim -o cyclonedx-json > sample-sbom.json
 ```
 </details>
 
@@ -613,7 +618,7 @@ mysqldump -u root -p --single-transaction --routines sbomsight > C:\work\backup-
 
 ```powershell
 git pull
-.\mvnw.cmd clean package
+.\mvnw.cmd clean package -DskipTests
 .\scripts\install-service.ps1 -Start     # 서비스로 등록했다면
 .\scripts\run-server.ps1                 # 아니면 이쪽
 ```
@@ -660,6 +665,35 @@ UTF-8 바이트가 CP949 lead 바이트로 해석되면서 **뒤따르는 ASCII 
 git checkout -- scripts/
 Format-Hex -Path .\scripts\run-server.ps1 -Count 3   # 첫 3바이트가 EF BB BF
 ```
+
+### 어제까지 잘 되다가 **재부팅한 다음부터** 기동이 안 된다 (`RSA public key ...`)
+
+기동 로그 끝에 이런 줄이 있으면 이것이다. `HikariPool` 이 접속을 다시 시도하는
+줄이 여러 번 찍히다가 마지막에 나온다.
+
+```
+RSA public key is not available client side (option serverRsaPublicKeyFile not set)
+```
+
+**DB 는 정상이고 비밀번호도 맞다.** MySQL 8 은 한 번 인증한 계정을 서버 메모리에
+캐시해 두고 그동안은 간단한 경로로 접속을 받아 주는데, 그 캐시는 **DB 서버가 다시
+뜰 때 비워진다.** 비워진 뒤 첫 접속은 전체 인증을 해야 하고, 전체 인증에는 TLS
+연결이거나 서버의 RSA 공개키가 필요하다. 접속 주소에 옵션 하나가 빠져 있으면 거기서
+멈춘다.
+
+`config\env.ps1` 의 접속 주소 끝에 **`&allowPublicKeyRetrieval=true`** 를 더한다.
+
+```powershell
+$env:SBOMSIGHT_DB_URL = 'jdbc:mariadb://localhost:3306/sbomsight?sslMode=disable&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true'
+```
+
+같은 PC 안의 접속(`localhost`)이라 공개키를 받아 오는 경로가 밖으로 나가지 않는다.
+**DB 를 다른 PC 에 두었다면** 이 옵션 대신 `sslMode=disable` 을 `sslMode=trust` 로
+바꾼다 — 암호화된 연결 위에서는 공개키를 따로 받지 않는다.
+
+> 이 문구를 만나면 기동 화면이 **무엇을 고쳐야 하는지 한국어로** 알려 준다
+> (`DataSourceFailureAnalyzer`). 그래도 여기 적어 두는 것은, 그 화면을 못 보고
+> 로그만 받아 보는 경우가 있기 때문이다.
 
 ### `java.exe : openjdk version ...` 이 빨간 오류로 뜬다
 

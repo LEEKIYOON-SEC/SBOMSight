@@ -38,8 +38,18 @@ spring:
     # MariaDB Connector/J 를 쓴다. MariaDB 와 MySQL 8 둘 다 이 주소로 붙는다.
     #   sslMode=disable            같은 PC 안이라 TLS 를 걸지 않는다. 밖에 두면 바꾼다.
     #   rewriteBatchedStatements   grype 한 번에 수만 건이 들어온다. 묶어 보낸다.
+    #   allowPublicKeyRetrieval    MySQL 8 의 caching_sha2_password 때문이다. 아래 참조.
     # 문자셋은 드라이버 기본이 utf8mb4 라 따로 적지 않는다.
-    url: ${SBOMSIGHT_DB_URL:jdbc:mariadb://127.0.0.1:13306/sbomsight?sslMode=disable&rewriteBatchedStatements=true}
+    #
+    # **allowPublicKeyRetrieval 을 빼면 DB 서버가 재부팅된 다음부터 기동이 막힌다.**
+    # MySQL 8 은 한 번 인증한 계정을 메모리에 캐시해 두고 그동안은 간단한 경로로
+    # 받아 주는데, 그 캐시는 서버가 다시 뜨면 비워진다. 그 뒤 첫 접속은 전체 인증을
+    # 해야 하고, 전체 인증은 TLS 이거나 서버의 RSA 공개키가 있어야 한다. 둘 다 없으면
+    # 드라이버가 "RSA public key is not available client side" 로 멈춘다 — DB 는
+    # 멀쩡하고 비밀번호도 맞는데 아침에 안 뜨는, 가장 알아보기 어려운 모양이 된다.
+    # 실제로 실 PC 에서 그렇게 하루를 잃었다. DB 를 다른 PC 에 두면 이 옵션 대신
+    # sslMode=trust 로 붙는다 — 암호화된 연결 위에서는 공개키가 필요 없다.
+    url: ${SBOMSIGHT_DB_URL:jdbc:mariadb://127.0.0.1:13306/sbomsight?sslMode=disable&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true}
     username: ${SBOMSIGHT_DB_USER:sbomsight}
     password: ${SBOMSIGHT_DB_PASSWORD:devpass}
     hikari:

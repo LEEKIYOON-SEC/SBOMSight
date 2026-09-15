@@ -26,7 +26,17 @@ $env:SBOMSIGHT_KEYSTORE          = 'file:./config/keystore.p12'
 $env:SBOMSIGHT_KEYSTORE_PASSWORD = '여기에-키스토어-비밀번호'
 
 # --- 데이터베이스 ---
-$env:SBOMSIGHT_DB_URL      = 'jdbc:mariadb://localhost:3306/sbomsight?sslMode=disable&rewriteBatchedStatements=true'
+#
+# allowPublicKeyRetrieval=true 를 빼지 마라. MySQL 8 은 한 번 인증한 계정을
+# 메모리에 캐시해 두고 그동안은 간단한 경로로 받아 주는데, 그 캐시는 **DB 서버가
+# 다시 뜨면 비워진다.** 그 뒤 첫 접속은 전체 인증을 해야 하고, 전체 인증은 TLS
+# 이거나 서버의 RSA 공개키가 있어야 한다. 둘 다 없으면 드라이버가
+# "RSA public key is not available client side" 로 멈춘다 — DB 는 멀쩡하고
+# 비밀번호도 맞는데 재부팅한 다음 날 아침에 안 뜨는 모양이 된다.
+#
+# DB 를 다른 PC 에 두었다면 이 옵션 대신 sslMode=trust 를 쓴다 — 암호화된 연결
+# 위에서는 공개키를 따로 받지 않는다.
+$env:SBOMSIGHT_DB_URL      = 'jdbc:mariadb://localhost:3306/sbomsight?sslMode=disable&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true'
 $env:SBOMSIGHT_DB_USER     = 'sbomsight'
 $env:SBOMSIGHT_DB_PASSWORD = '여기에-DB-비밀번호'
 

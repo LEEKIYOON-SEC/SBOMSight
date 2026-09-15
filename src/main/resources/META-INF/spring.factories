@@ -1,0 +1,6 @@
+# 기동 실패를 한국어로 풀어 주는 분석기.
+#
+# 스프링 부트 3 에서도 FailureAnalyzer 는 이 파일에서 읽는다
+# (자동설정만 META-INF/spring/*.imports 로 옮겨졌다).
+org.springframework.boot.diagnostics.FailureAnalyzer=\
+kr.sbomsight.config.DataSourceFailureAnalyzer
