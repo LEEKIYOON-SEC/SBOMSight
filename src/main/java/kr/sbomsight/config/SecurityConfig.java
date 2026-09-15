@@ -34,7 +34,7 @@ public class SecurityConfig {
      * 그렇게 됐다.
      */
     private static final String[] PUBLIC = {
-            "/login", "/css/**", "/js/**", "/fonts/**",
+            "/login", "/css/**", "/js/**", "/fonts/**", "/vendor/**",
             "/favicon.svg", "/favicon.ico", "/error"
     };
 

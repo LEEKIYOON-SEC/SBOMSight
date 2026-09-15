@@ -42,6 +42,14 @@ MEASURE = r"""
     return .2126*f[0] + .7152*f[1] + .0722*f[2];
   };
   const parse = (s) => {
+    // 크로뮴은 `light-dark()` · `color-mix()` 로 정한 색을 `color(srgb …)` 로
+    // 돌려준다. 그 꼴을 못 읽으면 **바탕이 없는 것으로 보고 흰색으로 세어**
+    // 멀쩡한 자리를 낮은 대비로 잡는다(Tabler 를 깐 뒤 그렇게 됐다).
+    const srgb = s.match(/color\(srgb\s+([^)]+)\)/);
+    if (srgb) {
+      const p = srgb[1].split(/[\s/]+/).filter(Boolean).map(Number);
+      return { rgb: p.slice(0, 3).map(v => v * 255), a: p.length > 3 ? p[3] : 1 };
+    }
     const m = s.match(/rgba?\(([^)]+)\)/);
     if (!m) return null;
     const p = m[1].split(/[,\s/]+/).filter(Boolean).map(Number);
@@ -55,6 +63,8 @@ MEASURE = r"""
         return c.a === 1 ? c.rgb : mix(c.rgb, bgOf(n.parentElement) || [255,255,255], c.a);
       }
     }
+    // 끝까지 투명하면 흰색(body 가 흰색이다). 읽을 수 없는 꼴이면 null 을
+    // 돌려준다 — 흰색으로 치면 멀쩡한 자리가 낮은 대비로 잡힌다.
     return [255, 255, 255];
   };
   const ratio = (a, b) => {
@@ -85,6 +95,7 @@ MEASURE = r"""
     const fg = parse(st.color);
     if (!fg) return;
     const bg = bgOf(el);
+    if (!bg) { out.push({ unreadable: true, where: path(el), color: st.color }); return; }
     const size = parseFloat(st.fontSize);
     const weight = parseInt(st.fontWeight, 10) || 400;
     const large = size >= 24 || (size >= 18.66 && weight >= 700);
@@ -110,9 +121,12 @@ with sync_playwright() as p:
     pg.fill('input[name=password]', 'devadmin1234')
     pg.click('button[type=submit]')
     pg.wait_for_load_state('networkidle')
+    # 마우스가 단추 위에 남아 있으면 그 단추만 hover 색으로 잡힌다. 치운다.
+    pg.mouse.move(0, 0)
 
     # 같은 자리를 화면마다 다시 내지 않는다. 한 번 고치면 한 번에 사라진다.
     seen = {}
+    unreadable = {}
     for url in SCREENS:
         r = pg.goto(BASE + url)
         if r.status >= 400:
@@ -120,6 +134,9 @@ with sync_playwright() as p:
             continue
         pg.wait_for_load_state('networkidle')
         for hit in pg.evaluate(MEASURE):
+            if hit.get('unreadable'):
+                unreadable.setdefault((hit['where'], hit['color']), url)
+                continue
             key = (hit['where'], hit['color'], hit['bg'], hit['size'])
             seen.setdefault(key, (hit, url))
 
@@ -127,6 +144,11 @@ with sync_playwright() as p:
         print(f"  {hit['got']:>5.2f} : 1  (필요 {hit['need']})  {hit['size']}px/{hit['weight']}"
               f"  {hit['color']} on {hit['bg']}")
         print(f"             {hit['where']}   {hit['text']!r}   ({url})")
+
+    if unreadable:
+        print(f"\n색을 읽지 못한 자리 {len(unreadable)}개 (oklab 등 — 세지 않았다)")
+        for (where, color), url in list(unreadable.items())[:5]:
+            print(f"   {where}  {color}  ({url})")
 
     print(f"\n대비가 낮은 자리 {len(seen)}개 — WCAG 2.1 AA (보통 4.5:1 · 큰 글자 3:1)")
     b.close()

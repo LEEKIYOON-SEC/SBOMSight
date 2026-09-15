@@ -16,12 +16,13 @@
   */-->
   <div th:replace="~{fragments/ui :: pagehead('내 계정', ${me.username}, ~{}, ~{})}"></div>
 
-  <div class="body">
+  <div class="page-body">
+    <div class="container-xl">
 
     <div class="card">
       <div class="card-header"><h2 class="card-title">계정 정보</h2></div>
       <div class="card-body">
-        <table class="kv">
+        <table class="table kv">
           <tr><th style="width:8rem">계정</th>
               <td class="mono" th:text="${me.username}">admin</td>
               <th style="width:8rem">권한</th>
@@ -40,12 +41,12 @@
               <th></th><td></td></tr>
         </table>
 
-        <form method="post" th:action="@{/me}" class="inline-form" style="margin-top:16px">
-          <label style="margin:0">표시 이름
-            <input name="displayName" th:value="${me.displayName}" autocomplete="off"
+        <form method="post" th:action="@{/me}" class="d-flex align-items-end gap-2 flex-wrap" style="margin-top:16px">
+          <label class="form-label" style="margin:0">표시 이름
+            <input class="form-control" name="displayName" th:value="${me.displayName}" autocomplete="off"
                    placeholder="홍길동 · 인프라운영팀">
           </label>
-          <button class="btn primary" type="submit">저장</button>
+          <button class="btn btn-dark" type="submit">저장</button>
         </form>
         <!--/*
           **있는 그대로 적는다.** 앞서 `목록과 기록에 함께 찍히는 이름` 이라고
@@ -64,7 +65,7 @@
     <div class="card">
       <div class="card-header"><h2 class="card-title">비밀번호</h2></div>
       <div class="card-body">
-        <table class="kv">
+        <table class="table kv">
           <tr><th style="width:8rem">마지막 변경</th>
               <td th:text="${me.passwordChangedAt != null}
                            ? ${#temporals.format(me.passwordChangedAt, 'yyyy-MM-dd')} : '—'">—</td>
@@ -82,13 +83,15 @@
               </td></tr>
         </table>
 
-        <div th:if="${reason.isForced()}" class="banner warn" style="margin-top:12px"
+        <div th:if="${reason.isForced()}" class="alert alert-warning" style="margin-top:12px"
              th:text="${reason.lede()}">지금 바꿔야 합니다.</div>
 
         <div class="btn-list" style="margin-top:16px">
-          <a class="btn primary" href="/password">비밀번호 변경</a>
+          <a class="btn btn-dark" href="/password">비밀번호 변경</a>
         </div>
       </div>
+    </div>
+  </div>
     </div>
   </div>
 

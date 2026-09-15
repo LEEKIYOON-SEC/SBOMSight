@@ -5,20 +5,23 @@
 <main>
 
   <div th:replace="~{fragments/ui :: pagehead('설정', null, ~{}, ~{})}"></div>
-  <div class="page-header" style="padding-top:0">
-    <div class="tabs">
-      <a th:replace="~{fragments/ui :: tab('/settings', '계정', null, ${tab} == 'accounts')}"></a>
-      <a th:replace="~{fragments/ui :: tab('/settings?tab=ips', '접근 IP', null, ${tab} == 'ips')}"></a>
-      <a th:replace="~{fragments/ui :: tab('/settings?tab=tools', '도구', null, ${tab} == 'tools')}"></a>
-      <a th:replace="~{fragments/ui :: tab('/settings/audit', '감사 로그', null, false)}"></a>
+  <div class="page-header d-print-none pt-0">
+    <div class="container-xl">
+    <ul class="nav nav-tabs">
+      <li th:replace="~{fragments/ui :: tab('/settings', '계정', null, ${tab} == 'accounts')}"></li>
+      <li th:replace="~{fragments/ui :: tab('/settings?tab=ips', '접근 IP', null, ${tab} == 'ips')}"></li>
+      <li th:replace="~{fragments/ui :: tab('/settings?tab=tools', '도구', null, ${tab} == 'tools')}"></li>
+      <li th:replace="~{fragments/ui :: tab('/settings/audit', '감사 로그', null, false)}"></li>
+    </ul>
     </div>
   </div>
 
-  <div class="body">
+  <div class="page-body">
+    <div class="container-xl">
 
   <h2 id="accounts" th:if="${tab} == 'accounts'">계정</h2>
   <div class="card" th:if="${tab} == 'accounts'">
-    <table>
+    <table class="table table-vcenter card-table">
       <thead>
       <tr>
         <th class="tight">계정</th><th class="tight">권한</th>
@@ -57,46 +60,46 @@
                            data-role=${u.role.name()}, data-enabled=${u.enabled}">수정</button>
           <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/unlock'}" class="inline"
                 th:if="${row.locked}">
-            <button type="submit" class="btn small">잠금 해제</button>
+            <button type="submit" class="btn btn-sm">잠금 해제</button>
           </form>
           <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/reset'}" class="inline"
                 onsubmit="return confirm('비밀번호를 계정 이름과 같게 되돌립니다.\n본인이 로그인해 새 비밀번호를 정해야 합니다.\n\n계속할까요?')">
-            <button type="submit" class="btn small">비밀번호 초기화</button>
+            <button type="submit" class="btn btn-sm">비밀번호 초기화</button>
           </form>
           <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/delete'}" class="inline"
                 onsubmit="return confirm('이 계정을 지웁니다. 되돌릴 수 없습니다.\n\n계속할까요?')">
-            <button type="submit" class="btn small danger">삭제</button>
+            <button type="submit" class="btn btn-sm btn-outline-danger">삭제</button>
           </form>
         </td>
       </tr>
       </tbody>
     </table>
 
-    <form method="post" th:action="@{/settings/users}" class="inline-form" style="margin-top:1rem">
-      <label>계정 이름
-        <input name="username" required autocomplete="off" placeholder="hong.gildong">
+    <form method="post" th:action="@{/settings/users}" class="d-flex align-items-end gap-2 flex-wrap" style="margin-top:1rem">
+      <label class="form-label">계정 이름
+        <input class="form-control" name="username" required autocomplete="off" placeholder="hong.gildong">
       </label>
-      <label>이름
-        <input name="displayName" autocomplete="off" placeholder="홍길동 · 인프라운영팀">
+      <label class="form-label">이름
+        <input class="form-control" name="displayName" autocomplete="off" placeholder="홍길동 · 인프라운영팀">
       </label>
-      <label>비밀번호
-        <input name="password" type="password" required minlength="8" autocomplete="new-password">
+      <label class="form-label">비밀번호
+        <input class="form-control" name="password" type="password" required minlength="8" autocomplete="new-password">
       </label>
-      <label>권한
-        <select name="role">
+      <label class="form-label">권한
+        <select class="form-select" name="role">
           <option value="VIEWER">조회 — 읽기 전용</option>
           <option value="ADMIN">관리자 — 전체 권한</option>
         </select>
       </label>
-      <button class="btn primary" type="submit">계정 추가</button>
+      <button class="btn btn-dark" type="submit">계정 추가</button>
     </form>
   </div>
 
   <h2 id="ips" th:if="${tab} == 'ips'">접근 IP</h2>
   <div class="card" th:if="${tab} == 'ips'">
     <form method="post" th:action="@{/settings/ips}">
-      <label>접속을 허용할 IP · 대역
-        <textarea name="allowedIps" rows="4" th:text="${allowedIps}"
+      <label class="form-label">접속을 허용할 IP · 대역
+        <textarea class="form-control" name="allowedIps" rows="4" th:text="${allowedIps}"
                   placeholder="192.168.10.0/24&#10;10.0.0.5"></textarea>
       </label>
       <!--/* 지금 어떤 상태인가는 남긴다. 이것은 설명이 아니라 값이다. */-->
@@ -105,7 +108,7 @@
         <b th:unless="${unrestricted}">제한 중</b>
         · 지금 접속 주소 <code th:text="${clientIp}">127.0.0.1</code>
       </p>
-      <button class="btn primary" type="submit">저장</button>
+      <button class="btn btn-dark" type="submit">저장</button>
 
       <details class="help">
         <summary>쓰는 방법과 주의</summary>
@@ -126,7 +129,7 @@
 
   <h2 id="tools" th:if="${tab} == 'tools'">도구 상태</h2>
   <div class="card" th:if="${tab} == 'tools'">
-    <table class="kv">
+    <table class="table kv">
       <tr>
         <th>grype</th>
         <td>
@@ -144,12 +147,14 @@
     </table>
     <!--/* 이것은 설명문이 아니라 고장 안내다. grype 이 없으면 이 도구가 하는
          일 전체가 멈추므로, 접어 두지 않고 눈에 걸리게 둔다. */-->
-    <p class="banner warn" style="margin:12px 0 0" th:unless="${grype.available()}">
+    <p class="alert alert-warning" style="margin:12px 0 0" th:unless="${grype.available()}">
       grype 이 없으면 SBOM 을 올려도 검사가 실패합니다. 설치한 뒤
       <code>grype db update</code> 로 취약점 DB 를 받고, 경로가 다르면
       <code>SBOMSIGHT_GRYPE</code> 로 알려 주세요.
     </p>
   </div>
+  </div>
+    </div>
   </div>
 
   <!--/*
@@ -168,22 +173,22 @@
       <h2>계정 수정</h2>
       <p class="lede mono" id="user-name">—</p>
 
-      <label for="user-display">이름</label>
-      <input name="displayName" id="user-display" autocomplete="off"
+      <label class="form-label" for="user-display">이름</label>
+      <input class="form-control" name="displayName" id="user-display" autocomplete="off"
              placeholder="홍길동 · 인프라운영팀">
 
-      <label for="user-role">권한</label>
-      <select name="role" id="user-role">
+      <label class="form-label" for="user-role">권한</label>
+      <select class="form-select" name="role" id="user-role">
         <option th:each="r : ${roles}" th:value="${r.name()}" th:text="${r.label()}">관리자</option>
       </select>
 
-      <label class="check" style="margin-top:12px">
-        <input type="checkbox" name="enabled" value="true" id="user-enabled" checked>
+      <label class="form-check form-check-inline mb-0" style="margin-top:12px">
+        <input class="form-check-input" type="checkbox" name="enabled" value="true" id="user-enabled" checked>
         이 계정으로 로그인할 수 있음
       </label>
 
-      <label for="user-password">새 비밀번호 <span class="faint">비우면 안 바꿈</span></label>
-      <input name="newPassword" id="user-password" type="password" minlength="8"
+      <label class="form-label" for="user-password">새 비밀번호 <span class="faint">비우면 안 바꿈</span></label>
+      <input class="form-control" name="newPassword" id="user-password" type="password" minlength="8"
              autocomplete="new-password">
       <p class="footnote">
         ※ 정해 주면 본인이 로그인할 때 <b>곧바로 다시 변경</b> —
@@ -192,7 +197,7 @@
 
       <div class="dialog-actions">
         <button type="button" class="btn" data-close>취소</button>
-        <button type="submit" class="btn primary">저장</button>
+        <button type="submit" class="btn btn-dark">저장</button>
       </div>
     </form>
   </dialog>

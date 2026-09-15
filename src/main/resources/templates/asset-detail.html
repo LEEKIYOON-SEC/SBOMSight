@@ -9,70 +9,76 @@
     앞서는 SBOM 올리기·검사 이력·조치·자산 삭제가 한 화면에 세로로 이어 붙어
     있어 아래가 화면 밖으로 밀렸다. 탭으로 가른다. 탭 선택은 주소에 남는다.
   */-->
-  <div class="page-header">
-    <div class="page-pretitle">
-      <i class="zrail" th:style="'background:' + (${#strings.isEmpty(asset.zone.color)}
-                                 ? '#6f7e8d' : ${asset.zone.color})"></i>
-      <a th:href="@{/(zone=${asset.zone.id})}" th:text="${asset.zone.name}">DMZ</a>
-    </div>
-
-    <div class="page-titlerow">
-      <h1 th:text="${asset.name}">web-01</h1>
-      <span class="tag" th:if="${asset.archivedAt != null}">보관됨</span>
-      <div class="btn-list">
-        <a th:if="${latest != null}" class="btn" th:href="@{'/reports/scan/' + ${latest.id}}">보고서</a>
-      </div>
-    </div>
-
-    <div class="page-subtitle">
+  <div class="page-header d-print-none">
+    <div class="container-xl">
+      <div class="row g-2 align-items-center">
+        <div class="col">
+          <div class="page-pretitle d-flex align-items-center gap-2">
+            <i class="zrail" th:style="'background:' + (${#strings.isEmpty(asset.zone.color)}
+                                       ? '#6f7e8d' : ${asset.zone.color})"></i>
+            <a th:href="@{/(zone=${asset.zone.id})}" th:text="${asset.zone.name}">DMZ</a>
+          </div>
+          <h2 class="page-title">
+            <span th:text="${asset.name}">web-01</span>
+            <span class="tag ms-2" th:if="${asset.archivedAt != null}">보관됨</span>
+          </h2>
+          <div class="page-subtitle text-secondary mt-1">
       <span th:text="${#strings.isEmpty(asset.osName)} ? '운영체제 미상' : ${asset.osName}">Rocky Linux 9.3</span>
       <th:block th:if="${!#strings.isEmpty(asset.note)}">
         · <span th:text="${asset.note}">대외 웹</span></th:block>
       <th:block th:if="${latest != null}">
         · 마지막 검사 <span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</span></th:block>
-      <th:block th:if="${latest == null}"> · 검사 없음</th:block>
-    </div>
+          <th:block th:if="${latest == null}"> · 검사 없음</th:block>
+          </div>
+          <div class="mt-2" style="max-width:340px" th:if="${latest != null and latest.findingCount > 0}">
+            <span th:replace="~{fragments/ui :: sevbar(${severity.getOrDefault('critical', 0)},
+                               ${severity.getOrDefault('high', 0)}, ${severity.getOrDefault('medium', 0)},
+                               ${severity.getOrDefault('low', 0)})}"></span>
+          </div>
+        </div>
+        <div class="col-auto ms-auto">
+          <div class="btn-list">
+            <a th:if="${latest != null}" class="btn" th:href="@{'/reports/scan/' + ${latest.id}}">보고서</a>
+          </div>
+        </div>
+      </div>
 
-    <div style="margin-top:10px; max-width:340px" th:if="${latest != null and latest.findingCount > 0}">
-      <span th:replace="~{fragments/ui :: sevbar(${severity.getOrDefault('critical', 0)},
-                         ${severity.getOrDefault('high', 0)}, ${severity.getOrDefault('medium', 0)},
-                         ${severity.getOrDefault('low', 0)})}"></span>
-    </div>
-
-    <div class="tabs">
-      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id}, '개요', null, ${tab} == 'overview')}"></a>
-      <a th:if="${latest != null}"
-         th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=vulns', '취약점',
-                       ${latest != null} ? ${latest.findingCount} : 0, ${tab} == 'vulns')}"></a>
+      <ul class="nav nav-tabs mt-2" style="border-bottom:0">
+        <li th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id}, '개요', null, ${tab} == 'overview')}"></li>
+        <li th:if="${latest != null}"
+           th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=vulns', '취약점',
+                       ${latest != null} ? ${latest.findingCount} : 0, ${tab} == 'vulns')}"></li>
       <!--/*
         패키지 탭. 취약점 탭은 grype 이 매치를 낸 것만 보여 주므로 "이 서버에
         openssl 이 몇 버전으로 깔려 있나" 를 물을 자리가 없었다.
       */-->
-      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=packages', '패키지',
-                       ${packageCount}, ${tab} == 'packages')}"></a>
-      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=history', '검사 이력',
-                       ${history.size()}, ${tab} == 'history')}"></a>
-      <a th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=actions', '조치·검토 결과',
-                       ${remediations.size() + assetAnalyses.size()}, ${tab} == 'actions')}"></a>
+        <li th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=packages', '패키지',
+                       ${packageCount}, ${tab} == 'packages')}"></li>
+        <li th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=history', '검사 이력',
+                       ${history.size()}, ${tab} == 'history')}"></li>
+        <li th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=actions', '조치·검토 결과',
+                       ${remediations.size() + assetAnalyses.size()}, ${tab} == 'actions')}"></li>
+      </ul>
     </div>
   </div>
 
   <!--/* ══ 개요 ══════════════════════════════════════════════════════ */-->
-  <div class="body" th:if="${tab} == 'overview'">
+  <div class="page-body" th:if="${tab} == 'overview'">
+    <div class="container-xl">
 
     <!--/*
       검사가 도는 동안 무엇이 일어나고 있는지. grype 은 자산 한 대에 몇 분씩
       걸리는데 "검사 중" 한 마디만 떠 있으면 돌고 있는지 멈춘 것인지 알 수
       없어 새로고침만 반복하게 된다.
     */-->
-    <div class="progress" th:if="${running != null}" th:attr="data-scan=${running.id}" id="progress">
+    <div class="progress-panel" th:if="${running != null}" th:attr="data-scan=${running.id}" id="progress">
       <div class="progress-head">
         <span class="spinner" data-role="icon"></span>
         <b data-role="title">검사 중</b>
         <span class="faint" data-role="subtitle"></span>
         <span class="spacer"></span>
         <span class="faint num" data-role="elapsed"></span>
-        <a class="btn primary" data-role="open" hidden>결과 보기</a>
+        <a class="btn btn-dark" data-role="open" hidden>결과 보기</a>
       </div>
       <div class="steps" data-role="steps"></div>
     </div>
@@ -80,12 +86,13 @@
     <div class="card">
       <div class="card-header"><h2 class="card-title">기본 정보</h2></div>
       <div class="card-body">
-        <table class="kv">
+        <table class="table kv">
           <tr><th>구역</th>
               <td>
                 <form method="post" th:action="@{'/assets/' + ${asset.id} + '/zone'}" class="inline"
                       sec:authorize="hasRole('ADMIN')">
-                  <select name="zoneId" onchange="this.form.submit()" aria-label="구역">
+                  <select class="form-select form-select-sm w-auto" name="zoneId"
+                          onchange="this.form.submit()" aria-label="구역">
                     <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
                             th:selected="${z.id == asset.zone.id}">DMZ</option>
                   </select>
@@ -108,11 +115,13 @@
       <div class="card-header"><h2 class="card-title">SBOM 올리기</h2></div>
       <div class="card-body">
         <form method="post" th:action="@{'/assets/' + ${asset.id} + '/sbom'}"
-              enctype="multipart/form-data" class="inline-form">
-          <label>syft 로 만든 SBOM 파일
-            <input type="file" name="file" accept=".json,.xml,.spdx,.cdx" required>
-          </label>
-          <button class="btn primary" type="submit">올리고 검사</button>
+              enctype="multipart/form-data" class="d-flex align-items-end gap-2 flex-wrap">
+          <div>
+            <label class="form-label" for="sbom-file">syft 로 만든 SBOM 파일</label>
+            <input type="file" class="form-control" id="sbom-file" name="file"
+                   accept=".json,.xml,.spdx,.cdx" required>
+          </div>
+          <button class="btn btn-dark" type="submit">올리고 검사</button>
         </form>
         <details class="help">
           <summary>SBOM 은 어떻게 만드나</summary>
@@ -132,16 +141,16 @@
     <div class="card danger-zone" sec:authorize="hasRole('ADMIN')">
       <div class="card-header"><h2 class="card-title">보관 · 삭제</h2></div>
       <div class="card-body">
-        <table class="kv">
+        <table class="table kv">
           <tr><th style="width:5rem">보관</th>
               <td>
                 <form method="post" th:action="@{'/assets/' + ${asset.id} + '/archive'}"
                       class="inline" th:if="${asset.archivedAt == null}">
-                  <button type="submit" class="btn small">보관</button>
+                  <button type="submit" class="btn btn-sm">보관</button>
                 </form>
                 <form method="post" th:action="@{'/assets/' + ${asset.id} + '/unarchive'}"
                       class="inline" th:unless="${asset.archivedAt == null}">
-                  <button type="submit" class="btn small">보관 풀기</button>
+                  <button type="submit" class="btn btn-sm">보관 풀기</button>
                 </form>
                 <span class="faint" style="margin-left:8px">
                   목록에서 빠지고 <b>결과는 남습니다.</b></span>
@@ -156,15 +165,18 @@
                   과 보관된 SBOM·검사 결과 파일이 함께 사라집니다. 되돌릴 수 없습니다.
                 </span>
                 <form method="post" th:action="@{'/assets/' + ${asset.id} + '/delete'}"
-                      class="inline-form" style="margin-top:12px">
-                  <label style="margin:0">확인 — 자산 이름을 입력하세요
-                    <input name="confirm" required autocomplete="off" th:placeholder="${asset.name}">
-                  </label>
-                  <button type="submit" class="btn danger">삭제</button>
+                      class="d-flex align-items-end gap-2 flex-wrap" style="margin-top:12px">
+                  <div>
+                    <label class="form-label" for="delete-confirm">확인 — 자산 이름을 입력하세요</label>
+                    <input class="form-control" id="delete-confirm" name="confirm" required autocomplete="off"
+                           th:placeholder="${asset.name}">
+                  </div>
+                  <button type="submit" class="btn btn-outline-danger">삭제</button>
                 </form>
               </td></tr>
         </table>
       </div>
+    </div>
     </div>
   </div>
 
@@ -173,49 +185,53 @@
     전체 취약점 화면과 **같은 서비스·같은 조각**을 쓴다. 한 자산 이야기는
     그 자산 안에서 끝난다 — 밖으로 나갔다 돌아오게 두지 않는다.
   */-->
-  <div th:if="${tab} == 'vulns'">
-    <form method="get" class="filters">
+  <div class="page-body" th:if="${tab} == 'vulns'">
+    <div class="container-xl">
+    <div class="card">
+    <form method="get" class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
       <input type="hidden" name="tab" value="vulns">
-      <span class="segmented">
+      <span class="btn-group">
         <!--/* `links` 로 만든다. `@{…(group=${g}, q=${q}, …)}` 는 값이 없어도
              이름을 적어서 `&q=&severity=&fixable=&kev=` 가 따라붙었다(N12). */-->
-        <a th:each="g : ${ {'item','cve','package'} }"
+        <a class="btn btn-sm" th:each="g : ${ {'item','cve','package'} }"
            th:href="@{${links.group(g)}}"
-           th:classappend="${group} == ${g} ? 'current' : ''"
+           th:classappend="${group} == ${g} ? 'active' : ''"
            th:text="${g} == 'item' ? '항목별' : (${g} == 'cve' ? 'CVE별' : '패키지별')">항목별</a>
       </span>
       <input type="hidden" name="group" th:value="${group}">
-      <label style="flex:1; min-width:12rem; margin:0">
-        <input type="search" name="q" th:value="${q}" autocomplete="off"
-               placeholder="CVE 번호 · 패키지 이름"></label>
-      <select name="severity" aria-label="심각도">
+      <input type="search" class="form-control form-control-sm" style="flex:1; min-width:12rem"
+             name="q" th:value="${q}" autocomplete="off" aria-label="CVE 번호 · 패키지 이름"
+             placeholder="CVE 번호 · 패키지 이름">
+      <select class="form-select form-select-sm w-auto" name="severity" aria-label="심각도">
         <option value="">심각도 전체</option>
         <option value="Critical" th:selected="${severityFilter} == 'Critical'">심각</option>
         <option value="High" th:selected="${severityFilter} == 'High'">높음</option>
         <option value="Medium" th:selected="${severityFilter} == 'Medium'">보통</option>
         <option value="Low" th:selected="${severityFilter} == 'Low'">낮음</option>
       </select>
-      <select name="fixable" aria-label="수정 버전">
+      <select class="form-select form-select-sm w-auto" name="fixable" aria-label="수정 버전">
         <option value="">수정 버전 전체</option>
         <option value="true" th:selected="${fixable != null and fixable}">있음</option>
         <option value="false" th:selected="${fixable != null and !fixable}">없음</option>
       </select>
-      <button class="btn primary" type="submit">찾기</button>
-      <a class="btn" th:href="@{/vulns(scan=${latest.id})}" title="전체 취약점 화면에서 같은 범위로 보기">넓게 보기</a>
+      <button class="btn btn-sm btn-dark" type="submit">찾기</button>
+      <a class="btn btn-sm" th:href="@{/vulns(scan=${latest.id})}"
+         title="전체 취약점 화면에서 같은 범위로 보기">넓게 보기</a>
     </form>
 
-    <div class="body flush">
+    <div>
       <th:block th:if="${group} == 'item'">
         <th:block th:if="${page.totalElements == 0}">
           <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
                             ${links.clear()}, '거르개 지우기')}"></div>
         </th:block>
         <th:block th:if="${page.totalElements > 0}">
-          <div class="resultcount">
-            <b th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b><span>건</span>
+          <div class="card-body py-2 border-bottom">
+            <b class="num" th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>
+            <span class="text-secondary">건</span>
           </div>
           <div th:replace="~{fragments/finding-table :: items(${page.content}, false, ${analyses})}"></div>
-          <div class="pager" th:if="${page.totalPages > 1}">
+          <div class="card-footer d-flex justify-content-center gap-3" th:if="${page.totalPages > 1}">
             <a th:if="${page.hasPrevious()}"
                th:href="@{${links.page(page.number - 1)}}">이전</a>
             <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
@@ -239,7 +255,10 @@
       베껴 두면 한쪽만 고치는 날이 오고, 실제로 그렇게 해서 이미 없앤 말이
       되살아난 적이 있다.
     */-->
+    </div>
+    </div>
     <div th:replace="~{fragments/analysis-dialog :: dialog(${links.here()})}"></div>
+    </div>
   </div>
 
   <!--/*
@@ -250,7 +269,8 @@
     않으므로, 다시 검사하기 전에는 인벤토리가 비어 있다. 그 상태를 "패키지가
     없습니다" 라고 말하면 거짓이다.
   */-->
-  <div class="body flush" th:if="${tab} == 'packages'">
+  <div class="page-body" th:if="${tab} == 'packages'">
+    <div class="container-xl">
     <th:block th:if="${assetPackages == null or assetPackages.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('아직 담긴 패키지가 없습니다',
                         '패키지 목록은 검사할 때 SBOM 에서 담깁니다. 이 자산을 다시 검사하면 채워집니다.',
@@ -260,16 +280,15 @@
     <div class="card" th:if="${assetPackages != null and !assetPackages.isEmpty()}">
       <div class="card-header">
         <h2 class="card-title">깔려 있는 패키지</h2>
-        <form method="get" class="inline">
+        <form method="get" class="ms-auto d-flex gap-2 align-items-center">
           <input type="hidden" name="tab" value="packages">
-          <span class="search">
-            <input name="q" th:value="${q}" placeholder="패키지 이름" aria-label="패키지 이름" autocomplete="off">
-          </span>
-          <button class="btn small" type="submit">찾기</button>
+          <input class="form-control form-control-sm" name="q" th:value="${q}"
+                 placeholder="패키지 이름" aria-label="패키지 이름" autocomplete="off">
+          <button class="btn btn-sm" type="submit">찾기</button>
         </form>
       </div>
-      <div class="table-scroll">
-        <table>
+      <div class="table-responsive">
+        <table class="table table-vcenter card-table">
           <thead>
           <tr>
             <th>패키지</th><th class="tight">유형</th>
@@ -297,18 +316,21 @@
         같은 패키지가 다른 자산에 몇 버전으로 깔렸는지는 패키지 화면에서.
       </p>
     </div>
+    </div>
   </div>
 
   <!--/* ══ 검사 이력 ══════════════════════════════════════════════════ */-->
-  <div class="body flush" th:if="${tab} == 'history'">
+  <div class="page-body" th:if="${tab} == 'history'">
+    <div class="container-xl">
+    <div class="card">
     <th:block th:if="${history.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('아직 검사가 없습니다',
                         'SBOM 을 올리면 grype 이 돌고 여기에 쌓입니다.',
                         '/assets/' + ${asset.id}, 'SBOM 올리기')}"></div>
     </th:block>
 
-    <div class="table-scroll" th:unless="${history.isEmpty()}">
-      <table>
+    <div class="table-responsive" th:unless="${history.isEmpty()}">
+      <table class="table table-vcenter card-table">
         <thead>
         <tr>
           <th class="tight">시각</th><th class="tight">상태</th>
@@ -355,25 +377,27 @@
             버튼이라 같은 칸에서 두 가지 모양이 놀았다.
           */-->
           <td class="tight actions">
-            <a class="btn small" th:if="${s.status.name() == 'DONE'}"
+            <a class="btn btn-sm" th:if="${s.status.name() == 'DONE'}"
                th:href="@{/vulns(scan=${s.id})}">열기</a>
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
                   th:if="${s.status.name() == 'DONE'}" sec:authorize="hasRole('ADMIN')">
-              <button type="submit" class="btn small"
+              <button type="submit" class="btn btn-sm"
                       title="보관된 SBOM 을 갱신된 취약점 DB 로 다시 검사합니다">다시 검사</button>
             </form>
-            <a class="btn small" th:if="${!#strings.isEmpty(s.sbomPath)}"
+            <a class="btn btn-sm" th:if="${!#strings.isEmpty(s.sbomPath)}"
                th:href="@{'/scans/' + ${s.id} + '/sbom'}"
                title="올렸던 SBOM 원본을 내려받습니다">SBOM</a>
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/delete'}" class="inline"
                   sec:authorize="hasRole('ADMIN')"
                   onsubmit="return confirm('이 검사와 보관된 SBOM·검사 결과를 지웁니다.\n되돌릴 수 없습니다.\n\n계속할까요?')">
-              <button type="submit" class="btn small danger">삭제</button>
+              <button type="submit" class="btn btn-sm btn-outline-danger">삭제</button>
             </form>
           </td>
         </tr>
         </tbody>
       </table>
+    </div>
+    </div>
     </div>
   </div>
 
@@ -383,7 +407,8 @@
     검토 결과는 대응 화면에 가야만 볼 수 있어서, "이 서버 것만" 을 물으면
     답이 없었다. 둘 다 여기 둔다.
   */-->
-  <div class="body" th:if="${tab} == 'actions'">
+  <div class="page-body" th:if="${tab} == 'actions'">
+    <div class="container-xl">
     <th:block th:if="${remediations.isEmpty() and assetAnalyses.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('등록된 조치도 검토 결과도 없습니다',
                         '취약점 화면에서 건을 골라 조치로 올리거나 검토 결과를 적습니다.',
@@ -394,8 +419,8 @@
     <div class="card" th:unless="${remediations.isEmpty()}">
       <div class="card-header"><h2 class="card-title">조치</h2>
         <span class="faint" style="font-size:13px" th:text="${remediations.size()} + '건'">0건</span></div>
-      <div class="table-scroll">
-        <table>
+      <div class="table-responsive">
+        <table class="table table-vcenter card-table">
           <thead>
           <tr>
             <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
@@ -422,8 +447,8 @@
       <div class="card-header"><h2 class="card-title">검토 결과</h2>
         <span class="faint" style="font-size:13px"
               th:text="${assetAnalyses.size()} + '건'">0건</span></div>
-      <div class="table-scroll">
-        <table>
+      <div class="table-responsive">
+        <table class="table table-vcenter card-table">
           <thead>
           <tr>
             <th class="tight">취약점</th><th class="tight">패키지</th>
@@ -465,6 +490,7 @@
           </tbody>
         </table>
       </div>
+    </div>
     </div>
   </div>
 

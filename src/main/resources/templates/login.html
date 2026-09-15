@@ -1,30 +1,52 @@
 <!doctype html>
+<!--/*
+  로그인. 껍데기(layout)를 쓰지 않고 홀로 선다 — 아직 아무 화면도 열 수 없는
+  사람에게 기둥을 그려 봐야 누를 곳이 없다.
+*/-->
 <html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>로그인 — SBOMSight</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/tabler/tabler.min.css">
   <link rel="stylesheet" href="/css/app.css">
 </head>
-<body class="gate">
+<body class="d-flex flex-column bg-surface-secondary">
 
-<main class="gate-box">
-  <div class="brand">SBOMSight</div>
+<div class="page page-center">
+  <div class="container container-tight py-4">
+    <div class="text-center mb-4">
+      <span class="navbar-brand fs-2 fw-bold">SBOMSight</span>
+    </div>
 
-  <div th:if="${notice}" th:classappend="'banner ' + ${noticeKind}"
-       th:text="${notice}" class="banner" style="margin:0 0 18px"></div>
+    <!--/* 왜 로그인 화면으로 왔는지 말한다. 이유 없이 돌아오면 고장으로 읽힌다.
+         noticeKind 는 컨트롤러가 정한다(success · danger · warning · info). */-->
+    <div th:if="${notice}" class="alert mb-3"
+         th:classappend="'alert-' + ${noticeKind}" th:text="${notice}"></div>
 
-  <form method="post" th:action="@{/login}">
-    <label>계정 이름
-      <input name="username" required autofocus autocomplete="username">
-    </label>
-    <label>비밀번호
-      <input name="password" type="password" required autocomplete="current-password">
-    </label>
-    <button class="btn primary" type="submit">로그인</button>
-  </form>
-</main>
+    <div class="card card-md">
+      <div class="card-body">
+        <h2 class="h2 text-center mb-4">로그인</h2>
+        <form method="post" th:action="@{/login}" autocomplete="off">
+          <div class="mb-3">
+            <label class="form-label" for="login-username">계정 이름</label>
+            <input class="form-control" id="login-username" name="username" required
+                   autofocus autocomplete="username">
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="login-password">비밀번호</label>
+            <input class="form-control" id="login-password" name="password" type="password"
+                   required autocomplete="current-password">
+          </div>
+          <div class="form-footer">
+            <button class="btn btn-dark w-100" type="submit">로그인</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>

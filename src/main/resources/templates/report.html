@@ -18,19 +18,28 @@
       2. 설명이 필요한 약어는 표 아래 각주 한 줄로 단다.
       3. 값이 없으면 — 로 둔다. 0 으로 채우면 세어 본 적 없는 숫자가 앉는다.
   */-->
-  <div class="page-head no-print">
-    <h1>점검 결과 보고서</h1>
-    <button type="button" class="btn" onclick="window.print()">인쇄 · PDF</button>
+  <div class="page-header d-print-none">
+    <div class="container-xl">
+      <div class="row g-2 align-items-center">
+        <div class="col"><h2 class="page-title">점검 결과 보고서</h2></div>
+        <div class="col-auto ms-auto">
+          <div class="btn-list">
+            <button type="button" class="btn" onclick="window.print()">인쇄 · PDF</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="body">
+  <div class="page-body">
+    <div class="container-xl">
 
   <div class="report-title">
     <h1 th:text="${report.overview.asset.name} + ' 취약점 점검 결과 보고'">web-01 취약점 점검 결과 보고</h1>
   </div>
 
   <!--/* ══ 문서 정보 ══════════════════════════════════════════════════ */-->
-  <table class="docinfo">
+  <table class="table docinfo">
     <tbody>
     <tr>
       <th>점검 대상</th>
@@ -72,7 +81,7 @@
   <!--/* ══ 1. 점검 개요 ═══════════════════════════════════════════════ */-->
   <section>
     <h2>1. 점검 개요</h2>
-    <table>
+    <table class="table">
       <thead><tr><th>항목</th><th class="num tight">값</th></tr></thead>
       <tbody>
       <tr><td>점검한 패키지</td>
@@ -118,7 +127,7 @@
     <h2>2. 점검 결과 요약</h2>
 
     <h3>2.1 심각도별 분포</h3>
-    <table>
+    <table class="table">
       <thead><tr><th class="tight">심각도</th><th class="num tight">건수</th>
                  <th class="num tight">비중</th></tr></thead>
       <tbody>
@@ -152,7 +161,7 @@
     </table>
 
     <h3>2.2 수정 가능 여부</h3>
-    <table>
+    <table class="table">
       <thead><tr><th class="tight">구분</th><th class="num tight">건수</th>
                  <th class="num tight">비중</th></tr></thead>
       <tbody>
@@ -177,7 +186,7 @@
     </p>
 
     <h3 th:if="${report.summary.exposure.measured()}">2.3 접근 경로</h3>
-    <table th:if="${report.summary.exposure.measured()}">
+    <table class="table" th:if="${report.summary.exposure.measured()}">
       <thead><tr><th class="tight">구분</th><th class="num tight">건수</th></tr></thead>
       <tbody>
       <tr><td class="tight">원격 접근</td>
@@ -207,7 +216,7 @@
   <!--/* ══ 3. 조치 대상 ═══════════════════════════════════════════════ */-->
   <section>
     <h2>3. 조치 대상</h2>
-    <table th:if="${!report.targets.fixTargets.isEmpty()}">
+    <table class="table" th:if="${!report.targets.fixTargets.isEmpty()}">
       <thead>
       <tr>
         <th class="num tight">순위</th>
@@ -264,7 +273,7 @@
         <td class="tight no-print" sec:authorize="hasRole('ADMIN')">
           <form method="post" th:action="@{'/scans/' + ${report.scan.id} + '/remediations'}">
             <input type="hidden" name="packageName" th:value="${a.packageName}">
-            <button type="submit" class="btn small">조치 등록</button>
+            <button type="submit" class="btn btn-sm">조치 등록</button>
           </form>
         </td>
       </tr>
@@ -293,7 +302,7 @@
   <!--/* ══ 4. 수정 버전 없는 항목 ═════════════════════════════════════ */-->
   <section th:if="${!report.targets.noFixRows.isEmpty()}">
     <h2>4. 수정 버전 없는 항목</h2>
-    <table>
+    <table class="table">
       <thead>
       <tr>
         <th class="tight">패키지</th><th class="tight">현재 버전</th>
@@ -353,7 +362,7 @@
   <!--/* ══ 5. 조치 진행 현황 ══════════════════════════════════════════ */-->
   <section th:if="${!report.progress.rows.isEmpty()}">
     <h2>5. 조치 진행 현황</h2>
-    <table>
+    <table class="table">
       <thead>
       <tr>
         <th class="tight">패키지</th><th class="tight">상태</th>
@@ -390,7 +399,7 @@
   <!--/* ══ 6. 이전 검사 대비 ══════════════════════════════════════════ */-->
   <section>
     <h2>6. 이전 검사 대비</h2>
-    <table th:if="${report.targets.diff.hasPrevious()}">
+    <table class="table" th:if="${report.targets.diff.hasPrevious()}">
       <thead><tr><th class="tight">구분</th><th class="num tight">건수</th></tr></thead>
       <tbody>
       <!--/*
@@ -435,6 +444,8 @@
     ※ 탐지 · 심각도 · CVSS · 수정 버전은 grype 원본. 재계산 · 조정 없음.
   </p>
 
+  </div>
+    </div>
   </div>
 
 </main>

@@ -29,17 +29,20 @@
     </div>
   </th:block>
 
-  <div class="tabs">
-    <a th:replace="~{fragments/ui :: tab('/actions', '조치',
-                     ${remediationCount}, ${tab} != 'analyses')}"></a>
-    <a th:replace="~{fragments/ui :: tab('/actions?tab=analyses', '검토 결과',
-                     ${analysisCount}, ${tab} == 'analyses')}"></a>
-  </div>
+  <ul class="nav nav-tabs">
+    <li th:replace="~{fragments/ui :: tab('/actions', '조치',
+                     ${remediationCount}, ${tab} != 'analyses')}"></li>
+    <li th:replace="~{fragments/ui :: tab('/actions?tab=analyses', '검토 결과',
+                     ${analysisCount}, ${tab} == 'analyses')}"></li>
+  </ul>
 
-  <form method="get" class="filters">
+  <div class="page-body">
+    <div class="container-xl">
+    <div class="card">
+  <form method="get" class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
     <input type="hidden" name="tab" th:value="${tab}">
-    <label>구역
-      <select name="zone" onchange="this.form.submit()">
+    <label class="form-label mb-0 me-1 d-flex align-items-center gap-1">구역
+      <select class="form-select form-select-sm w-auto" name="zone" onchange="this.form.submit()">
         <option value="">전체</option>
         <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
                 th:selected="${selectedZone != null && selectedZone == z.id}">DMZ</option>
@@ -48,7 +51,7 @@
 
     <!--/* 조치 탭의 거르개 */-->
     <label th:if="${tab} != 'analyses'">상태
-      <select name="status" onchange="this.form.submit()">
+      <select class="form-select form-select-sm w-auto" name="status" onchange="this.form.submit()">
         <option value="">전체</option>
         <option th:each="s : ${statuses}" th:value="${s}" th:text="${s.label()}"
                 th:selected="${status != null && status == s}">대기</option>
@@ -60,8 +63,8 @@
       두려 했는데 없앴다 — 사람이 켜고 끄게 두면 같은 상태인데 어떤 건은
       보이고 어떤 건은 안 보인다. 볼 일이 끝난 상태가 자동으로 빠진다.
     */-->
-    <label class="check" th:if="${tab} == 'analyses'">
-      <input type="checkbox" name="includeDone" value="true" th:checked="${includeDone}"
+    <label class="form-check form-check-inline mb-0" th:if="${tab} == 'analyses'">
+      <input class="form-check-input" type="checkbox" name="includeDone" value="true" th:checked="${includeDone}"
              onchange="this.form.submit()">
       검토 끝난 것도 보기
     </label>
@@ -69,11 +72,11 @@
     <button class="btn" type="submit">적용</button>
   </form>
 
-  <div class="body flush">
+  <div>
 
     <!--/* ══ 조치 ══════════════════════════════════════════════════════ */-->
     <th:block th:if="${tab} != 'analyses'">
-      <div th:if="${!overdue.isEmpty()}" class="banner warn">
+      <div th:if="${!overdue.isEmpty()}" class="alert alert-warning">
         <b th:text="'기한이 지난 조치 ' + ${overdue.size()} + '건'">기한 경과</b>
         <span th:each="r, i : ${overdue}" th:if="${i.index < 5}">
           <span th:text="${r.asset.name} + ' · ' + ${r.packageName}">web-01 · openssl</span><th:block
@@ -87,8 +90,8 @@
                           '/vulns?group=package', '취약점 보기')}"></div>
       </th:block>
 
-      <div class="table-scroll" th:unless="${remediations.isEmpty()}">
-        <table>
+      <div class="table-responsive" th:unless="${remediations.isEmpty()}">
+        <table class="table table-vcenter card-table">
           <thead>
           <tr>
             <th class="tight">자산</th><th class="tight">구역</th>
@@ -124,7 +127,7 @@
 
     <!--/* ══ 검토 결과 ══════════════════════════════════════════════════ */-->
     <th:block th:if="${tab} == 'analyses'">
-      <div th:if="${!overdue.isEmpty()}" class="banner danger">
+      <div th:if="${!overdue.isEmpty()}" class="alert alert-danger">
         <b th:text="'재검토일이 지난 것 ' + ${overdue.size()} + '건'">재검토 기한 경과</b>
         <span th:each="r, i : ${overdue}" th:if="${i.index < 5}">
           <span th:text="${r.asset.name} + ' · ' + ${r.packageName}">web-01 · openssl</span><th:block
@@ -138,8 +141,8 @@
                           '/vulns', '취약점 보기')}"></div>
       </th:block>
 
-      <div class="table-scroll" th:unless="${analyses.isEmpty()}">
-        <table>
+      <div class="table-responsive" th:unless="${analyses.isEmpty()}">
+        <table class="table table-vcenter card-table">
           <thead>
           <tr>
             <th class="tight">자산</th><th class="tight">구역</th>
@@ -209,6 +212,9 @@
         </table>
       </div>
     </th:block>
+  </div>
+    </div>
+    </div>
   </div>
 
 </main>

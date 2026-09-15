@@ -26,52 +26,55 @@
     둘 다 같은 질의를 불렀다. 그래서 "우리 전체에 심각이 몇 건인가" 를 물을
     자리가 없었다. 범위를 고르는 한 화면으로 합친다.
   */-->
-  <form method="get" class="filters">
+  <div class="page-body">
+    <div class="container-xl">
+    <div class="card">
+  <form method="get" class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
     <input type="hidden" name="scan" th:if="${selectedScan != null}" th:value="${selectedScan}">
 
-    <label style="margin:0">범위
-      <select name="zone" onchange="this.form.submit()" th:disabled="${selectedScan != null}">
+    <label class="form-label" style="margin:0">범위
+      <select class="form-select form-select-sm w-auto" name="zone" onchange="this.form.submit()" th:disabled="${selectedScan != null}">
         <option value="">전체</option>
         <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
                 th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>
       </select>
     </label>
 
-    <span class="segmented">
-      <a th:href="@{${links.group('item')}}"
-         th:classappend="${group} == 'item' ? 'current' : ''">항목별</a>
-      <a th:href="@{${links.group('cve')}}"
-         th:classappend="${group} == 'cve' ? 'current' : ''">CVE별</a>
-      <a th:href="@{${links.group('package')}}"
-         th:classappend="${group} == 'package' ? 'current' : ''">패키지별</a>
+    <span class="btn-group">
+      <a class="btn btn-sm" th:href="@{${links.group('item')}}"
+         th:classappend="${group} == 'item' ? 'active' : ''">항목별</a>
+      <a class="btn btn-sm" th:href="@{${links.group('cve')}}"
+         th:classappend="${group} == 'cve' ? 'active' : ''">CVE별</a>
+      <a class="btn btn-sm" th:href="@{${links.group('package')}}"
+         th:classappend="${group} == 'package' ? 'active' : ''">패키지별</a>
     </span>
 
     <input type="hidden" name="group" th:value="${group}">
 
     <label style="flex:1; min-width:14rem; margin:0">
-      <input type="search" name="q" th:value="${q}" autocomplete="off"
+      <input class="form-control form-control-sm" type="search" name="q" th:value="${q}" autocomplete="off"
              placeholder="CVE 번호 · 패키지 이름">
     </label>
-    <select name="severity" aria-label="심각도">
+    <select class="form-select form-select-sm w-auto" name="severity" aria-label="심각도">
       <option value="">심각도 전체</option>
       <option value="Critical" th:selected="${severity} == 'Critical'">심각</option>
       <option value="High" th:selected="${severity} == 'High'">높음</option>
       <option value="Medium" th:selected="${severity} == 'Medium'">보통</option>
       <option value="Low" th:selected="${severity} == 'Low'">낮음</option>
     </select>
-    <select name="fixable" aria-label="수정 버전">
+    <select class="form-select form-select-sm w-auto" name="fixable" aria-label="수정 버전">
       <option value="">수정 버전 전체</option>
       <option value="true" th:selected="${fixable != null and fixable}">있음</option>
       <option value="false" th:selected="${fixable != null and !fixable}">없음</option>
     </select>
-    <select name="kev" aria-label="실제 악용">
+    <select class="form-select form-select-sm w-auto" name="kev" aria-label="실제 악용">
       <option value="">실제 악용 전체</option>
       <option value="true" th:selected="${kev != null and kev}">확인됨</option>
     </select>
-    <button class="btn primary" type="submit">찾기</button>
+    <button class="btn btn-sm btn-dark" type="submit">찾기</button>
   </form>
 
-  <div class="body flush">
+  <div>
 
     <!--/* ══ 항목별 ═══════════════════════════════════════════════════ */-->
     <th:block th:if="${group} == 'item'">
@@ -81,17 +84,17 @@
       </th:block>
 
       <th:block th:if="${page.totalElements > 0}">
-        <div class="resultcount">
+        <div class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
           <b th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>
           <span>건</span>
           <span class="faint" th:if="${page.totalPages > 1}"
                 th:text="${page.number * page.size + 1} + '–' + ${page.number * page.size + page.numberOfElements} + '번째'"></span>
           <span class="spacer" style="flex:1"></span>
           <span class="faint" style="font-size:13px">정렬</span>
-          <span class="segmented">
-            <a th:each="s : ${ {'severity','cvss','epss','package','cve'} }"
+          <span class="btn-group">
+            <a class="btn btn-sm" th:each="s : ${ {'severity','cvss','epss','package','cve'} }"
                th:href="@{${links.sort(s)}}"
-               th:classappend="${sort} == ${s} ? 'current' : ''"
+               th:classappend="${sort} == ${s} ? 'active' : ''"
                th:text="${s} == 'severity' ? '심각도' : (${s} == 'cvss' ? 'CVSS'
                         : (${s} == 'epss' ? '악용 확률' : (${s} == 'package' ? '패키지' : 'CVE')))">심각도</a>
           </span>
@@ -100,7 +103,7 @@
         <div th:replace="~{fragments/finding-table :: items(${page.content},
                           ${selectedScan == null}, ${analyses})}"></div>
 
-        <div class="pager" th:if="${page.totalPages > 1}">
+        <div class="card-footer d-flex justify-content-center gap-3" th:if="${page.totalPages > 1}">
           <a th:if="${page.hasPrevious()}"
              th:href="@{${links.page(page.number - 1)}}">이전</a>
           <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
@@ -121,12 +124,12 @@
                           ${links.clear()}, '거르개 지우기')}"></div>
       </th:block>
       <th:block th:unless="${cveGroups.isEmpty()}">
-        <div class="resultcount">
+        <div class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
           <b th:text="${#numbers.formatInteger(cveGroups.size(), 0, 'COMMA')}">0</b>
           <span>가지 취약점</span>
         </div>
-        <div class="table-scroll">
-          <table>
+        <div class="table-responsive">
+          <table class="table table-vcenter card-table">
             <thead><tr>
               <th class="tight">취약점</th><th class="tight">심각도</th>
               <th class="num tight">CVSS</th><th class="num tight">악용 확률</th>
@@ -181,12 +184,12 @@
                           ${links.clear()}, '거르개 지우기')}"></div>
       </th:block>
       <th:block th:unless="${packageGroups.isEmpty()}">
-        <div class="resultcount">
+        <div class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
           <b th:text="${#numbers.formatInteger(packageGroups.size(), 0, 'COMMA')}">0</b>
           <span>개 패키지</span>
         </div>
-        <div class="table-scroll">
-          <table>
+        <div class="table-responsive">
+          <table class="table table-vcenter card-table">
             <thead><tr>
               <th class="tight">패키지</th><th class="tight">유형</th>
               <th class="num tight">영향 자산</th><th class="num tight">탐지</th>
@@ -224,6 +227,9 @@
         </div>
       </th:block>
     </th:block>
+  </div>
+    </div>
+    </div>
   </div>
 
   <!--/*

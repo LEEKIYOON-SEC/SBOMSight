@@ -1,609 +1,154 @@
-/* SBOMSight — 화면 전체가 쓰는 한 장.
-   프레임워크를 들이지 않는다. 폐쇄망 반입 대상이 하나라도 적어야 하고,
-   이 도구가 그리는 것은 표와 목록 몇 가지뿐이다.
+/* SBOMSight — Tabler 위에 얹는 한 장.
+   ─────────────────────────────────────────────────────────────────────────
+   **바탕은 Tabler(MIT)다.** 틀·단추·입력칸·표·카드·빈 화면은 전부 그쪽 것을
+   그대로 쓴다. 우리가 손으로 맞추던 것들(단추가 네 가지 크기로 갈리고 입력칸
+   높이가 39·40·41 로 어긋나던 것)이 그쪽에서는 한 벌로 정해져 있다.
 
-   바탕은 흰색이다. 앞서는 회색 바탕에 흰 상자를 얹었는데, 그 조합이
-   화면을 십 년 전 관리자 페이지처럼 보이게 하던 가장 큰 원인이었다.
-   구분은 상자가 아니라 머리카락 같은 선과 여백으로 한다. */
+   여기 남기는 것은 **Tabler 가 모르는 것**뿐이다.
+
+     · 심각도 팔레트와 그 표시 — grype 이 주는 단계를 그대로 쓴다
+     · 구역 색 띠 · 구역 머리줄
+     · 검사 진행 눈금
+     · 좁은 화면에서 첫 칸을 붙여 두는 표
+     · 인쇄용 보고서
+
+   ── 고칠 때 ────────────────────────────────────────────────────────────
+   **여기에 단추·입력칸·표의 모양을 다시 적지 않는다.** 그렇게 시작해서 지난번
+   같은 상태가 됐다. Tabler 에 없는 모양이 필요하면 먼저 Tabler 의 클래스를
+   찾는다(btn-sm · btn-ghost-secondary · form-select · table-vcenter …).
+   ───────────────────────────────────────────────────────────────────────── */
 
 @import url("/css/fonts.css");
 
 :root {
-  /* ── 대비 ──────────────────────────────────────────────────────────────
-     `scripts/check-contrast.py` 로 전 화면의 **그려진 색**을 재어 WCAG 2.1 AA
-     (보통 글자 4.5:1)에 못 미치는 자리를 찾았다. 아흔 곳이 나왔는데 값으로는
-     다섯 개였다 — 옅은 회색 하나와 심각도 색 넷.
+  /* ── 글꼴 ───────────────────────────────────────────────────────────────
+     Tabler 는 시스템 글꼴로 돈다. 한국어가 PC 마다 다르게 보이면 표의 칸
+     너비가 따라 달라지므로, 저장소에 담아 둔 IBM Plex Sans KR 로 못 박는다.
+     (폐쇄망이라 외부 글꼴을 부르지 않는다.) */
+  --tblr-font-sans-serif: "IBM Plex Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --tblr-font-monospace: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 
-     색상은 그대로 두고 **필요한 만큼만 진하게** 했다. 시안에서 온 팔레트라
-     느낌을 바꾸지 않는 선에서 멈춘다.
+  /* 본문 글자는 Tabler 기본(회색 #6b7280)보다 진하게 둔다. 이 도구는 문단이
+     아니라 표를 읽는 화면이고, 숫자와 버전 문자열이 회색이면 눈이 미끄러진다.
+     제목은 Tabler 가 이미 진한 색을 쓴다. */
+  --tblr-body-color: #14161a;
+  --tblr-secondary: #5a616b;
 
-       --fg-faint  #8a919b → #6a6f77   2.84 → 4.52  (가장 많이 걸린 자리)
-       --high      #c3571a → #b45018   3.97 → 4.52
-       --medium    #b4821b → #916916   3.11 → 4.54
-       --low       #6f7e8d → #64717f   3.77 → 4.50
-       --ok        #1b854f → #1a7f4b   4.17 → 4.50
+  /* 으뜸 동작은 파랑이 아니라 먹색이다. 파란 단추는 링크와 섞여 어느 쪽이
+     '지금 할 일'인지 흐려진다 — 그래서 btn-primary 가 아니라 btn-dark 를
+     쓴다. 링크와 강조에만 파랑을 남긴다. */
 
-     `--critical` 은 이미 넘었다(#a71922). 건드리지 않았다.
-     ────────────────────────────────────────────────────────────────────── */
-
-  /* 심각도. grype 이 주는 단계를 그대로 쓴다 — 다시 나누지 않는다. */
+  /* ── 심각도 ────────────────────────────────────────────────────────────
+     grype 이 주는 단계를 그대로 쓴다. 다시 나누지 않는다.
+     `scripts/check-contrast.py` 로 그려진 색을 재어 WCAG 2.1 AA(4.5:1)에
+     맞춰 둔 값이다 — 색상은 그대로 두고 필요한 만큼만 진하게 했다. */
   --critical: #a71922; --critical-bg: #fdecea; --critical-line: #f6c9c3;
   --high:     #b45018; --high-bg:     #fdefe3; --high-line:     #f6d0b0;
   --medium:   #916916; --medium-bg:   #fcf4e0; --medium-line:   #efd9a6;
   --low:      #64717f; --low-bg:      #f1f4f7; --low-line:      #dae0e7;
-  --accent:   #2262bb; --accent-bg:   #ecf3fd; --accent-line:   #c2d8f5;
   --ok:       #1a7f4b; --ok-bg:       #e8f6ed; --ok-line:       #bcdfc8;
+  --accent:   #2262bb; --accent-bg:   #ecf3fd; --accent-line:   #c2d8f5;
 
   --fg: #14161a; --fg-muted: #5a616b; --fg-faint: #6a6f77;
-  --line: #e6e9ed; --line-strong: #d6dae0;
-  --bg: #ffffff; --sunken: #fafbfc; --subtle: #f4f6f8; --hover: #f0f2f5;
-
-  /* 눌렀을 때·올렸을 때의 한 칸 진한 색. 앞서 쓰는 자리에 값을 직접
-     적어 두어서, 팔레트를 바꾸면 그 자리만 옛 색으로 남았다. */
-  --accent-strong: #1a4f9c;    /* 링크에 올렸을 때 */
-  --fg-strong:     #2a2e35;    /* 진한 단추에 올렸을 때 */
-  --critical-wash: #fffafa;    /* 되돌릴 수 없는 자리의 아주 옅은 바탕 */
-
-  /* 진한 바탕 위의 글자. `--bg` 와 값은 같지만 뜻이 다르다 — 배경이 아니라
-     글자색이고, 팔레트에서 배경을 바꿔도 이쪽은 따라가지 않는다. */
+  --line: var(--tblr-border-color);
+  --sunken: #fafbfc; --subtle: #f4f6f8; --hover: #f0f2f5;
   --on-dark: #ffffff;
-
-  /* 옛 이름들. 화면 곳곳이 아직 이 이름으로 부른다. */
-  --bg-soft: var(--subtle);
-  --accent-soft: var(--accent-bg);
-  --warn: var(--medium);
-
-  --radius: 8px;
-  --gutter: 28px;
-  --sidebar: 236px;
 }
-
-* { box-sizing: border-box; }
 
 /* hidden 은 어떤 display 규칙보다 세야 한다. .btn 처럼 display 를 직접 주는
-   클래스가 붙어 있으면 hidden 이 먹지 않아, 숨겨야 할 버튼이 그대로 보인다 —
+   클래스가 붙어 있으면 hidden 이 먹지 않아, 숨겨야 할 단추가 그대로 보인다 —
    검사가 도는 중에 "결과 보기" 가 눌리는 식으로 드러난다. */
 [hidden] { display: none !important; }
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: "IBM Plex Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
-  font-size: 15px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-}
-
-a { color: var(--accent); text-decoration: none; }
-a:hover { color: var(--accent-strong); }
-
-code, .mono, .path {
-  font-family: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
-}
-code { font-size: .92em; }
 
 /* 숫자는 자리를 맞춘다. 표에서 위아래 숫자의 자릿수가 어긋나면 크기 비교가
    눈으로 되지 않는다. */
 .num { text-align: right; font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
-
-button { font: inherit; cursor: pointer; }
-
-/* ============================================================
-   틀 — 왼쪽 사이드바 + 본문
-   ============================================================ */
-.shell { display: flex; min-height: 100vh; }
-
-.side {
-  width: var(--sidebar); flex-shrink: 0;
-  border-right: 1px solid var(--line); background: var(--sunken);
-  display: flex; flex-direction: column;
-  position: sticky; top: 0; height: 100vh;
-}
-.side .brand {
-  padding: 20px 20px 18px;
-  font-size: 17px; font-weight: 700; letter-spacing: -.015em;
-}
-.side .brand a { color: var(--fg); }
-
-.side nav { display: flex; flex-direction: column; gap: 1px; padding: 0 10px; }
-.side nav a {
-  display: flex; align-items: center; gap: 9px;
-  padding: 8px 10px; border-radius: 7px;
-  font-size: 14.5px; color: var(--fg-muted);
-}
-.side nav a:hover { background: var(--hover); color: var(--fg); }
-.side nav a.current { background: var(--hover); color: var(--fg); font-weight: 600; }
-.side nav a .badge {
-  margin-left: auto; font-size: 13px; font-weight: 600; color: var(--fg-faint);
-  font-variant-numeric: tabular-nums;
-}
-/* 기한이 지난 것이 있으면 숫자를 붉게. 메뉴를 누르기 전에 알아야 한다. */
-.side nav a .badge.alert { color: var(--critical); }
-
-.side .spacer { flex: 1; }
-
-/* 계정 블록. 안쪽은 <details> 메뉴다 (.menu — 아래 공통 규칙). */
-.side .me { border-top: 1px solid var(--line); padding: 10px; }
-.avatar {
-  width: 28px; height: 28px; border-radius: 14px; flex-shrink: 0;
-  background: var(--subtle); border: 1px solid var(--line-strong);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12.5px; font-weight: 700; color: var(--fg-muted);
-}
-.me .who { min-width: 0; flex: 1; }
-.me .who b {
-  display: block; font-size: 13.5px; font-weight: 600; color: var(--fg);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.me .who .role { display: block; font-size: 12px; color: var(--fg-faint); }
-.me .caret { color: var(--fg-faint); font-size: 11px; }
-
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-
-/* ============================================================
-   페이지 머리 · 탭 · 메뉴 — fragments/ui.html 이 쓰는 것
-   ============================================================ */
-/* 화면 머리를 한 모양으로. 앞서는 화면마다 .crumb / .page-head / .meta 를
-   제각각 조합해서, 화면을 옮길 때마다 눈이 제목 자리를 다시 찾아야 했다. */
-.page-header { padding: 20px var(--gutter) 0; }
-.page-pretitle {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 13px; color: var(--fg-faint); margin-bottom: 4px;
-}
-.page-pretitle:empty { display: none; }
-.page-titlerow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.page-titlerow h1 { margin: 0; font-size: 23px; font-weight: 700; letter-spacing: -.018em; }
-/* 제목 옆 한 줄. 무엇을 언제 봤는지 알려 주는 값이지 설명문이 아니다. */
-.page-subtitle {
-  font-size: 14px; color: var(--fg-faint);
-  font-variant-numeric: tabular-nums; margin-top: 5px;
-}
-.btn-list { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
-.btn-list:empty { display: none; }
-/* 탭이 없는 화면은 머리 아래에 선을 그어 본문과 가른다. */
-.page-header.plain { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
-
-/* 탭. 자바스크립트로 감췄다 보였다 하지 않고 링크로 만든다 — 그래야
-   새로고침·공유·뒤로가기가 살아 있다. */
-.tabs {
-  display: flex; gap: 2px; margin-top: 16px; padding: 0 var(--gutter);
-  border-bottom: 1px solid var(--line); overflow-x: auto;
-}
-.page-header .tabs {
-  margin-left: calc(var(--gutter) * -1); margin-right: calc(var(--gutter) * -1);
-}
-.tabs a {
-  padding: 9px 12px; font-size: 14px; color: var(--fg-muted);
-  border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
-}
-.tabs a:hover { color: var(--fg); }
-.tabs a.current { color: var(--fg); font-weight: 600; border-bottom-color: var(--fg); }
-.tabs a .n {
-  margin-left: 5px; color: var(--fg-faint); font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-.tabs a.current .n { color: var(--fg-muted); }
-
-/* 메뉴. <details> 라 자바스크립트가 없어도 열리고 Esc 가 듣는다. */
-.menu { position: relative; }
-.menu > summary {
-  list-style: none; cursor: pointer;
-  display: flex; align-items: center; gap: 9px;
-  padding: 8px 10px; border-radius: 8px;
-}
-.menu > summary::-webkit-details-marker { display: none; }
-.menu > summary:hover, .menu[open] > summary { background: var(--hover); }
-.menu-list {
-  position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 30;
-  background: var(--bg); border: 1px solid var(--line-strong); border-radius: 9px;
-  box-shadow: 0 10px 30px rgba(20, 22, 26, .16); padding: 4px;
-}
-.menu-list a, .menu-list button {
-  display: block; width: 100%; text-align: left;
-  padding: 7px 10px; border-radius: 6px; font-size: 13.5px;
-  color: var(--fg-muted); border: 0; background: transparent;
-}
-.menu-list a:hover, .menu-list button:hover { background: var(--hover); color: var(--fg); }
-.menu-list hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
-
-/* 어디에 있는지. 구역 색 띠를 앞에 달아 제목을 보기 전에 자리를 안다. */
-.crumb {
-  display: flex; align-items: center; gap: 7px;
-  padding: 20px var(--gutter) 0; font-size: 13px; color: var(--fg-faint);
-}
-.crumb .zrail { height: 12px; }
-.crumb + .page-head { padding-top: 5px; }
-
-/* 화면 머리 — 제목과 그 옆의 한 줄, 오른쪽에 동작. */
-.page-head {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  padding: 22px var(--gutter) 18px; border-bottom: 1px solid var(--line);
-}
-.page-head h1 { margin: 0; font-size: 23px; font-weight: 700; letter-spacing: -.018em; }
-/* 제목 옆 한 줄. 무엇을 언제 봤는지를 알려 주는 값이지 설명문이 아니다. */
-.page-head .meta { font-size: 14px; color: var(--fg-faint); font-variant-numeric: tabular-nums; }
-.page-head .spacer { flex: 1; }
-
-.body { padding: 18px var(--gutter) 40px; }
-/* 표가 화면 끝까지 가는 화면은 좌우 여백을 표 안쪽 칸이 가진다. */
-.body.flush { padding: 0 0 40px; }
-
-h2 { font-size: 16px; font-weight: 700; margin: 28px 0 10px; letter-spacing: -.01em; }
-h2:first-child { margin-top: 0; }
-h3 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; color: var(--fg-muted); }
-
-.muted { color: var(--fg-muted); }
-.faint { color: var(--fg-faint); }
-.center { text-align: center; }
-.spacer { flex: 1; }
-form.inline { display: inline; margin: 0; }
-
-/* 화면 머리의 한 줄. */
-.lede { font-size: 14px; color: var(--fg-muted); margin: 0 0 16px; }
-
-/* ============================================================
-   알림 줄
-   ============================================================ */
-.banner {
-  margin: 16px var(--gutter); padding: 11px 14px;
-  border: 1px solid var(--line); border-radius: var(--radius);
-  background: var(--subtle); font-size: 14px;
-}
-.banner.ok     { border-color: var(--ok-line);       background: var(--ok-bg); }
-.banner.warn   { border-color: var(--medium-line);   background: var(--medium-bg); }
-.banner.danger { border-color: var(--critical-line); background: var(--critical-bg); }
-.banner.info   { border-color: var(--accent-line);   background: var(--accent-bg); }
-
-/* ============================================================
-   버튼
-   ============================================================ */
-.btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 14px; padding: 8px 14px; border-radius: 8px;
-  border: 1px solid var(--line-strong); background: var(--bg); color: var(--fg-muted);
-  white-space: nowrap;
-}
-.btn:hover { background: var(--subtle); color: var(--fg); }
-/* 으뜸 동작은 파랑이 아니라 먹색이다. 파란 버튼은 링크와 섞여 어느 쪽이
-   '지금 할 일'인지 흐려진다. */
-.btn.primary { background: var(--fg); border-color: var(--fg); color: var(--on-dark); font-weight: 500; }
-.btn.primary:hover { background: var(--fg-strong); color: var(--on-dark); }
-.btn.small { font-size: 13px; padding: 5px 10px; border-radius: 6px; }
-.btn.danger { border-color: var(--critical-line); color: var(--critical); background: var(--bg); }
-.btn.danger:hover { background: var(--critical-bg); color: var(--critical); }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn.link { border: 0; background: transparent; color: var(--fg-faint); padding: 7px 4px; }
-.btn.link:hover { color: var(--fg); background: transparent; }
-
-/* ============================================================
-   입력
-   ============================================================ */
-label { display: block; margin-bottom: 14px; font-size: 13px; color: var(--fg-muted); }
-input, select, textarea {
-  font: inherit; font-size: 14px; width: 100%; margin-top: 5px;
-  padding: 8px 11px; border: 1px solid var(--line-strong);
-  border-radius: 8px; background: var(--bg); color: var(--fg);
-}
-input:focus, select:focus, textarea:focus {
-  outline: 2px solid var(--accent-bg); border-color: var(--accent);
-}
-/* 색 고르개. 기본값으로 두면 폭만 100% 로 늘어나 납작한 선처럼 보인다. */
-input[type="color"] {
-  width: 40px; height: 32px; padding: 2px; cursor: pointer;
-  border-radius: 7px; margin-top: 0;
-}
-
-.inline-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
-.inline-form label { margin-bottom: 0; }
-.inline-form input, .inline-form select { width: auto; min-width: 10rem; }
-
-/* 체크칸 — 상자와 글자가 한 줄에 나란히.
-   `label { display: block }` 과 `input { width: 100% }` 가 그대로 걸려 있어서
-   상자가 글자 위에 올라앉고 폭까지 늘어나 있었다. `.check` 라는 클래스는
-   세 화면에서 쓰고 있었는데 **정의가 아예 없었고**, 자산 화면만 같은 것을
-   인라인 style 로 따로 적어 두고 있었다. */
-label.check {
-  display: inline-flex; align-items: center; gap: 6px;
-  margin-bottom: 0; white-space: nowrap; cursor: pointer;
-}
-label.check input[type="checkbox"] {
-  width: auto; margin: 0; flex-shrink: 0; cursor: pointer;
-}
-
-/* 찾기 칸. 돋보기와 한 몸으로 둔다. */
-.search {
-  display: flex; align-items: center; gap: 8px;
-  height: 36px; padding: 0 12px; width: 280px;
-  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--bg);
-}
-.search:focus-within { border-color: var(--accent); outline: 2px solid var(--accent-bg); }
-.search input { border: 0; outline: 0; margin: 0; padding: 0; background: transparent; min-width: 0; }
-
-/* 거르개 한 줄. '적용' 버튼을 두지 않는다 — 누르면 바로 걸린다. */
-.filters {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 0 var(--gutter) 14px; border-bottom: 1px solid var(--line);
-}
-.segmented { display: inline-flex; padding: 3px; gap: 2px; background: var(--subtle); border-radius: 9px; }
-.segmented a {
-  display: flex; align-items: center; gap: 7px;
-  padding: 6px 13px; border-radius: 7px; font-size: 14px; color: var(--fg-muted);
-}
-.segmented a:hover { color: var(--fg); }
-.segmented a.current {
-  background: var(--bg); color: var(--fg); font-weight: 600;
-  box-shadow: 0 1px 2px rgba(20, 22, 26, .08);
-}
-.segmented .num { font-weight: 600; }
-
-.chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 13px; border-radius: 8px; font-size: 14px;
-  border: 1px solid var(--line-strong); background: var(--bg); color: var(--fg-muted);
-}
-.chip:hover { background: var(--subtle); color: var(--fg); }
-.chip.on { border-color: var(--fg); background: var(--fg); color: var(--on-dark); font-weight: 500; }
-
-/* ============================================================
-   요약 줄 · 구역 카드
-   ============================================================ */
-/* 지금 무엇이 급한가 — 한 줄이다. 숫자 상자를 여섯 개 세우면 매일 보는
-   사람에게 장식이 되고, 그 아래 정작 봐야 하는 목록이 화면 밖으로 밀린다. */
-.summaryline {
-  display: flex; align-items: center; flex-wrap: wrap;
-  padding: 12px var(--gutter); border-bottom: 1px solid var(--line);
-  background: var(--sunken);
-}
-.summaryline a {
-  display: inline-flex; align-items: baseline; gap: 6px;
-  padding: 4px 14px 4px 0; margin-right: 14px;
-  font-size: 13.5px; color: var(--fg-muted); border-right: 1px solid var(--line-strong);
-}
-.summaryline a:last-child { border-right: 0; margin-right: 0; }
-.summaryline a:hover { color: var(--fg); }
-.summaryline a b {
-  font-size: 17px; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums;
-}
-.summaryline a.alert b { color: var(--critical); }
-
-/* 구역 카드. 카드 **안에** 그 구역의 자산이 들어 있다 — 눌러서 자산 목록으로
-   튕기면 그 화면은 중간 정거장일 뿐이고, 기둥에 구역 목록을 두었던 것과
-   같은 문제가 된다. */
-.zonegrid {
-  display: grid; gap: 16px; padding: 18px var(--gutter) 0;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-}
-.zonecard { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
-.zonecard .top { display: flex; align-items: center; gap: 9px; padding: 14px 16px 0; }
-.zonecard .top b { font-size: 15.5px; font-weight: 700; letter-spacing: -.01em; }
-.zonecard .top .faint { font-size: 13px; }
-.zonecard .spacer { flex: 1; }
-.zonecard .stat { padding: 10px 16px 12px; display: flex; align-items: baseline; gap: 8px; }
-.zonecard .stat b {
-  font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.zonecard .stat span { font-size: 13px; color: var(--fg-muted); }
-.zonecard .bars { padding: 0 16px 10px; }
-.zonecard .counts { padding: 0 16px 12px; display: flex; flex-wrap: wrap; gap: 4px 0; }
-.zonecard .servers { border-top: 1px solid var(--line); background: var(--sunken); }
-.zonecard .servers a {
-  display: flex; align-items: center; gap: 8px; padding: 8px 16px;
-  font-size: 13.5px; color: var(--fg-muted); border-bottom: 1px solid var(--line);
-}
-.zonecard .servers a:last-of-type { border-bottom: 0; }
-.zonecard .servers a:hover { background: var(--hover); color: var(--fg); }
-.zonecard .servers a b { font-weight: 600; color: var(--fg); }
-.zonecard .foot {
-  padding: 9px 16px; border-top: 1px solid var(--line);
-  font-size: 12.5px; color: var(--fg-faint); display: flex; align-items: center; gap: 8px;
-}
-
-/* 표 머리를 눌러 정렬한다. 링크가 칸을 꽉 채워야 어디를 눌러도 먹는다. */
-th.sortable { padding: 0; }
-th.sortable a { display: block; padding: 9px 14px; color: inherit; }
-th.sortable a:hover { color: var(--fg); }
-th.sortable .sortmark { color: var(--fg); }
-
-/* 결과 수. 표 위에 크게 한 번. */
-.resultcount { display: flex; align-items: baseline; gap: 8px; padding: 12px var(--gutter) 10px; }
-.resultcount b { font-size: 20px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
-.resultcount span { font-size: 14px; color: var(--fg-muted); }
-
-/* ============================================================
-   표 — 바깥 테두리 없이 머리카락 선만
-   ============================================================ */
-table { border-collapse: collapse; width: 100%; }
-th {
-  text-align: left; padding: 9px 14px; white-space: nowrap;
-  font-size: 12.5px; font-weight: 600; color: var(--fg-faint);
-  background: var(--sunken);
-  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-  /* 긴 표에서 머리가 붙어 있는다. 취약점 수천 건을 훑을 때 어느 칸이
-     무엇인지 매번 위로 올라가 확인하게 두지 않는다. */
-  position: sticky; top: 0; z-index: 2;
-}
-/* 이름표-값 표(.kv)와 보고서 표는 붙일 이유가 없다 — 짧고, 인쇄로 나간다. */
-.kv th, .report th, dialog th { position: static; }
-td { padding: 11px 14px; font-size: 14px; vertical-align: middle; border-bottom: 1px solid var(--line); }
-tbody tr:hover { background: var(--sunken); }
 th.num, td.num { text-align: right; }
 
-/* 표가 화면 폭을 다 쓰는 경우 첫 칸과 끝 칸은 화면 여백만큼 들여 쓴다. */
-.flush table th:first-child, .flush table td:first-child { padding-left: var(--gutter); }
-.flush table th:last-child,  .flush table td:last-child  { padding-right: var(--gutter); }
-
-/* 내용만큼만 차지하는 열. 남는 폭은 tight 가 아닌 열이 가져간다. */
-th.tight, td.tight { width: 1%; white-space: nowrap; }
-.asset-table td:last-child, .asset-table th:last-child { width: auto; min-width: 11rem; }
-
-.table-scroll { overflow-x: auto; }
-
-/* ── 좁은 화면(노트북 1366×768 이 흔하다)의 표 ──────────────────────────────
-   **들어가지 않는다. 억지로 넣지 않는다.** 취약점 표는 아홉 칸이고 CVE 번호
-   하나가 110px 쯤을 쓴다. 1024px 에서 표에 주어지는 폭은 788px 이라, 아홉
-   칸을 넣으려면 칸마다 87px 이다 — 번호 한 개도 못 넣는다.
-
-   그래서 세 갈래 중에서 고른다.
-
-     칸을 줄인다   좁을 때 칸을 감춘다 → 값이 사라진다. 이 도구는 감추지 않는다
-     접는다        `줄바꿈 금지`를 풀어 두 줄로 → **해 보고 버렸다.** `tight` 는
-                   `width:1%` 도 함께 걸고 있어서, 줄바꿈을 풀면 칸이 내용의
-                   최소 폭까지 줄어든다. 거기에 긴 식별자를 끊어 주면
-                   `CVE-2021-44228` 이 한 글자씩 세로로 쪼개진다. 표는 칸 안에
-                   들어가고 화면은 못 읽게 된다 — 재기만 통과한 셈이다
-     고정한다      ← 이것. 가로로 밀되 **첫 칸이 따라 움직이지 않게** 한다
-
-   미는 것 자체는 문제가 아니었다. 밀면 어느 줄을 보고 있었는지 잃는 것이
-   문제였다. 첫 칸(자산 · 취약점 번호)을 붙여 두면 오른쪽 끝의 `적기` 까지
-   밀어도 그 줄이 무엇인지 계속 보인다. */
-@media (max-width: 1200px) {
-  .table-scroll > table > thead th:first-child,
-  .table-scroll > table > tbody > tr > td:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 1;
-    /* 비치면 뒤 글자와 겹쳐 읽힌다. 바탕을 깔아 둔다. */
-    background: var(--bg);
-  }
-  /* 표 머리는 이미 `position: sticky; top: 0; z-index: 2` 로 붙어 있다.
-     그래서 첫 칸에 z-index 1 만 주면 **옆 칸이 위에 덮여 첫 칸 글자가
-     사라진다** — 실제로 `자산` 이 안 보였다. 머리의 첫 칸은 위·왼쪽 양쪽에
-     붙으므로 형제보다 높아야 한다. */
-  .table-scroll > table > thead th:first-child {
-    background: var(--sunken);
-    z-index: 3;
-  }
-  .table-scroll > table > tbody > tr:hover > td:first-child { background: var(--hover); }
-  /* 펼친 줄은 한 칸이 표 전체를 덮는다. 그것까지 붙이면 의미가 없다. */
-  .table-scroll > table > tbody > tr.zone-row > td:first-child { position: static; }
-
-  /* **눌리는 대신 밀리게 한다.** `tight` 가 아닌 칸은 남는 폭을 나눠 쓰는데,
-     표가 칸보다 넓으면 그 칸들이 최소 폭까지 줄어든다. 한국어는 글자 단위로
-     줄바꿈되므로 `조치 안 함(위험 수용)` 이 한 글자씩 세로로 쪼개졌다 —
-     표는 칸 안에 들어가고 사람은 못 읽는다.
-
-     최소 폭을 주면 표가 칸을 넘고, 넘으면 `.table-scroll` 이 밀어 준다.
-     첫 칸은 위에서 붙여 두었으니 밀어도 어느 줄인지 잃지 않는다. */
-  .table-scroll > table > thead th:not(.tight):not(.num),
-  .table-scroll > table > tbody > tr > td:not(.tight):not(.num) { min-width: 7rem; }
-}
-
-/* 이름표와 값이 짝을 이루는 표. 이름표 칸에 회색 바탕을 깔면 표 머리처럼
-   보여서, 값이 아래가 아니라 오른쪽에 있다는 것을 한 번 더 읽어야 한다. */
-.kv th {
-  width: 7rem; background: transparent; color: var(--fg-muted);
-  font-weight: 500; border-top: 0; vertical-align: top;
-}
-.kv td { border-top: 0; }
+.mono, .path, code { font-family: var(--tblr-font-monospace); }
 
 /* 설치 경로. 길어서 한 줄로 자르고 전체는 title 로 본다. */
 .path { font-size: 12.5px; max-width: 22rem;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 도움말 — 접어 둔다.
-   화면 자체에 설명을 늘어놓으면 매일 보는 사람에게는 전부 군더더기이고,
-   그 군더더기 때문에 실제로 봐야 하는 값이 묻힌다. 처음 한 번 필요한
-   내용은 그 동작 옆에 접어 두고, 필요한 사람만 펼친다. */
-details.help { margin: 10px 0 0; font-size: 13.5px; }
-details.help > summary {
-  cursor: pointer; color: var(--fg-faint); width: fit-content;
-  list-style: none; display: flex; align-items: center; gap: 5px;
-}
-details.help > summary::-webkit-details-marker { display: none; }
-details.help > summary::before { content: "?";
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 15px; height: 15px; border-radius: 8px; flex-shrink: 0;
-  border: 1px solid var(--line-strong); font-size: 10.5px; font-weight: 700;
-}
-details.help > summary:hover { color: var(--fg); }
-details.help[open] > summary { margin-bottom: 8px; }
-details.help .inner {
-  color: var(--fg-muted); line-height: 1.75; max-width: 44rem;
-  padding: 11px 14px; border-radius: 8px; background: var(--sunken);
-  border: 1px solid var(--line);
-}
-details.help .inner > :first-child { margin-top: 0; }
-details.help .inner > :last-child { margin-bottom: 0; }
-
-/* 아무것도 없을 때. 빈 표를 그리는 대신 왜 비었는지 말하고,
-   **다음에 할 것을 버튼 하나로** 준다. 앞서는 글자만 있어서, 읽고 나서
-   어디를 눌러야 하는지 다시 찾아야 했다. */
-.empty { padding: 52px var(--gutter); text-align: center; color: var(--fg-muted); }
-.empty .glyph {
-  width: 38px; height: 38px; margin: 0 auto 12px; border-radius: 10px;
-  border: 1.5px dashed var(--line-strong); display: flex;
-  align-items: center; justify-content: center; color: var(--fg-faint); font-size: 17px;
-}
-.empty b { display: block; font-size: 15px; font-weight: 600; color: var(--fg); margin-bottom: 5px; }
-.empty p { margin: 0 0 14px; font-size: 13.5px; }
-/* 화면 한가운데가 아니라 제목 바로 아래 붙는 것. 가운데로 몰면 어느 제목에
-   딸린 말인지 흐려진다. */
-.empty.inline { padding: 14px 0; text-align: left; font-size: 14px; }
+.muted { color: var(--fg-muted); }
+.faint { color: var(--fg-faint); }
+.spacer { flex: 1; }
+form.inline { display: inline; margin: 0; }
+.danger-text { color: var(--critical); font-weight: 600; }
+td.overdue { color: var(--critical); font-weight: 600; }
 
 /* ============================================================
-   구역
+   표 — Tabler 의 표에 두 가지만 더한다
    ============================================================ */
-/* 구역 색 띠. 색만으로 구분하지 않고 언제나 이름이 옆에 붙는다. */
-.zrail { display: inline-block; width: 3px; height: 15px; border-radius: 2px; flex-shrink: 0; }
-
-/* 구역 머리줄 — 그 구역의 현황이 한 줄로.
-   표 안에 줄로 들어간다. 구역마다 표를 따로 그리면 칸 너비가 제각각이
-   되어 세로로 눈이 내려가지 않는다. */
-.zone-head {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  font-size: 13.5px;
+/* 긴 표에서 머리가 붙어 있는다. 취약점 수천 건을 훑을 때 어느 칸이 무엇인지
+   매번 위로 올라가 확인하게 두지 않는다. */
+.table-sticky thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--tblr-bg-surface-secondary, #f8fafc);
 }
-tr.zone-row > td {
-  padding: 12px var(--gutter); background: var(--subtle);
-  border-top: 1px solid var(--line);
-}
-tbody:first-of-type tr.zone-row > td { border-top: 0; }
-tbody tr.zone-row:hover > td { background: var(--subtle); }
-.zone-head b { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
-.zone-head .spacer { flex: 1; }
-.zone-head .sep { width: 1px; height: 18px; background: var(--line-strong); display: block; }
 
-/* 심각도 표시. 색 띠 + 글자. 색만으로 구분하지 않는다. */
-.pcount { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13.5px; }
-.pcount + .pcount { margin-left: 12px; }
-.mark { display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
-.mark.critical { background: var(--critical); }
-.mark.high     { background: var(--high); }
-.mark.medium   { background: var(--medium); }
-.mark.low      { background: var(--low); }
+/* 내용만큼만 차지하는 열. 남는 폭은 tight 가 아닌 열이 가져간다. */
+th.tight, td.tight { width: 1%; white-space: nowrap; }
 
-/* ── 버전 분포 (패키지 화면) ──────────────────────────────────────────
-   한 패키지에 어느 버전이 몇 대에 깔려 있고, 그 버전에 무엇이 걸렸나.
+/* ── 좁은 화면(노트북 1366×768 이 흔하다)의 표 ──────────────────────────────
+   **들어가지 않는다. 억지로 넣지 않는다.** 취약점 표는 아홉 칸이고 CVE 번호
+   하나가 110px 쯤을 쓴다. 1024px 에서 표에 주어지는 폭으로는 아홉 칸이 물리적
+   으로 안 들어간다.
 
-   **색만으로 가르지 않는다(§5-15).** 걸린 것이 있는 버전은 `▮` 채운
-   사각형 + 그 등급 색이고, 걸린 것이 없는 버전은 `○` 속 빈 동그라미 +
-   회색이다. 색을 못 보는 사람에게도 모양이 다르게 보여야 한다. */
-.vslice {
-  display: inline-flex; align-items: center; gap: 5px;
-  margin-right: 14px; white-space: nowrap; font-size: 13px;
-}
-.vmark { display: inline-block; width: 8px; height: 8px; flex-shrink: 0; }
-.vmark.critical { background: var(--critical);  border-radius: 2px; }
-.vmark.high     { background: var(--high);      border-radius: 2px; }
-.vmark.medium   { background: var(--medium);    border-radius: 2px; }
-.vmark.low      { background: var(--low);       border-radius: 2px; }
-.vmark.negligible, .vmark.unknown {
-  background: var(--fg-faint); border-radius: 2px;
-}
-/* 걸린 것이 없는 버전 — 속이 비고 둥글다. */
-.vmark.none {
-  background: transparent; border: 1.5px solid var(--fg-faint); border-radius: 50%;
-}
-/* 취약한 버전은 글자도 그 색을 쓴다. 안전한 버전은 기본색 그대로. */
-.sevtext[data-sev="critical"] { color: var(--critical); font-weight: 600; }
-.sevtext[data-sev="high"]     { color: var(--high);     font-weight: 600; }
-.sevtext[data-sev="medium"]   { color: var(--medium);   font-weight: 600; }
-.sevtext[data-sev="low"]      { color: var(--low); }
-.sevtext[data-sev="negligible"], .sevtext[data-sev="unknown"] { color: var(--fg-muted); }
+     칸을 줄인다   좁을 때 칸을 감춘다 → 값이 사라진다. 이 도구는 감추지 않는다
+     접는다        줄바꿈을 풀어 두 줄로 → **해 보고 버렸다.** `CVE-2021-44228`
+                   이 한 글자씩 세로로 쪼개졌다 — 표는 칸 안에 들어가고 사람은
+                   못 읽는다
+     고정한다      ← 이것. 가로로 밀되 **첫 칸이 따라 움직이지 않게** 한다
 
-/* 심각도 딱지 */
+   미는 것 자체는 문제가 아니었다. 밀면 어느 줄을 보고 있었는지 잃는 것이
+   문제였다. */
+@media (max-width: 1200px) {
+  .table-responsive > table > thead th:first-child,
+  .table-responsive > table > tbody > tr > td:first-child {
+    position: sticky; left: 0; z-index: 1;
+    /* 비치면 뒤 글자와 겹쳐 읽힌다. 바탕을 깔아 둔다. */
+    background: var(--tblr-bg-surface, #fff);
+  }
+  /* 표 머리는 이미 위에 붙어 있다(z-index 2). 머리의 첫 칸은 위·왼쪽 양쪽에
+     붙으므로 형제보다 높아야 한다 — 1 만 주면 옆 칸이 덮어 글자가 사라진다. */
+  .table-responsive > table > thead th:first-child {
+    z-index: 3; background: var(--tblr-bg-surface-secondary, #f8fafc);
+  }
+  /* 펼친 줄은 한 칸이 표 전체를 덮는다. 그것까지 붙이면 의미가 없다. */
+  .table-responsive > table > tbody > tr.zone-row > td:first-child { position: static; }
+  /* 한국어는 글자 단위로 줄바꿈된다. 최소 폭이 없으면 `조치 안 함(위험 수용)`
+     이 한 글자씩 세로로 쪼개진다. 최소 폭을 주면 표가 칸을 넘고, 넘으면
+     가로로 밀린다 — 첫 칸은 붙여 두었으니 어느 줄인지 잃지 않는다. */
+  .table-responsive > table > thead th:not(.tight):not(.num),
+  .table-responsive > table > tbody > tr > td:not(.tight):not(.num) { min-width: 7rem; }
+}
+
+/* 작은 입력칸과 작은 고르개의 높이를 맞춘다.
+   Tabler 에서 `form-select-sm` 은 32px, `form-control-sm` 은 28px 다. 거르개
+   줄에는 둘이 나란히 서는데, 4px 차이는 한 줄에 붙여 놓으면 눈에 걸린다 —
+   "오와열이 안 맞는다" 가 이런 것들의 합이다. 모양이 아니라 **줄맞춤**을
+   고치는 것이라 여기 둔다. */
+input.form-control-sm, select.form-select-sm { height: 2rem; }
+
+/* 표 머리를 눌러 정렬한다. 링크가 칸을 꽉 채워야 어디를 눌러도 먹는다. */
+th.sortable { padding: 0; }
+th.sortable a { display: block; padding: .5rem .75rem; color: inherit; }
+th.sortable a:hover { color: var(--fg); }
+th.sortable .sortmark { color: var(--fg); }
+
+/* 이름표와 값이 짝을 이루는 표. 이름표 칸에 회색 바탕을 깔면 표 머리처럼
+   보여서, 값이 아래가 아니라 오른쪽에 있다는 것을 한 번 더 읽어야 한다. */
+.kv th {
+  width: 7.5rem; background: transparent; color: var(--fg-muted);
+  font-weight: 500; vertical-align: top; white-space: nowrap;
+}
+
+/* ============================================================
+   심각도 · 구역 — 우리 것
+   ============================================================ */
+/* 심각도 딱지. 색만으로 구분하지 않는다 — 언제나 글자가 함께 있다. */
 .sev {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 9px; border-radius: 6px;
@@ -615,23 +160,7 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 .sev.low      { background: var(--low-bg);      color: var(--low); }
 .sev i { width: 6px; height: 6px; border-radius: 2px; background: currentColor; display: block; }
 
-.tag {
-  display: inline-block; padding: 2px 8px; border-radius: 5px;
-  font-size: 12.5px; font-weight: 600;
-  background: var(--subtle); color: var(--fg-muted);
-}
-.tag.kev   { background: var(--critical-bg); color: var(--critical); }
-.tag.fix   { background: var(--ok-bg);       color: var(--ok); }
-.tag.nofix { background: var(--medium-bg);   color: var(--medium); }
-
-/* 수용 링크. 버튼처럼 크게 두면 '올리기' 보다 눈에 띈다 — 고치는 것이
-   먼저이고 수용은 마지막 수단이다. */
-.accept-link { font-size: 12.5px; margin-left: 6px; white-space: nowrap; }
-
-.danger-text { color: var(--critical); font-weight: 600; }
-
 /* 심각도 막대. 한 자산의 구성을 한 줄로 본다.
-
    0 이 아닌 구간은 **최소 2px**. 비율만으로 그리면 187건 중 심각 1건이
    폭 0 으로 사라진다 — 가장 급한 것이 안 보이는 셈이다. */
 .sevbar {
@@ -645,92 +174,195 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 .sevbar i.medium   { background: var(--medium); }
 .sevbar i.low      { background: var(--low); }
 
+/* 개수 표시. 색 띠 + 글자. */
+.pcount { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13.5px; }
+.pcount + .pcount { margin-left: 12px; }
+.mark { display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.mark.critical { background: var(--critical); }
+.mark.high     { background: var(--high); }
+.mark.medium   { background: var(--medium); }
+.mark.low      { background: var(--low); }
+
+/* ── 버전 분포 (패키지 화면) ──────────────────────────────────────────
+   **색만으로 가르지 않는다.** 걸린 것이 있는 버전은 채운 사각형 + 그 등급
+   색이고, 걸린 것이 없는 버전은 속 빈 동그라미 + 회색이다. 색을 못 보는
+   사람에게도 모양이 다르게 보여야 한다. */
+.vslice {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-right: 14px; white-space: nowrap; font-size: 13px;
+}
+.vmark { display: inline-block; width: 8px; height: 8px; flex-shrink: 0; border-radius: 2px; }
+.vmark.critical { background: var(--critical); }
+.vmark.high     { background: var(--high); }
+.vmark.medium   { background: var(--medium); }
+.vmark.low      { background: var(--low); }
+.vmark.negligible, .vmark.unknown { background: var(--fg-faint); }
+/* 걸린 것이 없는 버전 — 속이 비고 둥글다. */
+.vmark.none { background: transparent; border: 1.5px solid var(--fg-faint); border-radius: 50%; }
+
+.sevtext[data-sev="critical"] { color: var(--critical); font-weight: 600; }
+.sevtext[data-sev="high"]     { color: var(--high);     font-weight: 600; }
+.sevtext[data-sev="medium"]   { color: var(--medium);   font-weight: 600; }
+.sevtext[data-sev="low"]      { color: var(--low); }
+.sevtext[data-sev="negligible"], .sevtext[data-sev="unknown"] { color: var(--fg-muted); }
+
+/* 구역 색 띠. 색만으로 구분하지 않고 언제나 이름이 옆에 붙는다. */
+.zrail { display: inline-block; width: 3px; height: 15px; border-radius: 2px; flex-shrink: 0; }
+
+/* 구역 머리줄 — 그 구역의 현황이 한 줄로. 표 안에 줄로 들어간다. 구역마다
+   표를 따로 그리면 칸 너비가 제각각이 되어 세로로 눈이 내려가지 않는다. */
+.zone-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
+.zone-head b { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.zone-head .sep { width: 1px; height: 18px; background: var(--tblr-border-color); display: block; }
+tr.zone-row > td { background: var(--subtle); }
+tbody tr.zone-row:hover > td { background: var(--subtle); }
+
+/* 딱지 — 실제 악용 · 수정 버전 유무 */
+.tag {
+  display: inline-block; padding: 2px 8px; border-radius: 5px;
+  font-size: 12.5px; font-weight: 600;
+  background: var(--subtle); color: var(--fg-muted);
+}
+.tag.kev   { background: var(--critical-bg); color: var(--critical); }
+.tag.fix   { background: var(--ok-bg);       color: var(--ok); }
+.tag.nofix { background: var(--medium-bg);   color: var(--medium); }
+
+/* 검사 상태 */
+.status { font-size: 12.5px; font-weight: 600; padding: 2px 8px; border-radius: 5px; white-space: nowrap; }
+.status.QUEUED, .status.RUNNING { background: var(--accent-bg); color: var(--accent); }
+.status.DONE   { background: var(--ok-bg);       color: var(--ok); }
+.status.FAILED { background: var(--critical-bg); color: var(--critical); }
+
+/* 수용 링크. 단추처럼 크게 두면 '올리기' 보다 눈에 띈다 — 고치는 것이
+   먼저이고 수용은 마지막 수단이다. */
+.accept-link { font-size: 12.5px; margin-left: 6px; white-space: nowrap; }
+
 /* ============================================================
-   상자 — 이제 거의 쓰지 않는다
+   요약 줄 — 지금 무엇이 급한가
    ============================================================ */
-/* 흰 바탕 위의 흰 상자는 테두리만 남는다. 정말 묶어야 하는 곳(설정 화면의
-   갈래, 되돌릴 수 없는 동작)에만 남겨 두고 나머지는 선과 여백으로 가른다. */
-.card {
-  border: 1px solid var(--line); border-radius: 10px;
-  padding: 16px 18px; margin-bottom: 18px; background: var(--bg);
+/* 숫자 상자를 여섯 개 세우면 매일 보는 사람에게 장식이 되고, 그 아래 정작
+   봐야 하는 목록이 화면 밖으로 밀린다. 한 줄로 둔다. */
+.summaryline { display: flex; align-items: center; flex-wrap: wrap; }
+.summaryline a {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 4px 14px 4px 0; margin-right: 14px;
+  font-size: 13.5px; color: var(--fg-muted); border-right: 1px solid var(--tblr-border-color);
 }
-.card > :first-child { margin-top: 0; }
-.card > :last-child { margin-bottom: 0; }
-
-/* 카드에 머리를 달면 안쪽 여백은 .card-body 가 가진다 — 표를 카드 끝까지
-   붙이려면 .card 자신은 여백이 없어야 한다. */
-.card:has(> .card-header) { padding: 0; }
-.card-header {
-  display: flex; align-items: center; gap: 10px;
-  padding: 13px 18px; border-bottom: 1px solid var(--line);
+.summaryline a:last-child { border-right: 0; margin-right: 0; }
+.summaryline a:hover { color: var(--fg); }
+.summaryline a b {
+  font-size: 17px; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums;
 }
-.card-title { font-size: 14.5px; font-weight: 600; margin: 0; }
-.card-body { padding: 16px 18px; }
-.card-body > :first-child { margin-top: 0; }
-.card-body > :last-child { margin-bottom: 0; }
-.card > .table-scroll > table > thead th { border-top: 0; }
-.card > .table-scroll > table > tbody > tr:last-child > td { border-bottom: 0; }
+/* `alert` 라는 이름을 쓰지 않는다 — Tabler 의 알림 상자 클래스와 같아서
+   그 이름을 붙이면 링크가 빨간 상자로 그려진다(실제로 그렇게 떴다). */
+.summaryline a.overdue b { color: var(--critical); }
 
-/* 되돌릴 수 없는 동작. 실수로 누르는 자리가 아니라 마음먹고 찾아오는
-   자리여야 한다. */
-.danger-zone { border-color: var(--critical-line); background: var(--critical-wash); }
-.danger-zone p { margin-top: 0; }
+/* Tabler 의 경고 알림은 글자가 주황(#f59f00)이라 옅은 바탕 위에서 2.0:1 이다.
+   장식이 아니라 **읽어야 하는 문장**이 들어가는 자리라(기한 지난 조치 · grype
+   실행 불가) 글자만 진하게 한다. 색상은 그대로 두고 명도만 낮췄다 —
+   `scripts/check-contrast.py` 로 재어 4.5:1 을 넘긴 값이다. */
+.alert-warning { --tblr-alert-color: #8a5a00; color: #8a5a00; }
+.alert-warning b, .alert-warning strong { color: inherit; }
 
 /* ============================================================
-   로그인 · 비밀번호
+   도움말 — 접어 둔다
    ============================================================ */
-body.gate {
-  display: flex; align-items: center; justify-content: center;
-  min-height: 100vh; background: var(--sunken);
+/* 화면 자체에 설명을 늘어놓으면 매일 보는 사람에게는 전부 군더더기이고, 그
+   군더더기 때문에 실제로 봐야 하는 값이 묻힌다. 처음 한 번 필요한 내용은 그
+   동작 옆에 접어 두고, 필요한 사람만 펼친다. */
+details.help { margin: 10px 0 0; font-size: 13.5px; }
+details.help > summary {
+  cursor: pointer; color: var(--fg-faint); width: fit-content;
+  list-style: none; display: flex; align-items: center; gap: 5px;
 }
-.gate-box { width: min(25rem, 92vw); background: var(--bg);
-            border: 1px solid var(--line); border-radius: 12px; padding: 28px 26px;
-            box-shadow: 0 1px 2px rgba(20, 22, 26, .04); }
-.gate-box .brand { font-size: 17px; font-weight: 700; letter-spacing: -.015em; margin-bottom: 20px; }
-.gate-box h1 { font-size: 17px; font-weight: 600; margin: 0 0 6px; }
-.gate-box .why { font-size: 13.5px; color: var(--fg-muted); margin: 0 0 20px; line-height: 1.6; }
-.gate-box form { display: flex; flex-direction: column; }
-/* 이름표와 그 아래 칸이 한 덩이로 붙어야 한다. 이름표에 아래 여백을 주면
-   이름표와 자기 칸 사이가 벌어지고, 그 칸과 다음 이름표가 붙어 버린다 —
-   "새 비밀번호" 가 위 칸의 설명처럼 읽힌다. */
-.gate-box form label { margin: 0 0 4px; }
-.gate-box form input { margin: 0 0 14px; }
-.gate-box .btn { margin-top: 6px; justify-content: center; }
-.gate-box .btn.primary { width: 100%; }
+details.help > summary::-webkit-details-marker { display: none; }
+details.help > summary::before {
+  content: "?"; display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border-radius: 8px; flex-shrink: 0;
+  border: 1px solid var(--tblr-border-color); font-size: 10.5px; font-weight: 700;
+}
+details.help > summary:hover { color: var(--fg); }
+details.help[open] > summary { margin-bottom: 8px; }
+details.help .inner {
+  color: var(--fg-muted); line-height: 1.75; max-width: 44rem;
+  padding: 11px 14px; border-radius: 8px; background: var(--sunken);
+  border: 1px solid var(--tblr-border-color);
+}
+details.help .inner > :first-child { margin-top: 0; }
+details.help .inner > :last-child { margin-bottom: 0; }
+
+/* 고르개 아래 뜨는 **뜻 한 줄**. 각주와 생김새는 닮았지만 다른 것이다 —
+   각주는 개조식이고, 이 줄은 정해 둔 문장 그대로다. */
+.gloss { margin: 6px 0 0; font-size: 12.5px; color: var(--fg-muted); line-height: 1.7; }
+
+/* 표 아래 한 줄. 약어를 푸는 자리이지 설명을 쓰는 자리가 아니다. */
+.footnote {
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--tblr-border-color);
+  font-size: 12.5px; color: var(--fg-faint); line-height: 1.7;
+}
 
 /* ============================================================
-   팝업
+   계정 메뉴 — <details> 라 자바스크립트가 없어도 열린다
+   ============================================================ */
+/* Tabler 의 dropdown 은 Bootstrap 의 JS 를 요구한다. 그 JS 를 들이면 그것이
+   안 뜨는 날 메뉴가 통째로 안 열린다 — <details> 는 브라우저가 연다. */
+.menu { position: relative; }
+.menu > summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: 8px;
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover, .menu[open] > summary { background: var(--hover); }
+.menu-list {
+  position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 1030;
+  background: #fff; border: 1px solid var(--tblr-border-color); border-radius: 9px;
+  box-shadow: 0 10px 30px rgba(20, 22, 26, .16); padding: 4px;
+}
+.menu-list a, .menu-list button {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 10px; border-radius: 6px; font-size: 13.5px;
+  color: var(--fg-muted); border: 0; background: transparent;
+}
+.menu-list a:hover, .menu-list button:hover { background: var(--hover); color: var(--fg); }
+.menu-list hr { border: 0; border-top: 1px solid var(--tblr-border-color); margin: 4px 2px; }
+.me .who { min-width: 0; flex: 1; }
+.me .who b {
+  display: block; font-size: 13.5px; font-weight: 600; color: var(--fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.me .who .role { display: block; font-size: 12px; color: var(--fg-faint); }
+.me .caret { color: var(--fg-faint); font-size: 11px; }
+
+/* ============================================================
+   팝업 — <dialog>
    ============================================================ */
 dialog {
-  border: 1px solid var(--line); border-radius: 12px; padding: 22px;
-  width: min(30rem, 92vw); box-shadow: 0 12px 40px rgba(20, 22, 26, .16);
+  border: 1px solid var(--tblr-border-color); border-radius: 12px; padding: 22px;
+  width: min(34rem, 92vw); box-shadow: 0 12px 40px rgba(20, 22, 26, .16);
+  color: var(--tblr-body-color);
 }
 dialog::backdrop { background: rgba(20, 22, 26, .32); }
-dialog h2 { margin-top: 0; }
+dialog h2 { margin-top: 0; font-size: 1.125rem; }
 dialog textarea { min-height: 4rem; }
 .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
 
-/* 표 안의 작은 폼(권한 바꾸기 등). 기본값으로 두면 칸 폭까지 눌려 화살표만
-   남는다. */
-td form.inline select, td form.inline input { width: auto; min-width: 8rem; margin-top: 0; }
-
 /* ============================================================
-   진행 상태
+   검사 진행
    ============================================================ */
 /* 검사가 도는 동안 무엇이 일어나고 있는지. 눈금은 보여 주기 위해 지어낸
    것이 아니라 ScanService 가 실제로 지나가는 자리와 하나씩 맞물린다. */
-.progress {
+.progress-panel {
   border: 1px solid var(--accent-line); border-radius: 12px;
-  overflow: hidden; background: var(--bg); margin-bottom: 20px;
+  overflow: hidden; background: #fff; margin-bottom: 20px;
 }
-.progress.failed { border-color: var(--critical-line); }
+.progress-panel.failed { border-color: var(--critical-line); }
 .progress-head {
   display: flex; align-items: center; gap: 13px;
   padding: 16px 20px; background: var(--accent-bg);
 }
-.progress.failed .progress-head { background: var(--critical-bg); }
+.progress-panel.failed .progress-head { background: var(--critical-bg); }
 .progress-head b { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
-.progress-head .spacer { flex: 1; }
 
 .spinner {
   width: 19px; height: 19px; border-radius: 10px; flex-shrink: 0;
@@ -749,12 +381,12 @@ td form.inline select, td form.inline input { width: auto; min-width: 8rem; marg
   transform: rotate(45deg);
 }
 
-.steps { display: flex; padding: 18px 20px 20px; border-top: 1px solid var(--line); }
+.steps { display: flex; padding: 18px 20px 20px; border-top: 1px solid var(--tblr-border-color); }
 .step { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
 .step .rail { display: flex; align-items: center; }
 .step .rail i {
   width: 21px; height: 21px; border-radius: 11px; flex-shrink: 0;
-  border: 2px solid var(--line-strong); background: var(--bg);
+  border: 2px solid var(--tblr-border-color); background: #fff;
 }
 .step .rail span { flex: 1; height: 3px; margin-left: 5px; border-radius: 2px;
                    background: var(--hover); overflow: hidden; position: relative; }
@@ -787,19 +419,10 @@ td form.inline select, td form.inline input { width: auto; min-width: 8rem; marg
   .spinner { animation: none; border-top-color: var(--accent-line); }
   .step.running .rail span::after { animation: none; left: 0; width: 100%; opacity: .5; }
 }
-
 @media (max-width: 700px) {
   .steps { flex-direction: column; gap: 14px; }
   .step .rail span { display: none; }
 }
-
-.status { font-size: 12.5px; font-weight: 600; padding: 2px 8px; border-radius: 5px; white-space: nowrap; }
-.status.QUEUED, .status.RUNNING { background: var(--accent-bg); color: var(--accent); }
-.status.DONE   { background: var(--ok-bg);       color: var(--ok); }
-.status.FAILED { background: var(--critical-bg); color: var(--critical); }
-
-.pager { display: flex; gap: 16px; align-items: center; justify-content: center; margin-top: 20px; }
-td.overdue { color: var(--critical); font-weight: 600; }
 
 /* ============================================================
    보고서 — 읽는 문서
@@ -812,22 +435,19 @@ td.overdue { color: var(--critical); font-weight: 600; }
 .report section { margin-bottom: 40px; break-inside: auto; }
 .report h2 {
   font-size: 17px; margin: 0 0 14px; padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--tblr-border-color);
 }
 .report h3 { font-size: 14px; margin: 24px 0 8px; color: var(--fg-muted); }
 
 /* 문서 정보 — 결재 문서의 첫 표. 두 쌍이 한 줄에 들어간다. */
-.report .docinfo { margin-bottom: 32px; border: 1px solid var(--line); }
+.report .docinfo { margin-bottom: 32px; border: 1px solid var(--tblr-border-color); }
 .report .docinfo th {
-  width: 7.5rem; background: var(--bg-sunk); color: var(--fg-muted);
+  width: 7.5rem; background: var(--sunken); color: var(--fg-muted);
   font-weight: 600; white-space: nowrap;
 }
 .report .docinfo th, .report .docinfo td {
-  border: 1px solid var(--line); padding: 8px 12px; font-size: 13px;
+  border: 1px solid var(--tblr-border-color); padding: 8px 12px; font-size: 13px;
 }
-/* 첫 칸의 여백을 없애는 규칙(.report th:first-child)이 테두리 표에는 어울리지 않는다. */
-.report .docinfo th:first-child, .report .docinfo td:first-child { padding-left: 12px; }
-.report .docinfo th:last-child,  .report .docinfo td:last-child  { padding-right: 12px; }
 
 /* 합계 줄. 표의 마지막 줄이 합계라는 것이 눈에 걸려야 한다. */
 .report tr.total > td { border-top: 2px solid var(--fg-muted); font-weight: 600; }
@@ -840,46 +460,12 @@ td.overdue { color: var(--critical); font-weight: 600; }
   padding: 12px 14px; border-radius: 8px;
 }
 .report table { margin-bottom: 8px; }
-.report th:first-child, .report td:first-child { padding-left: 0; }
-.report th:last-child,  .report td:last-child  { padding-right: 0; }
-.report .kv th { width: 8rem; background: transparent; color: var(--fg-muted); border-top: 0; }
-.report .kv td { border-top: 0; }
+.report .kv th { width: 8rem; }
 
 /* 구역·기간 고르기. 보고서 위에 얹히는 줄이라 가볍게 둔다. */
 .report-picker {
   display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;
-  margin-bottom: 28px; padding-bottom: 16px; border-bottom: 1px solid var(--line);
-}
-.report-picker label { margin-bottom: 0; }
-.report-picker input, .report-picker select { width: auto; min-width: 8rem; }
-
-/* 표 아래 한 줄. 약어를 푸는 자리이지 설명을 쓰는 자리가 아니다. */
-.footnote {
-  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
-  font-size: 12.5px; color: var(--fg-faint); line-height: 1.7;
-}
-
-/* 고르개 아래 뜨는 **뜻 한 줄** (§4.2~4.4). 각주와 생김새는 닮았지만 다른
-   것이다 — 각주는 개조식이고, 이 줄은 계획이 정한 문장 그대로다. 한
-   클래스를 같이 쓰다가 각주 규칙이 이 줄까지 잡았다. */
-.gloss {
-  margin: 6px 0 0; font-size: 12.5px; color: var(--fg-muted); line-height: 1.7;
-}
-
-/* ============================================================
-   좁은 화면
-   ============================================================ */
-/* 노트북 화면 하나로 보는 일이 잦다. 사이드바를 가로줄로 눕힌다. */
-@media (max-width: 900px) {
-  .shell { flex-direction: column; }
-  .side {
-    width: auto; height: auto; position: static;
-    border-right: 0; border-bottom: 1px solid var(--line);
-  }
-  .side nav { flex-direction: row; flex-wrap: wrap; padding: 0 14px 10px; }
-  .side .rule, .side .grouphead, .side .zonenav { display: none; }
-  .side .me { border-top: 1px solid var(--line); }
-  :root { --gutter: 16px; }
+  margin-bottom: 28px; padding-bottom: 16px; border-bottom: 1px solid var(--tblr-border-color);
 }
 
 /* ============================================================
@@ -893,26 +479,22 @@ td.overdue { color: var(--critical); font-weight: 600; }
 @page { size: A4 portrait; margin: 18mm 15mm; }
 
 @media print {
-  .side, .btn, .no-print, .report-picker { display: none !important; }
+  .navbar, .btn, .no-print, .report-picker, .page-header .btn-list { display: none !important; }
   .print-only { display: inline; }
   body { background: #fff; font-size: 10pt; }
-  .shell { display: block; }
-  .body { padding: 0; }
-  .page-head { border: 0; padding: 0; }
+  .page, .page-wrapper, .page-body, .container-xl { display: block; margin: 0; padding: 0; max-width: none; }
   .report { max-width: none; }
-  .card { border: none; padding: 0; margin-bottom: 12px; break-inside: avoid; }
+  .card { border: none; box-shadow: none; margin-bottom: 12px; break-inside: avoid; }
   table { font-size: 9.5pt; }
-  th { background: transparent; }
+  th { background: transparent !important; }
   /* 표가 쪽을 넘어가면 다음 쪽에도 열 머리가 다시 찍혀야 한다. */
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
-  .table-scroll { overflow-x: visible; }
-
+  .table-responsive { overflow-x: visible; }
   /* 장은 새 쪽에서 시작한다. 첫 장은 문서 정보에 붙여 둔다. */
   .report section { break-before: page; margin-bottom: 0; }
   .report section:first-of-type { break-before: auto; }
-  .report h2 { break-after: avoid; }
-  .report h3 { break-after: avoid; }
+  .report h2, .report h3 { break-after: avoid; }
   /* 각주는 자기가 다는 표와 같은 쪽에 있어야 뜻이 있다. */
   .footnote { break-before: avoid; }
   .report .docinfo th { background: transparent; }

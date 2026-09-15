@@ -4,11 +4,16 @@
 
       <html th:replace="~{layout :: page(~{::main}, 'assets', '자산')}">
 
-  레이아웃 전용 라이브러리를 더하지 않고 타임리프 기본 기능만 쓴다 — 의존성
-  하나가 늘면 폐쇄망에 반입할 것이 하나 더 는다.
+  틀은 **Tabler(MIT)** 의 것을 그대로 쓴다 — `.page` · `.navbar-vertical` ·
+  `.page-wrapper` · `.page-header` · `.page-body`. 우리가 손으로 맞추던 자리
+  (단추 네 가지 크기, 입력칸 높이 39·40·41)가 그쪽에서는 한 벌로 정해져 있다.
+
+  **자바스크립트는 부르지 않는다.** 메뉴는 <details>, 팝업은 <dialog> 라
+  브라우저가 연다. Tabler 의 JS 를 들이면 그것이 안 뜨는 날 메뉴가 통째로
+  안 열린다.
 
   메뉴는 위가 아니라 왼쪽에 세운다. 위에 눕히면 항목이 늘 때마다 제목 줄과
-  자리를 다투고, 구역 목록처럼 길이를 모르는 것은 아예 올릴 수가 없다.
+  자리를 다툰다.
 */-->
 <html lang="ko" xmlns:th="http://www.thymeleaf.org"
       xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
@@ -18,75 +23,103 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title th:text="${title} + ' — SBOMSight'">SBOMSight</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <!--/* 바탕이 먼저, 우리 것이 나중. 순서가 바뀌면 우리 규칙이 덮인다. */-->
+  <link rel="stylesheet" href="/vendor/tabler/tabler.min.css">
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
 
-<div class="shell">
+<div class="page">
 
   <!--/* 초기 비밀번호에 붙잡혀 있으면 기둥을 통째로 감춘다. 어차피 눌러도
        비밀번호 화면으로 되돌아온다 — 되돌아오는 링크를 보여 주면 고장으로
        읽힌다. */-->
-  <aside class="side" sec:authorize="isAuthenticated()" th:unless="${passwordLocked}">
-    <div class="brand"><a href="/">SBOMSight</a></div>
+  <aside class="navbar navbar-vertical navbar-expand-sm"
+         sec:authorize="isAuthenticated()" th:unless="${passwordLocked}">
+    <div class="container-fluid">
+      <h1 class="navbar-brand"><a href="/">SBOMSight</a></h1>
 
-    <!--/* 기둥에 올릴 자격은 "자산을 거치지 않고 물을 수 있는 질문" 이다.
-         "이 CVE 가 어디 있나"(취약점) · "기한 지난 게 있나"(대응) ·
-         "보고서 뽑자"(보고서) 는 자격이 있다. "DMZ 자산 보여 줘" 는 자산
-         화면의 거르개이지 기둥이 아니다 — 그래서 ZONE 목록을 걷어냈다. */-->
-    <nav>
-      <a href="/" th:classappend="${active} == 'assets' ? 'current' : ''">자산
-        <span class="badge" th:text="${navAssetCount}">0</span></a>
-      <a href="/vulns" th:classappend="${active} == 'vulns' ? 'current' : ''">취약점</a>
-      <!--/* 자산을 거치지 않고 물을 수 있는 질문이라 기둥에 있다 —
-           "openssl 이 어디 깔려 있나". 취약점이 붙기 전에도 답해야 한다. */-->
-      <a href="/packages" th:classappend="${active} == 'packages' ? 'current' : ''">패키지</a>
-      <a href="/actions" th:classappend="${active} == 'actions' ? 'current' : ''">대응
-        <!--/* 기한이 지난 것이 있으면 그 수를 붉게. 화면을 열기 전에 알아야 한다.
-             조치 기한과 재검토일을 한 숫자로 합친다 — 기둥에서 갈라 놓으면
-             어느 쪽이 급한지 두 번 보게 된다. */-->
-        <span class="badge alert" th:if="${navActionOverdue > 0}"
-              th:text="${navActionOverdue}">0</span>
-        <span class="badge" th:if="${navActionOverdue == 0 && navActionOpen > 0}"
-              th:text="${navActionOpen}">0</span></a>
-      <a href="/reports" th:classappend="${active} == 'reports' ? 'current' : ''">보고서</a>
-      <a href="/settings" sec:authorize="hasRole('ADMIN')"
-         th:classappend="${active} == 'settings' ? 'current' : ''">설정</a>
-    </nav>
+      <div class="navbar-collapse">
+        <!--/* 기둥에 올릴 자격은 "자산을 거치지 않고 물을 수 있는 질문" 이다.
+             "이 CVE 가 어디 있나"(취약점) · "기한 지난 게 있나"(대응) ·
+             "보고서 뽑자"(보고서) 는 자격이 있다. "DMZ 자산 보여 줘" 는 자산
+             화면의 거르개이지 기둥이 아니다 — 그래서 ZONE 목록을 걷어냈다. */-->
+        <ul class="navbar-nav pt-lg-2">
+          <li class="nav-item" th:classappend="${active} == 'assets' ? 'active' : ''">
+            <a class="nav-link d-flex" href="/">
+              <span class="nav-link-title">자산</span>
+              <span class="ms-auto text-secondary" th:text="${navAssetCount}">0</span>
+            </a>
+          </li>
+          <li class="nav-item" th:classappend="${active} == 'vulns' ? 'active' : ''">
+            <a class="nav-link" href="/vulns"><span class="nav-link-title">취약점</span></a>
+          </li>
+          <!--/* 자산을 거치지 않고 물을 수 있는 질문이라 기둥에 있다 —
+               "openssl 이 어디 깔려 있나". 취약점이 붙기 전에도 답해야 한다. */-->
+          <li class="nav-item" th:classappend="${active} == 'packages' ? 'active' : ''">
+            <a class="nav-link" href="/packages"><span class="nav-link-title">패키지</span></a>
+          </li>
+          <li class="nav-item" th:classappend="${active} == 'actions' ? 'active' : ''">
+            <a class="nav-link d-flex" href="/actions">
+              <span class="nav-link-title">대응</span>
+              <!--/* 기한이 지난 것이 있으면 그 수를 붉게. 화면을 열기 전에 알아야
+                   한다. 조치 기한과 재검토일을 한 숫자로 합친다 — 갈라 놓으면
+                   어느 쪽이 급한지 두 번 보게 된다. */-->
+              <span class="ms-auto danger-text" th:if="${navActionOverdue > 0}"
+                    th:text="${navActionOverdue}">0</span>
+              <span class="ms-auto text-secondary"
+                    th:if="${navActionOverdue == 0 && navActionOpen > 0}"
+                    th:text="${navActionOpen}">0</span>
+            </a>
+          </li>
+          <li class="nav-item" th:classappend="${active} == 'reports' ? 'active' : ''">
+            <a class="nav-link" href="/reports"><span class="nav-link-title">보고서</span></a>
+          </li>
+          <li class="nav-item" sec:authorize="hasRole('ADMIN')"
+              th:classappend="${active} == 'settings' ? 'active' : ''">
+            <a class="nav-link" href="/settings"><span class="nav-link-title">설정</span></a>
+          </li>
+        </ul>
 
-    <div class="spacer"></div>
+        <div class="mt-auto"></div>
 
-    <!--/* 누를 곳 하나에 갈 곳이 셋이면 그건 링크가 아니라 메뉴다.
-         앞서는 계정 이름이 곧바로 /password 로 가서 "왜 비밀번호 변경으로
-         가지?" 가 됐다. */-->
-    <div class="me">
-      <details class="menu">
-        <summary>
-          <span class="avatar" th:text="${navInitials}">KL</span>
-          <span class="who">
-            <b sec:authentication="name">—</b>
-            <span class="role" sec:authorize="hasRole('ADMIN')">관리자</span>
-            <span class="role" sec:authorize="!hasRole('ADMIN')">조회</span>
-          </span>
-          <span class="caret">▲</span>
-        </summary>
-        <div class="menu-list">
-          <a href="/me">내 계정</a>
-          <a href="/password">비밀번호 변경</a>
-          <hr>
-          <!--/* 로그아웃은 POST 다. GET 이면 링크를 미리 읽는 도구가 세션을 끊는다.
-               CSRF 토큰은 타임리프가 폼에 자동으로 넣는다. */-->
-          <form th:action="@{/logout}" method="post">
-            <button type="submit">로그아웃</button>
-          </form>
+        <!--/* 누를 곳 하나에 갈 곳이 셋이면 그건 링크가 아니라 메뉴다.
+             앞서는 계정 이름이 곧바로 /password 로 가서 "왜 비밀번호 변경으로
+             가지?" 가 됐다. */-->
+        <div class="me border-top pt-2">
+          <details class="menu">
+            <summary>
+              <span class="avatar avatar-sm" th:text="${navInitials}">KL</span>
+              <span class="who">
+                <b sec:authentication="name">—</b>
+                <span class="role" sec:authorize="hasRole('ADMIN')">관리자</span>
+                <span class="role" sec:authorize="!hasRole('ADMIN')">조회</span>
+              </span>
+              <span class="caret">▲</span>
+            </summary>
+            <div class="menu-list">
+              <a href="/me">내 계정</a>
+              <a href="/password">비밀번호 변경</a>
+              <hr>
+              <!--/* 로그아웃은 POST 다. GET 이면 링크를 미리 읽는 도구가 세션을
+                   끊는다. CSRF 토큰은 타임리프가 폼에 자동으로 넣는다. */-->
+              <form th:action="@{/logout}" method="post">
+                <button type="submit">로그아웃</button>
+              </form>
+            </div>
+          </details>
         </div>
-      </details>
+      </div>
     </div>
   </aside>
 
-  <div class="main">
-    <div th:if="${message}" class="banner ok" th:text="${message}"></div>
-    <div th:if="${error}" class="banner danger" th:text="${error}"></div>
+  <div class="page-wrapper">
+    <div th:if="${message}" class="container-xl mt-3">
+      <div class="alert alert-success mb-0" th:text="${message}"></div>
+    </div>
+    <div th:if="${error}" class="container-xl mt-3">
+      <div class="alert alert-danger mb-0" th:text="${error}"></div>
+    </div>
     <th:block th:replace="${content}"></th:block>
   </div>
 </div>

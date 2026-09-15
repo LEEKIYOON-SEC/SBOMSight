@@ -16,24 +16,25 @@
   */-->
   <div th:replace="~{fragments/ui :: pagehead('보고서', null, ~{}, ~{})}"></div>
 
-  <div class="body">
+  <div class="page-body">
+    <div class="container-xl">
 
   <h2>구역 · 기간</h2>
   <div class="card">
     <form method="get" th:action="@{/reports/zone}" class="report-picker" style="margin:0;border:0;padding:0">
-      <label>구역
-        <select name="zone">
+      <label class="form-label">구역
+        <select class="form-select" name="zone">
           <option value="">전체</option>
           <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}">DMZ</option>
         </select>
       </label>
-      <label>시작 <input type="date" name="from" th:value="${thisMonth}"></label>
-      <label>종료 <input type="date" name="to" th:value="${today}"></label>
-      <button class="btn primary" type="submit">보고서 보기</button>
+      <label class="form-label">시작 <input class="form-control" type="date" name="from" th:value="${thisMonth}"></label>
+      <label class="form-label">종료 <input class="form-control" type="date" name="to" th:value="${today}"></label>
+      <button class="btn btn-dark" type="submit">보고서 보기</button>
       <span class="spacer"></span>
-      <a class="btn small" th:href="@{/reports/zone(from=${thisMonth}, to=${today})}">이번 달</a>
-      <a class="btn small" th:href="@{/reports/zone(from=${lastMonthFrom}, to=${lastMonthTo})}">지난 달</a>
-      <a class="btn small" th:href="@{/reports/zone(from=${quarterFrom}, to=${today})}">최근 3개월</a>
+      <a class="btn btn-sm" th:href="@{/reports/zone(from=${thisMonth}, to=${today})}">이번 달</a>
+      <a class="btn btn-sm" th:href="@{/reports/zone(from=${lastMonthFrom}, to=${lastMonthTo})}">지난 달</a>
+      <a class="btn btn-sm" th:href="@{/reports/zone(from=${quarterFrom}, to=${today})}">최근 3개월</a>
     </form>
   </div>
 
@@ -45,7 +46,7 @@
   </th:block>
 
   <div class="card" th:if="${!latest.isEmpty() or !neverScanned.isEmpty()}">
-    <table>
+    <table class="table table-vcenter card-table">
       <thead>
       <tr>
         <th class="tight">자산</th>
@@ -65,7 +66,7 @@
         <td class="num tight"
             th:text="${#numbers.formatInteger(s.findingCount, 0, 'COMMA')}">0</td>
         <td class="actions">
-          <a class="btn small" th:href="@{'/reports/scan/' + ${s.id}}">보고서</a>
+          <a class="btn btn-sm" th:href="@{'/reports/scan/' + ${s.id}}">보고서</a>
         </td>
       </tr>
       <!--/*
@@ -79,7 +80,7 @@
         <td class="tight faint" th:text="${a.zone.name}">내부업무</td>
         <td class="tight faint" colspan="2">완료된 검사가 없습니다</td>
         <td class="actions">
-          <a class="btn small" th:href="@{'/assets/' + ${a.id} + '?tab=scans'}">SBOM 올리기</a>
+          <a class="btn btn-sm" th:href="@{'/assets/' + ${a.id} + '?tab=scans'}">SBOM 올리기</a>
         </td>
       </tr>
       </tbody>
@@ -91,6 +92,8 @@
     다른 시점은 자산 상세 · 검사 이력에서.
   </p>
 
+  </div>
+    </div>
   </div>
 
 </main>

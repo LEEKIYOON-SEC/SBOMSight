@@ -640,7 +640,7 @@ class ComponentInventoryTest {
         String html = mvc.perform(get(url).with(user("tester").roles("ADMIN")))
                          .andExpect(status().isOk())
                          .andReturn().getResponse().getContentAsString();
-        Matcher m = Pattern.compile("class=\"page-subtitle\"[^>]*>([^<]*)<").matcher(html);
+        Matcher m = Pattern.compile("class=\"page-subtitle[^\"]*\"[^>]*>([^<]*)<").matcher(html);
         assertThat(m.find()).as("화면 머리에 부제가 없습니다: %s", url).isTrue();
         return m.group(1).trim();
     }

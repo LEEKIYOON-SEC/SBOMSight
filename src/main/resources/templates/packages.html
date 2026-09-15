@@ -33,17 +33,20 @@
     </div>
   </th:block>
 
-  <form method="get" class="filters">
-    <label style="margin:0">구역
-      <select name="zone" onchange="this.form.submit()">
+  <div class="page-body">
+    <div class="container-xl">
+    <div class="card">
+  <form method="get" class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
+    <label class="form-label" style="margin:0">구역
+      <select class="form-select form-select-sm w-auto" name="zone" onchange="this.form.submit()">
         <option value="">전체</option>
         <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
                 th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>
       </select>
     </label>
 
-    <label style="margin:0">유형
-      <select name="type" onchange="this.form.submit()">
+    <label class="form-label" style="margin:0">유형
+      <select class="form-select form-select-sm w-auto" name="type" onchange="this.form.submit()">
         <option value="">전체</option>
         <option th:each="t : ${listing.types()}" th:value="${t}" th:text="${t}"
                 th:selected="${type != null and type == t}">rpm</option>
@@ -51,11 +54,11 @@
     </label>
 
     <span class="search">
-      <input name="q" th:value="${q}" placeholder="패키지 이름" aria-label="패키지 이름" autocomplete="off">
+      <input class="form-control form-control-sm" name="q" th:value="${q}" placeholder="패키지 이름" aria-label="패키지 이름" autocomplete="off">
     </span>
 
-    <label class="check">
-      <input type="checkbox" name="vulnerable" value="true" th:checked="${vulnerable}"
+    <label class="form-check form-check-inline mb-0">
+      <input class="form-check-input" type="checkbox" name="vulnerable" value="true" th:checked="${vulnerable}"
              onchange="this.form.submit()">
       취약점 있는 것만
     </label>
@@ -64,8 +67,8 @@
       "버전이 갈린 것만" 이 이 화면을 두는 이유에 가장 가깝다. 거르개 이름을
       줄이지 않는다 — `갈림` 한 마디로는 무엇이 갈렸는지 알 수 없다.
     */-->
-    <label class="check">
-      <input type="checkbox" name="mixed" value="true" th:checked="${mixed}"
+    <label class="form-check form-check-inline mb-0">
+      <input class="form-check-input" type="checkbox" name="mixed" value="true" th:checked="${mixed}"
              onchange="this.form.submit()">
       버전이 갈린 것만
     </label>
@@ -73,7 +76,7 @@
     <button class="btn" type="submit">찾기</button>
   </form>
 
-  <div class="body flush">
+  <div>
 
     <!--/*
       **빈 것과 안 본 것을 구분해서 말한다.** V13 은 이미 쌓인 SBOM 을 되읽지
@@ -92,8 +95,8 @@
     </th:block>
 
     <div class="card" th:if="${!listing.rows().isEmpty()}">
-      <div class="table-scroll">
-        <table>
+      <div class="table-responsive">
+        <table class="table table-vcenter card-table">
           <thead>
           <tr>
             <th>패키지</th>
@@ -140,10 +143,10 @@
                          ? ${#numbers.formatInteger(p.findingCount(), 0, 'COMMA')} : '—'">—</td>
 
             <td class="tight actions">
-              <a class="btn small"
+              <a class="btn btn-sm"
                  th:href="@{${links.change('open', open == p.name() ? null : p.name())}}"
                  th:text="${open == p.name()} ? '접기' : '자산 보기'">자산 보기</a>
-              <a class="btn small" th:href="@{${vulnLinks.change('q', p.name())}}"
+              <a class="btn btn-sm" th:href="@{${vulnLinks.change('q', p.name())}}"
                  th:if="${p.findingCount() > 0}">취약점</a>
             </td>
           </tr>
@@ -154,8 +157,8 @@
           */-->
           <tr th:if="${openRows != null and !openRows.isEmpty()}" class="zone-row">
             <td colspan="6">
-              <div class="table-scroll">
-                <table>
+              <div class="table-responsive">
+                <table class="table table-vcenter card-table">
                   <thead>
                   <tr>
                     <th class="tight">자산</th><th class="tight">구역</th>
@@ -197,6 +200,9 @@
          th:text="'이름 ' + ${#numbers.formatInteger(listing.total(), 0, 'COMMA')} + '개 중 앞 200개만 화면에. 검색으로 좁히거나 CSV 로 전부.'">—</b>
     </p>
 
+  </div>
+    </div>
+    </div>
   </div>
 
 </main>

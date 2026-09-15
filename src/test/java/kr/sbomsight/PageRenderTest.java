@@ -138,7 +138,8 @@ class PageRenderTest {
         String html = open("/");
         assertThat(html).contains(asset.getName());
         // 왼쪽 기둥이 붙었는가. 없으면 화면 사이를 오갈 길이 사라진다.
-        assertThat(html).contains("class=\"side\"");
+        // (Tabler 의 세로 기둥 — `navbar navbar-vertical`.)
+        assertThat(html).contains("navbar-vertical");
         assertThat(html).contains(asset.getZone().getName());
 
         open("/?zone=" + asset.getZone().getId());
@@ -198,7 +199,7 @@ class PageRenderTest {
                 .doesNotContain("등록된 자산이 없습니다");
         assertThat(table)
                 .as("표 보기인데 구역 카드가 같이 그려지면 th:if 가 안 먹은 것이다")
-                .doesNotContain("zonegrid");
+                .doesNotContain("zone-cards");
 
         // 심각도 막대는 검사가 있고 탐지가 있는 자산에만. 자산 둘 중 하나는
         // 검사가 없으므로 막대도 하나여야 한다.
@@ -208,7 +209,7 @@ class PageRenderTest {
 
         // 구역 보기에서는 반대로 카드가 있고 표가 없어야 한다.
         String cards = open("/?view=zones");
-        assertThat(cards).contains("zonegrid");
+        assertThat(cards).contains("zone-cards");
         assertThat(cards).doesNotContain("asset-table");
     }
 
@@ -254,8 +255,8 @@ class PageRenderTest {
         // 한 칸에서 두 가지 모양이 놀던 자리다. 맨 링크로 되돌아가면 여기서 깨진다.
         assertThat(history)
                 .as("완료된 검사에는 열기·다시 검사가 둘 다 버튼으로 있어야 한다")
-                .contains("class=\"btn small\" href=\"/vulns?scan=" + scan.getId() + "\">열기</a>")
-                .contains("class=\"btn small\"")
+                .contains("class=\"btn btn-sm\" href=\"/vulns?scan=" + scan.getId() + "\">열기</a>")
+                .contains("class=\"btn btn-sm\"")
                 .contains("다시 검사");
 
         assertThat(open("/assets/" + asset.getId() + "?tab=actions")).contains("xz");
@@ -492,7 +493,7 @@ class PageRenderTest {
                     .as("%s 의 '%s' 단추", head.getKey(), head.getValue())
                     .isEqualTo(1);
             // 머리 줄 자체도 하나여야 한다.
-            assertThat(count(html, "page-titlerow"))
+            assertThat(count(html, "class=\"page-title\""))
                     .as("%s 의 페이지 머리", head.getKey())
                     .isEqualTo(1);
         }

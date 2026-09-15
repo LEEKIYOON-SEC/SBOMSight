@@ -11,10 +11,11 @@
     하나를 받아 들고 "우리한테 있나, 몇 대에 있나" 를 묻는데, 그 답을 보려면
     자산을 하나씩 열어야 했다.
   */-->
-  <div class="page-header plain">
+  <div class="page-header d-print-none">
+    <div class="container-xl">
     <div class="page-pretitle"><a th:href="@{/vulns(group='cve')}">취약점</a></div>
-    <div class="page-titlerow">
-      <h1 class="mono" style="font-size:22px" th:text="${cve}">CVE-0000-0000</h1>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <h2 class="page-title mono" th:text="${cve}">CVE-0000-0000</h2>
       <span class="sev" th:classappend="${#strings.toLowerCase(first.severity)}"><i></i>
         <span th:switch="${#strings.toLowerCase(first.severity)}">
           <th:block th:case="'critical'">심각</th:block>
@@ -25,7 +26,7 @@
         </span></span>
       <span th:if="${first.kev != null and first.kev}" class="tag kev">실제 악용 확인</span>
     </div>
-    <div class="page-subtitle">
+    <div class="text-secondary mt-1">
       영향 자산 <b th:text="${assetCount}">0</b>대 · 탐지 <b th:text="${rows.size()}">0</b>건
       <th:block th:each="s, i : ${spread}">
         <th:block th:if="${i.first}"> · </th:block>
@@ -33,14 +34,16 @@
           th:unless="${i.last}"> · </th:block>
       </th:block>
     </div>
+    </div>
   </div>
 
-  <div class="body">
+  <div class="page-body">
+    <div class="container-xl">
 
     <div class="card">
       <div class="card-header"><h2 class="card-title">grype 이 준 값</h2></div>
       <div class="card-body">
-        <table class="kv">
+        <table class="table kv">
           <tr><th>CVSS</th>
               <td>
                 <b th:if="${first.cvssScore != null}" th:text="${first.cvssScore}">10.0</b>
@@ -82,8 +85,8 @@
     <div class="card">
       <div class="card-header"><h2 class="card-title">이 CVE 가 있는 자산</h2>
         <span class="faint" style="font-size:13px" th:text="${assetCount} + '대'">0대</span></div>
-      <div class="table-scroll">
-        <table>
+      <div class="table-responsive">
+        <table class="table table-vcenter card-table">
           <thead><tr>
             <th class="tight">자산</th><th class="tight">구역</th>
             <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
@@ -108,11 +111,13 @@
             <td class="tight faint mono"
                 th:text="${#temporals.format(f.scan.createdAt, 'yyyy-MM-dd')}">—</td>
             <td class="tight actions">
-              <a class="btn small" th:href="@{'/assets/' + ${f.scan.asset.id}(tab='vulns')}">열기</a></td>
+              <a class="btn btn-sm" th:href="@{'/assets/' + ${f.scan.asset.id}(tab='vulns')}">열기</a></td>
           </tr>
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
     </div>
   </div>
 

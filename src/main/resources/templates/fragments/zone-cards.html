@@ -13,10 +13,11 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
 
-<div th:fragment="cards(groups)" class="zonegrid">
-  <div class="zonecard" th:each="g : ${groups}">
+<div th:fragment="cards(groups)" class="row row-cards zone-cards">
+  <div class="col-md-6 col-xl-4" th:each="g : ${groups}">
+  <div class="card h-100">
 
-    <div class="top">
+    <div class="card-header d-flex align-items-center gap-2">
       <i class="zrail" th:style="'background:' + (${#strings.isEmpty(g.zone.color)}
                                  ? '#6f7e8d' : ${g.zone.color})" style="height:17px"></i>
       <b th:text="${g.zone.name}">DMZ</b>
@@ -29,18 +30,19 @@
     </div>
 
     <!--/* 큰 수치 하나. 먼저 볼 것은 '심각 + 높음' 이다. */-->
-    <div class="stat">
-      <b th:text="${g.severityCount('critical') + g.severityCount('high')}">0</b>
-      <span>심각 · 높음</span>
-    </div>
+    <div class="card-body pb-2">
+      <div class="d-flex align-items-baseline gap-2 mb-2">
+        <span class="h1 mb-0" th:text="${g.severityCount('critical') + g.severityCount('high')}">0</span>
+        <span class="text-secondary">심각 · 높음</span>
+      </div>
 
-    <div class="bars" th:if="${g.findingCount() > 0}">
+    <div th:if="${g.findingCount() > 0}">
       <span th:replace="~{fragments/ui :: sevbar(${g.severityCount('critical')},
                          ${g.severityCount('high')}, ${g.severityCount('medium')},
                          ${g.severityCount('low')})}"></span>
     </div>
 
-    <div class="counts" th:if="${g.findingCount() > 0}">
+    <div class="mt-2 d-flex flex-wrap" th:if="${g.findingCount() > 0}">
       <span class="pcount" th:if="${g.severityCount('critical') > 0}">
         <i class="mark critical"></i>심각 <b th:text="${g.severityCount('critical')}">0</b></span>
       <span class="pcount" th:if="${g.severityCount('high') > 0}">
@@ -51,9 +53,12 @@
         <i class="mark low"></i>낮음 <b th:text="${g.severityCount('low')}">0</b></span>
     </div>
 
+    </div>
+
     <!--/* 카드의 요점. 자산이 여기 있으니 눌러서 다른 화면으로 튕기지 않는다. */-->
-    <div class="servers" th:unless="${g.isEmpty()}">
-      <a th:each="row : ${g.rows}" th:href="@{'/assets/' + ${row.asset.id}}">
+    <div class="list-group list-group-flush" th:unless="${g.isEmpty()}">
+      <a class="list-group-item list-group-item-action d-flex align-items-center gap-2"
+         th:each="row : ${g.rows}" th:href="@{'/assets/' + ${row.asset.id}}">
         <b th:text="${row.asset.name}">web-01</b>
         <span class="faint" th:unless="${row.hasScan()}">검사 없음</span>
         <span class="spacer"></span>
@@ -62,17 +67,18 @@
         <span class="num faint" th:unless="${row.hasScan()}">—</span>
       </a>
     </div>
-    <div class="servers" th:if="${g.isEmpty()}">
-      <a class="faint" style="cursor:default">이 구역에는 아직 자산이 없습니다.</a>
+    <div class="list-group list-group-flush" th:if="${g.isEmpty()}">
+      <span class="list-group-item faint">이 구역에는 아직 자산이 없습니다.</span>
     </div>
 
-    <div class="foot">
+    <div class="card-footer d-flex align-items-center gap-2 py-2">
       <span th:if="${g.oldestScan() != null}"
             th:text="'가장 오래된 검사 ' + ${#temporals.format(g.oldestScan(), 'yyyy-MM-dd')}">—</span>
       <span th:if="${g.oldestScan() == null}">검사 기록 없음</span>
       <span class="spacer"></span>
       <a th:unless="${g.isEmpty()}" th:href="@{/reports/zone(zone=${g.zone.id})}">보고서</a>
     </div>
+  </div>
   </div>
 </div>
 

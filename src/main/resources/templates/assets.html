@@ -7,220 +7,233 @@
 
   <div th:replace="~{fragments/ui :: pagehead('자산', null, ~{::actions}, ~{})}"></div>
   <!--/*
-    버튼 묶음은 페이지 머리로 들어간다. **정의한 자리에서는 그리지 않는다** —
+    단추 묶음은 페이지 머리로 들어간다. **정의한 자리에서는 그리지 않는다** —
     `th:remove="tag"` 는 감싼 태그만 없애고 그 안의 단추는 문서에 그대로
     남긴다. 그래서 같은 단추가 머리에 한 번, 그 아래에 또 한 번 찍혀 있었다
     (모든 화면에서). 바깥을 `th:remove="all"` 로 통째로 지운다 —
     `~{::actions}` 는 템플릿을 다시 훑어 조각을 찾으므로 영향을 받지 않는다.
   */-->
   <th:block th:remove="all">
-    <div th:fragment="actions" sec:authorize="hasRole('ADMIN')">
+    <div th:fragment="actions" class="btn-list" sec:authorize="hasRole('ADMIN')">
       <button type="button" class="btn" id="open-zones">구역 관리</button>
       <a class="btn" th:href="@{/assets/import}">일괄 등록</a>
-      <button type="button" class="btn primary" id="open-add">자산 등록</button>
+      <button type="button" class="btn btn-dark" id="open-add">자산 등록</button>
     </div>
   </th:block>
 
-  <!--/*
-    지금 무엇이 급한가. **한 줄이다.**
+  <div class="page-body">
+    <div class="container-xl">
 
-    숫자 상자를 여섯 개 세우지 않는다 — 매일 보는 사람에게 카드 벽은 한 번
-    보고 지나치는 장식이 되고, 그 아래 정작 봐야 하는 목록이 화면 밖으로
-    밀린다. 0 인 항목은 아예 그리지 않는다.
+      <!--/*
+        지금 무엇이 급한가. **한 줄이다.**
 
-    각 숫자는 링크다. 누르면 그 조건이 걸린 화면으로 간다 — 숫자를 보고
-    "그래서 어느 것?" 을 다시 찾게 두지 않는다.
-  */-->
-  <div class="summaryline" th:if="${summary.noScan() + summary.stale() + summary.actionOverdue()
-                                   + summary.critical() + summary.noFix() > 0}">
-    <a th:if="${summary.noScan() > 0}" th:href="@{/(filter='noscan')}">
-      <b th:text="${summary.noScan()}">0</b> 검사 안 한 자산</a>
-    <a th:if="${summary.stale() > 0}" th:href="@{/(filter='stale')}">
-      <b th:text="${summary.stale()}">0</b> 30일 넘은 자산</a>
-    <a th:if="${summary.actionOverdue() > 0}" class="alert" th:href="@{/actions}">
-      <b th:text="${summary.actionOverdue()}">0</b> 기한 지난 대응</a>
-    <a th:if="${summary.critical() > 0}" th:href="@{/vulns(severity='Critical')}">
-      <b th:text="${summary.critical()}">0</b> 심각</a>
-    <a th:if="${summary.noFix() > 0}" th:href="@{/vulns(fixable='false')}">
-      <b th:text="${#numbers.formatInteger(summary.noFix(), 0, 'COMMA')}">0</b> 수정 버전 없음</a>
-  </div>
+        숫자 상자를 여섯 개 세우지 않는다 — 매일 보는 사람에게 카드 벽은 한 번
+        보고 지나치는 장식이 되고, 그 아래 정작 봐야 하는 목록이 화면 밖으로
+        밀린다. 0 인 항목은 아예 그리지 않는다.
 
-  <!--/*
-    구역은 자산의 묶음이지 기둥의 항목이 아니다. 왼쪽 기둥에 있던 구역 목록이
-    여기 칩으로 내려왔다 — 눌러도 결국 이 화면으로 돌아오던 것들이다.
-  */-->
-  <div class="filters">
-    <a class="chip" th:classappend="${selectedZone == null} ? 'on' : ''"
-       th:href="@{${links.copy().with('zone', null).here()}}">
-      전체 <span class="n" th:text="${totalCount}">0</span></a>
-    <a th:each="z : ${zones}" class="chip"
-       th:classappend="${selectedZone != null and selectedZone == z.id} ? 'on' : ''"
-       th:href="@{${links.copy().with('zone', z.id).here()}}">
-      <i class="zrail" th:style="'background:' + (${#strings.isEmpty(z.color)} ? '#6f7e8d' : ${z.color})"></i>
-      <span th:text="${z.name}">DMZ</span>
-      <span class="n" th:text="${zoneCounts.getOrDefault(z.id, 0)}">0</span></a>
+        각 숫자는 링크다. 누르면 그 조건이 걸린 화면으로 간다 — 숫자를 보고
+        "그래서 어느 것?" 을 다시 찾게 두지 않는다.
+      */-->
+      <div class="card mb-3" th:if="${summary.noScan() + summary.stale() + summary.actionOverdue()
+                                     + summary.critical() + summary.noFix() > 0}">
+        <div class="card-body py-2 summaryline">
+          <a th:if="${summary.noScan() > 0}" th:href="@{/(filter='noscan')}">
+            <b th:text="${summary.noScan()}">0</b> 검사 안 한 자산</a>
+          <a th:if="${summary.stale() > 0}" th:href="@{/(filter='stale')}">
+            <b th:text="${summary.stale()}">0</b> 30일 넘은 자산</a>
+          <a th:if="${summary.actionOverdue() > 0}" class="overdue" th:href="@{/actions}">
+            <b th:text="${summary.actionOverdue()}">0</b> 기한 지난 대응</a>
+          <a th:if="${summary.critical() > 0}" th:href="@{/vulns(severity='Critical')}">
+            <b th:text="${summary.critical()}">0</b> 심각</a>
+          <a th:if="${summary.noFix() > 0}" th:href="@{/vulns(fixable='false')}">
+            <b th:text="${#numbers.formatInteger(summary.noFix(), 0, 'COMMA')}">0</b> 수정 버전 없음</a>
+        </div>
+      </div>
 
-    <span class="spacer"></span>
+      <div class="card">
+        <!--/*
+          구역은 자산의 묶음이지 기둥의 항목이 아니다. 왼쪽 기둥에 있던 구역
+          목록이 여기 칩으로 내려왔다 — 눌러도 결국 이 화면으로 돌아오던
+          것들이다.
+        */-->
+        <div class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
+          <a class="btn btn-sm" th:classappend="${selectedZone == null} ? 'active' : ''"
+             th:href="@{${links.copy().with('zone', null).here()}}">
+            전체 <span class="ms-1 text-secondary num" th:text="${totalCount}">0</span></a>
+          <a th:each="z : ${zones}" class="btn btn-sm"
+             th:classappend="${selectedZone != null and selectedZone == z.id} ? 'active' : ''"
+             th:href="@{${links.copy().with('zone', z.id).here()}}">
+            <i class="zrail me-1" th:style="'background:' + (${#strings.isEmpty(z.color)} ? '#6f7e8d' : ${z.color})"></i>
+            <span th:text="${z.name}">DMZ</span>
+            <span class="ms-1 text-secondary num" th:text="${zoneCounts.getOrDefault(z.id, 0)}">0</span></a>
 
-    <!--/* 거른 것이 있으면 무엇으로 걸렀는지 보이고, 푸는 길이 그 자리에 있어야 한다. */-->
-    <a th:if="${filter != null and !#strings.isEmpty(filter)}" class="chip on"
-       th:href="@{${links.copy().with('filter', null).here()}}"
-       th:text="(${filter} == 'noscan' ? '검사 안 한 자산' : '30일 넘은 자산') + ' ✕'">거름 ✕</a>
+          <!--/* 거른 것이 있으면 무엇으로 걸렀는지 보이고, 푸는 길이 그 자리에 있어야 한다. */-->
+          <a th:if="${filter != null and !#strings.isEmpty(filter)}" class="btn btn-sm active"
+             th:href="@{${links.copy().with('filter', null).here()}}"
+             th:text="(${filter} == 'noscan' ? '검사 안 한 자산' : '30일 넘은 자산') + ' ✕'">거름 ✕</a>
 
-    <!--/* 같은 것을 인라인 style 로 따로 적어 두고 있었다. 클래스로 모은다. */-->
-    <label class="check">
-      <input type="checkbox" id="archived-toggle" th:checked="${archived}"> 보관된 자산도</label>
+          <span class="ms-auto"></span>
 
-    <span class="segmented">
-      <!--/* 표 보기가 기본이라 `view` 를 안 적는다 — 주소가 짧아지고, 적어도
-           같은 화면이다. 구역 보기는 정렬이 없으므로 함께 뗀다. */-->
-      <a th:href="@{${links.copy().with('view', null).here()}}"
-         th:classappend="${view} != 'zones' ? 'current' : ''">표</a>
-      <a th:href="@{${links.copy().with('view', 'zones').with('sort', null).with('dir', null).here()}}"
-         th:classappend="${view} == 'zones' ? 'current' : ''">구역</a>
-    </span>
-  </div>
+          <label class="form-check form-check-inline mb-0">
+            <input class="form-check-input" type="checkbox" id="archived-toggle" th:checked="${archived}">
+            <span class="form-check-label">보관된 자산도</span>
+          </label>
 
-  <div class="body flush">
+          <div class="btn-group" role="group">
+            <!--/* 표 보기가 기본이라 `view` 를 안 적는다 — 주소가 짧아지고, 적어도
+                 같은 화면이다. 구역 보기는 정렬이 없으므로 함께 뗀다. */-->
+            <a class="btn btn-sm" th:href="@{${links.copy().with('view', null).here()}}"
+               th:classappend="${view} != 'zones' ? 'active' : ''">표</a>
+            <a class="btn btn-sm" th:href="@{${links.copy().with('view', 'zones').with('sort', null).with('dir', null).here()}}"
+               th:classappend="${view} == 'zones' ? 'active' : ''">구역</a>
+          </div>
+        </div>
 
-    <!--/*
-      조건은 바깥 <th:block> 이 든다. 같은 태그에 th:if 와 th:replace 를 함께
-      걸면 **조건이 무시된다** — 타임리프는 th:replace 를 먼저 처리하고(우선순위
-      100 대 300), 조각이 그 태그를 통째로 갈아치우면서 th:if 까지 함께 사라진다.
-      실제로 자산이 세 대 있는데 "등록된 자산이 없습니다" 가 같이 떠 있었다.
-    */-->
-    <th:block th:if="${assetCount == 0 and filter == null}">
-      <div th:replace="~{fragments/ui :: empty('등록된 자산이 없습니다',
-                        '자산을 등록하고 그 자산에서 뽑은 SBOM 을 올립니다.', null, null)}"></div>
-    </th:block>
+        <!--/*
+          조건은 바깥 <th:block> 이 든다. 같은 태그에 th:if 와 th:replace 를 함께
+          걸면 **조건이 무시된다** — 타임리프는 th:replace 를 먼저 처리하고(우선순위
+          100 대 300), 조각이 그 태그를 통째로 갈아치우면서 th:if 까지 함께 사라진다.
+          실제로 자산이 세 대 있는데 "등록된 자산이 없습니다" 가 같이 떠 있었다.
+        */-->
+        <th:block th:if="${assetCount == 0 and filter == null}">
+          <div th:replace="~{fragments/ui :: empty('등록된 자산이 없습니다',
+                            '자산을 등록하고 그 자산에서 뽑은 SBOM 을 올립니다.', null, null)}"></div>
+        </th:block>
 
-    <th:block th:if="${assetCount == 0 and filter != null}">
-      <div th:replace="~{fragments/ui :: empty('걸리는 자산이 없습니다', null, '/', '전체 보기')}"></div>
-    </th:block>
+        <th:block th:if="${assetCount == 0 and filter != null}">
+          <div th:replace="~{fragments/ui :: empty('걸리는 자산이 없습니다', null, '/', '전체 보기')}"></div>
+        </th:block>
 
-    <!--/* ══ 구역 보기 — 시안의 카드 격자 ══════════════════════════════ */-->
-    <th:block th:if="${view == 'zones' and assetCount > 0}">
-      <div th:replace="~{fragments/zone-cards :: cards(${groups})}"></div>
-    </th:block>
+        <!--/* ══ 구역 보기 — 시안의 카드 격자 ══════════════════════════════ */-->
+        <th:block th:if="${view == 'zones' and assetCount > 0}">
+          <div class="card-body">
+            <div th:replace="~{fragments/zone-cards :: cards(${groups})}"></div>
+          </div>
+        </th:block>
 
-    <!--/*
-      ══ 표 보기 ══════════════════════════════════════════════════════
-      구역이 몇이든 표는 하나다. 구역마다 표를 따로 그리면 칸 너비가
-      제각각이 되어 세로로 눈이 내려가지 않는다 — 자산이 하나뿐인 구역의
-      '탐지' 칸과 열 대짜리 구역의 '탐지' 칸이 다른 자리에 선다.
-    */-->
-    <!--/*
-      정렬 머리의 주소를 문자열로 짜고 있었다 — 그래서 고르지 않은 값도
-      `filter=&archived=false` 로 따라붙었다. `links` 로 만든다(N12).
-    */-->
-    <div class="table-scroll" th:if="${view != 'zones' and assetCount > 0}">
-      <table class="asset-table">
-        <thead>
-        <tr>
-          <th class="tight sortable">
-            <a th:href="@{${links.copy().with('sort', 'name').with('dir', sort == 'name' and dir == 'asc' ? 'desc' : 'asc').here()}}">자산
-              <span class="sortmark" th:if="${sort == 'name'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↑</span></a></th>
-          <th class="tight">운영체제</th>
-          <th class="tight sortable">
-            <a th:href="@{${links.copy().with('sort', 'scanned').with('dir', sort == 'scanned' and dir == 'desc' ? 'asc' : 'desc').here()}}">마지막 검사
-              <span class="sortmark" th:if="${sort == 'scanned'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↓</span></a></th>
-          <th class="num tight sortable">
-            <a th:href="@{${links.copy().with('sort', 'findings').with('dir', sort == 'findings' and dir == 'asc' ? 'desc' : 'asc').here()}}">탐지
-              <span class="sortmark" th:if="${sort == 'findings'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↓</span></a></th>
-          <th class="tight">심각도</th>
-          <th class="num tight">대응</th>
-          <th>비고</th>
-          <th class="tight"></th>
-        </tr>
-        </thead>
+        <!--/*
+          ══ 표 보기 ══════════════════════════════════════════════════════
+          구역이 몇이든 표는 하나다. 구역마다 표를 따로 그리면 칸 너비가
+          제각각이 되어 세로로 눈이 내려가지 않는다 — 자산이 하나뿐인 구역의
+          '탐지' 칸과 열 대짜리 구역의 '탐지' 칸이 다른 자리에 선다.
 
-        <tbody th:each="g : ${groups}">
-        <tr class="zone-row">
-          <td colspan="8">
-            <div class="zone-head">
-              <i class="zrail" th:style="'background:' + (${#strings.isEmpty(g.zone.color)} ? '#6f7e8d' : ${g.zone.color})"></i>
-              <b th:text="${g.zone.name}">DMZ</b>
-              <span class="faint num" th:text="${g.serverCount()} + '대'">0대</span>
-              <span class="spacer"></span>
-              <th:block th:unless="${g.isEmpty()}">
-                <span class="pcount" th:if="${g.severityCount('critical') > 0}">
-                  <i class="mark critical"></i>심각
-                  <b class="num" style="color:var(--critical)" th:text="${g.severityCount('critical')}">0</b></span>
-                <span class="pcount" th:if="${g.severityCount('high') > 0}">
-                  <i class="mark high"></i>높음
-                  <b class="num" style="color:var(--high)" th:text="${g.severityCount('high')}">0</b></span>
-                <span class="num faint">탐지
-                  <b style="color:var(--fg)" th:text="${#numbers.formatInteger(g.findingCount(), 0, 'COMMA')}">0</b></span>
-                <a class="btn small" th:href="@{/reports/zone(zone=${g.zone.id})}">보고서</a>
-              </th:block>
-            </div>
-          </td>
-        </tr>
+          정렬 머리의 주소는 `links` 로 만든다. 문자열로 짜면 고르지 않은 값도
+          `filter=&archived=false` 로 따라붙는다(N12).
+        */-->
+        <div class="table-responsive" th:if="${view != 'zones' and assetCount > 0}">
+          <table class="table table-vcenter card-table table-sticky asset-table">
+            <thead>
+            <tr>
+              <th class="tight sortable">
+                <a th:href="@{${links.copy().with('sort', 'name').with('dir', sort == 'name' and dir == 'asc' ? 'desc' : 'asc').here()}}">자산
+                  <span class="sortmark" th:if="${sort == 'name'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↑</span></a></th>
+              <th class="tight">운영체제</th>
+              <th class="tight sortable">
+                <a th:href="@{${links.copy().with('sort', 'scanned').with('dir', sort == 'scanned' and dir == 'desc' ? 'asc' : 'desc').here()}}">마지막 검사
+                  <span class="sortmark" th:if="${sort == 'scanned'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↓</span></a></th>
+              <th class="num tight sortable">
+                <a th:href="@{${links.copy().with('sort', 'findings').with('dir', sort == 'findings' and dir == 'asc' ? 'desc' : 'asc').here()}}">탐지
+                  <span class="sortmark" th:if="${sort == 'findings'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↓</span></a></th>
+              <th class="tight">심각도</th>
+              <th class="num tight">대응</th>
+              <th>비고</th>
+              <th class="tight"></th>
+            </tr>
+            </thead>
 
-        <tr th:if="${g.isEmpty()}">
-          <td colspan="8" class="faint">이 구역에는 아직 자산이 없습니다.</td>
-        </tr>
+            <tbody th:each="g : ${groups}">
+            <tr class="zone-row">
+              <td colspan="8">
+                <div class="zone-head">
+                  <i class="zrail" th:style="'background:' + (${#strings.isEmpty(g.zone.color)} ? '#6f7e8d' : ${g.zone.color})"></i>
+                  <b th:text="${g.zone.name}">DMZ</b>
+                  <span class="faint num" th:text="${g.serverCount()} + '대'">0대</span>
+                  <span class="spacer"></span>
+                  <th:block th:unless="${g.isEmpty()}">
+                    <span class="pcount" th:if="${g.severityCount('critical') > 0}">
+                      <i class="mark critical"></i>심각
+                      <b class="num sevtext" data-sev="critical" th:text="${g.severityCount('critical')}">0</b></span>
+                    <span class="pcount" th:if="${g.severityCount('high') > 0}">
+                      <i class="mark high"></i>높음
+                      <b class="num sevtext" data-sev="high" th:text="${g.severityCount('high')}">0</b></span>
+                    <span class="num faint">탐지
+                      <b class="text-body" th:text="${#numbers.formatInteger(g.findingCount(), 0, 'COMMA')}">0</b></span>
+                    <a class="btn btn-sm" th:href="@{/reports/zone(zone=${g.zone.id})}">보고서</a>
+                  </th:block>
+                </div>
+              </td>
+            </tr>
 
-        <tr th:each="row : ${g.rows}" th:style="${row.asset.archivedAt != null} ? 'opacity:.55' : ''">
-          <td class="tight">
-            <a th:href="@{'/assets/' + ${row.asset.id}}"
-               style="font-weight:600" th:text="${row.asset.name}">web-01</a>
-            <span class="tag" th:if="${row.asset.archivedAt != null}">보관됨</span>
-          </td>
-          <td class="tight faint" th:text="${#strings.isEmpty(row.asset.osName)} ? '—' : ${row.asset.osName}">Rocky 9.3</td>
+            <tr th:if="${g.isEmpty()}">
+              <td colspan="8" class="faint">이 구역에는 아직 자산이 없습니다.</td>
+            </tr>
 
-          <td class="tight mono faint" th:if="${row.hasScan()}"
-              th:text="${#temporals.format(row.latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</td>
-          <td class="tight faint" th:unless="${row.hasScan()}">검사 없음</td>
+            <tr th:each="row : ${g.rows}" th:style="${row.asset.archivedAt != null} ? 'opacity:.55' : ''">
+              <td class="tight">
+                <a class="fw-bold" th:href="@{'/assets/' + ${row.asset.id}}"
+                   th:text="${row.asset.name}">web-01</a>
+                <span class="tag" th:if="${row.asset.archivedAt != null}">보관됨</span>
+              </td>
+              <td class="tight faint" th:text="${#strings.isEmpty(row.asset.osName)} ? '—' : ${row.asset.osName}">Rocky 9.3</td>
 
-          <td class="num tight" style="font-weight:600"
-              th:text="${row.hasScan()} ? ${#numbers.formatInteger(row.latest.findingCount, 0, 'COMMA')} : '—'">—</td>
+              <td class="tight mono faint" th:if="${row.hasScan()}"
+                  th:text="${#temporals.format(row.latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</td>
+              <td class="tight faint" th:unless="${row.hasScan()}">검사 없음</td>
 
-          <!--/* 네 덩이 숫자 대신 막대 하나. 자산 스무 대를 세로로 훑을 수 있다. */-->
-          <td class="tight">
-            <th:block th:if="${row.hasScan() and row.latest.findingCount > 0}">
-              <span th:replace="~{fragments/ui :: sevbar(${row.severityCount('critical')},
-                                 ${row.severityCount('high')}, ${row.severityCount('medium')},
-                                 ${row.severityCount('low')})}"></span>
-            </th:block>
-            <span class="faint" th:unless="${row.hasScan() and row.latest.findingCount > 0}">—</span>
-          </td>
+              <td class="num tight fw-bold"
+                  th:text="${row.hasScan()} ? ${#numbers.formatInteger(row.latest.findingCount, 0, 'COMMA')} : '—'">—</td>
 
-          <td class="num tight">
-            <a th:if="${row.openRemediations > 0}" th:href="@{'/assets/' + ${row.asset.id}}"
-               th:text="${row.openRemediations}">0</a>
-            <span class="faint" th:unless="${row.openRemediations > 0}">—</span>
-          </td>
+              <!--/* 네 덩이 숫자 대신 막대 하나. 자산 스무 대를 세로로 훑을 수 있다. */-->
+              <td class="tight">
+                <th:block th:if="${row.hasScan() and row.latest.findingCount > 0}">
+                  <span th:replace="~{fragments/ui :: sevbar(${row.severityCount('critical')},
+                                     ${row.severityCount('high')}, ${row.severityCount('medium')},
+                                     ${row.severityCount('low')})}"></span>
+                </th:block>
+                <span class="faint" th:unless="${row.hasScan() and row.latest.findingCount > 0}">—</span>
+              </td>
 
-          <td class="faint" th:text="${#strings.isEmpty(row.asset.note)} ? '—' : ${row.asset.note}">—</td>
-          <td class="tight actions">
-            <a class="btn small" th:href="@{'/assets/' + ${row.asset.id}}">열기</a>
-          </td>
-        </tr>
-        </tbody>
-      </table>
+              <td class="num tight">
+                <a th:if="${row.openRemediations > 0}" th:href="@{'/assets/' + ${row.asset.id}}"
+                   th:text="${row.openRemediations}">0</a>
+                <span class="faint" th:unless="${row.openRemediations > 0}">—</span>
+              </td>
+
+              <td class="faint" th:text="${#strings.isEmpty(row.asset.note)} ? '—' : ${row.asset.note}">—</td>
+              <td class="tight">
+                <a class="btn btn-sm" th:href="@{'/assets/' + ${row.asset.id}}">열기</a>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <dialog id="add-dialog" sec:authorize="hasRole('ADMIN')">
       <form method="post" th:action="@{/assets}" th:object="${newAsset}">
         <h2>자산 등록</h2>
-        <label>자산 이름
-          <input th:field="*{name}" placeholder="web-01" required autocomplete="off">
-        </label>
-        <label>구역
-          <select name="zoneId">
+        <div class="mb-3">
+          <label class="form-label" for="new-asset-name">자산 이름</label>
+          <input class="form-control" id="new-asset-name" th:field="*{name}" placeholder="web-01" required autocomplete="off">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="new-asset-zone">구역</label>
+          <select class="form-select" id="new-asset-zone" name="zoneId">
             <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}">DMZ</option>
           </select>
-        </label>
-        <label>운영체제
-          <input th:field="*{osName}" placeholder="Rocky Linux 9.3" autocomplete="off">
-        </label>
-        <label>비고
-          <input th:field="*{note}" placeholder="용도 · 담당 부서 등" autocomplete="off">
-        </label>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="new-asset-os">운영체제</label>
+          <input class="form-control" id="new-asset-os" th:field="*{osName}" placeholder="Rocky Linux 9.3" autocomplete="off">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="new-asset-note">비고</label>
+          <input class="form-control" id="new-asset-note" th:field="*{note}" placeholder="용도 · 담당 부서 등" autocomplete="off">
+        </div>
         <div class="dialog-actions">
           <button type="button" class="btn" data-close>취소</button>
-          <button type="submit" class="btn primary">등록</button>
+          <button type="submit" class="btn btn-dark">등록</button>
         </div>
       </form>
     </dialog>
@@ -232,7 +245,7 @@
     */-->
     <dialog id="zones-dialog" sec:authorize="hasRole('ADMIN')">
       <h2>구역 관리</h2>
-      <table>
+      <table class="table table-vcenter">
         <thead><tr>
           <th class="tight">구역</th><th class="num tight">자산</th>
           <th class="tight">색</th><th class="tight"></th>
@@ -240,28 +253,29 @@
         <tbody>
         <tr th:each="z : ${zones}">
           <td class="tight">
-            <form method="post" th:action="@{'/zones/' + ${z.id} + '/rename'}" class="inline"
-                  th:unless="${z.isUnassigned()}">
-              <input name="name" th:value="${z.name}" required maxlength="64" aria-label="구역 이름">
-              <button type="submit" class="btn small">이름</button>
+            <form method="post" th:action="@{'/zones/' + ${z.id} + '/rename'}"
+                  class="d-flex gap-1" th:unless="${z.isUnassigned()}">
+              <input class="form-control form-control-sm" name="name" th:value="${z.name}"
+                     required maxlength="64" aria-label="구역 이름">
+              <button type="submit" class="btn btn-sm">이름</button>
             </form>
             <b th:if="${z.isUnassigned()}" th:text="${z.name}">미분류</b>
           </td>
           <td class="num tight" th:text="${zoneCounts.getOrDefault(z.id, 0)}">0</td>
           <td class="tight">
             <form method="post" th:action="@{'/zones/' + ${z.id} + '/color'}" class="inline">
-              <input type="color" name="color" aria-label="구역 색"
+              <input type="color" class="form-control form-control-color" name="color" aria-label="구역 색"
                      th:value="${#strings.isEmpty(z.color)} ? '#6f7e8d' : ${z.color}"
                      onchange="this.form.submit()">
             </form>
           </td>
-          <td class="tight actions">
+          <td class="tight">
             <form method="post" th:action="@{'/zones/' + ${z.id} + '/delete'}" class="inline"
                   th:if="${!z.isUnassigned() and zoneCounts.getOrDefault(z.id, 0) == 0}"
                   onsubmit="return confirm('이 구역을 지웁니다.\n\n계속할까요?')">
-              <button type="submit" class="btn small danger">삭제</button>
+              <button type="submit" class="btn btn-sm btn-outline-danger">삭제</button>
             </form>
-            <span class="faint" style="font-size:12.5px"
+            <span class="faint small"
                   th:if="${z.isUnassigned() or zoneCounts.getOrDefault(z.id, 0) > 0}"
                   th:text="${z.isUnassigned()} ? '기본 구역' : '자산이 남아 있음'">—</span>
           </td>
@@ -269,16 +283,18 @@
         </tbody>
       </table>
 
-      <form method="post" th:action="@{/zones}" class="inline-form" style="margin-top:16px">
-        <label style="flex:1">구역 추가
-          <input name="name" required maxlength="64" autocomplete="off" placeholder="DMZ">
-        </label>
-        <input type="color" name="color" value="#2262bb" aria-label="구역 색">
+      <form method="post" th:action="@{/zones}" class="d-flex align-items-end gap-2 mt-3">
+        <div class="flex-fill">
+          <label class="form-label" for="new-zone-name">구역 추가</label>
+          <input class="form-control" id="new-zone-name" name="name" required maxlength="64" autocomplete="off" placeholder="DMZ">
+        </div>
+        <input type="color" class="form-control form-control-color" name="color"
+               value="#2262bb" aria-label="구역 색">
         <button type="submit" class="btn">추가</button>
       </form>
 
       <div class="dialog-actions">
-        <button type="button" class="btn primary" data-close>닫기</button>
+        <button type="button" class="btn btn-dark" data-close>닫기</button>
       </div>
     </dialog>
 

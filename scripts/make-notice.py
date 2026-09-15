@@ -155,11 +155,19 @@ scripts/make-notice.sh          # SBOM 을 다시 뽑아 이 파일을 다시 �
 """)
     table(third)
     print(f"""
-## 2. 글꼴
+## 2. 글꼴 · 화면 바탕 (저장소에 담아 둔 것)
 
 | 무엇 | 버전 | 라이선스 |
 |---|---|---|
 | IBM Plex Sans KR · IBM Plex Mono (woff2 292개) | — | SIL OFL 1.1 |
+| Tabler (tabler.min.css 한 장) | 1.5.1 | MIT |
+
+**Tabler 는 CSS 한 장만 가져왔다.** 함께 배포되는 `dist/libs/` 는 통째로 뺐다 —
+그 안의 ApexCharts 는 5판부터 MIT 가 아니고(이중 라이선스 · 재배포는 별도 OEM
+라이선스) 우리는 차트를 쓰지 않는다. JS 도 가져오지 않았다. 원문은
+`src/main/resources/static/vendor/tabler/LICENSE` 에 동봉되어 있고, 무엇을
+가져오고 무엇을 뺐는지는 같은 폴더의 `README.md` 에 적혀 있다.
+
 
 Copyright © 2017 IBM Corp. with Reserved Font Name "Plex".
 전문은 `src/main/resources/static/fonts/LICENSE.txt` 에 동봉되어 있다.

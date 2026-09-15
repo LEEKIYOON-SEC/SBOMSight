@@ -55,7 +55,8 @@ public class AuthController {
             // 않으면 "가만히 있었는데 튕겼다" 가 된다.
             model.addAttribute("notice",
                     "같은 계정으로 다른 곳에서 로그인해 이 자리의 접속이 끊겼습니다.");
-            model.addAttribute("noticeKind", "warn");
+            // 값은 그대로 화면의 alert 갈래가 된다(alert-danger · alert-warning · alert-info).
+            model.addAttribute("noticeKind", "warning");
         } else if (expired != null) {
             model.addAttribute("notice", "일정 시간 사용하지 않아 로그아웃되었습니다.");
             model.addAttribute("noticeKind", "info");

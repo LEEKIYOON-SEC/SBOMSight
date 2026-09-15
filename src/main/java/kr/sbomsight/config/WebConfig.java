@@ -65,5 +65,12 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addResourceHandler("/css/**")
                 .addResourceLocations("classpath:/static/css/")
                 .setCacheControl(CacheControl.noCache().cachePrivate());
+
+        // 반입해 둔 Tabler. 이름에 판이 안 붙어 있어 CSS 와 같은 규칙으로 둔다 —
+        // 694KB 라 매번 받으면 크지만, 안 바뀌었으면 304 한 번으로 끝난다.
+        // (응답 압축을 켜 두어 처음 받을 때도 90KB 안팎이다.)
+        registry.addResourceHandler("/vendor/**")
+                .addResourceLocations("classpath:/static/vendor/")
+                .setCacheControl(CacheControl.noCache().cachePrivate());
     }
 }

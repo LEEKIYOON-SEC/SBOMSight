@@ -11,8 +11,8 @@
       xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 <body>
 
-<div th:fragment="items(rows, showAsset, analyses)" class="table-scroll">
-  <table>
+<div th:fragment="items(rows, showAsset, analyses)" class="table-responsive">
+  <table class="table table-vcenter card-table">
     <thead>
     <tr>
       <th class="tight" th:if="${showAsset}">자산</th>

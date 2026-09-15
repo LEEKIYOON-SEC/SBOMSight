@@ -23,6 +23,7 @@ SBOM 기반 취약점 대응 검토. **Syft 와 Grype 이 전부이고**, 이 �
 |---|---|
 | 웹 | Spring Boot 3.3 (내장 Tomcat) · Java 21 |
 | 화면 | Thymeleaf 서버 렌더링 — 로그인 상태와 화면이 어긋날 자리를 만들지 않는다 |
+| 화면 바탕 | **Tabler 1.5.1 (MIT)** — CSS 한 장만 저장소에 담아 쓴다. JS 도, `dist/libs` 도 가져오지 않는다 |
 | 로그인 | Spring Security 폼 로그인 · 세션 유휴 만료 · CSRF |
 | DB | MariaDB 또는 MySQL 8 · Flyway 마이그레이션 · 드라이버는 MariaDB Connector/J (LGPL-2.1) |
 | 검사 | **syft**(SBOM 생성, 대상 서버에서) · **grype**(취약점 매칭, 이 서버에서) |
@@ -252,6 +253,8 @@ DB_PORT=13306 ./scripts/check-mariadb.sh      # 진짜 DB + Flyway 스키마로 
 DB_PORT=13306 ./scripts/check-migrations.sh   # 빈 DB 와 데이터가 있는 DB 양쪽에 태운다
 python3 scripts/check-table-width.py 1280     # 표가 칸을 넘는지 (브라우저로 실측)
 python3 scripts/check-links.py                # 주소에 빈 값이 붙는지
+python3 scripts/check-uniform.py              # 단추·입력칸이 한 모양인지
+python3 scripts/check-contrast.py             # 글자 대비 (WCAG 2.1 AA)
 ```
 
 아래 둘은 **브라우저만 알 수 있는 것**이라 시험이 아니라 스크립트다. 표가
