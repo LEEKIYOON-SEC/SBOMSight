@@ -301,6 +301,11 @@ details.help .inner > :last-child { margin-bottom: 0; }
   font-size: 12.5px; color: var(--fg-faint); line-height: 1.7;
 }
 
+/* 되돌릴 수 없는 자리. 실수로 누르는 곳이 아니라 마음먹고 찾아오는 곳이어야
+   한다 — Tabler 로 옮기면서 이 카드가 다른 카드와 똑같아졌다. */
+.card.danger-zone { border-color: var(--critical-line); background: #fffafa; }
+.card.danger-zone > .card-header { border-bottom-color: var(--critical-line); }
+
 /* ============================================================
    계정 메뉴 — <details> 라 자바스크립트가 없어도 열린다
    ============================================================ */
@@ -315,7 +320,7 @@ details.help .inner > :last-child { margin-bottom: 0; }
 .menu > summary::-webkit-details-marker { display: none; }
 .menu > summary:hover, .menu[open] > summary { background: var(--hover); }
 .menu-list {
-  position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; z-index: 1030;
+  position: absolute; bottom: calc(100% + 6px); left: .5rem; right: .5rem; z-index: 1030;
   background: #fff; border: 1px solid var(--tblr-border-color); border-radius: 9px;
   box-shadow: 0 10px 30px rgba(20, 22, 26, .16); padding: 4px;
 }

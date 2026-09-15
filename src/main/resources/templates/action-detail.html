@@ -30,6 +30,7 @@
        않는다** — 검사 대상이 바뀌어 사라진 것인지 정말 올린 것인지는
        도구가 판단할 수 없다. 숫자만 보여 주고 판단은 담당자가 한다. */-->
   <div class="card" th:if="${latest != null}">
+    <div class="card-body">
     <span th:if="${remaining == 0}" class="alert alert-success" style="margin:0;display:block">
       최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
       이 패키지 탐지 <b>0건</b> — 확인 후 완료로 넘기세요.
@@ -38,9 +39,11 @@
       최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
       이 패키지 탐지 <b th:text="${remaining} + '건'">0건</b>.
     </span>
+    </div>
   </div>
 
   <div class="card">
+    <div class="card-body">
     <form method="post" th:action="@{'/actions/' + ${remediation.id}}"
           sec:authorize="hasRole('ADMIN')">
       <div class="d-flex align-items-end gap-2 flex-wrap">
@@ -81,10 +84,12 @@
       <tr><th>기한</th><td th:text="${remediation.dueDate != null} ? ${#temporals.format(remediation.dueDate, 'yyyy-MM-dd')} : '—'">—</td></tr>
       <tr><th>메모</th><td th:text="${#strings.isEmpty(remediation.note)} ? '—' : ${remediation.note}">—</td></tr>
     </table>
+    </div>
   </div>
 
   <h2>대상</h2>
   <div class="card">
+    <div class="card-body">
     <table class="table kv">
       <tr><th>패키지</th><td th:text="${remediation.packageName}">openssl</td></tr>
       <tr><th>현재 → 목표</th>
@@ -94,6 +99,7 @@
       <tr><th>등록</th>
           <td th:text="${#temporals.format(remediation.createdAt, 'yyyy-MM-dd HH:mm')} + ' · ' + ${remediation.createdBy}">—</td></tr>
     </table>
+    </div>
   </div>
 
   <h2>이력</h2>
@@ -117,7 +123,6 @@
   </div>
   </div>
     </div>
-  </div>
 
 </main>
 </body>

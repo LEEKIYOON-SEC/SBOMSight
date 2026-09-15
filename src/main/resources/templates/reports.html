@@ -21,6 +21,7 @@
 
   <h2>구역 · 기간</h2>
   <div class="card">
+    <div class="card-body">
     <form method="get" th:action="@{/reports/zone}" class="report-picker" style="margin:0;border:0;padding:0">
       <label class="form-label">구역
         <select class="form-select" name="zone">
@@ -36,6 +37,7 @@
       <a class="btn btn-sm" th:href="@{/reports/zone(from=${lastMonthFrom}, to=${lastMonthTo})}">지난 달</a>
       <a class="btn btn-sm" th:href="@{/reports/zone(from=${quarterFrom}, to=${today})}">최근 3개월</a>
     </form>
+    </div>
   </div>
 
   <h2>자산</h2>
@@ -94,7 +96,6 @@
 
   </div>
     </div>
-  </div>
 
 </main>
 </body>

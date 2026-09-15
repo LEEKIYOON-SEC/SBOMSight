@@ -259,7 +259,6 @@
     </div>
     <div th:replace="~{fragments/analysis-dialog :: dialog(${links.here()})}"></div>
     </div>
-  </div>
 
   <!--/*
     ══ 패키지 ══════════════════════════════════════════════════════════
@@ -310,11 +309,13 @@
           </tbody>
         </table>
       </div>
-      <p class="footnote">
-        ※ 기준 — 이 자산의 최신 검사
-        (<span th:text="${#numbers.formatInteger(packageCount, 0, 'COMMA')}">0</span>개).
-        같은 패키지가 다른 자산에 몇 버전으로 깔렸는지는 패키지 화면에서.
-      </p>
+      <div class="card-footer">
+        <p class="footnote" style="margin-top:0;padding-top:0;border-top:0">
+          ※ 기준 — 이 자산의 최신 검사
+          (<span th:text="${#numbers.formatInteger(packageCount, 0, 'COMMA')}">0</span>개).
+          같은 패키지가 다른 자산에 몇 버전으로 깔렸는지는 패키지 화면에서.
+        </p>
+      </div>
     </div>
     </div>
   </div>

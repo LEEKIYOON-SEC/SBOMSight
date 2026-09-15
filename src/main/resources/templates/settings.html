@@ -55,7 +55,7 @@
                 class="faint">—</span>
         </td>
         <td class="actions">
-          <button type="button" class="btn small edit-user"
+          <button type="button" class="btn btn-sm edit-user"
                   th:attr="data-username=${u.username}, data-display=${u.displayName},
                            data-role=${u.role.name()}, data-enabled=${u.enabled}">수정</button>
           <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/unlock'}" class="inline"
@@ -75,7 +75,8 @@
       </tbody>
     </table>
 
-    <form method="post" th:action="@{/settings/users}" class="d-flex align-items-end gap-2 flex-wrap" style="margin-top:1rem">
+    <div class="card-body border-top">
+    <form method="post" th:action="@{/settings/users}" class="d-flex align-items-end gap-2 flex-wrap">
       <label class="form-label">계정 이름
         <input class="form-control" name="username" required autocomplete="off" placeholder="hong.gildong">
       </label>
@@ -93,10 +94,12 @@
       </label>
       <button class="btn btn-dark" type="submit">계정 추가</button>
     </form>
+    </div>
   </div>
 
   <h2 id="ips" th:if="${tab} == 'ips'">접근 IP</h2>
   <div class="card" th:if="${tab} == 'ips'">
+    <div class="card-body">
     <form method="post" th:action="@{/settings/ips}">
       <label class="form-label">접속을 허용할 IP · 대역
         <textarea class="form-control" name="allowedIps" rows="4" th:text="${allowedIps}"
@@ -125,10 +128,12 @@
         </div>
       </details>
     </form>
+    </div>
   </div>
 
   <h2 id="tools" th:if="${tab} == 'tools'">도구 상태</h2>
   <div class="card" th:if="${tab} == 'tools'">
+    <div class="card-body">
     <table class="table kv">
       <tr>
         <th>grype</th>
@@ -152,10 +157,10 @@
       <code>grype db update</code> 로 취약점 DB 를 받고, 경로가 다르면
       <code>SBOMSIGHT_GRYPE</code> 로 알려 주세요.
     </p>
+    </div>
   </div>
   </div>
     </div>
-  </div>
 
   <!--/*
     계정 수정.
@@ -171,7 +176,7 @@
     */-->
     <form method="post" id="user-form" th:action="@{/settings/users}">
       <h2>계정 수정</h2>
-      <p class="lede mono" id="user-name">—</p>
+      <p class="mono text-secondary" id="user-name">—</p>
 
       <label class="form-label" for="user-display">이름</label>
       <input class="form-control" name="displayName" id="user-display" autocomplete="off"
@@ -182,9 +187,9 @@
         <option th:each="r : ${roles}" th:value="${r.name()}" th:text="${r.label()}">관리자</option>
       </select>
 
-      <label class="form-check form-check-inline mb-0" style="margin-top:12px">
+      <label class="form-check form-check-inline my-3">
         <input class="form-check-input" type="checkbox" name="enabled" value="true" id="user-enabled" checked>
-        이 계정으로 로그인할 수 있음
+        <span class="form-check-label">이 계정으로 로그인할 수 있음</span>
       </label>
 
       <label class="form-label" for="user-password">새 비밀번호 <span class="faint">비우면 안 바꿈</span></label>
