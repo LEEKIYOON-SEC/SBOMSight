@@ -70,11 +70,34 @@ public class VulnController {
                         @RequestParam(required = false) Boolean fixable,
                         @RequestParam(required = false) Boolean kev,
                         @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(required = false) Integer size,
+                        @RequestParam(required = false) Integer at,
                         @RequestParam(defaultValue = "severity") String sort,
+                        @RequestParam(defaultValue = "desc") String dir,
                         Model model) {
         // 한 자산 이야기는 그 자산 안에서 끝난다.
         if (asset != null) {
             return "redirect:/assets/" + asset + "?tab=vulns";
+        }
+
+        // 화면 안의 모든 링크는 여기서 나온다. 고르지 않은 것과 **기본값은
+        // 주소에 안 붙는다** — `sort=severity&dir=desc&size=100` 은 고른 것이
+        // 아니라 아직 아무것도 고르지 않은 상태다.
+        VulnQuery.Links links = new VulnQuery.Links("/vulns", null)
+                .with("zone", zone).with("scan", scan).with("group", group)
+                .with("q", q).with("severity", severity)
+                .with("fixable", fixable).with("kev", kev)
+                .with("size", VulnQuery.sizeOf(size) == VulnQuery.PAGE_SIZE
+                              ? null : VulnQuery.sizeOf(size))
+                .with("sort", "severity".equals(sort) ? null : sort)
+                .with("dir", "desc".equals(dir) ? null : dir);
+
+        // 몇 번째로 — 쪽이 아니라 **건의 번호**를 받는다. 화면이 `101–200번째`
+        // 라고 세고 있으므로 사람이 아는 값도 그 번호다. 쪽으로 환산해
+        // 되돌린다 — `at` 을 주소에 남겨 두면 거르개를 바꿀 때마다 따라다니며
+        // 엉뚱한 쪽으로 튄다.
+        if (at != null && at > 0) {
+            return "redirect:" + links.page((at - 1) / VulnQuery.sizeOf(size));
         }
 
         VulnQuery.Scope scope = scan != null ? query.ofScan(scan) : query.ofZone(zone);
@@ -88,13 +111,10 @@ public class VulnController {
         model.addAttribute("fixable", fixable);
         model.addAttribute("kev", kev);
         model.addAttribute("sort", sort);
-        // 화면 안의 모든 링크는 여기서 나온다. 고르지 않은 것은 주소에 안 붙는다.
-        model.addAttribute("links", new VulnQuery.Links("/vulns", null)
-                .with("zone", zone).with("scan", scan).with("group", group)
-                .with("q", q).with("severity", severity)
-                .with("fixable", fixable).with("kev", kev).with("sort", sort));
+        model.addAttribute("dir", dir);
+        model.addAttribute("links", links);
 
-        query.fill(model, scope, group, q, severity, fixable, kev, page, sort);
+        query.fill(model, scope, group, q, severity, fixable, kev, page, size, sort, dir);
         return "vulns";
     }
 
@@ -132,8 +152,11 @@ public class VulnController {
         // 내려받기는 한 페이지가 아니라 걸린 것 전부다. 화면에 100건만 보이는데
         // 파일도 100건이면 그 파일로 대조를 할 수 없다.
         List<Finding> rows = scope.scanIds().isEmpty() ? List.of()
+                // 파일은 언제나 심각한 것부터다. 화면의 정렬 방향을 따라가지
+                // 않는다 — 내려받은 파일이 어떤 순서였는지 나중에 알 수 없으면
+                // 두 파일을 나란히 놓고 대조할 수 없다.
                 : findings.findInBySeverity(scope.scanIds(), blank(q), blank(severity),
-                                            fixable, kev, PageRequest.of(0, 100_000))
+                                            fixable, kev, false, PageRequest.of(0, 100_000))
                           .getContent();
 
         response.setContentType("text/csv; charset=UTF-8");

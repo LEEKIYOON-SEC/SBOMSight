@@ -41,7 +41,7 @@
       각주는 개조식이어야 하지만 이 줄은 계획이 정한 문장 그대로여야 한다.
       둘이 `footnote` 한 클래스를 같이 쓰고 있었다.
     */-->
-    <p class="gloss" id="analysis-state-gloss">아직 보지 않았습니다.</p>
+    <p class="gloss" id="analysis-state-gloss">아직 보지 않음</p>
 
     <!--/* 근거는 `해당 없음` 일 때만 연다. 다른 상태에서 물으면 고를 것이 없다. */-->
     <div id="analysis-justification-row" hidden>
@@ -58,7 +58,7 @@
 
     <label class="form-label" for="analysis-response">대응</label>
     <select class="form-select" name="response" id="analysis-response" data-gloss="analysis-response-gloss">
-      <option value="" data-needs-review="false">— 아직 정하지 않음 —</option>
+      <option value="" data-needs-review="false">— 미정 —</option>
       <option th:each="r : ${T(kr.sbomsight.domain.AnalysisResponse).values()}"
               th:value="${r.name()}" th:text="${r.label()}"
               th:attr="data-gloss=${r.gloss()}, data-needs-review=${r.needsReviewDate()}">버전 올려 조치</option>
@@ -81,7 +81,7 @@
       `다른 통제 선택` 으로 붙어 보였다. 안 적어도 된다는 뜻이므로
       `(선택 사항)` 으로 푼다 (§4.0.4 — 줄여서 뜻이 흐려지면 줄이지 않는다).
     */-->
-    <label class="form-label" for="analysis-control">다른 통제 <span class="faint">(선택 사항)</span></label>
+    <label class="form-label" for="analysis-control">추가 보안 통제 <span class="faint">(선택 사항)</span></label>
     <input class="form-control" name="otherControl" id="analysis-control" placeholder="내부망에서만 접근 · WAF 규칙 적용">
 
     <!--/*
@@ -97,7 +97,7 @@
 
     <div class="dialog-actions">
       <button type="button" class="btn" data-close>취소</button>
-      <button type="submit" class="btn btn-dark">적기</button>
+      <button type="submit" class="btn btn-dark" id="analysis-submit">작성</button>
     </div>
   </form>
 </dialog>
@@ -161,6 +161,11 @@
         dialog.querySelector('#analysis-note').value = link.dataset.note || '';
         dialog.querySelector('#analysis-control').value = link.dataset.control || '';
         dialog.querySelector('#analysis-doc').value = link.dataset.doc || '';
+
+        // 으뜸 단추의 글자는 목록의 링크와 같아야 한다 — 목록에서 `수정` 을
+        // 눌렀는데 팝업이 `작성` 이라고 하면 새로 쓰는 것으로 읽힌다.
+        dialog.querySelector('#analysis-submit').textContent =
+                link.dataset.exists === 'true' ? '수정' : '작성';
 
         sync();
         dialog.showModal();

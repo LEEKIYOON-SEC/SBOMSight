@@ -16,21 +16,21 @@ package kr.sbomsight.domain;
  */
 public enum AnalysisResponse {
 
-    UPDATE("update", "버전 올려 조치",
-           "수정 버전이 나온 판으로 올립니다.", false),
+    UPDATE("update", "업그레이드",
+           "수정 버전이 나온 판으로 올림", false),
 
-    ROLLBACK("rollback", "이전 버전으로 내림",
-             "올릴 수 없어, 취약하지 않은 예전 판으로 내립니다.", false),
+    ROLLBACK("rollback", "다운그레이드",
+             "올릴 수 없어 취약하지 않은 예전 판으로 내림", false),
 
-    WORKAROUND_AVAILABLE("workaround_available", "우회 조치 (패치 없이)",
-                         "설정 변경·접근 제한 등으로 막습니다. 패키지는 그대로 둡니다.", false),
+    WORKAROUND_AVAILABLE("workaround_available", "우회 조치 (패치 미적용)",
+                         "설정 변경·접근 제한 등으로 차단 · 패키지는 그대로", false),
 
     CAN_NOT_FIX("can_not_fix", "조치 불가",
-                "수정 버전이 없고 우회도 되지 않습니다.", true),
+                "수정 버전 없음 · 우회도 불가", true),
 
     /** 고칠 수 있지만 안 하기로 한 것. 기한이 없으면 방치와 구분되지 않는다. */
-    WILL_NOT_FIX("will_not_fix", "조치 안 함 (위험 수용)",
-                 "고칠 수 있지만 하지 않기로 하고 위험을 감수합니다.", true);
+    WILL_NOT_FIX("will_not_fix", "위험 수용",
+                 "고칠 수 있지만 하지 않기로 결정 · 위험 감수", true);
 
     private final String standard;
     private final String label;

@@ -208,9 +208,13 @@ class PageRenderTest {
                 .isEqualTo(1);
 
         // 구역 보기에서는 반대로 카드가 있고 표가 없어야 한다.
+        //
+        // **표의 class 를 본다.** 구역 접기 스크립트가 같은 이름으로 표를
+        // 찾으므로(`querySelector('.asset-table')`) 이름만 찾으면 표가
+        // 없어도 걸린다 — 그러면 이 시험은 아무것도 지키지 못한다.
         String cards = open("/?view=zones");
         assertThat(cards).contains("zone-cards");
-        assertThat(cards).doesNotContain("asset-table");
+        assertThat(cards).doesNotContain("table-sticky asset-table");
     }
 
     /** 요약 줄의 숫자는 링크다. 누른 자리가 열리지 않으면 숫자만 보여 준 셈이다. */
@@ -245,7 +249,7 @@ class PageRenderTest {
     void assetDetailTabs() throws Exception {
         String overview = open("/assets/" + asset.getId());
         assertThat(overview).contains("기본 정보");
-        assertThat(overview).contains("SBOM 올리기");
+        assertThat(overview).contains("SBOM 업로드");
         assertThat(overview).contains("보관");
 
         String history = open("/assets/" + asset.getId() + "?tab=history");
@@ -284,7 +288,7 @@ class PageRenderTest {
         assertThat(bogus)
                 .as("본문이 없는 화면이 200 으로 떴다")
                 .contains("기본 정보")
-                .contains("SBOM 올리기");
+                .contains("SBOM 업로드");
 
         // 이력 탭은 이름이 history 다. 내용이 실제로 있어야 한다.
         assertThat(open("/assets/" + asset.getId() + "?tab=history"))

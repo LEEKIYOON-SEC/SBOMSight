@@ -8,6 +8,7 @@ import kr.sbomsight.repo.ScanRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.JpaSort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
@@ -31,6 +32,19 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 public class VulnQuery {
 
     public static final int PAGE_SIZE = 100;
+
+    /**
+     * 한 쪽에 몇 건. 화면에서 고른다.
+     *
+     * <p>고를 수 있는 값만 받는다 — 주소에 손으로 적은 {@code size=50000} 이
+     * 그대로 질의로 들어가면 한 사람이 화면 한 장으로 DB 를 붙잡는다.
+     */
+    public static final List<Integer> PAGE_SIZES = List.of(10, 30, 50, 100);
+
+    /** 목록에 없는 값은 기본값으로 되돌린다. {@code null} 도 기본값이다. */
+    public static int sizeOf(Integer size) {
+        return size != null && PAGE_SIZES.contains(size) ? size : PAGE_SIZE;
+    }
 
     private final FindingRepository findings;
     private final ScanRepository scans;
@@ -134,6 +148,32 @@ public class VulnQuery {
             return build("page", page);
         }
 
+        /** 이 화면의 경로. 쪽 이동 form 의 {@code action} 이 쓴다. */
+        public String path() {
+            return path;
+        }
+
+        /**
+         * 지금 고른 것을 form 의 숨은 칸으로.
+         *
+         * <p>쪽 이동은 링크가 아니라 <b>form</b> 이다 — 몇 번째로 갈지는
+         * 사람이 적는 값이라 주소를 미리 만들어 둘 수 없다. 그 form 이
+         * 지금의 범위·거르개·정렬을 잃지 않게 그대로 실어 보낸다. 손으로
+         * 적으면 거르개를 하나 더할 때 이 목록에 넣는 것을 잊는다.
+         *
+         * <p>{@code page} 는 뺀다 — 넣으면 숨은 칸과 사람이 적은 값이 같은
+         * 이름으로 두 번 실려 서버가 앞의 것을 읽는다.
+         */
+        public java.util.Map<String, String> fields() {
+            LinkedHashMap<String, String> out = new LinkedHashMap<>();
+            for (var e : merged().entrySet()) {
+                if (!"page".equals(e.getKey())) {
+                    out.put(e.getKey(), String.valueOf(e.getValue()));
+                }
+            }
+            return out;
+        }
+
         /**
          * 지금 고른 것에서 <b>한 가지만 바꾼 주소.</b> {@code null} 을 주면
          * 그 값을 뺀다 — 펼친 것을 접는 링크가 그렇게 만들어진다.
@@ -165,7 +205,8 @@ public class VulnQuery {
             return download.here();
         }
 
-        private String build(String overrideName, Object overrideValue) {
+        /** 언제나 달고 다니는 것 + 지금 고른 것. 빈 값은 빼고 돌려준다. */
+        private LinkedHashMap<String, Object> merged() {
             LinkedHashMap<String, Object> all = new LinkedHashMap<>();
             if (fixed != null) {
                 for (String pair : fixed.split("&")) {
@@ -173,7 +214,16 @@ public class VulnQuery {
                     all.put(pair.substring(0, eq), pair.substring(eq + 1));
                 }
             }
-            all.putAll(current);
+            current.forEach((name, value) -> {
+                if (value != null && !String.valueOf(value).isBlank()) {
+                    all.put(name, value);
+                }
+            });
+            return all;
+        }
+
+        private String build(String overrideName, Object overrideValue) {
+            LinkedHashMap<String, Object> all = merged();
             if (overrideName != null) {
                 all.put(overrideName, overrideValue);
                 // 목록이 바뀌면 몇 쪽을 보고 있었는지는 뜻이 없어진다.
@@ -234,7 +284,8 @@ public class VulnQuery {
     /** 목록을 모델에 담는다. 묶는 방식에 따라 담기는 값이 다르다. */
     @Transactional(readOnly = true)
     public void fill(Model model, Scope scope, String group, String q, String severity,
-                     Boolean fixable, Boolean kev, int page, String sort) {
+                     Boolean fixable, Boolean kev, int page, Integer size,
+                     String sort, String dir) {
         String term = blankToNull(q);
         String sev = blankToNull(severity);
 
@@ -254,13 +305,15 @@ public class VulnQuery {
                     findings.groupByPackageIn(scope.scanIds()));
             default -> {
                 int p = Math.max(page, 0);
+                int rows = sizeOf(size);
+                boolean asc = "asc".equals(dir);
                 model.addAttribute("page", "severity".equals(sort) || sort == null
                         // 심각도는 글자다. Critical 이 High 보다 앞이라는 것은
                         // 알파벳 순서가 아니라 뜻이고, ORDER BY CASE 로만 낸다.
                         ? findings.findInBySeverity(scope.scanIds(), term, sev, fixable, kev,
-                                                    PageRequest.of(p, PAGE_SIZE))
+                                                    asc, PageRequest.of(p, rows))
                         : findings.findIn(scope.scanIds(), term, sev, fixable, kev,
-                                          PageRequest.of(p, PAGE_SIZE, order(sort))));
+                                          PageRequest.of(p, rows, order(sort, dir))));
             }
         }
 
@@ -279,16 +332,57 @@ public class VulnQuery {
      *
      * <p>어느 축으로 정렬하든 <b>값이 없는 건은 항상 뒤로</b> 보낸다. CVSS 가
      * 없는 건을 0 점으로 줄 세우면 "안전하다"는, 아무도 내리지 않은 판정이 된다.
+     * 방향을 뒤집어도 따라 올라오지 않는다.
+     *
+     * <p><b>{@code dir} 은 곧이곧대로 읽는다</b> — {@code asc} 면 오름차순,
+     * 아니면 내림차순. 칸마다 "처음 눌렀을 때의 방향" 이 다른 것은
+     * ({@code CVSS} 는 큰 것부터, {@code 패키지} 는 사전 순) 화면이 링크를
+     * 만들 때 정하고, 여기서 다시 뒤집지 않는다. 뒤집으면 화면에 찍힌
+     * 화살표와 실제 순서가 어긋난다.
+     *
+     * <p><b>{@code Sort.Order#nullsLast()} 로는 안 된다.</b> 그 지시는 SQL 에
+     * 도달하지 않는다 — 띄워서 재 보고 찾았다. Hibernate 가 내보낸 것은
+     * {@code order by f1_0.cvss_score, f1_0.package_name} 이고 {@code nulls
+     * last} 는 어디에도 없었다. 내림차순에서는 MySQL·H2 가 NULL 을 알아서
+     * 뒤로 보내 주어 지금까지 맞아 보였을 뿐이고, 오름차순을 열자 <b>CVSS 가
+     * 없는 34건이 "가장 안 위험한 것" 자리에 줄줄이 섰다.</b>
+     *
+     * <p>그래서 정렬 축 앞에 <b>"값이 없는가" 한 칸을 직접 붙인다.</b>
+     * 이것만이 두 방향·두 DB 에서 같게 돈다.
      */
-    public static Sort order(String sort) {
+    public static Sort order(String sort, String dir) {
+        Sort.Direction d = "asc".equals(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
         return switch (sort == null ? "" : sort) {
-            case "epss" -> Sort.by(Sort.Order.desc("epss").nullsLast(),
-                                   Sort.Order.desc("cvssScore").nullsLast());
-            case "package" -> Sort.by(Sort.Order.asc("packageName"), Sort.Order.asc("cve"));
-            case "cve" -> Sort.by(Sort.Order.asc("cve"));
-            default -> Sort.by(Sort.Order.desc("cvssScore").nullsLast(),
-                               Sort.Order.asc("packageName"));
+            case "epss" -> nullsLast("f.epss")
+                    .and(Sort.by(Sort.Order.by("epss").with(d)))
+                    .and(nullsLast("f.cvssScore"))
+                    .and(Sort.by(Sort.Order.by("cvssScore").with(d)));
+            // 이름은 비지 않는다(NOT NULL). 값 검사를 붙일 것이 없다.
+            case "package" -> Sort.by(Sort.Order.by("packageName").with(d),
+                                      Sort.Order.asc("cve"));
+            case "cve" -> Sort.by(Sort.Order.by("cve").with(d));
+            default -> nullsLast("f.cvssScore")
+                    .and(Sort.by(Sort.Order.by("cvssScore").with(d),
+                                 Sort.Order.asc("packageName")));
         };
+    }
+
+    /**
+     * "값이 없는가" 를 맨 앞 정렬 칸으로.
+     *
+     * <p>{@code 0}(있음) → {@code 1}(없음) 오름차순이므로, 뒤에 오는 축의
+     * 방향과 무관하게 값 없는 건이 <b>언제나 뒤로</b> 간다.
+     *
+     * <p>{@code JpaSort.unsafe} 는 식을 그대로 JPQL 의 {@code ORDER BY} 에
+     * 넣는다. 그래서 <b>여기 적는 별칭은 질의의 별칭과 같아야 한다</b> —
+     * {@link kr.sbomsight.repo.FindingRepository#findIn} 의 {@code f} 다.
+     * 질의의 별칭을 바꾸면 여기도 바꿔야 하고, 안 바꾸면 그 화면이 500 이 된다.
+     */
+    private static Sort nullsLast(String path) {
+        // 괄호로 감싼다. Spring Data 는 괄호가 없는 식을 속성 이름으로 보고
+        // 질의의 별칭을 앞에 붙여서(`f.CASE WHEN …`) 질의가 구문 오류로 터진다.
+        return JpaSort.unsafe(Sort.Direction.ASC,
+                              "(CASE WHEN " + path + " IS NULL THEN 1 ELSE 0 END)");
     }
 
     private String blankToNull(String value) {

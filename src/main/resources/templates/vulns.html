@@ -32,13 +32,18 @@
   <form method="get" class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
     <input type="hidden" name="scan" th:if="${selectedScan != null}" th:value="${selectedScan}">
 
-    <label class="form-label" style="margin:0">범위
-      <select class="form-select form-select-sm w-auto" name="zone" onchange="this.form.submit()" th:disabled="${selectedScan != null}">
-        <option value="">전체</option>
-        <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
-                th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>
-      </select>
-    </label>
+    <!--/*
+      라벨은 고르개를 **감싸지 않는다.** `form-label` 은 블록이라 감싸면 글자
+      아래로 고르개가 내려가고, 그 한 칸만 두 줄이 되어 옆의 묶기 단추·검색
+      칸과 밑선이 어긋난다. 나란히 두고 `for` 로 묶는다.
+    */-->
+    <label class="form-label mb-0" for="zone-filter">범위</label>
+    <select class="form-select form-select-sm w-auto" id="zone-filter" name="zone"
+            onchange="this.form.submit()" th:disabled="${selectedScan != null}">
+      <option value="">전체</option>
+      <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
+              th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>
+    </select>
 
     <span class="btn-group">
       <a class="btn btn-sm" th:href="@{${links.group('item')}}"
@@ -51,10 +56,9 @@
 
     <input type="hidden" name="group" th:value="${group}">
 
-    <label style="flex:1; min-width:14rem; margin:0">
-      <input class="form-control form-control-sm" type="search" name="q" th:value="${q}" autocomplete="off"
-             placeholder="CVE 번호 · 패키지 이름">
-    </label>
+    <input class="form-control form-control-sm" type="search" name="q" th:value="${q}"
+           style="flex:1; min-width:14rem" autocomplete="off"
+           aria-label="CVE 번호 · 패키지 이름" placeholder="CVE 번호 · 패키지 이름">
     <select class="form-select form-select-sm w-auto" name="severity" aria-label="심각도">
       <option value="">심각도 전체</option>
       <option value="Critical" th:selected="${severity} == 'Critical'">심각</option>
@@ -83,33 +87,19 @@
                           ${links.clear()}, '거르개 지우기')}"></div>
       </th:block>
 
+      <!--/*
+        정렬 단추 묶음(`심각도 CVSS 악용확률 패키지 CVE`)을 뗐다. 방향이
+        없어서 낮은 것부터는 볼 수 없었고, 같은 일을 하는 자리가 표 머리와
+        단추 묶음 두 곳이 되었다. **표 머리를 누른다** — 자산 목록이 이미
+        그렇게 돌고, 한 번 더 누르면 방향이 뒤집힌다.
+      */-->
       <th:block th:if="${page.totalElements > 0}">
-        <div class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
-          <b th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>
-          <span>건</span>
-          <span class="faint" th:if="${page.totalPages > 1}"
-                th:text="${page.number * page.size + 1} + '–' + ${page.number * page.size + page.numberOfElements} + '번째'"></span>
-          <span class="spacer" style="flex:1"></span>
-          <span class="faint" style="font-size:13px">정렬</span>
-          <span class="btn-group">
-            <a class="btn btn-sm" th:each="s : ${ {'severity','cvss','epss','package','cve'} }"
-               th:href="@{${links.sort(s)}}"
-               th:classappend="${sort} == ${s} ? 'active' : ''"
-               th:text="${s} == 'severity' ? '심각도' : (${s} == 'cvss' ? 'CVSS'
-                        : (${s} == 'epss' ? '악용 확률' : (${s} == 'package' ? '패키지' : 'CVE')))">심각도</a>
-          </span>
-        </div>
+        <div th:replace="~{fragments/ui :: countline(${page}, ${links})}"></div>
 
         <div th:replace="~{fragments/finding-table :: items(${page.content},
-                          ${selectedScan == null}, ${analyses})}"></div>
+                          ${selectedScan == null}, ${analyses}, ${links}, ${sort}, ${dir})}"></div>
 
-        <div class="card-footer d-flex justify-content-center gap-3" th:if="${page.totalPages > 1}">
-          <a th:if="${page.hasPrevious()}"
-             th:href="@{${links.page(page.number - 1)}}">이전</a>
-          <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
-          <a th:if="${page.hasNext()}"
-             th:href="@{${links.page(page.number + 1)}}">다음</a>
-        </div>
+        <div th:replace="~{fragments/ui :: pager(${page}, ${links})}"></div>
       </th:block>
     </th:block>
 

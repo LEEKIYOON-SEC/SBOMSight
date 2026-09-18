@@ -171,6 +171,15 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      *
      * <p>순위를 열로 저장해 두는 방법도 있지만, 그러면 grype 이 준 단계를
      * 우리가 한 번 더 옮겨 적는 자리가 생긴다. 옮겨 적는 자리는 틀어진다.
+     *
+     * <p><b>방향을 질의 안에서 뒤집는다</b>({@code :asc}). 오름차순용 질의를
+     * 한 벌 더 두면 {@code WHERE} 절이 두 곳에 있게 되고, 거르개를 하나
+     * 고칠 때 한쪽만 고치는 날이 온다 — 그때부터 같은 목록이 정렬 방향에
+     * 따라 다른 건수를 낸다.
+     *
+     * <p><b>심각도를 모르는 건은 방향과 무관하게 언제나 뒤로</b>(순위 9).
+     * 오름차순에서 앞으로 올리면 "가장 안 위험한 것" 자리에 서게 되는데,
+     * 그것은 아무도 내리지 않은 판정이다. CVSS 가 없는 건도 같다.
      */
     @Query(value = """
            SELECT f FROM Finding f
@@ -184,10 +193,16 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
-           ORDER BY CASE LOWER(f.severity)
-                      WHEN 'critical' THEN 0 WHEN 'high' THEN 1
-                      WHEN 'medium'   THEN 2 WHEN 'low'  THEN 3 ELSE 4 END,
-                    f.cvssScore DESC NULLS LAST, f.packageName ASC, f.cve ASC
+           ORDER BY CASE WHEN :asc = TRUE
+                           THEN CASE LOWER(f.severity)
+                                  WHEN 'low'      THEN 0 WHEN 'medium'   THEN 1
+                                  WHEN 'high'     THEN 2 WHEN 'critical' THEN 3 ELSE 9 END
+                           ELSE CASE LOWER(f.severity)
+                                  WHEN 'critical' THEN 0 WHEN 'high'     THEN 1
+                                  WHEN 'medium'   THEN 2 WHEN 'low'      THEN 3 ELSE 9 END
+                         END,
+                    CASE WHEN :asc = TRUE THEN f.cvssScore ELSE -f.cvssScore END ASC NULLS LAST,
+                    f.packageName ASC, f.cve ASC
            """,
            countQuery = """
            SELECT COUNT(f) FROM Finding f JOIN f.scan s
@@ -206,6 +221,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                                    @Param("severity") String severity,
                                    @Param("fixable") Boolean fixable,
                                    @Param("kev") Boolean kev,
+                                   @Param("asc") boolean asc,
                                    Pageable pageable);
 
     /**

@@ -97,7 +97,7 @@ public final class CsvWriter {
             throws IOException {
         try (Writer writer = start(out)) {
             row(writer, "자산", "구역", "취약점", "패키지", "상태", "근거", "대응",
-                        "설명", "다른 통제", "결재 문서 번호", "재검토일",
+                        "설명", "추가 보안 통제", "결재 문서 번호", "재검토일",
                         "기록한 사람", "기록한 때");
             for (FindingAnalysis a : rows) {
                 row(writer,

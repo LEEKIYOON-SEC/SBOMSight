@@ -217,6 +217,11 @@ th.sortable .sortmark { color: var(--fg); }
 tr.zone-row > td { background: var(--subtle); }
 tbody tr.zone-row:hover > td { background: var(--subtle); }
 
+/* 접힌 구역. 머리줄은 남는다 — 접은 것과 자산이 없는 것이 같아 보이면
+   "왜 안 보이지" 부터 물어야 한다. 접기 단추의 모양은 건드리지 않는다:
+   `btn btn-sm` 그대로여야 화면마다 같은 높이로 선다. */
+.zone-group.folded tr.zone-item { display: none; }
+
 /* 딱지 — 실제 악용 · 수정 버전 유무 */
 .tag {
   display: inline-block; padding: 2px 8px; border-radius: 5px;

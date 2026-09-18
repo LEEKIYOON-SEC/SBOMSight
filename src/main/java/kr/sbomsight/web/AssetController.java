@@ -288,13 +288,25 @@ public class AssetController {
                          @RequestParam(required = false) Boolean fixable,
                          @RequestParam(required = false) Boolean kev,
                          @RequestParam(defaultValue = "0") int page,
+                         @RequestParam(required = false) Integer size,
+                         @RequestParam(required = false) Integer at,
                          @RequestParam(defaultValue = "severity") String sort,
+                         @RequestParam(defaultValue = "desc") String dir,
                          Model model) {
         // 모르는 탭 이름은 개요로 되돌린다. 화면은 `th:if` 로 갈라져 있어서,
         // 아무 것에도 맞지 않는 값이 오면 **탭 줄만 있고 본문이 빈 화면**이
         // 뜬다 — 200 이라 시험도 통과한다. `?tab=scans` 로 실제 그랬다
         // (이력 탭의 이름은 `history` 다).
         tab = TABS.contains(tab) ? tab : "overview";
+
+        // 몇 번째로 — 쪽이 아니라 **건의 번호**를 받아 쪽으로 환산해 되돌린다.
+        // `at` 을 주소에 남겨 두면 거르개를 바꿀 때마다 따라다니며 엉뚱한
+        // 쪽으로 튄다. 자산 상세와 `/vulns` 가 같은 표를 쓰므로 여기도 같다.
+        if ("vulns".equals(tab) && at != null && at > 0) {
+            return "redirect:" + vulnLinks(id, group, q, severityFilter, fixable, kev,
+                                           size, sort, dir)
+                    .page((at - 1) / VulnQuery.sizeOf(size));
+        }
         model.addAttribute("tab", tab);
         Asset asset = asset(id);
         List<Scan> history = scans.findByAssetIdOrderByCreatedAtDesc(id);
@@ -327,18 +339,15 @@ public class AssetController {
         if ("vulns".equals(tab) && latest != null) {
             model.addAttribute("scope", vulns.ofScan(latest.getId()));
             vulns.fill(model, vulns.ofScan(latest.getId()), group, q, severityFilter,
-                       fixable, kev, page, sort);
-            // 이 탭은 언제나 tab=vulns 를 달고 다닌다. 나머지는 고른 것만 붙는다.
-            model.addAttribute("links",
-                    new VulnQuery.Links("/assets/" + id, "tab=vulns")
-                            .with("group", group).with("q", q)
-                            .with("severity", severityFilter)
-                            .with("fixable", fixable).with("kev", kev).with("sort", sort));
+                       fixable, kev, page, size, sort, dir);
+            model.addAttribute("links", vulnLinks(id, group, q, severityFilter, fixable, kev,
+                                                  size, sort, dir));
             model.addAttribute("group", group);
             model.addAttribute("q", q);
             model.addAttribute("fixable", fixable);
             model.addAttribute("kev", kev);
             model.addAttribute("sort", sort);
+            model.addAttribute("dir", dir);
             model.addAttribute("severityFilter", severityFilter);
         }
 
@@ -351,6 +360,29 @@ public class AssetController {
             model.addAttribute("q", q);
         }
         return "asset-detail";
+    }
+
+    /**
+     * 취약점 탭의 링크.
+     *
+     * <p>이 탭은 언제나 {@code tab=vulns} 를 달고 다닌다. 나머지는 고른 것만
+     * 붙고 <b>기본값은 적지 않는다</b> — {@code sort=severity&dir=desc&size=100}
+     * 은 고른 것이 아니라 아직 아무것도 고르지 않은 상태다.
+     *
+     * <p>한 벌로 둔다. 쪽 이동({@code at})이 되돌릴 주소와 화면이 그리는
+     * 주소가 갈리면, 거르개를 하나 더할 때 한쪽만 고치는 날이 온다.
+     */
+    private VulnQuery.Links vulnLinks(Long id, String group, String q, String severity,
+                                      Boolean fixable, Boolean kev, Integer size,
+                                      String sort, String dir) {
+        return new VulnQuery.Links("/assets/" + id, "tab=vulns")
+                .with("group", group).with("q", q)
+                .with("severity", severity)
+                .with("fixable", fixable).with("kev", kev)
+                .with("size", VulnQuery.sizeOf(size) == VulnQuery.PAGE_SIZE
+                              ? null : VulnQuery.sizeOf(size))
+                .with("sort", "severity".equals(sort) ? null : sort)
+                .with("dir", "desc".equals(dir) ? null : dir);
     }
 
     /**

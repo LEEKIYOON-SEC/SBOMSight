@@ -18,17 +18,17 @@ package kr.sbomsight.domain;
 public enum AnalysisState {
 
     /** 아직 아무도 보지 않았다. 값이 없는 것이지 "괜찮다" 가 아니다. */
-    NOT_SET("미검토", "아직 보지 않았습니다.", true),
+    NOT_SET("미검토", "아직 보지 않음", true),
 
-    IN_TRIAGE("검토 중", "우리 환경에 해당되는지 확인하고 있습니다.", true),
+    IN_TRIAGE("검토 중", "우리 환경에 해당되는지 확인 중", true),
 
-    EXPLOITABLE("해당됨", "우리 환경에 영향이 있습니다. 고쳐야 합니다.", true),
+    EXPLOITABLE("해당됨", "우리 환경에 영향 있음 · 조치 필요", true),
 
     /** 탐지 자체는 맞다. 다만 우리 환경에 영향이 없다 — 근거를 골라야 한다. */
-    NOT_AFFECTED("해당 없음", "탐지는 맞지만 우리 환경에는 영향이 없습니다.", false),
+    NOT_AFFECTED("해당 없음", "탐지는 맞음 · 우리 환경에는 영향 없음", false),
 
     /** 탐지가 틀렸다. 패키지를 잘못 짚었거나 버전을 잘못 읽은 경우다. */
-    FALSE_POSITIVE("오탐", "탐지 자체가 틀렸습니다(패키지 오인 등).", false);
+    FALSE_POSITIVE("오탐", "탐지 자체가 틀림 · 패키지 오인 등", false);
 
     private final String label;
     private final String gloss;

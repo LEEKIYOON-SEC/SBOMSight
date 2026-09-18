@@ -334,7 +334,7 @@ class FindingAnalysisTest {
         assertThat(html)
                 .as("적어 둔 것이 목록에 안 보인다 — 번호가 어긋났다")
                 .contains("data-state=\"NOT_AFFECTED\"")
-                .contains(">고치기</a>");
+                .contains(">수정</a>");
     }
 
     /** 옛 주 식별자로 적힌 것(위험 수용에서 옮겨 온 행)도 찾아야 한다. */
@@ -363,7 +363,7 @@ class FindingAnalysisTest {
         assertThat(html)
                 .as("옛 번호로 적어 둔 것이 목록에서 사라졌다")
                 .contains("data-response=\"WILL_NOT_FIX\"")
-                .contains(">고치기</a>");
+                .contains(">수정</a>");
     }
 
     // --- 화면 ---------------------------------------------------------------
@@ -376,7 +376,7 @@ class FindingAnalysisTest {
                          .andExpect(status().isOk())
                          .andReturn().getResponse().getContentAsString();
         assertThat(html).contains("openssl")
-                        .contains("조치 안 함")
+                        .contains("위험 수용")
                         .contains("보안-2026-0143");
     }
 

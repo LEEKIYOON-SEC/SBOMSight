@@ -190,7 +190,7 @@
             <td>
               <div th:if="${!#strings.isEmpty(a.note)}" th:text="${a.note}">설명</div>
               <div class="faint" th:if="${!#strings.isEmpty(a.otherControl)}"
-                   th:text="'다른 통제: ' + ${a.otherControl}"></div>
+                   th:text="'추가 보안 통제: ' + ${a.otherControl}"></div>
             </td>
 
             <!--/* 시스템이 아는 것만 적는다 — 로그인 계정과 시각. 결재 문서

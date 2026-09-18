@@ -112,7 +112,7 @@
     <!--/* SBOM 업로드는 자산 안에 있다. 어느 자산 것인지 나중에 정하는 길을
          열어 두면, 어디에도 속하지 않는 결과가 쌓인다. */-->
     <div class="card" sec:authorize="hasRole('ADMIN')">
-      <div class="card-header"><h2 class="card-title">SBOM 올리기</h2></div>
+      <div class="card-header"><h2 class="card-title">SBOM 업로드</h2></div>
       <div class="card-body">
         <form method="post" th:action="@{'/assets/' + ${asset.id} + '/sbom'}"
               enctype="multipart/form-data" class="d-flex align-items-end gap-2 flex-wrap">
@@ -121,13 +121,12 @@
             <input type="file" class="form-control" id="sbom-file" name="file"
                    accept=".json,.xml,.spdx,.cdx" required>
           </div>
-          <button class="btn btn-dark" type="submit">올리고 검사</button>
+          <button class="btn btn-dark" type="submit">검사 시작</button>
         </form>
         <details class="help">
-          <summary>SBOM 은 어떻게 만드나</summary>
+          <summary>SBOM 생성 가이드</summary>
           <div class="inner">
-            대상 자산에서 <code>syft &lt;대상&gt; -o cyclonedx-json &gt; sbom.json</code> 으로 뽑습니다.
-            올리면 grype 이 이 서버에서 돌고, 끝나면 <b>검사 이력</b> 탭에 나타납니다.
+            대상 자산에서 <code>syft &lt;경로&gt; -o cyclonedx-json &gt; sbom.json</code> 으로 추출
           </div>
         </details>
       </div>
@@ -152,8 +151,7 @@
                       class="inline" th:unless="${asset.archivedAt == null}">
                   <button type="submit" class="btn btn-sm">보관 풀기</button>
                 </form>
-                <span class="faint" style="margin-left:8px">
-                  목록에서 빠지고 <b>결과는 남습니다.</b></span>
+                <span class="faint ms-2">목록에서 제외 · 검사 결과 유지</span>
               </td></tr>
           <tr><th>삭제</th>
               <td>
@@ -161,13 +159,13 @@
                   <b th:text="'스캔 ' + ${impact.scanCount()} + '건'">스캔 0건</b> ·
                   <b th:text="'탐지 ' + ${#numbers.formatInteger(impact.findingCount(), 0, 'COMMA')} + '건'">탐지 0건</b> ·
                   <b th:text="'조치 ' + ${impact.remediationCount()} + '건'">조치 0건</b> ·
-                  <b th:text="'검토 결과 ' + ${impact.analysisCount()} + '건'">검토 결과 0건</b>
-                  과 보관된 SBOM·검사 결과 파일이 함께 사라집니다. 되돌릴 수 없습니다.
+                  <b th:text="'검토 결과 ' + ${impact.analysisCount()} + '건'">검토 결과 0건</b> ·
+                  보관된 SBOM·검사 결과 파일 <b>삭제</b>
                 </span>
                 <form method="post" th:action="@{'/assets/' + ${asset.id} + '/delete'}"
                       class="d-flex align-items-end gap-2 flex-wrap" style="margin-top:12px">
                   <div>
-                    <label class="form-label" for="delete-confirm">확인 — 자산 이름을 입력하세요</label>
+                    <label class="form-label" for="delete-confirm">확인 — 자산 이름 입력</label>
                     <input class="form-control" id="delete-confirm" name="confirm" required autocomplete="off"
                            th:placeholder="${asset.name}">
                   </div>
@@ -225,19 +223,13 @@
           <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
                             ${links.clear()}, '거르개 지우기')}"></div>
         </th:block>
+        <!--/* 건수 줄·표·쪽 넘김 모두 `/vulns` 와 같은 조각이다. 두 벌을 두면
+             한쪽만 고치는 날이 오고, 그때부터 같은 목록이 화면마다 다르게 센다. */-->
         <th:block th:if="${page.totalElements > 0}">
-          <div class="card-body py-2 border-bottom">
-            <b class="num" th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>
-            <span class="text-secondary">건</span>
-          </div>
-          <div th:replace="~{fragments/finding-table :: items(${page.content}, false, ${analyses})}"></div>
-          <div class="card-footer d-flex justify-content-center gap-3" th:if="${page.totalPages > 1}">
-            <a th:if="${page.hasPrevious()}"
-               th:href="@{${links.page(page.number - 1)}}">이전</a>
-            <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
-            <a th:if="${page.hasNext()}"
-               th:href="@{${links.page(page.number + 1)}}">다음</a>
-          </div>
+          <div th:replace="~{fragments/ui :: countline(${page}, ${links})}"></div>
+          <div th:replace="~{fragments/finding-table :: items(${page.content}, false,
+                            ${analyses}, ${links}, ${sort}, ${dir})}"></div>
+          <div th:replace="~{fragments/ui :: pager(${page}, ${links})}"></div>
         </th:block>
       </th:block>
 
@@ -327,7 +319,7 @@
     <th:block th:if="${history.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('아직 검사가 없습니다',
                         'SBOM 을 올리면 grype 이 돌고 여기에 쌓입니다.',
-                        '/assets/' + ${asset.id}, 'SBOM 올리기')}"></div>
+                        '/assets/' + ${asset.id}, 'SBOM 업로드')}"></div>
     </th:block>
 
     <div class="table-responsive" th:unless="${history.isEmpty()}">
@@ -480,7 +472,7 @@
             <td>
               <div th:if="${!#strings.isEmpty(a.note)}" th:text="${a.note}">설명</div>
               <div class="faint" th:if="${!#strings.isEmpty(a.otherControl)}"
-                   th:text="'다른 통제: ' + ${a.otherControl}"></div>
+                   th:text="'추가 보안 통제: ' + ${a.otherControl}"></div>
             </td>
             <td class="tight num" th:classappend="${a.reviewOverdue} ? 'overdue' : ''">
               <span th:if="${a.reviewBy != null}"

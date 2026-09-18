@@ -74,10 +74,22 @@
 
           <span class="ms-auto"></span>
 
-          <label class="form-check form-check-inline mb-0">
+          <!--/* `보관된 자산도` 라고만 적혀 있었다 — 뒤가 잘려 무엇을 하겠다는
+               것인지 알 수 없다. 켜면 무엇이 더 보이는지를 적는다. */-->
+          <label class="form-check form-check-inline mb-0"
+                 title="보관한 자산은 기본 목록에서 빠집니다. 켜면 함께 보입니다.">
             <input class="form-check-input" type="checkbox" id="archived-toggle" th:checked="${archived}">
-            <span class="form-check-label">보관된 자산도</span>
+            <span class="form-check-label">보관 자산 포함</span>
           </label>
+
+          <!--/*
+            구역을 접는다. 자산이 늘면 목록이 구역 순서대로 길어져, 아래쪽
+            구역을 보려면 관심 없는 구역을 지나쳐 내려가야 한다. 접은 것은
+            주소에 넣지 않는다 — 결재 문서에 붙는 링크가 보는 사람마다 다른
+            목록을 내놓는다. 이 브라우저에만 남긴다.
+          */-->
+          <button type="button" class="btn btn-sm" id="fold-all"
+                  th:if="${view != 'zones' and assetCount > 0}">모두 접기</button>
 
           <div class="btn-group" role="group">
             <!--/* 표 보기가 기본이라 `view` 를 안 적는다 — 주소가 짧아지고, 적어도
@@ -121,7 +133,8 @@
           `filter=&archived=false` 로 따라붙는다(N12).
         */-->
         <div class="table-responsive" th:if="${view != 'zones' and assetCount > 0}">
-          <table class="table table-vcenter card-table table-sticky asset-table">
+          <table class="table table-vcenter card-table table-sticky asset-table"
+                 th:attr="data-zone-picked=${selectedZone != null}">
             <thead>
             <tr>
               <th class="tight sortable">
@@ -141,10 +154,12 @@
             </tr>
             </thead>
 
-            <tbody th:each="g : ${groups}">
+            <tbody th:each="g : ${groups}" class="zone-group" th:attr="data-zone=${g.zone.id}">
             <tr class="zone-row">
               <td colspan="8">
                 <div class="zone-head">
+                  <button type="button" class="btn btn-sm zone-fold" aria-expanded="true"
+                          th:title="${g.zone.name} + ' 접기'">▾</button>
                   <i class="zrail" th:style="'background:' + (${#strings.isEmpty(g.zone.color)} ? '#6f7e8d' : ${g.zone.color})"></i>
                   <b th:text="${g.zone.name}">DMZ</b>
                   <span class="faint num" th:text="${g.serverCount()} + '대'">0대</span>
@@ -164,11 +179,12 @@
               </td>
             </tr>
 
-            <tr th:if="${g.isEmpty()}">
+            <tr class="zone-item" th:if="${g.isEmpty()}">
               <td colspan="8" class="faint">이 구역에는 아직 자산이 없습니다.</td>
             </tr>
 
-            <tr th:each="row : ${g.rows}" th:style="${row.asset.archivedAt != null} ? 'opacity:.55' : ''">
+            <tr class="zone-item" th:each="row : ${g.rows}"
+                th:style="${row.asset.archivedAt != null} ? 'opacity:.55' : ''">
               <td class="tight">
                 <a class="fw-bold" th:href="@{'/assets/' + ${row.asset.id}}"
                    th:text="${row.asset.name}">web-01</a>
@@ -312,6 +328,68 @@
         const close = e.target.closest('[data-close]');
         if (close) { close.closest('dialog').close(); }
       });
+
+      // 구역 접기.
+      //
+      // 접은 것은 **주소에 넣지 않는다.** 주소에 넣으면 그 링크가 결재 문서에
+      // 붙고, 받은 사람은 접힌 목록을 전체라고 읽는다. 이 브라우저의 이 세션
+      // 에만 남긴다 — 다음에 열면 다시 전부 펼쳐져 있다.
+      (function () {
+        const table = document.querySelector('.asset-table');
+        if (!table) return;
+        const KEY = 'sbomsight.folded-zones';
+        const groups = Array.from(table.querySelectorAll('tbody.zone-group'));
+        const all = document.querySelector('#fold-all');
+
+        let folded = new Set();
+        try { folded = new Set(JSON.parse(sessionStorage.getItem(KEY) || '[]')); } catch (e) { }
+        // 구역을 골라 놓았으면 접힌 것을 무시하고 펼친다 — 한 구역만 남은
+        // 목록이 접혀 있으면 걸러 놓고 빈 화면을 보게 된다.
+        if (table.dataset.zonePicked === 'true') { folded = new Set(); }
+
+        function save() {
+          try { sessionStorage.setItem(KEY, JSON.stringify(Array.from(folded))); } catch (e) { }
+        }
+
+        function anyOpen() {
+          return groups.some(function (g) { return !folded.has(g.dataset.zone); });
+        }
+
+        function draw() {
+          groups.forEach(function (g) {
+            const off = folded.has(g.dataset.zone);
+            g.classList.toggle('folded', off);
+            const b = g.querySelector('.zone-fold');
+            if (!b) return;
+            b.textContent = off ? '▸' : '▾';
+            b.setAttribute('aria-expanded', off ? 'false' : 'true');
+            const name = g.querySelector('.zone-head b');
+            b.title = (name ? name.textContent + ' ' : '') + (off ? '펼치기' : '접기');
+          });
+          if (all) { all.textContent = anyOpen() ? '모두 접기' : '모두 펼치기'; }
+        }
+
+        table.addEventListener('click', function (e) {
+          const b = e.target.closest('.zone-fold');
+          if (!b) return;
+          const id = b.closest('tbody.zone-group').dataset.zone;
+          if (folded.has(id)) { folded.delete(id); } else { folded.add(id); }
+          save();
+          draw();
+        });
+
+        if (all) {
+          all.addEventListener('click', function () {
+            folded = anyOpen()
+                    ? new Set(groups.map(function (g) { return g.dataset.zone; }))
+                    : new Set();
+            save();
+            draw();
+          });
+        }
+
+        draw();
+      })();
 
       // 보관된 자산 보기. 주소에 남아야 새로고침해도 유지된다.
       const archived = document.querySelector('#archived-toggle');

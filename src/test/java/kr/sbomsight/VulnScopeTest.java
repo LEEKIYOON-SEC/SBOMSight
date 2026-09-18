@@ -92,7 +92,7 @@ class VulnScopeTest {
         VulnQuery.Scope scope = query.ofZone(null);
         return scope.scanIds().isEmpty() ? List.of()
                 : findings.findInBySeverity(scope.scanIds(), q, null, null, null,
-                                            PageRequest.of(0, 100)).getContent();
+                                            false, PageRequest.of(0, 100)).getContent();
     }
 
     // --- 범위 -----------------------------------------------------------------
@@ -123,7 +123,7 @@ class VulnScopeTest {
         // 검사 하나를 여는 것은 "그때 무엇이 있었나" 를 묻는 일이다.
         VulnQuery.Scope old = query.ofScan(before.getId());
         assertThat(findings.findInBySeverity(old.scanIds(), "log4j", null, null, null,
-                                             PageRequest.of(0, 100)))
+                                             false, PageRequest.of(0, 100)))
                 .hasSize(1);
     }
 
@@ -216,7 +216,7 @@ class VulnScopeTest {
 
         VulnQuery.Scope scope = query.ofZone(dmz.getId());
         assertThat(findings.findInBySeverity(scope.scanIds(), "log4j", null, null, null,
-                                             PageRequest.of(0, 100)))
+                                             false, PageRequest.of(0, 100)))
                 .hasSize(1)
                 .extracting(f -> f.getScan().getAsset().getName())
                 .containsExactly(web.getName());
@@ -232,7 +232,7 @@ class VulnScopeTest {
 
         VulnQuery.Scope scope = query.ofScan(s.getId());
         assertThat(findings.findInBySeverity(scope.scanIds(), "log4j", null, false, null,
-                                             PageRequest.of(0, 100)))
+                                             false, PageRequest.of(0, 100)))
                 .extracting(Finding::getPackageName).containsExactly("log4j-api");
     }
 
@@ -259,31 +259,113 @@ class VulnScopeTest {
 
         VulnQuery.Scope scope = query.ofScan(s.getId());
         assertThat(findings.findInBySeverity(scope.scanIds(), null, null, null, null,
-                                             PageRequest.of(0, 100)).getContent())
+                                             false, PageRequest.of(0, 100)).getContent())
                 .extracting(Finding::getCve)
                 .containsExactly("CVE-CRIT", "CVE-HIGH", "CVE-MED", "CVE-LOW", "CVE-NONE");
+
+        // 방향을 뒤집으면 낮은 것부터. **값 없는 것은 따라 올라오지 않는다** —
+        // 오름차순에서 맨 앞은 "가장 안 위험한 것" 자리이고, 심각도를 모르는
+        // 건을 그 자리에 놓으면 아무도 내리지 않은 판정이 된다.
+        assertThat(findings.findInBySeverity(scope.scanIds(), null, null, null, null,
+                                             true, PageRequest.of(0, 100)).getContent())
+                .extracting(Finding::getCve)
+                .containsExactly("CVE-LOW", "CVE-MED", "CVE-HIGH", "CVE-CRIT", "CVE-NONE");
     }
 
     /**
      * CVSS·EPSS 가 없는 건도 마찬가지다. 0 으로 줄 세우면 "안전하다" 가 된다.
      *
-     * <p><b>정렬 결과가 아니라 정렬 지시를 본다.</b> 결과로 보면 이 시험은
-     * 아무것도 지키지 못한다 — H2 도 MySQL 도 {@code DESC} 에서는 NULL 을
-     * 알아서 뒤로 보내므로, {@code nullsLast()} 를 통째로 지워도 시험은
-     * 통과한다. 실제로 지워 보고 확인했다. 지시 자체를 못 박아야 한 줄이
-     * 사라진 것을 잡는다.
+     * <p><b>지시가 아니라 나온 목록을 본다.</b> 앞서 이 시험은
+     * {@code Sort.Order#nullsLast()} 가 붙어 있는지만 확인했고, 그래서
+     * <b>그 지시가 SQL 에 도달하지 않는 것을 잡지 못했다.</b> Hibernate 가
+     * 내보낸 것은 {@code order by f1_0.cvss_score, f1_0.package_name} 였고
+     * {@code nulls last} 는 어디에도 없었다 — 내림차순에서는 MySQL·H2 가
+     * NULL 을 알아서 뒤로 보내 주어 맞아 보였을 뿐이다. 오름차순을 열자
+     * CVSS 없는 건이 "가장 안 위험한 것" 자리에 줄줄이 섰다(띄워서 찾았다).
+     *
+     * <p>두 방향 모두, 두 축 모두 본다.
      */
     @Test
-    @DisplayName("값이 비어 있을 수 있는 축은 전부 NULL 을 뒤로 보내라고 지시한다")
-    void nullableSortKeysAlwaysAskForNullsLast() {
-        for (String sort : new String[] { "", "cvss", "epss", "package", "cve", "없는이름" }) {
-            for (Sort.Order o : VulnQuery.order(sort)) {
-                if (o.getProperty().equals("cvssScore") || o.getProperty().equals("epss")) {
-                    assertThat(o.getNullHandling())
-                            .as("정렬 '%s' 의 %s 축이 NULL 을 뒤로 보내지 않는다", sort, o.getProperty())
-                            .isEqualTo(Sort.NullHandling.NULLS_LAST);
-                }
+    @DisplayName("값이 없는 건은 방향과 무관하게 목록의 맨 뒤다")
+    void rowsWithoutAValueStayLastWhicheverDirection() {
+        Asset web = asset("web", dmz);
+        Scan s = scan(web, Instant.now());
+
+        Finding high = finding(s, "CVE-HI", "a-high", "High", "fixed");
+        high.setCvssScore(BigDecimal.valueOf(8.1));
+        high.setEpss(BigDecimal.valueOf(0.4200));
+        Finding low = finding(s, "CVE-LO", "b-low", "Low", "fixed");
+        low.setCvssScore(BigDecimal.valueOf(3.2));
+        low.setEpss(BigDecimal.valueOf(0.0100));
+        // 값이 없는 건. grype 이 점수를 주지 않은 경우다.
+        Finding blank = finding(s, "CVE-NONE", "c-none", "", "fixed");
+        blank.setCvssScore(null);
+        blank.setEpss(null);
+        findings.saveAll(List.of(high, low, blank));
+        findings.flush();
+
+        VulnQuery.Scope scope = query.ofScan(s.getId());
+        for (String axis : new String[] { "cvss", "epss" }) {
+            for (String dir : new String[] { "asc", "desc" }) {
+                List<Finding> rows = findings.findIn(scope.scanIds(), null, null, null, null,
+                                PageRequest.of(0, 100, VulnQuery.order(axis, dir)))
+                        .getContent();
+                assertThat(rows).extracting(Finding::getCve)
+                        .as("%s %s — 값 없는 건이 맨 뒤가 아니다", axis, dir)
+                        .endsWith("CVE-NONE");
             }
+        }
+    }
+
+    /**
+     * {@code dir} 은 곧이곧대로 읽는다.
+     *
+     * <p>화면은 고른 방향을 화살표로 찍는다. 서버가 칸마다 다시 뒤집으면
+     * <b>찍힌 화살표와 실제 순서가 어긋난다</b> — 그 화면은 거짓말을 한다.
+     *
+     * <p>값 축을 찾아서 본다. 맨 앞은 "값이 없는가" 칸이고 그것은 방향과
+     * 무관하게 언제나 오름차순이다.
+     */
+    @Test
+    @DisplayName("asc 는 오름차순, 그 외는 내림차순 — 서버가 다시 뒤집지 않는다")
+    void directionIsReadLiterally() {
+        java.util.Map<String, String> axis = java.util.Map.of(
+                "", "cvssScore", "cvss", "cvssScore", "epss", "epss",
+                "package", "packageName", "cve", "cve");
+        axis.forEach((sort, property) -> {
+            assertThat(valueAxis(VulnQuery.order(sort, "asc"), property))
+                    .as("정렬 '%s' 의 %s 축이 오름차순이 아니다", sort, property)
+                    .isEqualTo(Sort.Direction.ASC);
+            assertThat(valueAxis(VulnQuery.order(sort, "desc"), property))
+                    .as("정렬 '%s' 의 %s 축이 내림차순이 아니다", sort, property)
+                    .isEqualTo(Sort.Direction.DESC);
+        });
+    }
+
+    /** 그 축의 방향. 없으면 시험을 실패시킨다 — 축이 사라진 것도 버그다. */
+    private Sort.Direction valueAxis(Sort sort, String property) {
+        return sort.stream().filter(o -> o.getProperty().equals(property))
+                   .map(Sort.Order::getDirection).findFirst()
+                   .orElseThrow(() -> new AssertionError(property + " 축이 정렬에서 사라졌다"));
+    }
+
+    /**
+     * 한 쪽에 몇 건 — <b>고를 수 있는 값만 받는다.</b>
+     *
+     * <p>주소는 사람이 손으로 고친다. {@code size=50000} 이 그대로 질의로
+     * 들어가면 화면 한 장이 DB 를 붙잡는다.
+     */
+    @Test
+    @DisplayName("쪽 크기는 고를 수 있는 값만 받고, 나머지는 기본값으로 되돌린다")
+    void pageSizeOnlyTakesOfferedValues() {
+        assertThat(VulnQuery.PAGE_SIZES).containsExactly(10, 30, 50, 100);
+        for (int offered : VulnQuery.PAGE_SIZES) {
+            assertThat(VulnQuery.sizeOf(offered)).isEqualTo(offered);
+        }
+        for (Integer bad : new Integer[] { null, 0, -1, 7, 101, 50_000 }) {
+            assertThat(VulnQuery.sizeOf(bad))
+                    .as("고를 수 없는 값 %s 이 그대로 들어갔다", bad)
+                    .isEqualTo(VulnQuery.PAGE_SIZE);
         }
     }
 
