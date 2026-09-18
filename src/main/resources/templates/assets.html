@@ -33,20 +33,33 @@
 
         각 숫자는 링크다. 누르면 그 조건이 걸린 화면으로 간다 — 숫자를 보고
         "그래서 어느 것?" 을 다시 찾게 두지 않는다.
+
+        **실제 악용이 맨 앞이다.** 심각도는 grype 이 매긴 등급이고, 실제 악용은
+        지금 밖에서 쓰이고 있다는 확인된 사실이다 — 심각 100건보다 실제 악용
+        1건이 급하다. 그 둘은 붉게, 높음은 주황으로 낸다(글자와 숫자를 같은
+        색으로 — 숫자만 색이 있으면 무엇의 숫자인지 한 번 더 읽어야 한다).
+
+        `심각`·`높음` 은 grype 이 준 단계 이름 그대로다. 우리가 다시 나누거나
+        다른 말로 부르지 않는다(§11).
       */-->
-      <div class="card mb-3" th:if="${summary.noScan() + summary.stale() + summary.actionOverdue()
-                                     + summary.critical() + summary.noFix() > 0}">
+      <div class="card mb-3" th:if="${summary.kev() + summary.critical() + summary.high()
+                                     + summary.noScan() + summary.stale()
+                                     + summary.actionOverdue() + summary.noFix() > 0}">
         <div class="card-body py-2 summaryline">
+          <a th:if="${summary.kev() > 0}" class="sev-critical" th:href="@{/vulns(kev='true')}">
+            <b th:text="${#numbers.formatInteger(summary.kev(), 0, 'COMMA')}">0</b> 실제 악용</a>
+          <a th:if="${summary.critical() > 0}" class="sev-critical" th:href="@{/vulns(severity='Critical')}">
+            <b th:text="${#numbers.formatInteger(summary.critical(), 0, 'COMMA')}">0</b> 심각</a>
+          <a th:if="${summary.high() > 0}" class="sev-high" th:href="@{/vulns(severity='High')}">
+            <b th:text="${#numbers.formatInteger(summary.high(), 0, 'COMMA')}">0</b> 높음</a>
+          <a th:if="${summary.noFix() > 0}" th:href="@{/vulns(fixable='false')}">
+            <b th:text="${#numbers.formatInteger(summary.noFix(), 0, 'COMMA')}">0</b> 수정 버전 없음</a>
           <a th:if="${summary.noScan() > 0}" th:href="@{/(filter='noscan')}">
             <b th:text="${summary.noScan()}">0</b> 검사 안 한 자산</a>
           <a th:if="${summary.stale() > 0}" th:href="@{/(filter='stale')}">
             <b th:text="${summary.stale()}">0</b> 30일 넘은 자산</a>
           <a th:if="${summary.actionOverdue() > 0}" class="overdue" th:href="@{/actions}">
             <b th:text="${summary.actionOverdue()}">0</b> 기한 지난 대응</a>
-          <a th:if="${summary.critical() > 0}" th:href="@{/vulns(severity='Critical')}">
-            <b th:text="${summary.critical()}">0</b> 심각</a>
-          <a th:if="${summary.noFix() > 0}" th:href="@{/vulns(fixable='false')}">
-            <b th:text="${#numbers.formatInteger(summary.noFix(), 0, 'COMMA')}">0</b> 수정 버전 없음</a>
         </div>
       </div>
 
@@ -74,12 +87,21 @@
 
           <span class="ms-auto"></span>
 
-          <!--/* `보관된 자산도` 라고만 적혀 있었다 — 뒤가 잘려 무엇을 하겠다는
-               것인지 알 수 없다. 켜면 무엇이 더 보이는지를 적는다. */-->
+          <!--/*
+            `보관` 이라고 불렀는데 **그 말이 목적을 말하지 않았다** — 무엇을
+            보관하는지, 왜 하는지가 안 읽혔고, 이 저장소에서 `보관` 은 이미
+            SBOM 원본을 gzip 으로 쥐고 있는 것을 가리키고 있었다(한 말이 두
+            가지를 가리키던 셈이다).
+
+            하는 일은 **운영에서 내린 자산을 현황에서 빼는 것**이다. 폐기한
+            서버는 SBOM 이 더 올라오지 않으므로, 그냥 두면 마지막 검사가
+            영원히 '최신' 으로 남아 전사 심각 건수에 계속 더해지고
+            `30일 넘은 자산` 에도 계속 뜬다. 그래서 그 말로 부른다.
+          */-->
           <label class="form-check form-check-inline mb-0"
-                 title="보관한 자산은 기본 목록에서 빠집니다. 켜면 함께 보입니다.">
+                 title="운영에서 내린 자산. 목록과 현황 숫자에서 빠지고 검사 이력은 남습니다. 켜면 함께 보입니다.">
             <input class="form-check-input" type="checkbox" id="archived-toggle" th:checked="${archived}">
-            <span class="form-check-label">보관 자산 포함</span>
+            <span class="form-check-label">운영 종료 자산 포함</span>
           </label>
 
           <!--/*
@@ -165,14 +187,18 @@
                   <span class="faint num" th:text="${g.serverCount()} + '대'">0대</span>
                   <span class="spacer"></span>
                   <th:block th:unless="${g.isEmpty()}">
-                    <span class="pcount" th:if="${g.severityCount('critical') > 0}">
+                    <!--/* 실제 악용이 맨 앞. 확인된 사실이 등급보다 급하다. */-->
+                    <span class="pcount critical" th:if="${g.kevCount() > 0}">
+                      <i class="mark critical"></i>실제 악용
+                      <span><b class="num" th:text="${g.kevCount()}">0</b>건</span></span>
+                    <span class="pcount critical" th:if="${g.severityCount('critical') > 0}">
                       <i class="mark critical"></i>심각
-                      <b class="num sevtext" data-sev="critical" th:text="${g.severityCount('critical')}">0</b></span>
-                    <span class="pcount" th:if="${g.severityCount('high') > 0}">
+                      <span><b class="num" th:text="${g.severityCount('critical')}">0</b>건</span></span>
+                    <span class="pcount high" th:if="${g.severityCount('high') > 0}">
                       <i class="mark high"></i>높음
-                      <b class="num sevtext" data-sev="high" th:text="${g.severityCount('high')}">0</b></span>
+                      <span><b class="num" th:text="${g.severityCount('high')}">0</b>건</span></span>
                     <span class="num faint">탐지
-                      <b class="text-body" th:text="${#numbers.formatInteger(g.findingCount(), 0, 'COMMA')}">0</b></span>
+                      <b class="text-body" th:text="${#numbers.formatInteger(g.findingCount(), 0, 'COMMA')}">0</b>건</span>
                     <a class="btn btn-sm" th:href="@{/reports/zone(zone=${g.zone.id})}">보고서</a>
                   </th:block>
                 </div>
@@ -188,7 +214,7 @@
               <td class="tight">
                 <a class="fw-bold" th:href="@{'/assets/' + ${row.asset.id}}"
                    th:text="${row.asset.name}">web-01</a>
-                <span class="tag" th:if="${row.asset.archivedAt != null}">보관됨</span>
+                <span class="tag" th:if="${row.asset.archivedAt != null}">운영 종료</span>
               </td>
               <td class="tight faint" th:text="${#strings.isEmpty(row.asset.osName)} ? '—' : ${row.asset.osName}">Rocky 9.3</td>
 
@@ -391,7 +417,7 @@
         draw();
       })();
 
-      // 보관된 자산 보기. 주소에 남아야 새로고침해도 유지된다.
+      // 운영 종료한 자산까지 보기. 주소에 남아야 새로고침해도 유지된다.
       const archived = document.querySelector('#archived-toggle');
       if (archived) {
         archived.addEventListener('change', function () {

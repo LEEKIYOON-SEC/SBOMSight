@@ -89,6 +89,9 @@
   낼지. `/vulns` 와 자산 상세의 취약점 탭이 **같은 것을 쓴다** — 두 벌을
   두면 한쪽만 고치는 날이 오고, 그때부터 같은 목록이 화면마다 다르게 센다.
 
+  `1–100번째` 는 뺐다. 지금 몇 쪽인지는 아래 쪽 넘김이 말하고, 위아래 두
+  곳이 같은 것을 다르게 세면 읽는 사람이 둘을 맞춰 봐야 한다.
+
     <div th:replace="~{fragments/ui :: countline(${page}, ${links})}"></div>
 
   한 쪽에 몇 건인지는 주소에 남는다. 기본값(100)은 적지 않는다.
@@ -97,9 +100,6 @@
      class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
   <b class="num" th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>
   <span class="text-secondary">건</span>
-  <span class="faint num" th:if="${page.totalPages > 1}"
-        th:text="${page.number * page.size + 1} + '–'
-                 + ${page.number * page.size + page.numberOfElements} + '번째'">1–100번째</span>
   <span style="flex:1"></span>
   <span class="faint" style="font-size:13px">한 쪽에</span>
   <span class="btn-group" th:with="fallback=${T(kr.sbomsight.service.VulnQuery).PAGE_SIZE}">
@@ -111,32 +111,36 @@
 
 
 <!--/*
-  ─── 쪽 넘김 ──────────────────────────────────────────────────────────
-  이전 · 다음만 두면 110번째를 보려고 다음을 열한 번 누른다. **몇 번째로**
-  칸에 번호를 적으면 그 건이 있는 쪽으로 간다 — 서버가 쪽으로 환산한다.
+  ─── 페이지 넘김 ──────────────────────────────────────────────────────
+  이전 · 다음만 두면 12페이지를 보려고 다음을 열한 번 누른다. **칸에 페이지
+  번호를 적으면 그 페이지로 간다.**
 
     <div th:replace="~{fragments/ui :: pager(${page}, ${links})}"></div>
 
   form 은 지금의 범위·거르개·정렬을 숨은 칸으로 그대로 실어 보낸다
   (`links.fields()`). 손으로 적으면 거르개를 하나 더할 때 잊는다.
+
+  칸의 이름이 `page` 가 아니라 `jump` 인 이유 — 주소의 `page` 는 0부터
+  세고(스프링의 셈), 사람이 읽는 페이지는 1부터다. 같은 이름으로 두면 한
+  칸 어긋난 페이지로 간다. 서버가 환산해 `page` 로 되돌린다.
 */-->
-<div th:fragment="pager(page, links)" class="card-footer d-flex align-items-center gap-2 flex-wrap"
+<div th:fragment="pager(page, links)"
+     class="card-footer d-flex justify-content-center align-items-center gap-2 flex-wrap"
      th:if="${page.totalPages > 1}">
   <a class="btn btn-sm" th:if="${page.hasPrevious()}"
      th:href="@{${links.page(page.number - 1)}}">이전</a>
-  <span class="num" th:text="${page.number + 1} + ' / ' + ${page.totalPages} + ' 쪽'">1 / 1 쪽</span>
-  <a class="btn btn-sm" th:if="${page.hasNext()}"
-     th:href="@{${links.page(page.number + 1)}}">다음</a>
-
-  <span style="flex:1"></span>
 
   <form method="get" th:action="@{${links.path()}}" class="d-flex align-items-center gap-2">
     <input type="hidden" th:each="e : ${links.fields()}" th:name="${e.key}" th:value="${e.value}">
-    <input class="form-control form-control-sm num" type="number" name="at" min="1"
-           th:max="${page.totalElements}" style="width:6rem" autocomplete="off"
-           aria-label="몇 번째로" th:placeholder="${page.number * page.size + 1}">
-    <button class="btn btn-sm" type="submit">번째로</button>
+    <input class="form-control form-control-sm num" type="number" name="jump" min="1"
+           th:max="${page.totalPages}" style="width:4.5rem" autocomplete="off"
+           aria-label="페이지 번호" th:value="${page.number + 1}">
+    <span class="text-secondary num" th:text="'/ ' + ${page.totalPages} + ' 페이지'">/ 1 페이지</span>
+    <button class="btn btn-sm" type="submit">이동</button>
   </form>
+
+  <a class="btn btn-sm" th:if="${page.hasNext()}"
+     th:href="@{${links.page(page.number + 1)}}">다음</a>
 </div>
 
 

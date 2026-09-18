@@ -71,7 +71,7 @@ public class VulnController {
                         @RequestParam(required = false) Boolean kev,
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(required = false) Integer size,
-                        @RequestParam(required = false) Integer at,
+                        @RequestParam(required = false) Integer jump,
                         @RequestParam(defaultValue = "severity") String sort,
                         @RequestParam(defaultValue = "desc") String dir,
                         Model model) {
@@ -92,12 +92,12 @@ public class VulnController {
                 .with("sort", "severity".equals(sort) ? null : sort)
                 .with("dir", "desc".equals(dir) ? null : dir);
 
-        // 몇 번째로 — 쪽이 아니라 **건의 번호**를 받는다. 화면이 `101–200번째`
-        // 라고 세고 있으므로 사람이 아는 값도 그 번호다. 쪽으로 환산해
-        // 되돌린다 — `at` 을 주소에 남겨 두면 거르개를 바꿀 때마다 따라다니며
-        // 엉뚱한 쪽으로 튄다.
-        if (at != null && at > 0) {
-            return "redirect:" + links.page((at - 1) / VulnQuery.sizeOf(size));
+        // 페이지 이동. **사람이 적는 값은 1부터**이고 주소의 `page` 는 0부터
+        // 센다(스프링의 셈). 같은 이름으로 받으면 한 칸 어긋난 페이지로 가므로
+        // 다른 이름으로 받아 여기서 환산하고, 주소에는 남기지 않는다 —
+        // 남기면 거르개를 바꿀 때마다 따라다니며 엉뚱한 페이지로 튄다.
+        if (jump != null && jump > 0) {
+            return "redirect:" + links.page(jump - 1);
         }
 
         VulnQuery.Scope scope = scan != null ? query.ofScan(scan) : query.ofZone(zone);

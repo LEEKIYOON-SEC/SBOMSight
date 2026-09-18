@@ -190,9 +190,9 @@ class VulnScopeTest {
                 .hasSize(1);
     }
 
-    /** 보관한 자산은 운영에서 내린 것이다. 현황 숫자에 섞이면 안 된다. */
+    /** 운영 종료한 자산은 운영에서 내린 것이다. 현황 숫자에 섞이면 안 된다. */
     @Test
-    @DisplayName("보관한 자산은 범위에서 빠진다")
+    @DisplayName("운영 종료한 자산은 범위에서 빠진다")
     void archivedAssetsLeaveTheScope() {
         Asset retired = asset("retired", dmz);
         finding(scan(retired, Instant.now()), "CVE-2021-44228", "log4j-core", "Critical", "fixed");
@@ -202,7 +202,7 @@ class VulnScopeTest {
         assets.saveAndFlush(retired);
 
         assertThat(lookup("log4j"))
-                .as("보관한 자산이 아직 현황에 섞여 있다")
+                .as("운영 종료한 자산이 아직 현황에 섞여 있다")
                 .isEmpty();
     }
 

@@ -20,7 +20,7 @@
           </div>
           <h2 class="page-title">
             <span th:text="${asset.name}">web-01</span>
-            <span class="tag ms-2" th:if="${asset.archivedAt != null}">보관됨</span>
+            <span class="tag ms-2" th:if="${asset.archivedAt != null}">운영 종료</span>
           </h2>
           <div class="page-subtitle text-secondary mt-1">
       <span th:text="${#strings.isEmpty(asset.osName)} ? '운영체제 미상' : ${asset.osName}">Rocky Linux 9.3</span>
@@ -123,35 +123,53 @@
           </div>
           <button class="btn btn-dark" type="submit">검사 시작</button>
         </form>
+        <!--/*
+          대상 자산에서 도는 명령이다. 이 서버가 아니다.
+
+          윈도우를 따로 적는 이유 — PowerShell 의 `>` 는 UTF-16 으로 적어서
+          grype 이 읽지 못한다. 파일 이름을 syft 에 넘기면(`-o 형식=파일`)
+          syft 가 직접 UTF-8 로 쓴다.
+        */-->
         <details class="help">
           <summary>SBOM 생성 가이드</summary>
           <div class="inner">
-            대상 자산에서 <code>syft &lt;경로&gt; -o cyclonedx-json &gt; sbom.json</code> 으로 추출
+            <div class="mb-2"><b>Linux</b>
+              <div><code>syft dir:/ -o cyclonedx-json &gt; sbom.json</code></div></div>
+            <div><b>Windows</b> (PowerShell)
+              <div><code>syft dir:C:\ -o cyclonedx-json=sbom.json</code></div>
+              <div class="faint">PowerShell 의 <code>&gt;</code> 는 UTF-16 으로 적으므로
+                파일 이름을 syft 에 넘겨 UTF-8 로 받는다</div></div>
           </div>
         </details>
       </div>
     </div>
 
     <!--/*
-      보관과 삭제는 다르다. 보관은 목록에서 치우고 결과는 남긴다 — 쓰지 않는
-      자산을 정리하려고 지우면 검사 이력과 보고서 근거가 함께 사라지고,
-      점검에서 "작년 그 서버 기록" 을 물으면 답할 것이 없어진다.
+      **운영 종료와 삭제는 다르다.** 앞서 이것을 `보관` 이라고 불렀는데 그
+      말이 목적을 말하지 않았고, 같은 말이 SBOM 원본을 쥐고 있는 것도
+      가리키고 있었다.
+
+      하는 일 — 운영에서 내린 자산을 목록과 **현황 숫자에서 뺀다.** 폐기한
+      서버는 SBOM 이 더 올라오지 않으므로 그냥 두면 마지막 검사가 영원히
+      '최신' 으로 남아 전사 심각 건수에 계속 더해진다. 검사 이력과 보고서
+      근거는 그대로 남는다 — 지우면 점검에서 "작년 그 서버 기록" 을 물을 때
+      답할 것이 없어진다.
     */-->
     <div class="card danger-zone" sec:authorize="hasRole('ADMIN')">
-      <div class="card-header"><h2 class="card-title">보관 · 삭제</h2></div>
+      <div class="card-header"><h2 class="card-title">운영 종료 · 삭제</h2></div>
       <div class="card-body">
         <table class="table kv">
-          <tr><th style="width:5rem">보관</th>
+          <tr><th style="width:5rem">운영 종료</th>
               <td>
                 <form method="post" th:action="@{'/assets/' + ${asset.id} + '/archive'}"
                       class="inline" th:if="${asset.archivedAt == null}">
-                  <button type="submit" class="btn btn-sm">보관</button>
+                  <button type="submit" class="btn btn-sm">운영 종료</button>
                 </form>
                 <form method="post" th:action="@{'/assets/' + ${asset.id} + '/unarchive'}"
                       class="inline" th:unless="${asset.archivedAt == null}">
-                  <button type="submit" class="btn btn-sm">보관 풀기</button>
+                  <button type="submit" class="btn btn-sm">운영 재개</button>
                 </form>
-                <span class="faint ms-2">목록에서 제외 · 검사 결과 유지</span>
+                <span class="faint ms-2">목록·현황 숫자에서 제외 · 검사 이력 유지</span>
               </td></tr>
           <tr><th>삭제</th>
               <td>

@@ -26,9 +26,9 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
     List<Asset> findLiveWithZone();
 
     /**
-     * 보관한 것까지 전부. 목록에서 <b>보관된 자산도</b> 를 켰을 때 쓴다.
+     * 운영 종료한 것까지 전부. 목록에서 <b>운영 종료 자산 포함</b> 을 켰을 때 쓴다.
      *
-     * <p>보관은 지우는 것과 다르다 — 결과는 남고 목록에서만 빠진다. 그런데
+     * <p>운영 종료는 지우는 것과 다르다 — 이력은 남고 목록에서만 빠진다. 그런데
      * 다시 볼 길이 없으면 그건 지운 것이나 마찬가지다.
      */
     @Query("""

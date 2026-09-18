@@ -167,7 +167,7 @@ class PageRenderTest {
             open("/?sort=" + sort + "&dir=desc");
         }
 
-        // 보관된 자산도 함께.
+        // 운영 종료한 자산까지 함께.
         open("/?archived=true");
         // 구역 카드 + 구역 거르개가 겹칠 때.
         open("/?view=zones&zone=" + asset.getZone().getId());
@@ -231,6 +231,39 @@ class PageRenderTest {
         open("/actions");
     }
 
+    /**
+     * 요약 줄과 구역 머리줄의 <b>실제 악용</b> 건수.
+     *
+     * <p>심각도와 다른 축이라 따로 센다 — 심각도가 `보통` 인데 실제로 악용되고
+     * 있는 건이 `심각` 100건보다 급하다.
+     *
+     * <p><b>{@code kev} 가 NULL 인 건을 세면 안 된다.</b> grype 이 값을 주지
+     * 않은 것은 "아니다" 가 아니라 "모른다" 이고, 그것을 악용 확인으로 세면
+     * 아무도 확인하지 않은 판정이 화면 맨 앞에 붉게 뜬다.
+     */
+    @Test
+    @DisplayName("실제 악용은 kev=true 만 센다 — 모르는 것은 세지 않는다")
+    void theExploitedCountOnlyCountsWhatGrypeConfirmed() throws Exception {
+        // 씨앗에 kev=true 가 한 건 있다. 여기에 모르는 것과 아닌 것을 더한다.
+        for (Boolean kev : new Boolean[] { null, Boolean.FALSE }) {
+            Finding f = new Finding(scan, "CVE-9999-" + System.nanoTime() + "|zlib",
+                                    "CVE-9999-0001", "zlib");
+            f.setSeverity("Critical");
+            f.setFixState("fixed");
+            f.setKev(kev);
+            findings.saveAndFlush(f);
+        }
+
+        String html = open("/");
+        assertThat(html)
+                .as("요약 줄에 실제 악용이 없다")
+                .contains("실제 악용");
+        // `<b>1</b> 실제 악용` — 숫자가 1 이어야 한다. 3 이면 NULL·false 까지 센 것이다.
+        assertThat(html.replaceAll("\\s+", ""))
+                .as("모르는 것(NULL)이나 아닌 것(false)까지 실제 악용으로 셌다")
+                .contains("<b>1</b>실제악용");
+    }
+
     @Test
     @DisplayName("자산 상세 · 취약점 목록")
     void assetAndScan() throws Exception {
@@ -250,7 +283,7 @@ class PageRenderTest {
         String overview = open("/assets/" + asset.getId());
         assertThat(overview).contains("기본 정보");
         assertThat(overview).contains("SBOM 업로드");
-        assertThat(overview).contains("보관");
+        assertThat(overview).contains("운영 종료");
 
         String history = open("/assets/" + asset.getId() + "?tab=history");
         assertThat(history).contains("이전 대비");
@@ -305,9 +338,12 @@ class PageRenderTest {
            .andExpect(status().isNotFound());
     }
 
-    /** 보관은 지우는 것과 다르다 — 목록에서 빠지고 결과는 남는다. */
+    /**
+     * <b>운영 종료</b>는 지우는 것과 다르다 — 목록·현황 숫자에서 빠지고
+     * 검사 이력은 남는다. (앞서 화면에서 `보관` 이라고 부른 것이다.)
+     */
     @Test
-    @DisplayName("보관하면 목록에서 빠지고, 보관 보기에서는 나온다")
+    @DisplayName("운영 종료하면 목록에서 빠지고, 포함해서 보면 나온다")
     void archiveHidesFromList() throws Exception {
         mvc.perform(post("/assets/" + asset.getId() + "/archive")
                         .with(user("tester").roles("ADMIN")).with(csrf()))

@@ -67,7 +67,7 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
      * 이름을 찍는데 {@code open-in-view} 가 꺼져 있어, 같이 읽어 오지 않으면
      * 그 자리에서 {@code LazyInitializationException} 이 난다.
      *
-     * <p>보관 처리한 자산은 뺀다 — 더 뽑을 일이 없는 자산이다.
+     * <p>운영 종료한 자산은 뺀다 — 더 뽑을 일이 없는 자산이다.
      */
     @Query("""
            SELECT s FROM Scan s

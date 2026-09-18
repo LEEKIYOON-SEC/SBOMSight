@@ -97,7 +97,7 @@ public class AssetController {
      * @param zone     구역 거르개. 기둥에 있던 구역 목록이 여기로 내려왔다.
      * @param filter   {@code noscan} 검사 없는 것 · {@code stale} 오래된 것
      * @param view     {@code table} 표 · {@code zones} 구역 카드
-     * @param archived 보관한 자산도 함께 보는가
+     * @param archived 운영 종료한 자산도 함께 보는가
      */
     @GetMapping
     public String index(@RequestParam(required = false) Long zone,
@@ -113,12 +113,22 @@ public class AssetController {
         Map<Long, Scan> latest = scans.findLatestDonePerAsset().stream()
                 .collect(Collectors.toMap(s -> s.getAsset().getId(), s -> s, (a, b) -> a));
 
+        // 실제 악용(KEV)은 최신 검사들에서 한 번에 센다 — 자산마다 물으면
+        // 자산 수만큼 왕복한다. 심각도와 다른 축이라 따로 센다: 심각도가
+        // `보통` 인데 실제로 악용되고 있는 건이 `심각` 100건보다 급하다.
+        List<Long> latestIds = latest.values().stream().map(Scan::getId).toList();
+        Map<Long, Long> kev = latestIds.isEmpty() ? Map.of()
+                : findings.countKevPerAsset(latestIds).stream()
+                          .collect(Collectors.toMap(FindingRepository.AssetCount::getAssetId,
+                                                    FindingRepository.AssetCount::getTotal));
+
         List<AssetRow> all = list.stream().map(asset -> {
             Scan scan = latest.get(asset.getId());
             Map<String, Long> severity = scan == null ? Map.of() : severityMap(scan.getId());
             long open = remediations.countByAssetIdAndStatusIn(
                     asset.getId(), List.of(RemediationStatus.OPEN, RemediationStatus.IN_PROGRESS));
-            return new AssetRow(asset, scan, severity, open);
+            return new AssetRow(asset, scan, severity, open,
+                                kev.getOrDefault(asset.getId(), 0L));
         }).toList();
 
         // 요약 줄은 **거르기 전** 전체를 센다. 거른 뒤 세면 "검사 안 한 자산 3"
@@ -155,7 +165,7 @@ public class AssetController {
         // 동작은 하지만 그 주소가 결재 문서에 붙고 옆자리에 전달된다.
         //
         // **기본값은 적지 않는다.** `archived=false` 는 안 고른 것이 아니라
-        // "보관된 것은 빼기로 골랐다" 고 읽힌다.
+        // "운영 종료한 것은 빼기로 골랐다" 고 읽힌다.
         model.addAttribute("links", new VulnQuery.Links("/", null)
                 .with("zone", zone)
                 .with("filter", filter)
@@ -170,8 +180,15 @@ public class AssetController {
         return "assets";
     }
 
-    /** 요약 줄에 들어가는 다섯 숫자. 0 인 것은 화면이 그리지 않는다. */
-    public record Summary(long noScan, long stale, long actionOverdue, long critical, long noFix) {
+    /**
+     * 요약 줄에 들어가는 숫자. 0 인 것은 화면이 그리지 않는다.
+     *
+     * <p>{@code kev}(실제 악용)를 앞에 둔다 — <b>확인된 사실</b>이고 심각도와
+     * 다른 축이다. {@code critical}·{@code high} 는 grype 이 준 단계를 그대로
+     * 센다(다시 나누지 않는다).
+     */
+    public record Summary(long noScan, long stale, long actionOverdue,
+                          long kev, long critical, long high, long noFix) {
     }
 
     private Summary summarize(List<AssetRow> rows) {
@@ -181,6 +198,8 @@ public class AssetController {
         long stale = rows.stream()
                 .filter(r -> r.hasScan() && r.latest().getCreatedAt().isBefore(cut)).count();
         long critical = rows.stream().mapToLong(r -> r.severityCount("critical")).sum();
+        long high = rows.stream().mapToLong(r -> r.severityCount("high")).sum();
+        long kev = rows.stream().mapToLong(AssetRow::kevCount).sum();
 
         // 수정 버전이 없는 탐지. 최신 완료 검사들만 한 번에 센다 — 자산마다
         // 물으면 자산 수만큼 왕복한다.
@@ -194,7 +213,7 @@ public class AssetController {
         // 같은 수를 쓴다 — 두 곳이 다른 수를 보이면 어느 쪽을 믿을지 모른다.
         long overdue = remediations.countOverdue(java.time.LocalDate.now())
                 + analyses.reviewOverdue().size();
-        return new Summary(noScan, stale, overdue, critical, noFix);
+        return new Summary(noScan, stale, overdue, kev, critical, high, noFix);
     }
 
     private boolean matches(AssetRow row, String filter) {
@@ -289,7 +308,7 @@ public class AssetController {
                          @RequestParam(required = false) Boolean kev,
                          @RequestParam(defaultValue = "0") int page,
                          @RequestParam(required = false) Integer size,
-                         @RequestParam(required = false) Integer at,
+                         @RequestParam(required = false) Integer jump,
                          @RequestParam(defaultValue = "severity") String sort,
                          @RequestParam(defaultValue = "desc") String dir,
                          Model model) {
@@ -299,13 +318,12 @@ public class AssetController {
         // (이력 탭의 이름은 `history` 다).
         tab = TABS.contains(tab) ? tab : "overview";
 
-        // 몇 번째로 — 쪽이 아니라 **건의 번호**를 받아 쪽으로 환산해 되돌린다.
-        // `at` 을 주소에 남겨 두면 거르개를 바꿀 때마다 따라다니며 엉뚱한
-        // 쪽으로 튄다. 자산 상세와 `/vulns` 가 같은 표를 쓰므로 여기도 같다.
-        if ("vulns".equals(tab) && at != null && at > 0) {
+        // 페이지 이동. 사람이 적는 값은 1부터, 주소의 `page` 는 0부터 센다.
+        // 자산 상세와 `/vulns` 가 같은 표·같은 쪽 넘김을 쓰므로 여기도 같다.
+        if ("vulns".equals(tab) && jump != null && jump > 0) {
             return "redirect:" + vulnLinks(id, group, q, severityFilter, fixable, kev,
                                            size, sort, dir)
-                    .page((at - 1) / VulnQuery.sizeOf(size));
+                    .page(jump - 1);
         }
         model.addAttribute("tab", tab);
         Asset asset = asset(id);
@@ -412,12 +430,18 @@ public class AssetController {
     }
 
     /**
-     * 보관 — 목록에서 치우되 결과는 남긴다.
+     * 운영 종료 — 목록과 <b>현황 숫자</b>에서 빼되 이력은 남긴다.
      *
-     * <p>{@code archivedAt} 은 처음부터 있었는데 켜고 끄는 길이 없었다. 쓰지
-     * 않는 자산을 정리하려면 지우는 수밖에 없었고, 지우면 그 자산의 검사 이력과
-     * 보고서 근거가 함께 사라진다. 점검에서 "작년 그 서버 기록" 을 물으면
-     * 답할 것이 없어진다.
+     * <p><b>화면 말을 `보관` 에서 `운영 종료` 로 바꿨다.</b> `보관` 은 목적을
+     * 말하지 않았고, 이 저장소에서 같은 말이 SBOM 원본을 gzip 으로 쥐고 있는
+     * 것도 가리키고 있었다 — 한 말이 두 가지를 가리키면 둘 다 흐려진다.
+     * 저장하는 열 이름({@code archived_at})은 그대로다: 데이터 이관이 없다.
+     *
+     * <p>주기적으로 SBOM 을 올리는 것으로 이 자리를 대신할 수 없다. 폐기한
+     * 서버는 <b>그냥 SBOM 이 안 올라온다</b> — 그러면 마지막 검사가 영원히
+     * "최신" 으로 남아 전사 심각 건수에 계속 더해지고 `30일 넘은 자산` 에도
+     * 계속 뜬다. 지우는 것과도 다르다: 지우면 검사 이력과 보고서 근거가 함께
+     * 사라지고, 점검에서 "작년 그 서버 기록" 을 물으면 답할 것이 없어진다.
      */
     @PostMapping("assets/{id}/archive")
     @PreAuthorize("hasRole('ADMIN')")
@@ -427,7 +451,7 @@ public class AssetController {
         assets.save(asset);
         audit.record(AuditEvent.ASSET_ARCHIVED, asset.getName(), "");
         flash.addFlashAttribute("message",
-                asset.getName() + " 을 보관했습니다. 목록에서 빠지고 결과는 남습니다.");
+                asset.getName() + " 을 운영 종료로 처리했습니다. 목록과 현황 숫자에서 빠집니다.");
         return "redirect:/assets/" + id;
     }
 
@@ -438,7 +462,7 @@ public class AssetController {
         asset.setArchivedAt(null);
         assets.save(asset);
         audit.record(AuditEvent.ASSET_UNARCHIVED, asset.getName(), "");
-        flash.addFlashAttribute("message", asset.getName() + " 의 보관을 풀었습니다.");
+        flash.addFlashAttribute("message", asset.getName() + " 을 운영 재개로 되돌렸습니다.");
         return "redirect:/assets/" + id;
     }
 
@@ -648,8 +672,12 @@ public class AssetController {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    /** 목록 한 줄에 필요한 것 — 자산, 마지막 스캔, 심각도 분포, 열린 조치 수. */
-    public record AssetRow(Asset asset, Scan latest, Map<String, Long> severity, long openRemediations) {
+    /**
+     * 목록 한 줄에 필요한 것 — 자산, 마지막 스캔, 심각도 분포, 열린 조치 수,
+     * 실제 악용 건수.
+     */
+    public record AssetRow(Asset asset, Scan latest, Map<String, Long> severity,
+                           long openRemediations, long kevCount) {
 
         public long severityCount(String key) {
             return severity.getOrDefault(key, 0L);
@@ -678,6 +706,11 @@ public class AssetController {
 
         public long openRemediations() {
             return rows.stream().mapToLong(AssetRow::openRemediations).sum();
+        }
+
+        /** 이 구역의 실제 악용(KEV) 건수. 구역 머리줄의 첫 숫자다. */
+        public long kevCount() {
+            return rows.stream().mapToLong(AssetRow::kevCount).sum();
         }
 
         public boolean isEmpty() {

@@ -174,9 +174,13 @@ th.sortable .sortmark { color: var(--fg); }
 .sevbar i.medium   { background: var(--medium); }
 .sevbar i.low      { background: var(--low); }
 
-/* 개수 표시. 색 띠 + 글자. */
+/* 개수 표시. 색 띠 + 글자.
+   **글자와 숫자를 같은 색으로 둔다.** 숫자만 붉으면 무엇의 숫자인지 한 번 더
+   읽어야 한다 — 급한 화면에서 그 한 번이 걸린다. */
 .pcount { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13.5px; }
 .pcount + .pcount { margin-left: 12px; }
+.pcount.critical, .pcount.critical b { color: var(--critical); font-weight: 600; }
+.pcount.high,     .pcount.high b     { color: var(--high);     font-weight: 600; }
 .mark { display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
 .mark.critical { background: var(--critical); }
 .mark.high     { background: var(--high); }
@@ -261,6 +265,12 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 /* `alert` 라는 이름을 쓰지 않는다 — Tabler 의 알림 상자 클래스와 같아서
    그 이름을 붙이면 링크가 빨간 상자로 그려진다(실제로 그렇게 떴다). */
 .summaryline a.overdue b { color: var(--critical); }
+
+/* 실제 악용과 심각은 붉게, 높음은 주황으로. 숫자만이 아니라 글자까지 —
+   `3 심각` 에서 숫자만 붉으면 무엇이 3 인지 한 번 더 읽어야 한다.
+   색은 `check-contrast.py` 로 재어 4.5:1 을 넘긴 값(--critical · --high)이다. */
+.summaryline a.sev-critical, .summaryline a.sev-critical b { color: var(--critical); }
+.summaryline a.sev-high,     .summaryline a.sev-high b     { color: var(--high); }
 
 /* Tabler 의 경고 알림은 글자가 주황(#f59f00)이라 옅은 바탕 위에서 2.0:1 이다.
    장식이 아니라 **읽어야 하는 문장**이 들어가는 자리라(기한 지난 조치 · grype

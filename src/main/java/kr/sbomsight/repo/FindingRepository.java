@@ -384,6 +384,30 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
            """)
     List<ZoneExposureRow> exposureRowsIn(@Param("scanIds") Collection<Long> scanIds);
 
+    /**
+     * 자산별 <b>실제 악용</b>(KEV) 건수.
+     *
+     * <p>목록의 요약 줄과 구역 머리줄이 쓴다. 심각도 분포와 따로 세는 이유 —
+     * 실제 악용은 심각도와 다른 축이다. 심각도가 `보통` 인데 실제로 악용되고
+     * 있는 건이 있고, 그 건이 `심각` 100건보다 급하다.
+     *
+     * <p>{@code kev} 는 grype 이 준 값이다. 없으면 NULL 이고 그것은 "아니다"
+     * 가 아니라 "모른다" 다 — {@code = TRUE} 로만 센다.
+     */
+    @Query("""
+           SELECT s.asset.id AS assetId, COUNT(f) AS total
+           FROM Finding f JOIN f.scan s
+           WHERE s.id IN :scanIds AND f.kev = TRUE
+           GROUP BY s.asset.id
+           """)
+    List<AssetCount> countKevPerAsset(@Param("scanIds") Collection<Long> scanIds);
+
+    interface AssetCount {
+        Long getAssetId();
+
+        long getTotal();
+    }
+
     /** 자산별 심각도 분포 — 구역 보고서의 자산 표. */
     @Query("""
            SELECT s.asset.id AS assetId, LOWER(f.severity) AS severity, COUNT(f) AS total
