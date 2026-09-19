@@ -395,7 +395,7 @@
     <p class="footnote" th:if="${!report.targets.noFixRows.isEmpty()}">
       ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 3장 비고.
       <b th:if="${report.progress.unexplained() > 0}" class="danger-text"
-         th:text="'검토 결과 없음 ' + ${report.progress.unexplained()} + '개'">—</b>
+         th:text="'검토 결과 없음 ' + ${report.progress.unexplained()} + '개 패키지'">—</b>
     </p>
     <!--/*
       **세는 단위가 다르다는 것을 여기서 밝힌다.** 2.2 는 `건` 으로 세고
@@ -448,13 +448,22 @@
       머리만 있고 줄이 없는 빈 표가 남았다(띄워 보고 찾았다).
       가르는 것은 **등록된 것이 있는가**다.
     */-->
+    <!--/*
+      **개수만 적지 않는다.** 조치는 (자산, 패키지)로 등록되고 2장은 건으로
+      센다. `미등록 15개` 만 쓰면 그 15 가 48건 중 얼마인지 말해 주지 않아,
+      보고받는 사람이 두 수를 이을 수 없다 — 단위가 말없이 바뀌는 자리다.
+      패키지 수와 그것이 덮는 건수를 늘 함께 적는다.
+    */-->
     <p class="footnote" th:if="${report.progress.tracked == 0}">
-      ※ 해당 없음 — 등록된 조치 없음 ·
-      미등록 <b th:text="${report.progress.untracked} + '개'">0개</b>
+      ※ 해당 없음 — 등록된 조치 없음 · 미등록
+      <b th:text="${report.progress.untracked} + '개 패키지'">0개 패키지</b>
+      (<b th:text="${#numbers.formatInteger(report.progress.untrackedFindings(), 0, 'COMMA')} + '건'">0건</b>)
     </p>
     <p class="footnote" th:if="${report.progress.tracked > 0}">
-      ※ 등록 <span th:text="${report.progress.tracked}">0</span>개 ·
-      미등록 <span th:text="${report.progress.untracked}">0</span>개
+      ※ 등록 <span th:text="${report.progress.tracked}">0</span>개 패키지
+      (<span th:text="${#numbers.formatInteger(report.progress.trackedFindings(), 0, 'COMMA')}">0</span>건) ·
+      미등록 <span th:text="${report.progress.untracked}">0</span>개 패키지
+      (<span th:text="${#numbers.formatInteger(report.progress.untrackedFindings(), 0, 'COMMA')}">0</span>건)
       <b th:if="${report.progress.overdue > 0}" class="danger-text"
          th:text="' · 기한 지남 ' + ${report.progress.overdue} + '개'">—</b>
       <b th:if="${report.progress.reviewOverdue() > 0}" class="danger-text"
@@ -506,6 +515,15 @@
     **grype 이 낸 것은 `탐지`, 우리가 적는 것은 `검토 결과`.** 앞서 둘 다
     `판정` 이라 불렀다(§4.1).
   */-->
+  <!--/*
+    **단위를 문서 맨 아래 한 줄로 못 박는다.** 장마다 세는 것이 다르다 —
+    건(탐지 하나)과 패키지(조치 하나)는 서로 환산되지 않는다. 그 사실을
+    적지 않으면 "48건인데 미등록 15개" 를 읽은 사람이 두 수를 이으려다
+    보고서를 의심한다. 실제로 그 질문을 받았다.
+  */-->
+  <p class="footnote">
+    ※ 단위 — 1 · 2 · 6장은 <b>건</b>, 3 · 4 · 5장은 <b>패키지</b>(한 줄 = 패키지 하나)
+  </p>
   <p class="footnote">
     ※ 탐지 · 심각도 · CVSS · 수정 버전은 검사 결과 그대로 · 재계산 없음
   </p>

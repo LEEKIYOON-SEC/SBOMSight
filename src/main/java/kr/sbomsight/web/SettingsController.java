@@ -49,8 +49,7 @@ public class SettingsController {
     }
 
     @GetMapping
-    public String index(@RequestParam(defaultValue = "accounts") String tab,
-                        HttpServletRequest request, Model model) {
+    public String index(@RequestParam(defaultValue = "accounts") String tab, Model model) {
         // 탭 선택은 주소에 남는다. 자바스크립트로 감췄다 보였다 하면
         // 새로고침했을 때 첫 탭으로 돌아가고, 링크로 남길 수도 없다.
         model.addAttribute("tab", tab);
@@ -63,8 +62,6 @@ public class SettingsController {
         model.addAttribute("passwordMaxAgeDays", properties.passwordMaxAgeDays());
         model.addAttribute("roles", Role.values());
         model.addAttribute("allowedIps", settings.allowedIpsText());
-        model.addAttribute("unrestricted", settings.allowlist().isEmpty());
-        model.addAttribute("clientIp", request.getRemoteAddr());
         model.addAttribute("grypePath", properties.grypePath());
         // grype 을 실제로 불러 본다. "설치되어 있다"는 말보다 판이 찍히는 것이 낫다.
         model.addAttribute("grype", grype.status());

@@ -105,32 +105,7 @@
         <textarea class="form-control" name="allowedIps" rows="4" th:text="${allowedIps}"
                   placeholder="192.168.10.0/24&#10;10.0.0.5"></textarea>
       </label>
-      <!--/* 지금 어떤 상태인가는 남긴다. 이것은 설명이 아니라 값이다. */-->
-      <p>
-        <b th:if="${unrestricted}">제한 없음</b>
-        <b th:unless="${unrestricted}">제한 중</b>
-        · 지금 접속 주소 <code th:text="${clientIp}">127.0.0.1</code>
-      </p>
       <button class="btn btn-dark" type="submit">저장</button>
-
-      <!--/*
-        설명문이 아니라 **틀리기 쉬운 자리 넷**이다. 문단으로 흘려 두면 읽다가
-        건너뛰고, 건너뛰면 자기 주소를 빼고 저장하려다 막힌 뒤에야 읽는다.
-        한 줄에 하나씩 세운다.
-      */-->
-      <details class="help">
-        <summary>주의사항</summary>
-        <div class="inner">
-          <ul>
-            <li>한 줄에 하나 또는 쉼표로 구분</li>
-            <li><code>10.0.0.5</code> — 접두 길이가 없으면 그 한 대만</li>
-            <li>비워 두면 <b>제한 없음</b> · 로그인은 그대로 필요</li>
-            <li>판단은 <b>소켓 상대 주소</b>로만 — <code>X-Forwarded-For</code> 같은 헤더는
-                누구든 채워 보낼 수 있어 보지 않음</li>
-            <li>지금 접속 중인 주소가 빠진 목록은 저장 거부</li>
-          </ul>
-        </div>
-      </details>
     </form>
     </div>
   </div>

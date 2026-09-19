@@ -417,6 +417,37 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
     List<AssetSeverityCount> countBySeverityPerAsset(@Param("scanIds") Collection<Long> scanIds);
 
     /**
+     * <b>자산 × 패키지마다 몇 건인가.</b>
+     *
+     * <p>조치({@link kr.sbomsight.domain.Remediation})는 <b>(자산, 패키지)</b>
+     * 로 등록되고, 탐지는 <b>건</b>이다. 보고서가 "미등록 15개" 라고만 쓰면
+     * 읽는 사람은 그 15 가 48건 중 얼마인지 알 수 없다 — 단위가 말없이
+     * 바뀌는 자리다. 둘을 잇는 수를 여기서 낸다.
+     *
+     * <p>구역 보고서에 필요하다. 자산 보고서는 검사 하나뿐이라
+     * {@link #groupByPackage} 로 족하다.
+     */
+    @Query("""
+           SELECT s.asset.id AS assetId, f.packageName AS packageName,
+                  COUNT(f) AS total,
+                  SUM(CASE WHEN f.fixState = 'fixed' THEN 1 ELSE 0 END) AS fixable
+           FROM Finding f JOIN f.scan s
+           WHERE s.id IN :scanIds
+           GROUP BY s.asset.id, f.packageName
+           """)
+    List<AssetPackageCount> countPerAssetPackage(@Param("scanIds") Collection<Long> scanIds);
+
+    interface AssetPackageCount {
+        Long getAssetId();
+
+        String getPackageName();
+
+        long getTotal();
+
+        long getFixable();
+    }
+
+    /**
      * 구역 전체를 패키지로 묶는다 — <b>구역 보고서의 핵심 표.</b>
      *
      * <p>"openssl 을 올리면 12대에서 47건이 사라진다" 는 그대로 작업 지시가

@@ -107,7 +107,7 @@ public class ZoneReportService {
         Exposure exposure = exposure(current);
         Aggregate aggregate = aggregate(current, exposure, inScope, notScanned);
         Judgement judgement = judgement(current, baseline, exposure);
-        Action action = action(zoneId, inScope, judgement, start, end);
+        Action action = action(zoneId, inScope, judgement, start, end, scanIds(current));
 
         return new ZoneReport(scope, aggregate, judgement, action);
     }
@@ -370,7 +370,7 @@ public class ZoneReportService {
     // --- 6장: 조치 진행 현황 ------------------------------------------------
 
     private Action action(Long zoneId, List<Asset> inScope, Judgement judgement,
-                          Instant start, Instant end) {
+                          Instant start, Instant end, List<Long> scanIds) {
         Set<Long> scope = inScope.stream().map(Asset::getId)
                                  .collect(java.util.stream.Collectors.toSet());
         List<Remediation> all = remediations.findByZone(zoneId).stream()
@@ -398,8 +398,28 @@ public class ZoneReportService {
                 .sorted(Comparator.comparing(Remediation::getDueDate))
                 .toList();
 
+        // **단위를 잇는다.** 조치는 (자산, 패키지)로 등록되고 탐지는 건이다.
+        // "등록된 조치 3개" 만 적으면 읽는 사람은 그 3 이 138건 중 얼마인지
+        // 알 수 없다 — 결재로 올라가는 문서에서 가장 먼저 의심받는 자리다.
+        Set<String> tracked = all.stream()
+                .filter(r -> !r.getStatus().isClosed())
+                .map(r -> r.getAsset().getId() + "|" + r.getPackageName())
+                .collect(java.util.stream.Collectors.toSet());
+        long trackedFindings = 0, untrackedFindings = 0;
+        for (FindingRepository.AssetPackageCount row : findings.countPerAssetPackage(scanIds)) {
+            if (row.getFixable() == 0) {
+                continue;   // 올려서 해소되는 것이 없는 패키지는 조치 대상이 아니다
+            }
+            if (tracked.contains(row.getAssetId() + "|" + row.getPackageName())) {
+                trackedFindings += row.getFixable();
+            } else {
+                untrackedFindings += row.getFixable();
+            }
+        }
+
         return new Action(all.size(), open, overdue, openedInPeriod, closedInPeriod,
-                          overdueRows, explained, judgement.blocked());
+                          overdueRows, explained, judgement.blocked(),
+                          trackedFindings, untrackedFindings);
     }
 
     // -----------------------------------------------------------------------
@@ -632,10 +652,19 @@ public class ZoneReportService {
     }
 
     /** 6장 — 조치 진행 현황. */
+    /**
+     * 6장 — 조치 진행 현황.
+     *
+     * <p><b>단위가 둘이다.</b> {@code total}·{@code open} 은 <b>조치</b> 수
+     * ((자산, 패키지)로 등록된다)이고, {@code trackedFindings} ·
+     * {@code untrackedFindings} 는 그것이 덮는 <b>건</b> 수다. 둘을 함께
+     * 적지 않으면 "등록된 조치 3개" 가 138건 중 얼마인지 말해 주지 않는다.
+     */
     public record Action(long total, long open, long overdue,
                          long openedInPeriod, long closedInPeriod,
                          List<Remediation> overdueRows, List<FindingAnalysis> explained,
-                         List<ZonePackageAction> residual) {
+                         List<ZonePackageAction> residual,
+                         long trackedFindings, long untrackedFindings) {
 
         public boolean isExplained(String packageName) {
             return explained.stream().anyMatch(a -> a.getPackageName().equals(packageName));

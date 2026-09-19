@@ -194,6 +194,47 @@ class ReportServiceTest {
                 .isEqualTo(1);
     }
 
+    /**
+     * <b>패키지 수와 건수가 맞물린다.</b>
+     *
+     * <p>조치({@link Remediation})는 <b>(자산, 패키지)</b> 로 등록되고
+     * 탐지는 <b>건</b>이다. 보고서가 5장에서 "미등록 15개" 라고만 쓰면
+     * 2장의 48건과 이을 수 없다 — 단위가 말없이 바뀌는 자리이고, 결재로
+     * 올라가는 문서에서 가장 먼저 의심받는다.
+     *
+     * <p>여기서 못 박는 것은 <b>두 수가 실제로 맞물린다</b>는 것이다:
+     * 등록 건수 + 미등록 건수 = 2.2 의 `수정 버전 있음`. 어긋나면 어느
+     * 쪽이든 틀린 것이고, 보고서가 스스로와 모순된다.
+     */
+    @Test
+    @DisplayName("5장의 등록·미등록 건수가 2.2 의 수정 버전 있음과 맞는다")
+    void chapter5FindingCountsReconcileWithChapter2() {
+        Scan scan = seedTypicalScan();      // 6건 — openssl 3 · curl 1 (고칠 수 있음), glibc 2 (없음)
+
+        // 아직 아무것도 등록하지 않았다.
+        ReportService.Report before = reports.build(scan);
+        assertThat(before.progress().trackedFindings()).isZero();
+        assertThat(before.progress().untrackedFindings())
+                .as("등록이 없으면 고칠 수 있는 건 전부가 미등록이다")
+                .isEqualTo(before.summary().fixable());
+
+        // openssl 하나를 등록한다 — 패키지 하나지만 건은 셋이다.
+        remediations.saveAndFlush(new Remediation(asset, "openssl", "tester"));
+
+        ReportService.Report after = reports.build(scan);
+        assertThat(after.progress().tracked())
+                .as("패키지로는 하나")
+                .isEqualTo(1);
+        assertThat(after.progress().trackedFindings())
+                .as("건으로는 셋 — 이 차이가 보이지 않으면 두 수를 이을 수 없다")
+                .isEqualTo(3);
+        assertThat(after.progress().untrackedFindings()).isEqualTo(1);   // curl
+
+        assertThat(after.progress().trackedFindings() + after.progress().untrackedFindings())
+                .as("등록 + 미등록 이 2.2 의 `수정 버전 있음` 과 어긋나면 보고서가 스스로와 모순된다")
+                .isEqualTo(after.summary().fixable());
+    }
+
     @Test
     @DisplayName("2장 — 심각도와 조치 가능 여부를 grype 이 준 대로 센다")
     void chapter2CountsMatchGrype() {

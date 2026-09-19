@@ -477,7 +477,7 @@
       ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 4장 비고.
       검토 결과 = 검토 결과를 적은 자산 수.
       <b th:if="${report.action.unexplained() > 0}" class="danger-text"
-         th:text="'검토 결과 없음 ' + ${report.action.unexplained()} + '개'">—</b>
+         th:text="'검토 결과 없음 ' + ${report.action.unexplained()} + '개 패키지'">—</b>
       <b th:if="${report.action.reviewOverdue() > 0}" class="danger-text"
          th:text="' · 재검토일 지남 ' + ${report.action.reviewOverdue()} + '건'">—</b>
     </p>
@@ -486,22 +486,43 @@
   <!--/* ══ 6. 조치 진행 현황 ══════════════════════════════════════════ */-->
   <section>
     <h2>6. 조치 진행 현황</h2>
+    <!--/*
+      **열 이름이 `건수` 였다.** 이 표가 세는 것은 건이 아니라 조치다 —
+      조치 하나는 (자산, 패키지)이고 여러 건을 덮는다. 2장이 건으로 세는데
+      여기가 말없이 조치로 바뀌면 두 수를 이을 수 없다. 열 이름을 바로잡고,
+      그것이 덮는 건수를 옆 열에 함께 적는다.
+    */-->
     <table class="table">
-      <thead><tr><th class="tight">구분</th><th class="num tight">건수</th></tr></thead>
+      <thead><tr><th class="tight">구분</th><th class="num tight">조치</th>
+                 <th class="num tight">덮는 건수</th></tr></thead>
       <tbody>
       <tr><td class="tight">등록된 조치</td>
-          <td class="num tight" th:text="${report.action.total}">0</td></tr>
+          <td class="num tight" th:text="${report.action.total} + '개'">0개</td>
+          <td class="num tight faint">—</td></tr>
       <tr><td class="tight">아직 열려 있음</td>
-          <td class="num tight" th:text="${report.action.open}">0</td></tr>
+          <td class="num tight" th:text="${report.action.open} + '개'">0개</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.action.trackedFindings, 0, 'COMMA')} + '건'">0건</td></tr>
+      <!--/* 아무도 맡지 않은 것. 이 줄이 없으면 "등록 3개" 가 전부처럼 읽힌다. */-->
+      <tr><td class="tight">미등록</td>
+          <td class="num tight faint">—</td>
+          <td class="num tight" th:classappend="${report.action.untrackedFindings > 0} ? 'danger-text' : ''"
+              th:text="${#numbers.formatInteger(report.action.untrackedFindings, 0, 'COMMA')} + '건'">0건</td></tr>
       <tr th:if="${report.action.overdue > 0}">
           <td class="tight">기한 지남</td>
-          <td class="num tight danger-text" th:text="${report.action.overdue}">0</td></tr>
+          <td class="num tight danger-text" th:text="${report.action.overdue} + '개'">0개</td>
+          <td class="num tight faint">—</td></tr>
       <tr><td class="tight">기간 중 등록</td>
-          <td class="num tight" th:text="${report.action.openedInPeriod}">0</td></tr>
+          <td class="num tight" th:text="${report.action.openedInPeriod} + '개'">0개</td>
+          <td class="num tight faint">—</td></tr>
       <tr><td class="tight">기간 중 완료</td>
-          <td class="num tight" th:text="${report.action.closedInPeriod}">0</td></tr>
+          <td class="num tight" th:text="${report.action.closedInPeriod} + '개'">0개</td>
+          <td class="num tight faint">—</td></tr>
       </tbody>
     </table>
+    <p class="footnote">
+      ※ 조치 하나 = (자산, 패키지). 2장은 건으로 셈 — 덮는 건수로 잇는다.
+    </p>
 
     <h3 th:if="${!report.action.overdueRows.isEmpty()}">기한이 지난 조치</h3>
     <table class="table" th:if="${!report.action.overdueRows.isEmpty()}">
@@ -565,6 +586,10 @@
     **grype 이 낸 것은 `탐지`, 우리가 적는 것은 `검토 결과`.** 앞서 둘 다
     `판정` 이라 불렀다(§4.1).
   */-->
+  <!--/* 단위를 못 박는다 — 자산 보고서와 같은 이유. */-->
+  <p class="footnote" th:if="${report.scope.assetsInScope > 0}">
+    ※ 단위 — 1 · 2 · 7장은 <b>건</b>, 3장은 <b>자산</b>, 4 · 5 · 6장은 <b>패키지</b>
+  </p>
   <p class="footnote" th:if="${report.scope.assetsInScope > 0}">
     ※ 탐지 · 심각도 · CVSS · 수정 버전은 검사 결과 그대로 · 재계산 없음
   </p>

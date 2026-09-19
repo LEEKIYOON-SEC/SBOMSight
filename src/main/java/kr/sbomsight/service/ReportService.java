@@ -457,9 +457,30 @@ public class ReportService {
         }
     }
 
-    /** 5장 — 조치 진행 현황. */
+    /**
+     * 5장 — 조치 진행 현황.
+     *
+     * <p><b>단위가 둘이다.</b> {@code tracked}/{@code untracked} 는
+     * <b>패키지</b> 수이고({@link Remediation} 이 (자산, 패키지)로 등록된다),
+     * {@code trackedFindings}/{@code untrackedFindings} 는 그것이 덮는
+     * <b>건</b> 수다. 보고서가 "미등록 15개" 라고만 쓰면 읽는 사람은 그 15 가
+     * 48건 중 얼마인지 알 수 없다 — <b>단위가 말없이 바뀌는 자리</b>이고,
+     * 결재로 올라가는 문서에서 그것이 가장 먼저 의심받는다. 늘 함께 적는다.
+     */
     public record Progress(List<ActionRow> rows, long tracked, long untracked, long overdue,
                            List<PackageAction> residual, List<FindingAnalysis> explained) {
+
+        /** 등록된 조치가 덮는 건수. 3장의 `해소 건수` 와 같은 축이다. */
+        public long trackedFindings() {
+            return rows.stream().filter(ActionRow::isTracked)
+                       .mapToLong(r -> r.action().fixableCount()).sum();
+        }
+
+        /** 아직 아무도 맡지 않은 건수. */
+        public long untrackedFindings() {
+            return rows.stream().filter(r -> !r.isTracked())
+                       .mapToLong(r -> r.action().fixableCount()).sum();
+        }
 
         /** 이 패키지에 검토 결과가 적혀 있는가. */
         public boolean isExplained(String packageName) {
