@@ -50,32 +50,40 @@
               th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>
     </select>
 
-    <label class="form-label mb-0" for="pkg-type">유형</label>
-    <select class="form-select form-select-sm w-auto" id="pkg-type" name="type"
+    <input class="form-control form-control-sm" name="q" th:value="${q}"
+           style="flex:1; min-width:12rem" autocomplete="off"
+           placeholder="패키지 이름" aria-label="패키지 이름">
+
+    <!--/*
+      **거르는 것은 고르개로, 보기를 넓히는 것만 체크박스로.**
+
+      앞서 `취약점 있는 것만`·`버전이 갈린 것만` 이 체크박스였다. 하는 일은
+      취약점 화면의 `심각도 전체`·`수정 버전 전체` 와 같은 거르기인데 모양만
+      달라서, 한 줄 안에 두 가지 조작이 섞여 있었다 — 고르개는 값을 고르고
+      체크박스는 켜고 끈다. 고르개로 맞춘다.
+
+      값이 없을 때 `전체` 를 그 칸의 이름과 함께 적는다(`취약점 전체`) —
+      닫힌 고르개만 보고도 무엇을 거르는 칸인지 읽혀야 한다. 취약점 화면과
+      같은 꼴이다. `갈림` 한 마디로 줄이지 않는다: 무엇이 갈렸는지 모른다.
+    */-->
+    <select class="form-select form-select-sm w-auto" name="type" aria-label="패키지 유형"
             onchange="this.form.submit()">
-      <option value="">전체</option>
+      <option value="">유형 전체</option>
       <option th:each="t : ${listing.types()}" th:value="${t}" th:text="${t}"
               th:selected="${type != null and type == t}">rpm</option>
     </select>
 
-    <input class="form-control form-control-sm" style="width:16rem" name="q" th:value="${q}"
-           placeholder="패키지 이름" aria-label="패키지 이름" autocomplete="off">
+    <select class="form-select form-select-sm w-auto" name="vulnerable" aria-label="취약점"
+            onchange="this.form.submit()">
+      <option value="">취약점 전체</option>
+      <option value="true" th:selected="${vulnerable}">취약점 있는 것만</option>
+    </select>
 
-    <label class="form-check form-check-inline mb-0">
-      <input class="form-check-input" type="checkbox" name="vulnerable" value="true" th:checked="${vulnerable}"
-             onchange="this.form.submit()">
-      취약점 있는 것만
-    </label>
-
-    <!--/*
-      "버전이 갈린 것만" 이 이 화면을 두는 이유에 가장 가깝다. 거르개 이름을
-      줄이지 않는다 — `갈림` 한 마디로는 무엇이 갈렸는지 알 수 없다.
-    */-->
-    <label class="form-check form-check-inline mb-0">
-      <input class="form-check-input" type="checkbox" name="mixed" value="true" th:checked="${mixed}"
-             onchange="this.form.submit()">
-      버전이 갈린 것만
-    </label>
+    <select class="form-select form-select-sm w-auto" name="mixed" aria-label="버전 갈림"
+            onchange="this.form.submit()">
+      <option value="">버전 전체</option>
+      <option value="true" th:selected="${mixed}">버전 갈린 것만</option>
+    </select>
 
     <button class="btn btn-sm btn-dark" type="submit">찾기</button>
   </form>

@@ -42,14 +42,26 @@ public class PackageController {
         this.zoneService = zoneService;
     }
 
+    /**
+     * 거르개는 <b>고르개</b>라 빈 값(`전체`)이 온다 — 그래서 {@code boolean}
+     * 이 아니라 {@code Boolean} 으로 받는다. 원시형으로 받으면 빈 문자열이
+     * 오는 순간 400 이 되고, 사람은 `전체` 를 골랐을 뿐인데 화면이 죽는다.
+     *
+     * <p><b>{@code name} 을 못 박는다.</b> 이름을 안 적으면 스프링이 자바
+     * 매개변수 이름을 그대로 주소의 이름으로 쓴다 — 여기서 이름을 바꾸는
+     * 순간 {@code ?mixed=true} 가 아무 데도 안 붙고, 거르개가 조용히 꺼진다.
+     * 시험이 잡았다.
+     */
     @GetMapping("/packages")
     public String list(@RequestParam(required = false) Long zone,
                        @RequestParam(required = false) String type,
                        @RequestParam(required = false) String q,
-                       @RequestParam(required = false, defaultValue = "false") boolean vulnerable,
-                       @RequestParam(required = false, defaultValue = "false") boolean mixed,
+                       @RequestParam(name = "vulnerable", required = false) Boolean vulnerableParam,
+                       @RequestParam(name = "mixed", required = false) Boolean mixedParam,
                        @RequestParam(required = false) String open,
                        Model model) {
+        boolean vulnerable = Boolean.TRUE.equals(vulnerableParam);
+        boolean mixed = Boolean.TRUE.equals(mixedParam);
 
         PackageService.Listing listing = packages.list(zone, type, q, vulnerable, mixed);
 
@@ -109,10 +121,13 @@ public class PackageController {
     public void export(@RequestParam(required = false) Long zone,
                        @RequestParam(required = false) String type,
                        @RequestParam(required = false) String q,
-                       @RequestParam(required = false, defaultValue = "false") boolean vulnerable,
-                       @RequestParam(required = false, defaultValue = "false") boolean mixed,
+                       @RequestParam(name = "vulnerable", required = false) Boolean vulnerableParam,
+                       @RequestParam(name = "mixed", required = false) Boolean mixedParam,
                        HttpServletResponse response) throws IOException {
-        List<PackageService.ExportRow> rows = packages.export(zone, type, q, vulnerable, mixed);
+        // 화면과 같은 거르개를 그대로 받는다 — 빈 값(`전체`)이 오므로 Boolean.
+        List<PackageService.ExportRow> rows = packages.export(
+                zone, type, q, Boolean.TRUE.equals(vulnerableParam),
+                Boolean.TRUE.equals(mixedParam));
 
         response.setContentType("text/csv; charset=UTF-8");
         response.setHeader("Content-Disposition",

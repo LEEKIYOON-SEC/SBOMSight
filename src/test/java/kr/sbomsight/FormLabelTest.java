@@ -85,6 +85,40 @@ class FormLabelTest {
                 .isEmpty();
     }
 
+    /**
+     * 체크박스의 글자는 <b>{@code form-check-label} 로 감싼다.</b>
+     *
+     * <p>맨 글자로 두면 Tabler 가 이름표로 보지 않는다 — 글꼴·줄높이·커서가
+     * 다른 화면의 체크박스와 어긋나고, 읽어 주는 도구에도 이름 없는 칸으로
+     * 들린다. 화면마다 손으로 찾지 않으려고 여기서 센다.
+     */
+    @Test
+    @DisplayName("체크박스의 글자는 form-check-label 로 감싼다")
+    void everyCheckBoxHasItsLabelMarkedUp() throws IOException {
+        List<String> bare = new ArrayList<>();
+
+        try (Stream<Path> files = Files.walk(TEMPLATES)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".html")).sorted().toList()) {
+                String text = Files.readString(file).replaceAll("(?s)<!--.*?-->", "");
+                Matcher blocks = Pattern.compile("<label[^>]*class=\"form-check[^\"]*\"")
+                                        .matcher(text);
+                while (blocks.find()) {
+                    int end = text.indexOf("</label>", blocks.end());
+                    String block = end < 0 ? text.substring(blocks.end())
+                                           : text.substring(blocks.end(), end);
+                    if (!block.contains("form-check-label")) {
+                        bare.add("%s:%d".formatted(TEMPLATES.relativize(file),
+                                                   count(text.substring(0, blocks.start()), "\n") + 1));
+                    }
+                }
+            }
+        }
+
+        assertThat(bare)
+                .as("체크박스 글자를 <span class=\"form-check-label\"> 로 감쌉니다.")
+                .isEmpty();
+    }
+
     private static int count(String text, String needle) {
         int n = 0;
         for (int i = text.indexOf(needle); i >= 0; i = text.indexOf(needle, i + needle.length())) {

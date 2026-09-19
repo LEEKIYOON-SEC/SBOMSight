@@ -64,10 +64,15 @@
       두려 했는데 없앴다 — 사람이 켜고 끄게 두면 같은 상태인데 어떤 건은
       보이고 어떤 건은 안 보인다. 볼 일이 끝난 상태가 자동으로 빠진다.
     */-->
+    <!--/*
+      이것은 거르기가 아니라 **보기를 넓히는 것**이라 체크박스로 둔다(자산
+      목록의 `운영 종료 자산 포함` 과 같은 자리). 글자는 `form-check-label`
+      로 감싼다 — 맨 글자로 두면 Tabler 가 이름표로 보지 않는다.
+    */-->
     <label class="form-check form-check-inline mb-0" th:if="${tab} == 'analyses'">
-      <input class="form-check-input" type="checkbox" name="includeDone" value="true" th:checked="${includeDone}"
-             onchange="this.form.submit()">
-      검토 끝난 것도 보기
+      <input class="form-check-input" type="checkbox" name="includeDone" value="true"
+             th:checked="${includeDone}" onchange="this.form.submit()">
+      <span class="form-check-label">검토 끝난 것 포함</span>
     </label>
 
     <button class="btn btn-sm btn-dark" type="submit">적용</button>
