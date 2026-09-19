@@ -126,19 +126,18 @@
         <!--/*
           대상 자산에서 도는 명령이다. 이 서버가 아니다.
 
-          윈도우를 따로 적는 이유 — PowerShell 의 `>` 는 UTF-16 으로 적어서
-          grype 이 읽지 못한다. 파일 이름을 syft 에 넘기면(`-o 형식=파일`)
-          syft 가 직접 UTF-8 로 쓴다.
+          윈도우 줄이 `>` 를 안 쓰는 이유는 **주석에만 남긴다** — 화면에
+          적어 두었더니 명령만 있는 것보다 오히려 읽기 어려웠다. (PowerShell
+          의 `>` 는 UTF-16 으로 적어서 grype 이 읽지 못한다. 파일 이름을
+          syft 에 넘기면 syft 가 UTF-8 로 쓴다.)
         */-->
         <details class="help">
           <summary>SBOM 생성 가이드</summary>
           <div class="inner">
-            <div class="mb-2"><b>Linux</b>
+            <div><b>Linux</b>
               <div><code>syft dir:/ -o cyclonedx-json &gt; sbom.json</code></div></div>
-            <div><b>Windows</b> (PowerShell)
-              <div><code>syft dir:C:\ -o cyclonedx-json=sbom.json</code></div>
-              <div class="faint">PowerShell 의 <code>&gt;</code> 는 UTF-16 으로 적으므로
-                파일 이름을 syft 에 넘겨 UTF-8 로 받는다</div></div>
+            <div class="mt-2"><b>Windows</b>
+              <div><code>syft dir:C:\ -o cyclonedx-json=sbom.json</code></div></div>
           </div>
         </details>
       </div>
@@ -230,9 +229,14 @@
         <option value="true" th:selected="${fixable != null and fixable}">있음</option>
         <option value="false" th:selected="${fixable != null and !fixable}">없음</option>
       </select>
+      <!--/*
+        `넓게 보기` 를 뗐다. 같은 검사를 `/vulns` 에서 여는 단추였는데, 이제
+        이 탭이 그 화면과 **같은 표·같은 정렬·같은 페이지 넘김**을 쓴다 —
+        넘어가서 달라지는 것은 자산 칸 하나뿐이다. 무엇이 달라지는지 알 수
+        없는 단추는 누를 이유를 만들지 못한다. CVE별·패키지별로 넓게 보는
+        길은 아래 묶기 단추가 안내한다.
+      */-->
       <button class="btn btn-sm btn-dark" type="submit">찾기</button>
-      <a class="btn btn-sm" th:href="@{/vulns(scan=${latest.id})}"
-         title="전체 취약점 화면에서 같은 범위로 보기">넓게 보기</a>
     </form>
 
     <div>
@@ -347,7 +351,13 @@
           <th class="tight">시각</th><th class="tight">상태</th>
           <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
           <th class="num tight">패키지</th>
-          <th class="tight">grype</th><th class="tight">DB 기준일</th>
+          <!--/*
+            `DB 기준일` 이라고만 적혀 있어 무엇의 기준일인지 읽히지 않았다.
+            grype 이 들고 있던 **취약점 DB 가 만들어진 날**이고, 그 날 뒤에
+            공개된 취약점은 이 검사에 없다 — 그것이 이 칸을 보는 이유다.
+          */-->
+          <th class="tight">grype</th>
+          <th class="tight" title="grype 이 쓴 취약점 DB 가 만들어진 날. 이 날 뒤에 공개된 취약점은 이 검사에 없습니다.">취약점 DB</th>
           <th>SBOM</th><th class="tight"></th>
         </tr>
         </thead>
@@ -355,9 +365,20 @@
         <tr th:each="s : ${history}">
           <td class="tight">
             <span class="mono" th:text="${#temporals.format(s.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
-            <!--/* 자산이 바뀐 것과 취약점 DB 가 바뀐 것은 완전히 다른 이야기다. */-->
-            <div class="faint" th:if="${s.isRescan()}"
-                 th:text="'다시 검사 (원본 ' + ${s.rescanOf} + ')'">다시 검사</div>
+            <!--/*
+              자산이 바뀐 것과 취약점 DB 가 바뀐 것은 완전히 다른 이야기다 —
+              다시 검사는 **같은 SBOM** 을 새 DB 로 돌린 것이다.
+
+              원본을 **스캔 번호가 아니라 시각으로** 가리킨다. `원본 1` 은
+              내부 번호라 사람이 아는 값이 아니었고, 이력이 쌓이면 그 번호로
+              어느 줄인지 찾을 수도 없다. 원본이 지워졌으면 그렇게 적는다.
+            */-->
+            <div class="faint" th:if="${s.isRescan()}" th:with="src=${origins.get(s.rescanOf)}">
+              <th:block th:if="${src != null}">다시 검사 · 원본
+                <span class="mono"
+                      th:text="${#temporals.format(src.createdAt, 'yyyy-MM-dd HH:mm')}">—</span></th:block>
+              <th:block th:if="${src == null}">다시 검사 · 원본 삭제됨</th:block>
+            </div>
           </td>
           <td class="tight">
             <span class="status" th:classappend="${s.status}" th:text="${s.status.label()}">완료</span>

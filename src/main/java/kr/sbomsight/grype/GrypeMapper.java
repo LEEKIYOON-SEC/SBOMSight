@@ -89,7 +89,8 @@ public class GrypeMapper {
         if (descriptor != null) {
             scan.setGrypeVersion(trim(descriptor.version()));
             if (descriptor.db() != null) {
-                scan.setGrypeDbBuilt(parseInstant(descriptor.db().built()));
+                // 판에 따라 `db.built` 또는 `db.status.built` 다.
+                scan.setGrypeDbBuilt(parseInstant(descriptor.db().builtAt()));
             }
         }
         GrypeReport.Distro distro = report.distro();

@@ -32,7 +32,6 @@ import java.util.List;
 @PreAuthorize("hasRole('ADMIN')")
 public class AuditController {
 
-    private static final int PAGE_SIZE = 100;
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final AuditLogRepository logs;
@@ -48,10 +47,26 @@ public class AuditController {
                         @RequestParam(required = false) String to,
                         @RequestParam(required = false) String q,
                         @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(required = false) Integer size,
+                        @RequestParam(required = false) Integer jump,
                         Model model) {
+        // CSV·페이지 넘김 주소를 자바에서 만든다(아래 주석). 페이지 이동이
+        // 되돌릴 주소도 같은 것을 써야 거르개를 잃지 않는다.
+        VulnQuery.Links filters = new VulnQuery.Links("/settings/audit", null)
+                .with("actor", actor).with("action", action)
+                .with("from", from).with("to", to).with("q", q)
+                .with("size", VulnQuery.sizeOf(size) == VulnQuery.PAGE_SIZE
+                              ? null : VulnQuery.sizeOf(size));
+
+        // 페이지 이동. 사람이 적는 값은 1부터, 주소의 `page` 는 0부터 센다.
+        if (jump != null && jump > 0) {
+            return "redirect:" + filters.page(jump - 1);
+        }
+
         Page<AuditLog> result = logs.search(blankToNull(actor), action,
                                             startOf(from), endOf(to), blankToNull(q),
-                                            PageRequest.of(Math.max(page, 0), PAGE_SIZE));
+                                            PageRequest.of(Math.max(page, 0),
+                                                           VulnQuery.sizeOf(size)));
 
         model.addAttribute("page", result);
         model.addAttribute("events", AuditEvent.values());
@@ -61,19 +76,14 @@ public class AuditController {
         model.addAttribute("to", to);
         model.addAttribute("q", q);
 
-        // CSV·쪽 넘김 주소를 자바에서 만든다. `@{/settings/audit(actor=${actor},
-        // …)}` 는 값이 없어도 이름을 적어서 `?actor=&action=&from=&to=&q=` 가
-        // 됐다 — 감사 기록을 남기는 화면의 주소가 읽히지 않는 것은 특히
-        // 곤란하다. 점검에서 "무엇으로 걸러 본 것이냐" 를 묻는다(N12).
-        VulnQuery.Links filters = new VulnQuery.Links("/settings/audit", null)
-                .with("actor", actor).with("action", action)
-                .with("from", from).with("to", to).with("q", q);
+        // 주소를 자바에서 만드는 이유 — `@{/settings/audit(actor=${actor}, …)}`
+        // 는 값이 없어도 이름을 적어서 `?actor=&action=&from=&to=&q=` 가 됐다.
+        // 감사 기록을 남기는 화면의 주소가 읽히지 않는 것은 특히 곤란하다:
+        // 점검에서 "무엇으로 걸러 본 것이냐" 를 묻는다(N12).
         model.addAttribute("csv",
                 filters.copy("/settings/audit/export.csv").here());
-        model.addAttribute("prevLink",
-                result.hasPrevious() ? filters.copy().page(result.getNumber() - 1) : null);
-        model.addAttribute("nextLink",
-                result.hasNext() ? filters.copy().page(result.getNumber() + 1) : null);
+        // 건수 줄·페이지 넘김 조각이 쓴다 — 목록이 있는 화면 전부가 같은 것을 쓴다.
+        model.addAttribute("links", filters);
         return "audit";
     }
 

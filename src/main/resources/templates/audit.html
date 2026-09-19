@@ -33,32 +33,31 @@
     <div class="container-xl">
     <div class="card">
   <form method="get" class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
-    <label class="form-label mb-0 me-1 d-flex align-items-center gap-1">계정
-      <input class="form-control form-control-sm" name="actor" th:value="${actor}" autocomplete="off" placeholder="hong.gildong">
-    </label>
-    <label class="form-label mb-0 me-1 d-flex align-items-center gap-1">행위
-      <select class="form-select form-select-sm w-auto" name="action">
-        <option value="">전체</option>
-        <option th:each="e : ${events}" th:value="${e}" th:text="${e.label()}"
-                th:selected="${action != null && action == e}">로그인</option>
-      </select>
-    </label>
-    <label class="form-label mb-0 me-1 d-flex align-items-center gap-1">부터
-      <input class="form-control form-control-sm" type="date" name="from" th:value="${from}">
-    </label>
-    <label class="form-label mb-0 me-1 d-flex align-items-center gap-1">까지
-      <input class="form-control form-control-sm" type="date" name="to" th:value="${to}">
-    </label>
-    <label class="form-label mb-0 me-1 d-flex align-items-center gap-1">검색
-      <input class="form-control form-control-sm" name="q" th:value="${q}" autocomplete="off" placeholder="대상 · 내용">
-    </label>
-    <button class="btn" type="submit">적용</button>
+    <!--/* 라벨은 칸을 감싸지 않는다 — 다른 화면과 같은 꼴이다. */-->
+    <label class="form-label mb-0" for="audit-actor">계정</label>
+    <input class="form-control form-control-sm w-auto" id="audit-actor" name="actor"
+           th:value="${actor}" autocomplete="off" placeholder="hong.gildong">
+    <label class="form-label mb-0" for="audit-action">행위</label>
+    <select class="form-select form-select-sm w-auto" id="audit-action" name="action">
+      <option value="">전체</option>
+      <option th:each="e : ${events}" th:value="${e}" th:text="${e.label()}"
+              th:selected="${action != null && action == e}">로그인</option>
+    </select>
+    <label class="form-label mb-0" for="audit-from">부터</label>
+    <input class="form-control form-control-sm w-auto" id="audit-from" type="date"
+           name="from" th:value="${from}">
+    <label class="form-label mb-0" for="audit-to">까지</label>
+    <input class="form-control form-control-sm w-auto" id="audit-to" type="date"
+           name="to" th:value="${to}">
+    <input class="form-control form-control-sm" name="q" th:value="${q}" autocomplete="off"
+           style="flex:1; min-width:12rem" aria-label="대상 · 내용" placeholder="대상 · 내용">
+    <button class="btn btn-sm btn-dark" type="submit">적용</button>
   </form>
 
   <div>
-    <div class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
-      <b th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b><span>건</span>
-    </div>
+    <!--/* 건수 줄과 페이지 넘김은 목록이 있는 화면 전부가 같은 조각을 쓴다
+         — 여기만 다른 모양이면 화면을 옮길 때 눈이 다시 자리를 찾는다. */-->
+    <div th:replace="~{fragments/ui :: countline(${page}, ${links})}"></div>
 
     <div class="table-responsive">
       <table class="table table-vcenter card-table">
@@ -90,11 +89,7 @@
       </table>
     </div>
 
-    <div class="card-footer d-flex justify-content-center gap-3" th:if="${page.totalPages > 1}">
-      <a th:if="${prevLink != null}" th:href="@{${prevLink}}">이전</a>
-      <span th:text="${page.number + 1} + ' / ' + ${page.totalPages}">1 / 1</span>
-      <a th:if="${nextLink != null}" th:href="@{${nextLink}}">다음</a>
-    </div>
+    <div th:replace="~{fragments/ui :: pager(${page}, ${links})}"></div>
   </div>
     </div>
     </div>

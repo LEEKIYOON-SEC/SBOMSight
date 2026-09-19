@@ -264,6 +264,37 @@ class PageRenderTest {
                 .contains("<b>1</b>실제악용");
     }
 
+    /**
+     * 이력의 <b>다시 검사</b> 줄이 원본을 어떻게 가리키는가.
+     *
+     * <p>앞서 `다시 검사 (원본 1)` 로 <b>스캔 번호</b>를 찍었다. 내부 번호라
+     * 사람이 아는 값이 아니고, 이력이 쌓이면 그 번호로 어느 줄인지 찾을 수도
+     * 없다. 원본의 <b>시각</b>을 찍는다 — 이력 표의 첫 칸이 그 시각이므로
+     * 눈으로 바로 짝이 맞는다.
+     */
+    @Test
+    @DisplayName("다시 검사는 원본을 번호가 아니라 시각으로 가리킨다")
+    void aRescanPointsAtTheOriginalByTime() throws Exception {
+        Scan again = new Scan(asset, "tester");
+        again.setStatus(ScanStatus.DONE);
+        again.setSbomFilename("sbom.json");
+        again.setRescanOf(scan.getId());
+        scans.saveAndFlush(again);
+
+        String history = open("/assets/" + asset.getId() + "?tab=history");
+        String when = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                .withZone(java.time.ZoneId.systemDefault())
+                .format(scan.getCreatedAt());
+
+        assertThat(history)
+                .as("원본을 스캔 번호로 가리키고 있다")
+                .doesNotContain("원본 " + scan.getId() + ")");
+        assertThat(history)
+                .as("원본의 시각이 없다 — 어느 줄이 원본인지 알 수 없다")
+                .contains("다시 검사 · 원본")
+                .contains(when);
+    }
+
     @Test
     @DisplayName("자산 상세 · 취약점 목록")
     void assetAndScan() throws Exception {
@@ -300,9 +331,16 @@ class PageRenderTest {
 
         // 취약점 탭. 자산 상세 안에서 끝나야 한다 — 전체 화면으로 튕기면
         // 한 자산 이야기를 보러 들어온 사람이 목록으로 쫓겨난다.
+        //
+        // `넓게 보기` 단추는 뗐다. 이 탭이 `/vulns` 와 **같은 표·같은 정렬·
+        // 같은 페이지 넘김**을 쓰므로 넘어가서 달라지는 것이 자산 칸 하나뿐
+        // 이었다. 대신 그 조각들이 여기 있는지를 본다.
         String vulns = open("/assets/" + asset.getId() + "?tab=vulns");
         assertThat(vulns).contains("CVE-2024-3094");
-        assertThat(vulns).contains("넓게 보기");
+        assertThat(vulns)
+                .as("취약점 탭이 전체 화면과 같은 표·정렬·페이지 넘김을 쓰지 않는다")
+                .contains("sortable")
+                .contains("페이지 사이즈");
     }
 
     /**

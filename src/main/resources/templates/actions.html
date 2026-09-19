@@ -41,22 +41,23 @@
     <div class="card">
   <form method="get" class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
     <input type="hidden" name="tab" th:value="${tab}">
-    <label class="form-label mb-0 me-1 d-flex align-items-center gap-1">구역
-      <select class="form-select form-select-sm w-auto" name="zone" onchange="this.form.submit()">
-        <option value="">전체</option>
-        <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
-                th:selected="${selectedZone != null && selectedZone == z.id}">DMZ</option>
-      </select>
-    </label>
+    <!--/* 라벨은 고르개를 감싸지 않는다 — 취약점·패키지 화면과 같은 꼴이다. */-->
+    <label class="form-label mb-0" for="action-zone">구역</label>
+    <select class="form-select form-select-sm w-auto" id="action-zone" name="zone"
+            onchange="this.form.submit()">
+      <option value="">전체</option>
+      <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
+              th:selected="${selectedZone != null && selectedZone == z.id}">DMZ</option>
+    </select>
 
     <!--/* 조치 탭의 거르개 */-->
-    <label th:if="${tab} != 'analyses'">상태
-      <select class="form-select form-select-sm w-auto" name="status" onchange="this.form.submit()">
-        <option value="">전체</option>
-        <option th:each="s : ${statuses}" th:value="${s}" th:text="${s.label()}"
-                th:selected="${status != null && status == s}">대기</option>
-      </select>
-    </label>
+    <label class="form-label mb-0" for="action-status" th:if="${tab} != 'analyses'">상태</label>
+    <select class="form-select form-select-sm w-auto" id="action-status" name="status"
+            th:if="${tab} != 'analyses'" onchange="this.form.submit()">
+      <option value="">전체</option>
+      <option th:each="s : ${statuses}" th:value="${s}" th:text="${s.label()}"
+              th:selected="${status != null && status == s}">대기</option>
+    </select>
 
     <!--/*
       검토 결과 탭의 거르개는 이것 하나다. 앞서 `목록에서 감추기` 체크박스를
@@ -69,7 +70,7 @@
       검토 끝난 것도 보기
     </label>
 
-    <button class="btn" type="submit">적용</button>
+    <button class="btn btn-sm btn-dark" type="submit">적용</button>
   </form>
 
   <div>
@@ -175,11 +176,11 @@
                                 : (${a.open} ? 'medium' : 'low')"><i></i>
                 <span th:text="${a.state.label()}">해당됨</span></span>
             </td>
-            <!--/* 대응 이름 중 긴 것("조치 안 함 (위험 수용)")이 줄바꿈 없이
+            <!--/* 대응 이름 중 긴 것("우회 조치 (패치 미적용)")이 줄바꿈 없이
                  들어가면 표가 칸을 넘는다. 여기도 `tight` 를 주지 않는다. */-->
             <td>
               <span th:if="${a.response != null}"
-                    th:text="${a.response.label()}">조치 안 함 (위험 수용)</span>
+                    th:text="${a.response.label()}">위험 수용</span>
               <span class="faint" th:if="${a.response == null}">—</span>
             </td>
             <td class="faint">

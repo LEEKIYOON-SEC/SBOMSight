@@ -368,6 +368,45 @@ class GrypeMapperTest {
         assertThat(scan.getDistroVersion()).isEqualTo("9.3");
     }
 
+    /**
+     * <b>기준일이 두 자리에 온다.</b> grype 0.87 까지는 {@code db.built} 였고,
+     * 새 DB(v6)를 쓰는 판부터는 {@code db.status.built} 로 옮겼다.
+     *
+     * <p>한 자리만 읽으면 다른 판에서 화면의 `취약점 DB` 칸이 <b>말없이 비어
+     * 있게</b> 된다 — 오류도 로그도 없이 빈 칸만 남는다. 실제로 그랬고, 쓰는
+     * 사람이 "이건 뭐고 왜 다 비어 있나" 라고 물어서 알았다.
+     */
+    @Test
+    @DisplayName("취약점 DB 기준일은 db.built 와 db.status.built 양쪽에서 읽는다")
+    void readsTheDbDateFromEitherShape() throws Exception {
+        String opened = "2026-08-18T01:23:45Z";
+
+        // 옛 자리 — grype 0.87.
+        Scan old = scan();
+        mapper.applyMetadata(old, json.readValue("""
+            {"matches":[],"descriptor":{"version":"0.87.0",
+             "db":{"built":"%s","schemaVersion":5}}}
+            """.formatted(opened), GrypeReport.class));
+
+        // 새 자리 — db.status 안으로 옮겨 갔다.
+        Scan fresh = scan();
+        mapper.applyMetadata(fresh, json.readValue("""
+            {"matches":[],"descriptor":{"version":"0.95.0",
+             "db":{"status":{"built":"%s","schemaVersion":"6.0.2","location":"/root/.cache"}}}}
+            """.formatted(opened), GrypeReport.class));
+
+        assertThat(old.getGrypeDbBuilt()).as("옛 자리에서 못 읽었다").isNotNull();
+        assertThat(fresh.getGrypeDbBuilt()).as("새 자리에서 못 읽었다").isNotNull();
+        assertThat(fresh.getGrypeDbBuilt()).isEqualTo(old.getGrypeDbBuilt());
+
+        // 둘 다 없으면 **지어내지 않는다.** 없는 값은 비워 둔다.
+        Scan silent = scan();
+        mapper.applyMetadata(silent, json.readValue("""
+            {"matches":[],"descriptor":{"version":"0.95.0","db":{"schemaVersion":"6.0.2"}}}
+            """, GrypeReport.class));
+        assertThat(silent.getGrypeDbBuilt()).isNull();
+    }
+
     @Test
     @DisplayName("빈 결과도 오류가 아니다 — 취약점이 없는 서버가 있다")
     void emptyIsFine() throws Exception {

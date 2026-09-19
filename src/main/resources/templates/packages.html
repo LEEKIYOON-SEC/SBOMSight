@@ -37,21 +37,26 @@
     <div class="container-xl">
     <div class="card">
   <form method="get" class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
-    <label class="form-label" style="margin:0">구역
-      <select class="form-select form-select-sm w-auto" name="zone" onchange="this.form.submit()">
-        <option value="">전체</option>
-        <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
-                th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>
-      </select>
-    </label>
+    <!--/*
+      라벨은 고르개를 **감싸지 않는다.** `form-label` 은 블록이라 감싸면 글자
+      아래로 고르개가 내려가고, 그 칸만 두 줄이 되어 옆 칸과 밑선이 어긋난다.
+      나란히 두고 `for` 로 묶는다 — 취약점 화면과 같은 꼴이다.
+    */-->
+    <label class="form-label mb-0" for="pkg-zone">구역</label>
+    <select class="form-select form-select-sm w-auto" id="pkg-zone" name="zone"
+            onchange="this.form.submit()">
+      <option value="">전체</option>
+      <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
+              th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>
+    </select>
 
-    <label class="form-label" style="margin:0">유형
-      <select class="form-select form-select-sm w-auto" name="type" onchange="this.form.submit()">
-        <option value="">전체</option>
-        <option th:each="t : ${listing.types()}" th:value="${t}" th:text="${t}"
-                th:selected="${type != null and type == t}">rpm</option>
-      </select>
-    </label>
+    <label class="form-label mb-0" for="pkg-type">유형</label>
+    <select class="form-select form-select-sm w-auto" id="pkg-type" name="type"
+            onchange="this.form.submit()">
+      <option value="">전체</option>
+      <option th:each="t : ${listing.types()}" th:value="${t}" th:text="${t}"
+              th:selected="${type != null and type == t}">rpm</option>
+    </select>
 
     <input class="form-control form-control-sm" style="width:16rem" name="q" th:value="${q}"
            placeholder="패키지 이름" aria-label="패키지 이름" autocomplete="off">
@@ -72,7 +77,7 @@
       버전이 갈린 것만
     </label>
 
-    <button class="btn" type="submit">찾기</button>
+    <button class="btn btn-sm btn-dark" type="submit">찾기</button>
   </form>
 
   <div>

@@ -136,8 +136,27 @@ public record GrypeReport(
      * 그 짐작이 틀리는 순간 <b>결과 전체가 통째로 버려진다.</b> 실제로
      * {@code location} 을 숫자로 짐작했다가 98건짜리 스캔이 파싱 단계에서
      * 통째로 실패했다(grype 은 캐시 경로 문자열을 준다).
+     *
+     * <p><b>기준일이 두 자리에 온다.</b> grype 0.87 까지는
+     * {@code db.built} 였고, 새 DB(v6)를 쓰는 판부터는
+     * {@code db.status.built} 로 옮겼다. 한 자리만 읽으면 다른 판에서
+     * 화면의 `취약점 DB` 칸이 <b>말없이 비어 있게</b> 된다 — 실제로 그랬다.
+     * 둘 다 읽고, 있는 쪽을 쓴다.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Db(String built) {
+    public record Db(String built, Status status) {
+
+        /** 있는 쪽. 둘 다 없으면 {@code null} — 없는 것을 지어내지 않는다. */
+        public String builtAt() {
+            if (built != null && !built.isBlank()) {
+                return built;
+            }
+            return status == null ? null : status.built();
+        }
+    }
+
+    /** 새 판의 {@code db.status}. 기준일만 꺼낸다. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Status(String built) {
     }
 }

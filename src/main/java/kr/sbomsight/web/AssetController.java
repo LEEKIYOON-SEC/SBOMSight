@@ -342,6 +342,10 @@ public class AssetController {
         model.addAttribute("running", running);
         // 이력의 '이전 대비' — 바로 앞 완료 검사와 견준 탐지 수 변화.
         model.addAttribute("delta", deltas(history));
+        // 다시 검사한 줄이 가리키는 원본. **번호가 아니라 시각을 찍기 위한
+        // 것이다** — `원본 1` 은 내부 번호라 사람이 아는 값이 아니다.
+        model.addAttribute("origins", history.stream()
+                .collect(Collectors.toMap(Scan::getId, s -> s, (a, b) -> a)));
         model.addAttribute("severity", latest == null ? Map.of() : severityMap(latest.getId()));
         model.addAttribute("remediations",
                 remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id));
@@ -617,7 +621,7 @@ public class AssetController {
                          file.getOriginalFilename() + " · " + file.getSize() + "바이트");
             scanService.runAsync(scan.getId());
             flash.addFlashAttribute("message",
-                    "SBOM 을 올렸습니다. grype 검사가 진행 중이며, 끝나면 이력에 나타납니다.");
+                    "SBOM 업로드 완료. grype 검사가 진행 중이며, 끝나면 검사 이력에 나타납니다.");
         } catch (Exception e) {
             log.error("업로드 실패 asset={}", id, e);
             flash.addFlashAttribute("error", "업로드하지 못했습니다: " + e.getMessage());

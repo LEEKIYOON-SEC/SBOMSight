@@ -85,8 +85,8 @@
 
 <!--/*
   ─── 건수 줄 ──────────────────────────────────────────────────────────
-  목록 위 한 줄. 몇 건인지, 지금 몇 번째를 보고 있는지, 한 쪽에 몇 건씩
-  낼지. `/vulns` 와 자산 상세의 취약점 탭이 **같은 것을 쓴다** — 두 벌을
+  목록 위 한 줄. 몇 건인지, 한 페이지에 몇 건씩 낼지. 목록이 있는 화면은
+  **전부 같은 것을 쓴다**(취약점 · 자산의 취약점 탭 · 감사 로그) — 두 벌을
   두면 한쪽만 고치는 날이 오고, 그때부터 같은 목록이 화면마다 다르게 센다.
 
   `1–100번째` 는 뺐다. 지금 몇 쪽인지는 아래 쪽 넘김이 말하고, 위아래 두
@@ -94,14 +94,14 @@
 
     <div th:replace="~{fragments/ui :: countline(${page}, ${links})}"></div>
 
-  한 쪽에 몇 건인지는 주소에 남는다. 기본값(100)은 적지 않는다.
+  페이지 사이즈는 주소에 남는다. 기본값(100)은 적지 않는다.
 */-->
 <div th:fragment="countline(page, links)"
      class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
   <b class="num" th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>
   <span class="text-secondary">건</span>
   <span style="flex:1"></span>
-  <span class="faint" style="font-size:13px">한 쪽에</span>
+  <span class="faint" style="font-size:13px">페이지 사이즈</span>
   <span class="btn-group" th:with="fallback=${T(kr.sbomsight.service.VulnQuery).PAGE_SIZE}">
     <a class="btn btn-sm" th:each="n : ${T(kr.sbomsight.service.VulnQuery).PAGE_SIZES}"
        th:href="@{${links.change('size', n == fallback ? null : n)}}"

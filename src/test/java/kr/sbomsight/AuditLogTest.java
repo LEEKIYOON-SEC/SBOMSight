@@ -24,6 +24,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -143,6 +144,32 @@ class AuditLogTest {
         // 엑셀이 UTF-8 로 읽게 하는 BOM 이 앞에 있어야 한다.
         assertThat(csv).startsWith("﻿");
         assertThat(csv).contains("접속 IP");
+    }
+
+    /**
+     * 감사 로그도 목록이 있는 다른 화면과 <b>같은 페이지 넘김</b>을 쓴다.
+     *
+     * <p>화면마다 쪽 넘김이 다르면 옮길 때마다 눈이 다시 자리를 찾는다.
+     * 여기서 보는 것은 셋이다 — 페이지 사이즈가 먹는가, 페이지 번호로
+     * 옮겨지는가, <b>옮기면서 거르개를 잃지 않는가.</b>
+     */
+    @Test
+    @DisplayName("감사 로그의 페이지 사이즈와 페이지 이동이 거르개를 들고 간다")
+    void theAuditPagerCarriesTheFilters() throws Exception {
+        for (int i = 0; i < 12; i++) {
+            audit.recordAs(ADMIN, AuditEvent.ZONE_CREATED, "쪽넘김-" + i, "");
+        }
+
+        String html = mvc.perform(get("/settings/audit?size=10")
+                                .with(user(ADMIN).roles("ADMIN")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("페이지 사이즈").contains("페이지");
+
+        // 사람이 적는 값은 1부터. 주소의 page 는 0부터 세므로 서버가 환산한다.
+        mvc.perform(get("/settings/audit?size=10&jump=2&action=ZONE_CREATED")
+                        .with(user(ADMIN).roles("ADMIN")))
+           .andExpect(redirectedUrl("/settings/audit?action=ZONE_CREATED&size=10&page=1"));
     }
 
     @Test

@@ -14,16 +14,16 @@ package kr.sbomsight.domain;
 public enum ScanStage {
 
     /** 파일을 받아 보관했다. grype 을 부르기 전. */
-    UPLOADED("올리기", "SBOM 을 받았습니다"),
+    UPLOADED("업로드", "SBOM 파일 받음"),
 
     /** 압축을 풀고 형식과 패키지 수를 센다. */
-    READING("SBOM 읽기", "형식과 패키지 수를 셉니다"),
+    READING("SBOM 읽기", "형식 판별 · 패키지 수 계수"),
 
     /** grype 이 도는 중. 대개 여기가 가장 길다. */
-    SCANNING("grype 검사", "취약점을 맞춰 봅니다"),
+    SCANNING("grype 검사", "취약점 매칭"),
 
     /** grype 출력을 읽어 저장한다. */
-    SAVING("결과 정리", "탐지를 저장합니다"),
+    SAVING("결과 정리", "탐지 저장"),
 
     /** 끝. */
     DONE("완료", "");

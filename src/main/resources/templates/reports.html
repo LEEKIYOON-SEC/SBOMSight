@@ -82,7 +82,10 @@
         <td class="tight faint" th:text="${a.zone.name}">내부업무</td>
         <td class="tight faint" colspan="2">완료된 검사가 없습니다</td>
         <td class="actions">
-          <a class="btn btn-sm" th:href="@{'/assets/' + ${a.id} + '?tab=scans'}">SBOM 올리기</a>
+          <!--/* `?tab=scans` 라는 탭은 없다(이력 탭의 이름은 `history`). 모르는
+               이름이 오면 개요로 되돌아가는데, 업로드 칸이 개요에 있어 우연히
+               맞아 보였을 뿐이다. 개요를 그대로 가리킨다. */-->
+          <a class="btn btn-sm" th:href="@{'/assets/' + ${a.id}}">SBOM 업로드</a>
         </td>
       </tr>
       </tbody>
