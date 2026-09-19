@@ -247,6 +247,12 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 
 /* 보고서의 `비고` 칸. 줄로 쌓되 한 줄은 쪼개지지 않게 둔다. */
 .remark { white-space: nowrap; }
+
+/* **판은 한 덩이다.** `5.14.0-611.5.1.el9_7.x86_64` 가 붙임표에서 끊기면
+   `5.14.0-` / `611.5.1.el9_7.x86_64` 로 보이고, 판 하나가 둘로 읽힌다 —
+   결재 문서에서 판을 잘못 읽는 것이 가장 나쁜 종류의 오류다(§5-9 와 같은
+   이유). 줄을 바꿔야 하면 `현재` 와 `목표` 사이에서 바꾼다. */
+.report td.mono > span, .report td.mono > b { white-space: nowrap; }
 .tag.kev   { background: var(--critical-bg); color: var(--critical); }
 .tag.fix   { background: var(--ok-bg);       color: var(--ok); }
 .tag.nofix { background: var(--medium-bg);   color: var(--medium); }

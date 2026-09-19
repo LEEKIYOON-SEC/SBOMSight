@@ -329,7 +329,8 @@ public class ReportService {
      *
      * @param reachable        원격 · 인증 불필요 · 사용자 개입 불필요 (AV:N/PR:N/UI:N)
      * @param reachableFixable 그중 패키지를 올리면 사라지는 것
-     * @param scopeChanged     권한 경계를 넘는 것 (S:C)
+     * @param scopeChanged     영향 범위 변경 (S:C) — 취약한 것 <b>밖</b>의 자원까지
+     *                         영향이 미치는 것. 권한 상승과는 다른 축이다
      * @param unreadable       벡터가 없거나 3.x 가 아니어서 <b>판단하지 못한</b> 것.
      *                         0 이 아니라 판단 불가다 — 아니오로 세지 않는다.
      */

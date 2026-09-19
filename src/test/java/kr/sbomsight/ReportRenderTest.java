@@ -121,6 +121,31 @@ class ReportRenderTest {
     }
 
     /**
+     * <b>구역 보고서의 `비고` 도 같다.</b>
+     *
+     * <p>앞 판에 자산 보고서만 고치고 여기를 빼먹었다. 쓰는 사람이 커널이
+     * 걸린 구역 보고서를 열어 `실/제/악/용` 이 세로로 쪼개진 것을 다시
+     * 보냈다. <b>같은 것을 두 군데 두면 한쪽만 고치는 날이 온다.</b>
+     * 그래서 두 보고서를 한 시험에서 함께 본다.
+     */
+    @Test
+    @DisplayName("구역 보고서의 비고도 줄로 쌓는다")
+    void zoneRemarkCellStacks() throws Exception {
+        Zone zone = zoneService.create("비고-" + System.nanoTime(), "#123456", "");
+        doneToday(assetIn(zone, "web"), "openssl", "3.0.7");
+
+        String html = mvc.perform(get("/reports/zone").param("zone", zone.getId().toString())
+                                                     .with(user("tester").roles("ADMIN")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+
+        assertThat(html).contains("<td class=\"remark\">");
+        assertThat(html)
+                .as("딱지는 `<div>` 안에 든다")
+                .doesNotContain("<td class=\"remark\">\n            <span");
+    }
+
+    /**
      * <b>장 번호가 건너뛰지 않는다.</b>
      *
      * <p>4장(`수정 버전 없는 항목`)과 5장(`조치 진행 현황`)을 비면 통째로

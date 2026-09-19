@@ -231,7 +231,7 @@
           <td class="num tight danger-text"
               th:text="${report.aggregate.exposure.reachableWithoutFix()}">0</td></tr>
       <tr th:if="${report.aggregate.exposure.scopeChanged > 0}">
-          <td class="tight">권한 경계를 넘음</td>
+          <td class="tight">영향 범위 변경</td>
           <td class="num tight" th:text="${report.aggregate.exposure.scopeChanged}">0</td></tr>
       <!--/*
         읽지 못한 것을 '아니오' 로 세면 "원격에서 닿지 않습니다" 라는, 아무도
@@ -244,7 +244,7 @@
     </table>
     <p class="footnote">
       ※ CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
-      권한 경계를 넘음 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
+      영향 범위 변경 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
     </p>
   </section>
 
@@ -362,11 +362,16 @@
           <td class="num tight" th:text="${a.criticalCount > 0} ? ${a.criticalCount} : '—'">—</td>
           <td class="num tight" th:text="${a.highCount > 0} ? ${a.highCount} : '—'">—</td>
           <td class="num tight" th:text="${a.maxCvss != null} ? ${a.maxCvss} : '—'">—</td>
-          <td>
-            <span th:if="${a.kevCount > 0}" class="tag kev"
-                  th:text="'실제 악용 ' + ${a.kevCount}">실제 악용</span>
-            <span th:if="${a.total > a.fixableCount}" class="faint"
-                  th:text="'수정 버전 없음 ' + (${a.total} - ${a.fixableCount})"></span>
+          <!--/*
+            **줄로 쌓는다.** 한 줄에 흘려 두었더니 칸이 좁아졌을 때
+            `실/제/악/용` 으로 한 글자씩 쪼개졌다 — 한국어는 글자 단위로
+            줄바꿈된다. 자산 보고서는 앞 판에 고쳤는데 여기를 빼먹었다.
+          */-->
+          <td class="remark">
+            <div th:if="${a.kevCount > 0}"><span class="tag kev"
+                 th:text="'실제 악용 ' + ${a.kevCount}">실제 악용</span></div>
+            <div class="faint" th:if="${a.total > a.fixableCount}"
+                 th:text="'수정 버전 없음 ' + (${a.total} - ${a.fixableCount})"></div>
           </td>
         </tr>
         <tr class="total">

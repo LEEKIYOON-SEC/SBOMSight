@@ -292,7 +292,7 @@
 
     <div class="card" th:if="${assetPackages != null and !assetPackages.isEmpty()}">
       <div class="card-header">
-        <h2 class="card-title">깔려 있는 패키지</h2>
+        <h2 class="card-title">설치된 패키지</h2>
         <form method="get" class="ms-auto d-flex gap-2 align-items-center">
           <input type="hidden" name="tab" value="packages">
           <input class="form-control form-control-sm" name="q" th:value="${q}"

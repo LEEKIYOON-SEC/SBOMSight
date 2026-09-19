@@ -196,7 +196,7 @@
           <td class="num tight danger-text"
               th:text="${report.summary.exposure.reachableWithoutFix()}">0</td></tr>
       <tr th:if="${report.summary.exposure.scopeChanged > 0}">
-          <td class="tight">권한 경계를 넘음</td>
+          <td class="tight">영향 범위 변경</td>
           <td class="num tight" th:text="${report.summary.exposure.scopeChanged}">0</td></tr>
       <!--/*
         읽지 못한 것을 '아니오' 로 세면 "원격에서 닿지 않습니다" 라는, 아무도
@@ -209,7 +209,7 @@
     </table>
     <p class="footnote" th:if="${report.summary.exposure.measured()}">
       ※ CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
-      권한 경계를 넘음 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
+      영향 범위 변경 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
     </p>
   </section>
 
