@@ -426,6 +426,14 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      * <p>버전은 묶음 축에서 뺀다 — 같은 openssl 이라도 자산마다 판이 다르다.
      * 대신 몇 가지 판이 섞여 있는지를 세어, 하나가 아니면 화면에서 목표
      * 버전을 단정하지 않는다.
+     *
+     * <p><b>거르개를 받는다.</b> 취약점 화면의 `패키지별` 묶기가 이것을
+     * 쓰는데, 앞서는 {@code scanIds} 만 넘기고 있었다 — 화면에는 고른 값이
+     * 그대로 남아 있는데 목록은 한 줄도 바뀌지 않았다. <b>걸린 것처럼 보이는
+     * 거르개가 안 걸리는 것</b>은 값이 틀린 것과 같다. {@code groupByCveIn}
+     * 과 같은 네 가지를 같은 식으로 받는다.
+     *
+     * <p>넷 다 {@code null} 이면 거르지 않는다 — 구역 보고서가 그렇게 부른다.
      */
     @Query("""
            SELECT f.packageName    AS packageName,
@@ -444,9 +452,21 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                   COUNT(DISTINCT f.fixedVersion) AS targetCount
            FROM Finding f JOIN f.scan s
            WHERE s.id IN :scanIds
+             AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
+             AND (:fixable IS NULL
+                  OR (:fixable = TRUE  AND f.fixState = 'fixed')
+                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+             AND (:kev IS NULL OR f.kev = :kev)
+             AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
            GROUP BY f.packageName, f.packageType
            """)
-    List<ZonePackageGroup> groupByPackageIn(@Param("scanIds") Collection<Long> scanIds);
+    List<ZonePackageGroup> groupByPackageIn(@Param("scanIds") Collection<Long> scanIds,
+                                            @Param("q") String q,
+                                            @Param("severity") String severity,
+                                            @Param("fixable") Boolean fixable,
+                                            @Param("kev") Boolean kev);
 
     /**
      * 증감 대조용 키. {@code (자산, CVE, 패키지명)} 세 축이다.

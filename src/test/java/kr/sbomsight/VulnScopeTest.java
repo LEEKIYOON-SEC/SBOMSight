@@ -432,6 +432,55 @@ class VulnScopeTest {
                 .isEqualTo(2);
     }
 
+    /**
+     * <b>패키지별 묶기도 거르개를 받는다.</b>
+     *
+     * <p>앞서 {@code VulnQuery} 가 이 묶기에만 {@code scanIds} 만 넘기고
+     * 검색어 · 심각도 · 수정 버전 · 실제 악용을 버리고 있었다. 화면에는 고른
+     * 값이 그대로 남아 있는데 <b>목록은 한 줄도 바뀌지 않았다</b> — 걸린
+     * 것처럼 보이는 거르개가 안 걸리는 것은 값이 틀린 것과 같다.
+     *
+     * <p>항목별 · CVE별은 넷 다 받고 있었다. 세 묶기가 같은 거르개에 같게
+     * 답해야 한다.
+     */
+    @Test
+    @DisplayName("패키지별 묶기도 거르개를 받는다")
+    void packageGroupingHonoursTheFilters() throws Exception {
+        Asset web = asset("web", dmz);
+        Scan s = scan(web, Instant.now());
+        finding(s, "CVE-2021-44228", "log4j-core", "Critical", "fixed");
+        finding(s, "CVE-2022-22965", "spring-beans", "High", "not-fixed");
+
+        // 거르지 않으면 둘 다.
+        assertThat(packagesOn("")).contains("log4j-core").contains("spring-beans");
+
+        // 검색어
+        assertThat(packagesOn("&q=log4j"))
+                .as("검색어가 패키지별 묶기에도 걸린다")
+                .contains("log4j-core").doesNotContain("spring-beans");
+
+        // 심각도
+        assertThat(packagesOn("&severity=high"))
+                .as("심각도가 패키지별 묶기에도 걸린다")
+                .contains("spring-beans").doesNotContain("log4j-core");
+
+        // 수정 버전 없음
+        assertThat(packagesOn("&fixable=false"))
+                .as("수정 버전 유무가 패키지별 묶기에도 걸린다")
+                .contains("spring-beans").doesNotContain("log4j-core");
+    }
+
+    /** `패키지별` 화면을 열어 표에 뜬 패키지 이름만 돌려준다. */
+    private String packagesOn(String query) throws Exception {
+        String html = mvc.perform(get("/vulns?group=package" + query)
+                                          .with(user("tester").roles("VIEWER")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+        // 표 부분만 본다 — 거르개의 `<option>` 이나 링크에 이름이 섞이지 않게.
+        int from = html.indexOf("개 패키지");
+        return from < 0 ? "" : html.substring(from);
+    }
+
     /** 걸리는 것이 없어도 화면은 열려야 한다. 빈 목록에서 터지는 자리가 흔하다. */
     @Test
     @DisplayName("걸리는 것이 없어도 세 묶기 모두 열린다")

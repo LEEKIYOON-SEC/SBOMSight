@@ -301,8 +301,10 @@ public class VulnQuery {
         switch (group == null ? "item" : group) {
             case "cve" -> model.addAttribute("cveGroups",
                     findings.groupByCveIn(scope.scanIds(), term, sev, fixable, kev));
+            // 거르개를 **넷 다** 넘긴다. 앞서는 `scanIds` 만 넘겼고, 화면에는
+            // 고른 값이 그대로 남아 있는데 목록이 한 줄도 바뀌지 않았다.
             case "package" -> model.addAttribute("packageGroups",
-                    findings.groupByPackageIn(scope.scanIds()));
+                    findings.groupByPackageIn(scope.scanIds(), term, sev, fixable, kev));
             default -> {
                 int p = Math.max(page, 0);
                 int rows = sizeOf(size);

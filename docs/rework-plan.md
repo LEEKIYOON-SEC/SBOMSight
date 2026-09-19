@@ -1695,17 +1695,53 @@ check-table-width 1280 넘침 0 · check-contrast 0 · check-links 빈 값 0
 
 #### 하다가 본 것 — 이번 커밋에 넣지 않는다
 
-1. **패키지별 묶기가 거르개를 받지 않는다.**
-   `VulnQuery.java:304` — `case "package" -> findings.groupByPackageIn(scope.scanIds())`.
-   `q` · `severity` · `fixable` · `kev` 를 넘기지 않는다. 화면에는 고른 값이
-   그대로 남아 있어서 **걸린 것처럼 보이는데 목록이 안 바뀐다.**
-   `cve` 묶기(`:302`)는 넷 다 넘긴다.
-2. **보고서의 장 번호가 건너뛴다.** `report.html:308` 의 4장은
-   `noFixRows` 가 비면 통째로 빠져서 `1 · 2 · 3 · 5 · 6` 으로 나온다.
-   4장의 `blocked` 는 **패키지 전체가 손댈 수 없는 것**만 세는데(
-   `ReportService.java:215` `g.getFixable() == 0`), 2.2 는 **건**으로
-   `수정 버전 없음 12` 라고 적는다 — 세는 단위가 달라서 읽는 사람은 둘이
-   어긋난 것으로 읽는다.
+1. **패키지별 묶기가 거르개를 받지 않는다.** → **N21 에서 고침**
+2. **보고서의 장 번호가 건너뛴다.** → **N22 에서 고침**
+
+---
+
+### N21 — 패키지별 묶기가 거르개를 버리고 있었다 ✅
+
+취약점 화면의 `패키지별` 묶기만 **검색어 · 심각도 · 수정 버전 · 실제 악용**
+넷을 버리고 있었다. 화면에는 고른 값이 그대로 남아 있는데 **목록은 한 줄도
+바뀌지 않았다.**
+
+```java
+case "cve"     -> findings.groupByCveIn(scope.scanIds(), term, sev, fixable, kev);
+case "package" -> findings.groupByPackageIn(scope.scanIds());   // ← 넷을 버린다
+```
+
+**걸린 것처럼 보이는 거르개가 안 걸리는 것은 값이 틀린 것과 같다.** 쓰는
+사람은 `심각` 만 고른 뒤 열다섯 줄을 보고 "심각이 열다섯 가지" 라고 읽는다.
+
+| 자리 | 무엇 |
+|---|---|
+| `FindingRepository.java:454-461` | `groupByCveIn` 과 **같은 네 조건**을 같은 식으로. 넷 다 `null` 이면 안 거른다 |
+| `FindingRepository.java:465-469` | `groupByPackageIn(scanIds, q, severity, fixable, kev)` |
+| `VulnQuery.java:304-307` | 넷을 넘긴다 |
+| `ZoneReportService.java:242-243` | `null, null, null, null` — **보고서는 거르지 않는다.** 기간 안의 것을 전부 센다 |
+
+#### 확인
+
+고치기 전 코드에서 먼저 돌려 실패를 확인했다
+(`VulnScopeTest:448 packageGroupingHonoursTheFilters` — `q` · `severity` ·
+`fixable` 셋 다 `not to contain` 에서 실패).
+
+```
+./mvnw -B test                             292개 통과 (H2)      ← 291 + 1
+DB_PORT=13306 scripts/check-mariadb.sh     292개 통과 (MariaDB 10.11 + Flyway)
+```
+
+띄워서 직접 — 화면에 뜬 수를 **DB 로 대조**했다(전부 일치).
+
+| 거르개 | 화면 | `SELECT COUNT(DISTINCT package_name)` (최신 검사 범위) |
+|---|---|---|
+| (없음) | 15 | 15 |
+| `q=log4j` | 1 | 1 |
+| `severity=critical` | 3 | 3 |
+| `kev=true` | 14 | 14 |
+| `fixable=false` | 15 | 15 |
+| `q=zzzz` | 0 | 0 |
 
 ---
 
