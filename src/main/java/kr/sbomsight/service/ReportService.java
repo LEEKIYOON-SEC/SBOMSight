@@ -183,7 +183,35 @@ public class ReportService {
                 || hasAnyKevFlag(scan);
 
         return new Summary(severity, fixState, fixable, noFix, unknownFix,
-                           groups.size(), kev, kevKnown, exposure, scan.getFindingCount());
+                           groups.size(), kev, kevKnown, exposure, scan.getFindingCount(),
+                           reviewCounts(scan));
+    }
+
+    /**
+     * <b>2.4 — 우리가 몇 건을 봤는가.</b>
+     *
+     * <p>2.1~2.3 은 전부 grype 의 축(심각도 · 수정 가능 여부 · 접근 경로)이다.
+     * 이 도구가 하는 일은 그 목록을 <b>검토하고 조치를 추적하는 것</b>인데,
+     * 그 축이 보고서 요약에 한 줄도 없었다 — "48건 중 몇 건을 봤나" 에 답할
+     * 자리가 없었다.
+     *
+     * <p><b>`미검토` 와 `검토 중` 을 가른다.</b> 앞서 4장 각주의
+     * `검토 결과 없음` 은 기록이 아예 없는 것만 셌다. `검토 중` 으로 열어 두고
+     * 반년 방치한 건이 "설명됨" 으로 집계됐다 — 아무도 손대지 않은 것과
+     * 보고 있는 것은 다른 상태다.
+     *
+     * <p>맞추는 규칙은 {@link FindingAnalysisService#stateOf}에 한 곳으로
+     * 둔다. 1장의 `제외` 집계와 같은 규칙이어야 두 수가 어긋나지 않는다.
+     */
+    private Map<AnalysisState, Long> reviewCounts(Scan scan) {
+        Map<String, FindingAnalysis> byKey = analyses.byKey(scan.getAsset().getId());
+        Map<AnalysisState, Long> counts = FindingAnalysisService.emptyStateCounts();
+        for (FindingRepository.FindingKey row : findings.findKeyRows(scan.getId())) {
+            AnalysisState state = FindingAnalysisService.stateOf(
+                    byKey, row.getCve(), row.getRelatedCve(), row.getPackageName());
+            counts.merge(state, 1L, Long::sum);
+        }
+        return counts;
     }
 
     private boolean hasAnyKevFlag(Scan scan) {
@@ -357,10 +385,26 @@ public class ReportService {
     public record Summary(Map<String, Long> severity, Map<String, Long> fixState,
                           long fixable, long noFix, long unknownFix,
                           int packageCount, long kevCount, boolean kevKnown,
-                          Exposure exposure, int total) {
+                          Exposure exposure, int total,
+                          Map<AnalysisState, Long> review) {
 
         public long severityOf(String key) {
             return severity.getOrDefault(key, 0L);
+        }
+
+        /** 2.4 한 줄. */
+        public long reviewOf(AnalysisState state) {
+            return review.getOrDefault(state, 0L);
+        }
+
+        /** 아직 아무도 보지 않은 건. 2.4 에서 가장 먼저 읽히는 수다. */
+        public long notReviewed() {
+            return reviewOf(AnalysisState.NOT_SET);
+        }
+
+        /** 누군가 손댄 건 — 미검토가 아닌 것 전부. */
+        public long reviewed() {
+            return total - notReviewed();
         }
 
         /** 심각·높음 합. 먼저 봐야 하는 숫자다. */

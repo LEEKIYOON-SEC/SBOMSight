@@ -476,7 +476,8 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      * 이어 붙이는 일은 자바에서 한다.
      */
     @Query("""
-           SELECT s.asset.id AS assetId, f.cve AS cve, f.packageName AS packageName
+           SELECT s.asset.id AS assetId, f.cve AS cve, f.relatedCve AS relatedCve,
+                  f.packageName AS packageName
            FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds
            """)
     List<AssetFindingKey> findKeysIn(@Param("scanIds") Collection<Long> scanIds);
@@ -594,6 +595,16 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         Long getAssetId();
 
         String getCve();
+
+        /**
+         * grype 이 함께 준 CVE 번호. 주 식별자가 GHSA 일 때 여기에 CVE 가 온다.
+         *
+         * <p>증감 대조에는 쓰지 않는다(축은 {@code cve} 하나다). <b>검토 결과를
+         * 맞출 때</b> 쓴다 — 적어 둔 번호가 둘 중 어느 쪽일지 모르므로, 한쪽만
+         * 보면 적어 둔 것이 보고서에서 사라진다. 1장의 `제외` 집계가 이미 둘
+         * 다 보고 있고, 2.4 도 같은 규칙이어야 두 수가 어긋나지 않는다.
+         */
+        String getRelatedCve();
 
         String getPackageName();
     }

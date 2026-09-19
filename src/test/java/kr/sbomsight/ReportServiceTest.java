@@ -2,6 +2,7 @@ package kr.sbomsight;
 
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
+import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.ReportService;
 import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,7 @@ class ReportServiceTest {
     @Autowired FindingRepository findings;
     @Autowired RemediationRepository remediations;
     @Autowired ZoneService zoneService;
+    @Autowired FindingAnalysisService analyses;
 
     private Asset asset;
 
@@ -112,6 +114,84 @@ class ReportServiceTest {
         ReportService.Overview ch = reports.build(scan).overview();
         assertThat(ch.balanced()).isFalse();
         assertThat(ch.hasAccountingNote()).isTrue();
+    }
+
+    /**
+     * <b>2.4 — 우리가 몇 건을 봤는가.</b>
+     *
+     * <p>2.1~2.3 은 전부 grype 의 축이다. 이 도구가 하는 일은 그 목록을
+     * 검토하고 조치를 추적하는 것인데, 그 축이 요약에 한 줄도 없었다.
+     *
+     * <p><b>`미검토` 와 `검토 중` 이 갈려야 한다.</b> 앞서 4장 각주는 기록이
+     * 아예 없는 것만 셌고, `검토 중` 으로 열어 두고 방치한 건은 "설명됨"
+     * 으로 집계됐다.
+     *
+     * <p>적어 둔 것이 없는 건은 <b>미검토</b>다 — "괜찮다" 가 아니다.
+     */
+    @Test
+    @DisplayName("2.4 — 미검토와 검토 중을 갈라 센다")
+    void chapter2CountsOurOwnReview() {
+        Scan scan = seedTypicalScan();      // 6건
+
+        analyses.record(asset, "CVE-1", "openssl", AnalysisState.IN_TRIAGE,
+                        null, null, "", "", "", null, "tester");
+        analyses.record(asset, "CVE-2", "openssl", AnalysisState.EXPLOITABLE,
+                        null, null, "", "", "", null, "tester");
+        analyses.record(asset, "CVE-5", "glibc", AnalysisState.NOT_AFFECTED,
+                        AnalysisJustification.CODE_NOT_REACHABLE, null, "", "", "", null, "tester");
+
+        ReportService.Summary ch = reports.build(scan).summary();
+
+        assertThat(ch.reviewOf(AnalysisState.IN_TRIAGE)).as("검토 중").isEqualTo(1);
+        assertThat(ch.reviewOf(AnalysisState.EXPLOITABLE)).as("해당됨").isEqualTo(1);
+        assertThat(ch.reviewOf(AnalysisState.NOT_AFFECTED)).as("해당 없음").isEqualTo(1);
+        assertThat(ch.notReviewed())
+                .as("적어 둔 것이 없는 셋은 미검토 — `괜찮다` 가 아니다")
+                .isEqualTo(3);
+
+        // 합이 탐지 건수와 같아야 한다. 어긋나면 어느 건이 어디로 샜는지
+        // 보고서를 읽는 사람이 알 수 없다.
+        assertThat(ch.review().values().stream().mapToLong(Long::longValue).sum())
+                .as("2.4 의 합계가 탐지 건수와 다르다")
+                .isEqualTo(ch.total());
+        assertThat(ch.reviewed()).isEqualTo(3);
+    }
+
+    /**
+     * 2.4 와 1장의 <b>`제외` 집계가 같은 규칙</b>이어야 한다.
+     *
+     * <p>둘 다 "적어 둔 번호가 주 식별자일 수도, 함께 온 CVE 일 수도 있다" 를
+     * 다뤄야 한다. 한쪽만 그러면 같은 건을 두 수가 다르게 세고, 그때 보고서는
+     * 스스로와 어긋난다.
+     */
+    @Test
+    @DisplayName("2.4 는 1장의 제외 집계와 같은 규칙으로 맞춘다")
+    void chapter2ReviewMatchesTheSameKeyRuleAsChapter1() {
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scans.saveAndFlush(scan);
+
+        // grype 의 주 식별자는 GHSA 이고, CVE 는 함께 온 번호다.
+        Finding f = finding(scan, "GHSA-jfh8-c2jp-5v3q", "log4j-core", "2.14.1",
+                            "Critical", "fixed", "2.17.0", 10.0);
+        f.setRelatedCve("CVE-2021-44228");
+        findings.saveAndFlush(f);
+        scan.setMatchCount(1);
+        scan.setFindingCount(1);
+        scans.saveAndFlush(scan);
+
+        // 사람은 CVE 번호로 적어 둔다.
+        analyses.record(asset, "CVE-2021-44228", "log4j-core", AnalysisState.FALSE_POSITIVE,
+                        null, null, "", "", "", null, "tester");
+
+        ReportService.Report report = reports.build(scan);
+        assertThat(report.summary().reviewOf(AnalysisState.FALSE_POSITIVE))
+                .as("함께 온 CVE 로 적어 둔 것을 2.4 가 못 찾았다")
+                .isEqualTo(1);
+        assertThat(report.summary().notReviewed()).isZero();
+        assertThat(report.overview().excludedByAnalysis())
+                .as("1장은 찾았는데 2.4 가 못 찾으면 두 수가 어긋난다")
+                .isEqualTo(1);
     }
 
     @Test

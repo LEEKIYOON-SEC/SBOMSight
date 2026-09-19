@@ -246,6 +246,36 @@
       ※ CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
       영향 범위 변경 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
     </p>
+
+    <!--/*
+      ══ 2.4 검토 결과 ═══════════════════════════════════════════════
+      2.1~2.3 은 전부 grype 의 축이다(심각도 · 수정 가능 여부 · 접근 경로).
+      이 도구가 하는 일은 그 목록을 **검토하고 조치를 추적하는 것**인데,
+      그 축이 요약에 한 줄도 없었다 — "N건 중 몇 건을 봤나" 에 답할 자리가
+      없었다.
+
+      **`미검토` 와 `검토 중` 을 가른다.** 아무도 손대지 않은 것과 보고
+      있는 것은 다른 상태다. 앞서 4장 각주는 둘을 뭉개고 있었다.
+    */-->
+    <h3>2.4 검토 결과</h3>
+    <table class="table">
+      <thead><tr><th class="tight">구분</th><th class="num tight">건수</th>
+                 <th class="num tight">비중</th></tr></thead>
+      <tbody>
+      <tr th:each="s : ${T(kr.sbomsight.domain.AnalysisState).values()}"
+          th:if="${report.aggregate.reviewOf(s) > 0}">
+        <td class="tight" th:text="${s.label()}">미검토</td>
+        <td class="num tight" th:classappend="${s.name() == 'NOT_SET'} ? 'danger-text' : ''"
+            th:text="${report.aggregate.reviewOf(s)}">0</td>
+        <td class="num tight faint" th:text="${report.aggregate.share(report.aggregate.reviewOf(s))}">0%</td>
+      </tr>
+      <tr class="total">
+        <td class="tight">합계</td>
+        <td class="num tight"><b th:text="${#numbers.formatInteger(report.aggregate.total, 0, 'COMMA')}">0</b></td>
+        <td class="num tight faint" th:text="${report.aggregate.total > 0} ? '100%' : '—'">100%</td>
+      </tr>
+      </tbody>
+    </table>
   </section>
 
   <!--/* ══ 3. 자산별 현황 ═════════════════════════════════════════════ */-->
@@ -494,12 +524,10 @@
 
   <!--/* ══ 7. 기간 시작 대비 ══════════════════════════════════════════ */-->
   <section>
-    <h2>7. 기간 시작 대비</h2>
+    <h2>7. 기간 시작 대비 증감</h2>
     <table class="table" th:if="${report.judgement.movement.comparable()}">
       <thead><tr><th class="tight">구분</th><th class="num tight">건수</th></tr></thead>
       <tbody>
-      <tr><td class="tight">대조한 자산</td>
-          <td class="num tight" th:text="${report.judgement.movement.assetsCompared} + '대'">0대</td></tr>
       <tr><td class="tight">신규</td>
           <td class="num tight" th:text="${report.judgement.movement.added}">0</td></tr>
       <tr><td class="tight">해소</td>
@@ -517,8 +545,8 @@
       ※ 기간 이전 검사 기록 없음 — 증감 대조 불가.
     </p>
     <p class="footnote" th:if="${report.judgement.movement.comparable()}">
-      ※ 대조 축 = (자산, 취약점 번호, 패키지명). 버전 제외 — 넣으면 패치한 건이
-      해소 1건 + 신규 1건으로 이중 계상.
+      ※ 대조한 자산 <b th:text="${report.judgement.movement.assetsCompared} + '대'">0대</b> ·
+      대조 축 = (자산, 취약점 번호, 패키지명). 버전 제외 — 이중 계상 방지.
       <!--/*
         기준선이 없는 자산을 대조에 넣으면 "새로 본 것" 이 "새로 생긴 것" 이
         되어 증감이 부풀려진다. 뺐다는 사실과 몇 대인지를 밝힌다.

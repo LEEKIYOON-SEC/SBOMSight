@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -121,6 +122,46 @@ class ReportProseTest {
 
         assertThat(tooMany)
                 .as("내용은 표로 냅니다. 설명이 필요한 약어는 각주 한 줄로 답니다.")
+                .isEmpty();
+    }
+
+    /**
+     * 절 번호가 <b>나오는 순서대로</b> 붙어 있는가.
+     *
+     * <p>{@code 2.4 검토 결과} 를 더하면서 {@code 2.3} 앞에 끼워 넣었다.
+     * 문서에는 {@code 2.1 · 2.2 · 2.4 · 2.3} 순으로 찍혔고, 시험 300개가
+     * 전부 통과한 채로 그랬다 — 띄워서 눈으로 보고 찾았다.
+     *
+     * <p>장 번호는 {@code ReportRenderTest} 가 본다(거기는 조건부로 빠지는
+     * 장이 있어 렌더해 봐야 안다). 절 번호는 템플릿에 그대로 적혀 있으므로
+     * 여기서 글자로 본다.
+     */
+    @Test
+    @DisplayName("절 번호가 순서대로 붙어 있다")
+    void subsectionNumbersAreInOrder() throws IOException {
+        List<String> wrong = new ArrayList<>();
+
+        for (Path file : REPORTS) {
+            Matcher m = Pattern.compile("<h3[^>]*>\\s*(\\d+)\\.(\\d+)\\s")
+                               .matcher(visible(file));
+            Map<String, Integer> last = new java.util.HashMap<>();
+            while (m.find()) {
+                String chapter = m.group(1);
+                int number = Integer.parseInt(m.group(2));
+                int previous = last.getOrDefault(chapter, 0);
+                if (number != previous + 1) {
+                    wrong.add("%s: %s.%d 앞이 %s.%d 다"
+                            .formatted(file.getFileName(), chapter, number, chapter, previous));
+                }
+                last.put(chapter, number);
+            }
+            assertThat(last)
+                    .as("%s 에서 절을 하나도 못 찾았다 — 시험이 헛돌고 있다", file.getFileName())
+                    .isNotEmpty();
+        }
+
+        assertThat(wrong)
+                .as("절은 문서에 나오는 순서대로 번호가 붙습니다.")
                 .isEmpty();
     }
 

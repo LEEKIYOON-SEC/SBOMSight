@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -187,5 +188,42 @@ public class FindingAnalysisService {
     @Transactional(readOnly = true)
     public long countForAsset(Long assetId) {
         return analyses.countByAsset(assetId);
+    }
+
+    /**
+     * 탐지 한 줄이 <b>어떤 검토 상태인가.</b>
+     *
+     * <p>적어 둔 것이 없으면 {@link AnalysisState#NOT_SET}(미검토)다. 없는
+     * 것을 "괜찮다" 로 읽지 않는다 — 아무도 보지 않았다는 뜻이다.
+     *
+     * <p><b>번호를 둘 다 본다.</b> grype 의 주 식별자가 GHSA 일 때 적어 둔
+     * 번호는 함께 온 CVE 쪽일 수 있다. 한쪽만 맞추면 적어 둔 검토 결과가
+     * 보고서에서 사라진다. 이 규칙은 보고서 1장의 `제외` 집계와 2.4 의
+     * 검토 결과 분포가 <b>같아야 하므로 여기 한 곳에만 둔다.</b>
+     *
+     * @param byKey {@code "CVE|패키지명"} → 적어 둔 것
+     */
+    public static AnalysisState stateOf(Map<String, FindingAnalysis> byKey,
+                                        String cve, String relatedCve, String packageName) {
+        FindingAnalysis direct = byKey.get(cve + "|" + packageName);
+        if (direct != null) {
+            return direct.getState();
+        }
+        if (relatedCve != null && !relatedCve.isBlank()) {
+            FindingAnalysis related = byKey.get(relatedCve + "|" + packageName);
+            if (related != null) {
+                return related.getState();
+            }
+        }
+        return AnalysisState.NOT_SET;
+    }
+
+    /** 상태마다 0 부터 시작하는 빈 표. 없는 줄이 빠지면 표가 판마다 달라진다. */
+    public static Map<AnalysisState, Long> emptyStateCounts() {
+        Map<AnalysisState, Long> counts = new LinkedHashMap<>();
+        for (AnalysisState state : AnalysisState.values()) {
+            counts.put(state, 0L);
+        }
+        return counts;
     }
 }

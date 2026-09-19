@@ -211,6 +211,36 @@
       ※ CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
       영향 범위 변경 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
     </p>
+
+    <!--/*
+      ══ 2.4 검토 결과 ═══════════════════════════════════════════════
+      2.1~2.3 은 전부 grype 의 축이다(심각도 · 수정 가능 여부 · 접근 경로).
+      이 도구가 하는 일은 그 목록을 **검토하고 조치를 추적하는 것**인데,
+      그 축이 요약에 한 줄도 없었다 — "N건 중 몇 건을 봤나" 에 답할 자리가
+      없었다.
+
+      **`미검토` 와 `검토 중` 을 가른다.** 아무도 손대지 않은 것과 보고
+      있는 것은 다른 상태다. 앞서 4장 각주는 둘을 뭉개고 있었다.
+    */-->
+    <h3>2.4 검토 결과</h3>
+    <table class="table">
+      <thead><tr><th class="tight">구분</th><th class="num tight">건수</th>
+                 <th class="num tight">비중</th></tr></thead>
+      <tbody>
+      <tr th:each="s : ${T(kr.sbomsight.domain.AnalysisState).values()}"
+          th:if="${report.summary.reviewOf(s) > 0}">
+        <td class="tight" th:text="${s.label()}">미검토</td>
+        <td class="num tight" th:classappend="${s.name() == 'NOT_SET'} ? 'danger-text' : ''"
+            th:text="${report.summary.reviewOf(s)}">0</td>
+        <td class="num tight faint" th:text="${report.summary.share(report.summary.reviewOf(s))}">0%</td>
+      </tr>
+      <tr class="total">
+        <td class="tight">합계</td>
+        <td class="num tight"><b th:text="${#numbers.formatInteger(report.summary.total, 0, 'COMMA')}">0</b></td>
+        <td class="num tight faint" th:text="${report.summary.total > 0} ? '100%' : '—'">100%</td>
+      </tr>
+      </tbody>
+    </table>
   </section>
 
   <!--/* ══ 3. 조치 대상 ═══════════════════════════════════════════════ */-->
@@ -382,7 +412,7 @@
   <!--/* ══ 5. 조치 진행 현황 — 비어도 장은 남긴다(4장과 같은 이유) ═══ */-->
   <section>
     <h2>5. 조치 진행 현황</h2>
-    <table class="table" th:if="${!report.progress.rows.isEmpty()}">
+    <table class="table" th:if="${report.progress.tracked > 0}">
       <thead>
       <tr>
         <th class="tight">패키지</th><th class="tight">상태</th>
@@ -391,7 +421,13 @@
       </tr>
       </thead>
       <tbody>
-      <tr th:each="row : ${report.progress.rows}">
+      <!--/*
+        **등록된 것만 싣는다.** 앞서 조치 대상 전부를 실어서, 아무것도
+        등록하지 않은 보고서는 `미등록 / — / —` 열다섯 줄로 한 쪽을 채웠다.
+        미등록은 수로 족하다(아래 각주) — 무엇이 미등록인지는 3장이 이미
+        같은 순서로 말하고 있다.
+      */-->
+      <tr th:each="row : ${report.progress.rows}" th:if="${row.isTracked()}">
         <td class="tight"><b th:text="${row.action.packageName}">openssl</b></td>
         <td class="tight">
           <span th:if="${row.isTracked()}" th:text="${row.remediation.status.label()}">대기</span>
@@ -406,10 +442,17 @@
       </tr>
       </tbody>
     </table>
-    <p class="footnote" th:if="${report.progress.rows.isEmpty()}">
-      ※ 해당 없음 — 조치 대상으로 잡힌 패키지 없음.
+    <!--/*
+      **`rows` 가 비었는가로 가르지 않는다.** 그 목록은 미등록까지 들고
+      있어서 거의 비지 않는다 — 조건을 거기 걸었더니 등록이 하나도 없을 때
+      머리만 있고 줄이 없는 빈 표가 남았다(띄워 보고 찾았다).
+      가르는 것은 **등록된 것이 있는가**다.
+    */-->
+    <p class="footnote" th:if="${report.progress.tracked == 0}">
+      ※ 해당 없음 — 등록된 조치 없음 ·
+      미등록 <b th:text="${report.progress.untracked} + '개'">0개</b>
     </p>
-    <p class="footnote" th:unless="${report.progress.rows.isEmpty()}">
+    <p class="footnote" th:if="${report.progress.tracked > 0}">
       ※ 등록 <span th:text="${report.progress.tracked}">0</span>개 ·
       미등록 <span th:text="${report.progress.untracked}">0</span>개
       <b th:if="${report.progress.overdue > 0}" class="danger-text"
@@ -421,7 +464,7 @@
 
   <!--/* ══ 6. 이전 검사 대비 ══════════════════════════════════════════ */-->
   <section>
-    <h2>6. 이전 검사 대비</h2>
+    <h2>6. 지난 검사 대비 증감</h2>
     <table class="table" th:if="${report.targets.diff.hasPrevious()}">
       <thead><tr><th class="tight">구분</th><th class="num tight">건수</th></tr></thead>
       <tbody>

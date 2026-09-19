@@ -1,5 +1,6 @@
 package kr.sbomsight.service;
 
+import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.CvssVector;
 import kr.sbomsight.domain.Remediation;
@@ -228,7 +229,44 @@ public class ZoneReportService {
             rows.add(new AssetRow(a, null, 0, 0, 0));
         }
 
-        return new Aggregate(severity, fixState, total, fixable, noFix, unknownFix, rows, exposure);
+        return new Aggregate(severity, fixState, total, fixable, noFix, unknownFix, rows, exposure,
+                             reviewCounts(current, inScope));
+    }
+
+    /**
+     * <b>2.4 — 우리가 몇 건을 봤는가.</b>
+     *
+     * <p>2.1~2.3 은 전부 grype 의 축이다. 이 도구가 하는 일은 그 목록을
+     * 검토하고 조치를 추적하는 것인데, 그 축이 요약에 한 줄도 없었다.
+     *
+     * <p>자산 보고서와 <b>같은 규칙</b>으로 맞춘다
+     * ({@link FindingAnalysisService#stateOf}) — 두 보고서가 같은 건을
+     * 다르게 세면 둘 중 하나는 틀린 것이다.
+     */
+    private Map<AnalysisState, Long> reviewCounts(List<Scan> current, List<Asset> inScope) {
+        Map<AnalysisState, Long> counts = FindingAnalysisService.emptyStateCounts();
+        if (current.isEmpty()) {
+            return counts;
+        }
+        // 자산으로 한 번 갈라 둔다. 구역은 자산이 섞여 있어서 (CVE, 패키지명)
+        // 으로만 맞추면 web-01 의 검토 결과가 api-01 의 탐지에 붙는다.
+        //
+        // **미리 갈라 둔다.** 탐지 줄마다 전체 지도를 훑으면 자산 다섯에
+        // 탐지 이백이면 훑기가 천 번이다 — 구역이 커질수록 보고서가 느려진다.
+        Map<Long, Map<String, FindingAnalysis>> byAsset = new HashMap<>();
+        analyses.byAssetKey(inScope.stream().map(Asset::getId).toList())
+                .forEach((key, value) -> byAsset
+                        .computeIfAbsent(value.getAsset().getId(), id -> new HashMap<>())
+                        .put(value.key(), value));
+
+        for (FindingRepository.AssetFindingKey row : findings.findKeysIn(scanIds(current))) {
+            Map<String, FindingAnalysis> forThisAsset =
+                    byAsset.getOrDefault(row.getAssetId(), Map.of());
+            counts.merge(FindingAnalysisService.stateOf(forThisAsset, row.getCve(),
+                                                        row.getRelatedCve(), row.getPackageName()),
+                         1L, Long::sum);
+        }
+        return counts;
     }
 
     // --- 4·5·7장: 조치 대상 · 수정 버전 없는 항목 · 기간 시작 대비 ----------
@@ -447,10 +485,21 @@ public class ZoneReportService {
     /** 2·3장 — 점검 결과 요약과 자산별 현황. */
     public record Aggregate(Map<String, Long> severity, Map<String, Long> fixState,
                             long total, long fixable, long noFix, long unknownFix,
-                            List<AssetRow> rows, Exposure exposure) {
+                            List<AssetRow> rows, Exposure exposure,
+                            Map<AnalysisState, Long> review) {
 
         public long severityOf(String key) {
             return severity.getOrDefault(key, 0L);
+        }
+
+        /** 2.4 한 줄. */
+        public long reviewOf(AnalysisState state) {
+            return review.getOrDefault(state, 0L);
+        }
+
+        /** 아직 아무도 보지 않은 건. */
+        public long notReviewed() {
+            return reviewOf(AnalysisState.NOT_SET);
         }
 
         /**
