@@ -121,6 +121,81 @@ class ReportRenderTest {
     }
 
     /**
+     * <b>장 번호가 건너뛰지 않는다.</b>
+     *
+     * <p>4장(`수정 버전 없는 항목`)과 5장(`조치 진행 현황`)을 비면 통째로
+     * 감추고 있었다. 실제 자료에서 `1 · 2 · 3 · 5 · 6` 으로 나왔다 —
+     * 결재로 올라가는 문서에서 번호가 비면 읽는 사람은 빠진 장을 찾는다.
+     *
+     * <p>더 나쁜 것은 <b>세는 단위가 다른 것이 가려졌다</b>는 점이다.
+     * 2.2 는 `건` 으로 `수정 버전 없음 12` 라고 적는데, 4장은 <b>한 건도
+     * 올릴 수 없는 패키지</b>만 센다. 4장이 사라지면 그 12건이 어디로
+     * 갔는지 문서 안에 답이 없다.
+     *
+     * <p>세 가지로 돌린다 — 4장만 빈 것 · 5장만 빈 것 · 둘 다 찬 것.
+     */
+    @Test
+    @DisplayName("장 번호가 1부터 6까지 건너뛰지 않는다")
+    void chapterNumbersNeverSkip() throws Exception {
+        // ① 4장만 빔 — 패키지 하나에 고칠 수 있는 건과 없는 건이 섞여 있다.
+        //    (패키지 전체가 막힌 것은 없으므로 4장은 비지만 2.2 는 1건을 센다)
+        String mixed = report(seedPackages("openssl", "fixed", "openssl", "not-fixed"));
+        assertChaptersRunTo(mixed, 6);
+        assertThat(mixed)
+                .as("4장이 비어도 2.2 의 건수가 어디로 갔는지 말한다")
+                .contains("3장 패키지에 섞임");
+
+        // ② 5장만 빔 — 고칠 수 있는 것이 하나도 없으니 조치 대상이 안 잡힌다.
+        assertChaptersRunTo(report(seedPackages("glibc", "not-fixed")), 6);
+
+        // ③ 둘 다 참.
+        assertChaptersRunTo(report(seed(true)), 6);
+    }
+
+    /** 장 제목의 번호가 1부터 {@code last} 까지 빠짐없이 있는가. */
+    private void assertChaptersRunTo(String html, int last) {
+        for (int n = 1; n <= last; n++) {
+            assertThat(html).as("%d장이 없다 — 번호가 건너뛴다", n).contains("<h2>" + n + ". ");
+        }
+    }
+
+    private String report(Scan scan) throws Exception {
+        return mvc.perform(get("/reports/scan/" + scan.getId()).with(user("tester").roles("ADMIN")))
+                  .andExpect(status().isOk())
+                  .andReturn().getResponse().getContentAsString();
+    }
+
+    /** {@code 패키지명, 수정 상태} 쌍을 그대로 담은 검사 하나. */
+    private Scan seedPackages(String... pairs) {
+        Asset asset = new Asset();
+        asset.setName("chapters-" + System.nanoTime());
+        asset.setZone(zoneService.unassigned());
+        assets.save(asset);
+
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scan.setSbomFilename("sbom.json");
+        scans.saveAndFlush(scan);
+
+        for (int i = 0; i < pairs.length; i += 2) {
+            String pkg = pairs[i];
+            String fixState = pairs[i + 1];
+            Finding f = new Finding(scan, "CVE-2000-" + i + "|" + pkg, "CVE-2000-" + i, pkg);
+            f.setPackageVersion("1.0.0");
+            f.setPackageType("rpm");
+            f.setSeverity("High");
+            f.setFixState(fixState);
+            f.setFixedVersion("fixed".equals(fixState) ? "1.0.1" : "");
+            f.setCvssScore(BigDecimal.valueOf(7.5));
+            findings.save(f);
+        }
+        scan.setMatchCount(pairs.length / 2);
+        scan.setFindingCount(pairs.length / 2);
+        scans.saveAndFlush(scan);
+        return scan;
+    }
+
+    /**
      * 벡터가 하나도 없는 스캔(옛 grype·다른 자문 DB)에서도 터지지 않아야 한다.
      * 그럴 때 노출면 문단은 "0건"이라고 말하는 대신 빠진다.
      */
@@ -204,6 +279,27 @@ class ReportRenderTest {
         // 다른 쪽은 `2대` 로 쓰면 같은 것을 두 모양으로 부르게 된다 (§4.0.2).
         assertThat(html).contains("2대");
         assertThat(html).contains("2대 이상 공통");
+    }
+
+    /**
+     * 구역 보고서도 장 번호가 건너뛰지 않는다.
+     *
+     * <p>5장(`수정 버전 없는 항목`)만 조건부였다. 고칠 수 있는 것만 걸린
+     * 구역에서는 `4 · 6 · 7` 로 나왔다.
+     */
+    @Test
+    @DisplayName("구역 보고서의 장 번호도 건너뛰지 않는다")
+    void zoneChapterNumbersNeverSkip() throws Exception {
+        Zone zone = zoneService.create("장번호-" + System.nanoTime(), "#123456", "");
+        // 전부 고칠 수 있는 것 — 5장에 실을 것이 없다.
+        doneToday(assetIn(zone, "web"), "openssl", "3.0.7");
+
+        String html = mvc.perform(get("/reports/zone").param("zone", zone.getId().toString())
+                                                     .with(user("tester").roles("ADMIN")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+
+        assertChaptersRunTo(html, 7);
     }
 
     @Test

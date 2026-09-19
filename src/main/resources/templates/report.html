@@ -304,10 +304,15 @@
     </p>
   </section>
 
-  <!--/* ══ 4. 수정 버전 없는 항목 ═════════════════════════════════════ */-->
-  <section th:if="${!report.targets.noFixRows.isEmpty()}">
+  <!--/*
+    ══ 4. 수정 버전 없는 항목 ═════════════════════════════════════════
+    **비어도 장은 남긴다.** 앞서 이 장을 통째로 감췄더니 번호가
+    `1 · 2 · 3 · 5 · 6` 으로 나왔다 — 결재로 올라가는 문서에서 번호가
+    비면 읽는 사람은 빠진 장을 찾는다. 6장이 이미 이 꼴이다.
+  */-->
+  <section>
     <h2>4. 수정 버전 없는 항목</h2>
-    <table class="table">
+    <table class="table" th:if="${!report.targets.noFixRows.isEmpty()}">
       <thead>
       <tr>
         <th class="tight">패키지</th><th class="tight">현재 버전</th>
@@ -357,17 +362,27 @@
       있다 — 그 줄의 비고에 남은 건수를 적었다. 적어 두지 않으면 "나머지는
       어디 갔냐" 를 점검에서 듣는다.
     */-->
-    <p class="footnote">
+    <p class="footnote" th:if="${!report.targets.noFixRows.isEmpty()}">
       ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 3장 비고.
       <b th:if="${report.progress.unexplained() > 0}" class="danger-text"
          th:text="'검토 결과 없음 ' + ${report.progress.unexplained()} + '개'">—</b>
     </p>
+    <!--/*
+      **세는 단위가 다르다는 것을 여기서 밝힌다.** 2.2 는 `건` 으로 세고
+      이 장은 `한 건도 올릴 수 없는 패키지` 를 센다. 이 장이 비면 2.2 의
+      `수정 버전 없음 12` 가 갈 곳이 없어 보인다 — 3장 패키지에 섞여 있다.
+    */-->
+    <p class="footnote" th:if="${report.targets.noFixRows.isEmpty()}">
+      ※ 해당 없음 — 수정 버전이 하나도 없는 패키지 없음.
+      <span th:if="${report.summary.noFix > 0}"
+            th:text="'2.2 의 수정 버전 없음 ' + ${report.summary.noFix} + '건은 3장 패키지에 섞임'">—</span>
+    </p>
   </section>
 
-  <!--/* ══ 5. 조치 진행 현황 ══════════════════════════════════════════ */-->
-  <section th:if="${!report.progress.rows.isEmpty()}">
+  <!--/* ══ 5. 조치 진행 현황 — 비어도 장은 남긴다(4장과 같은 이유) ═══ */-->
+  <section>
     <h2>5. 조치 진행 현황</h2>
-    <table class="table">
+    <table class="table" th:if="${!report.progress.rows.isEmpty()}">
       <thead>
       <tr>
         <th class="tight">패키지</th><th class="tight">상태</th>
@@ -391,7 +406,10 @@
       </tr>
       </tbody>
     </table>
-    <p class="footnote">
+    <p class="footnote" th:if="${report.progress.rows.isEmpty()}">
+      ※ 해당 없음 — 조치 대상으로 잡힌 패키지 없음.
+    </p>
+    <p class="footnote" th:unless="${report.progress.rows.isEmpty()}">
       ※ 등록 <span th:text="${report.progress.tracked}">0</span>개 ·
       미등록 <span th:text="${report.progress.untracked}">0</span>개
       <b th:if="${report.progress.overdue > 0}" class="danger-text"

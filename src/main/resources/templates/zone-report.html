@@ -393,10 +393,13 @@
     </p>
   </section>
 
-  <!--/* ══ 5. 수정 버전 없는 항목 ═════════════════════════════════════ */-->
-  <section th:if="${!report.action.residual.isEmpty()}">
+  <!--/*
+    ══ 5. 수정 버전 없는 항목 ═════════════════════════════════════════
+    **비어도 장은 남긴다.** 감추면 번호가 `4 · 6` 으로 건너뛴다.
+  */-->
+  <section>
     <h2>5. 수정 버전 없는 항목</h2>
-    <table class="table">
+    <table class="table" th:if="${!report.action.residual.isEmpty()}">
       <thead>
       <tr>
         <th class="tight">패키지</th><th class="num tight">자산</th>
@@ -432,7 +435,10 @@
       </tr>
       </tbody>
     </table>
-    <p class="footnote">
+    <p class="footnote" th:if="${report.action.residual.isEmpty()}">
+      ※ 해당 없음 — 수정 버전이 하나도 없는 패키지 없음.
+    </p>
+    <p class="footnote" th:unless="${report.action.residual.isEmpty()}">
       ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 4장 비고.
       검토 결과 = 검토 결과를 적은 자산 수.
       <b th:if="${report.action.unexplained() > 0}" class="danger-text"
