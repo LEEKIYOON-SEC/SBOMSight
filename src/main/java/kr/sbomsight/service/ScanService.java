@@ -207,7 +207,9 @@ public class ScanService {
                 report = json.readValue(in, GrypeReport.class);
             }
 
-            mapper.applyMetadata(scan, report);
+            // 기준일이 결과 JSON 에 없으면 도구에게 직접 묻는다 — 그 자리는
+            // grype 판마다 옮겨 다녔고, 놓치면 화면에서 말없이 빈 칸이 된다.
+            mapper.applyMetadata(scan, report, grype.dbBuilt());
             GrypeMapper.Result result = mapper.map(scan, report);
 
             findings.deleteByScanId(scan.getId());   // 다시 돌린 경우

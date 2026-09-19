@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -360,7 +361,7 @@ class GrypeMapperTest {
             """, GrypeReport.class);
 
         Scan scan = scan();
-        mapper.applyMetadata(scan, report);
+        mapper.applyMetadata(scan, report, "");
 
         assertThat(scan.getGrypeVersion()).isEqualTo("0.87.0");
         assertThat(scan.getGrypeDbBuilt()).isNotNull();
@@ -386,14 +387,14 @@ class GrypeMapperTest {
         mapper.applyMetadata(old, json.readValue("""
             {"matches":[],"descriptor":{"version":"0.87.0",
              "db":{"built":"%s","schemaVersion":5}}}
-            """.formatted(opened), GrypeReport.class));
+            """.formatted(opened), GrypeReport.class), "");
 
         // 새 자리 — db.status 안으로 옮겨 갔다.
         Scan fresh = scan();
         mapper.applyMetadata(fresh, json.readValue("""
             {"matches":[],"descriptor":{"version":"0.95.0",
              "db":{"status":{"built":"%s","schemaVersion":"6.0.2","location":"/root/.cache"}}}}
-            """.formatted(opened), GrypeReport.class));
+            """.formatted(opened), GrypeReport.class), "");
 
         assertThat(old.getGrypeDbBuilt()).as("옛 자리에서 못 읽었다").isNotNull();
         assertThat(fresh.getGrypeDbBuilt()).as("새 자리에서 못 읽었다").isNotNull();
@@ -403,8 +404,94 @@ class GrypeMapperTest {
         Scan silent = scan();
         mapper.applyMetadata(silent, json.readValue("""
             {"matches":[],"descriptor":{"version":"0.95.0","db":{"schemaVersion":"6.0.2"}}}
-            """, GrypeReport.class));
+            """, GrypeReport.class), "");
         assertThat(silent.getGrypeDbBuilt()).isNull();
+    }
+
+    /**
+     * 결과 JSON 에 기준일이 없으면 <b>도구에게 물어 받은 값</b>을 쓴다.
+     *
+     * <p>자리를 쫓아다니는 것으로는 부족했다. 두 자리를 다 읽게 고친 뒤에도
+     * 쓰는 사람의 화면은 비어 있었다 — 우리가 모르는 세 번째 자리이거나,
+     * 읽을 수 없는 꼴이거나. {@code grype db status} 의 답은 판이 바뀌어도
+     * {@code built} 한 낱말이라 그쪽을 뒤로 둔다.
+     *
+     * <p><b>순서가 중요하다.</b> 검사에 실제로 쓰인 DB 는 결과 JSON 쪽이다.
+     * 도구에게 묻는 것은 <b>지금</b> 깔린 DB 라서, 그 사이에 갱신되었으면
+     * 다른 값이 나온다. 결과에 있으면 결과를 쓴다.
+     */
+    @Test
+    @DisplayName("결과에 기준일이 없으면 도구에게 물어 받은 값을 쓴다")
+    void fallsBackToTheToolWhenTheReportIsSilent() throws Exception {
+        String reportSays = "2026-08-18T01:23:45Z";
+        String toolSays = "2026-09-01T00:00:00Z";
+
+        // 결과에 있으면 결과가 이긴다 — 그 검사에 실제로 쓰인 DB 다.
+        Scan both = scan();
+        mapper.applyMetadata(both, json.readValue("""
+            {"matches":[],"descriptor":{"version":"0.87.0","db":{"built":"%s"}}}
+            """.formatted(reportSays), GrypeReport.class), toolSays);
+        assertThat(both.getGrypeDbBuilt()).isEqualTo(Instant.parse(reportSays));
+
+        // 결과가 말이 없으면 도구에게 물어 받은 값.
+        Scan silent = scan();
+        mapper.applyMetadata(silent, json.readValue("""
+            {"matches":[],"descriptor":{"version":"0.95.0","db":{"schemaVersion":"6.0.2"}}}
+            """, GrypeReport.class), toolSays);
+        assertThat(silent.getGrypeDbBuilt())
+                .as("도구가 답했는데도 빈 칸이면 화면이 또 비어 있다")
+                .isEqualTo(Instant.parse(toolSays));
+
+        // `db` 자체가 없어도 같다.
+        Scan noDb = scan();
+        mapper.applyMetadata(noDb, json.readValue("""
+            {"matches":[],"descriptor":{"version":"0.95.0"}}
+            """, GrypeReport.class), toolSays);
+        assertThat(noDb.getGrypeDbBuilt()).isEqualTo(Instant.parse(toolSays));
+
+        // 둘 다 말이 없으면 비워 둔다 — 오늘 날짜로 채우지 않는다.
+        Scan nothing = scan();
+        mapper.applyMetadata(nothing, json.readValue("""
+            {"matches":[],"descriptor":{"version":"0.95.0"}}
+            """, GrypeReport.class), "");
+        assertThat(nothing.getGrypeDbBuilt()).isNull();
+    }
+
+    /**
+     * 기준일의 <b>꼴</b>이 달라도 읽는다.
+     *
+     * <p>{@code Instant.parse} 하나로는 끝이 {@code Z} 이거나 {@code +09:00}
+     * 인 것만 받는다. 콜론 없는 오프셋 · 오프셋 없는 시각 · 날짜만 은 전부
+     * 조용히 {@code null} 이 되어 화면에서 빈 칸으로 나온다.
+     */
+    @Test
+    @DisplayName("기준일의 꼴이 달라도 읽는다")
+    void readsTheDbDateInSeveralShapes() throws Exception {
+        record Case(String text, Instant expected) { }
+        List<Case> cases = List.of(
+                new Case("2026-03-09T00:31:20Z", Instant.parse("2026-03-09T00:31:20Z")),
+                new Case("2026-03-09T00:31:20.123456789Z", Instant.parse("2026-03-09T00:31:20.123456789Z")),
+                new Case("2026-03-09T09:31:20+09:00", Instant.parse("2026-03-09T00:31:20Z")),
+                new Case("2026-03-09T00:31:20+0000", Instant.parse("2026-03-09T00:31:20Z")),
+                new Case("2026-03-09T00:31:20", Instant.parse("2026-03-09T00:31:20Z")),
+                new Case("2026-03-09", Instant.parse("2026-03-09T00:00:00Z")));
+
+        for (Case c : cases) {
+            Scan scan = scan();
+            mapper.applyMetadata(scan, json.readValue("""
+                {"matches":[],"descriptor":{"version":"0.95.0"}}
+                """, GrypeReport.class), c.text());
+            assertThat(scan.getGrypeDbBuilt())
+                    .as("'%s' 를 읽지 못해 빈 칸이 된다", c.text())
+                    .isEqualTo(c.expected());
+        }
+
+        // 우리가 아는 꼴이 아니면 비워 둔다. 지어내지 않는다.
+        Scan odd = scan();
+        mapper.applyMetadata(odd, json.readValue("""
+            {"matches":[],"descriptor":{"version":"0.95.0"}}
+            """, GrypeReport.class), "얼마 전");
+        assertThat(odd.getGrypeDbBuilt()).isNull();
     }
 
     @Test
@@ -431,7 +518,7 @@ class GrypeMapperTest {
         GrypeReport report = json.readValue(body, GrypeReport.class);
 
         Scan scan = scan();
-        mapper.applyMetadata(scan, report);
+        mapper.applyMetadata(scan, report, "");
         GrypeMapper.Result result = mapper.map(scan, report);
 
         assertThat(report.matches()).hasSize(98);

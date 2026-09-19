@@ -152,6 +152,19 @@
           </th:block>
         </td>
       </tr>
+      <!--/*
+        **검사를 돌리기 전에도 보여야 한다.** 앞서 이 날짜는 검사 결과 JSON
+        에만 있었고, 그 자리가 판마다 달라 못 읽으면 화면이 말없이 비었다.
+        여기서는 grype 에게 직접 물어(`grype db status`) 그대로 적는다.
+      */-->
+      <tr th:if="${grype.available()}">
+        <th>취약점 DB</th>
+        <td>
+          <b th:if="${!#strings.isEmpty(grype.dbBuilt())}" th:text="${grype.dbBuilt()}">2026-03-09T00:31:20Z</b>
+          <span class="faint" th:if="${#strings.isEmpty(grype.dbBuilt())}">
+            확인되지 않음 · <code>grype db update</code></span>
+        </td>
+      </tr>
       <tr><th>실행 경로</th><td><code th:text="${grypePath}">grype</code></td></tr>
     </table>
     <!--/* 이것은 설명문이 아니라 고장 안내다. grype 이 없으면 이 도구가 하는

@@ -11,6 +11,11 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 
@@ -83,16 +88,27 @@ public class GrypeMapper {
         return new Result(List.copyOf(byKey.values()), matches.size(), merged, dropped);
     }
 
-    /** 스캔 자체에 대한 값 — grype 판·DB 기준일·배포판. */
-    public void applyMetadata(Scan scan, GrypeReport report) {
+    /**
+     * 스캔 자체에 대한 값 — grype 판 · 취약점 DB 기준일 · 배포판.
+     *
+     * @param fallbackDbBuilt 결과 JSON 에 기준일이 없을 때 쓸 값. grype 에게
+     *                        직접 물어 받은 글자다({@code grype db status}).
+     *                        <b>둘 다 없으면 비워 둔다</b> — 오늘 날짜 같은
+     *                        것으로 채우지 않는다(§11)
+     */
+    public void applyMetadata(Scan scan, GrypeReport report, String fallbackDbBuilt) {
         GrypeReport.Descriptor descriptor = report.descriptor();
         if (descriptor != null) {
             scan.setGrypeVersion(trim(descriptor.version()));
-            if (descriptor.db() != null) {
-                // 판에 따라 `db.built` 또는 `db.status.built` 다.
-                scan.setGrypeDbBuilt(parseInstant(descriptor.db().builtAt()));
-            }
         }
+        // 판에 따라 `db.built` 또는 `db.status.built` 다. 그마저 없으면
+        // 도구에게 물어 받은 값. 자리를 쫓아다니다 놓치면 말없이 빈 칸이 된다.
+        String built = descriptor != null && descriptor.db() != null
+                       ? descriptor.db().builtAt() : null;
+        if (built == null || built.isBlank()) {
+            built = fallbackDbBuilt;
+        }
+        scan.setGrypeDbBuilt(parseInstant(built));
         GrypeReport.Distro distro = report.distro();
         if (distro != null) {
             scan.setDistroName(trim(distro.name()));
@@ -361,16 +377,58 @@ public class GrypeMapper {
                 : cve + "|" + name + "|" + version + "|#" + Integer.toHexString(purl.hashCode());
     }
 
+    /**
+     * 시각 한 칸.
+     *
+     * <p><b>{@code Instant.parse} 하나로는 모자란다.</b> 그것은 끝이
+     * {@code Z} 이거나 {@code +09:00} 인 것만 받는다. grype 과 그 DB 를 만드는
+     * 쪽이 내놓는 꼴은 그보다 넓어서, 받지 못하면 <b>말없이 빈 칸</b>이 된다 —
+     * 화면의 `취약점 DB` 가 그렇게 비어 있었다. 아래 다섯 가지를 차례로 시도한다.
+     *
+     * <pre>
+     *   2026-03-09T00:31:20Z            Instant        (grype 0.87)
+     *   2026-03-09T00:31:20+09:00       Instant
+     *   2026-03-09T00:31:20+0000        OffsetDateTime (콜론 없는 오프셋)
+     *   2026-03-09T00:31:20             LocalDateTime  (오프셋 없음 — UTC 로 본다)
+     *   2026-03-09                      LocalDate      (날짜만 — 그날 0시 UTC)
+     * </pre>
+     *
+     * <p>다섯 다 아니면 <b>그 글자를 그대로 로그에 남기고</b> {@code null} 이다.
+     * 지어내지 않는다(§11) — 다만 왜 비었는지는 로그에서 찾을 수 있어야 한다.
+     */
+    private static final List<DateTimeFormatter> INSTANT_FORMATS = List.of(
+            DateTimeFormatter.ISO_OFFSET_DATE_TIME,
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss[.SSSSSSSSS][.SSSSSS][.SSS]Z"));
+
     private Instant parseInstant(String text) {
         if (text == null || text.isBlank()) {
             return null;
         }
+        String value = text.trim();
         try {
-            return Instant.parse(text.trim());
-        } catch (DateTimeParseException e) {
-            log.warn("grype DB 기준일을 읽지 못했습니다: {}", text);
-            return null;
+            return Instant.parse(value);
+        } catch (DateTimeParseException ignored) {
+            // 아래에서 더 넓게 본다.
         }
+        for (DateTimeFormatter format : INSTANT_FORMATS) {
+            try {
+                return OffsetDateTime.parse(value, format).toInstant();
+            } catch (DateTimeParseException ignored) {
+                // 다음 꼴
+            }
+        }
+        try {
+            return LocalDateTime.parse(value).toInstant(ZoneOffset.UTC);
+        } catch (DateTimeParseException ignored) {
+            // 날짜만 남았다
+        }
+        try {
+            return LocalDate.parse(value).atStartOfDay(ZoneOffset.UTC).toInstant();
+        } catch (DateTimeParseException ignored) {
+            // 우리가 아는 꼴이 아니다
+        }
+        log.warn("grype DB 기준일을 읽지 못했습니다(그대로 남깁니다): {}", value);
+        return null;
     }
 
     private String trim(String value) {

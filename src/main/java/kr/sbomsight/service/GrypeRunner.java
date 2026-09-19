@@ -32,6 +32,15 @@ public class GrypeRunner {
     /** `grype version -o json` 출력에서 판만 뽑는다. */
     private static final Pattern VERSION = Pattern.compile("\"version\"\\s*:\\s*\"([^\"]+)\"");
 
+    /**
+     * `grype db status` 출력에서 <b>만들어진 날</b>만 뽑는다.
+     *
+     * <p>JSON 이면 {@code "built": "…"}, 사람이 읽는 꼴이면
+     * {@code Built:  2026-03-09T00:31:20Z} 다. 판마다 어느 쪽인지 달라서 둘 다 본다.
+     */
+    private static final Pattern DB_BUILT = Pattern.compile(
+            "\"built\"\\s*:\\s*\"([^\"]+)\"|(?im)^\\s*built\\s*:\\s*(\\S.*?)\\s*$");
+
     private final SbomSightProperties properties;
 
     public GrypeRunner(SbomSightProperties properties) {
@@ -105,9 +114,11 @@ public class GrypeRunner {
      *
      * @param available 실행에 성공했는가
      * @param version   판 (예: 0.87.0). 못 읽으면 빈 문자열
+     * @param dbBuilt   취약점 DB 가 만들어진 날, grype 이 말하는 그대로.
+     *                  못 읽으면 빈 문자열 — 지어내지 않는다
      * @param message   실패했을 때 화면에 그대로 보여 줄 사유
      */
-    public record Status(boolean available, String version, String message) {
+    public record Status(boolean available, String version, String dbBuilt, String message) {
     }
 
     public Status status() {
@@ -119,18 +130,56 @@ public class GrypeRunner {
             boolean finished = process.waitFor(30, TimeUnit.SECONDS);
             if (!finished || process.exitValue() != 0) {
                 process.destroyForcibly();
-                return new Status(false, "", "grype 을 실행했지만 정상 종료하지 않았습니다.");
+                return new Status(false, "", "", "grype 을 실행했지만 정상 종료하지 않았습니다.");
             }
             // JSON 전체를 화면에 쏟지 않는다 — 필요한 것은 판 하나다.
             Matcher m = VERSION.matcher(out);
-            return new Status(true, m.find() ? m.group(1) : "", "");
+            return new Status(true, m.find() ? m.group(1) : "", dbBuilt(), "");
         } catch (IOException e) {
-            return new Status(false, "",
+            return new Status(false, "", "",
                     "grype 을 찾을 수 없습니다 (" + properties.grypePath() + "). "
                     + "설치되어 있고 PATH 에 있는지 확인하세요.");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new Status(false, "", "확인이 중단되었습니다.");
+            return new Status(false, "", "", "확인이 중단되었습니다.");
+        }
+    }
+
+    /**
+     * 취약점 DB 가 만들어진 날 — <b>grype 에게 직접 묻는다.</b>
+     *
+     * <p>본래는 검사 결과 JSON 의 {@code descriptor.db} 에서 읽는다. 그런데
+     * 그 자리는 판마다 옮겨 다녔고({@code db.built} → {@code db.status.built}),
+     * 옮겨 간 자리를 못 찾으면 화면의 `취약점 DB` 가 <b>말없이 비었다.</b>
+     * 결과 JSON 의 모양을 쫓아다니는 대신 도구에게 묻는다 — 이 물음의 답은
+     * 판이 바뀌어도 {@code built} 한 낱말이다.
+     *
+     * <p>읽지 못하면 빈 문자열이다. 오늘 날짜 같은 것으로 채우지 않는다 —
+     * 그 날 뒤에 공개된 취약점은 이 검사에 없다는 뜻을 가진 칸이라,
+     * 틀린 날짜는 없는 것보다 나쁘다.
+     */
+    public String dbBuilt() {
+        try {
+            Process process = new ProcessBuilder(properties.grypePath(), "db", "status", "-o", "json")
+                    .redirectErrorStream(true)
+                    .start();
+            String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            if (!process.waitFor(30, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                return "";
+            }
+            Matcher m = DB_BUILT.matcher(out);
+            if (!m.find()) {
+                log.warn("grype db status 에서 기준일을 찾지 못했습니다.");
+                return "";
+            }
+            return m.group(1) != null ? m.group(1).trim() : m.group(2).trim();
+        } catch (IOException e) {
+            log.warn("grype db status 를 실행하지 못했습니다: {}", e.getMessage());
+            return "";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "";
         }
     }
 
