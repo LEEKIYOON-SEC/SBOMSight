@@ -376,14 +376,14 @@ class ComponentInventoryTest {
 
         // 섞여 있다 — 이 줄에 표시를 따로 단다.
         assertThat(row.mixed()).isTrue();
-        // `버전이 갈린 것만` 거르개에 걸린다.
+        // `일부 자산만 업그레이드` 거르개에 걸린다.
         assertThat(packages.list(null, null, "log4j-core", false, true).rows())
                 .extracting(PackageService.PackageRow::name)
                 .contains("log4j-core");
     }
 
     @Test
-    @DisplayName("버전이 하나뿐이면 갈린 것이 아니다")
+    @DisplayName("버전이 하나뿐이면 일부만 업그레이드한 것이 아니다")
     @Transactional
     void oneVersionIsNotMixed() throws IOException {
         Asset asset = asset("single");
@@ -465,7 +465,7 @@ class ComponentInventoryTest {
     /**
      * 머리에 적힌 수가 <b>표에 실린 줄 수와 맞는가.</b>
      *
-     * <p>거르개 전 이름 수를 그대로 찍고 있었다. 그래서 `버전이 갈린 것만` 을
+     * <p>거르개 전 이름 수를 그대로 찍고 있었다. 그래서 `일부 자산만 업그레이드` 를
      * 켜서 한 줄만 남은 화면 머리에 {@code 6개} 가 적혔다 — 화면은 멀쩡히 뜨고
      * 시험도 전부 통과했다. 0건인데 {@code 100%} 를 찍던 것과 같은 종류다.
      */
@@ -473,7 +473,7 @@ class ComponentInventoryTest {
     @DisplayName("머리의 수가 표에 실린 줄 수와 맞는다")
     @Transactional
     void headCountMatchesTheRowsOnScreen() throws Exception {
-        // 버전이 갈린 패키지 하나 — 2.14.1 에 심각이 걸려 있고 2.17.1 은 깨끗하다.
+        // 일부만 업그레이드한 패키지 하나 — 2.14.1 에 심각이 걸려 있고 2.17.1 은 깨끗하다.
         Asset stale = asset("head-stale");
         Scan staleScan = doneScan(stale);
         ingest(stale, staleScan, """
@@ -625,7 +625,7 @@ class ComponentInventoryTest {
                 .as("걸린 것이 없는 버전에 등급이 적혔다")
                 .doesNotContain("\"2.17.1\",\"1\",\"0\",\"없음\"");
 
-        // `버전이 갈린 것만` — 화면과 같이 걸린다. 두 버전이 함께 남아야
+        // `일부 자산만 업그레이드` — 화면과 같이 걸린다. 두 버전이 함께 남아야
         // 한다: 한 줄만 남기면 무엇이 갈렸는지 알 수 없다.
         String mixedOnly = mvc.perform(get("/packages/export.csv?q=csv-&mixed=true")
                                                .with(user("tester").roles("ADMIN")))
