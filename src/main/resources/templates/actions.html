@@ -29,12 +29,21 @@
     </div>
   </th:block>
 
-  <ul class="nav nav-tabs">
-    <li th:replace="~{fragments/ui :: tab('/actions', '조치',
-                     ${remediationCount}, ${tab} != 'analyses')}"></li>
-    <li th:replace="~{fragments/ui :: tab('/actions?tab=analyses', '검토 결과',
-                     ${analysisCount}, ${tab} == 'analyses')}"></li>
-  </ul>
+  <!--/*
+    탭 줄도 **본문과 같은 칸 안**에 둔다. 감싸는 칸이 없어 화면 맨 왼쪽에
+    붙어 있었고, 그 아래 카드보다 16px 왼쪽에서 시작했다 — 설정·감사 로그와
+    같은 꼴로 맞춘다.
+  */-->
+  <div class="page-header d-print-none pt-0">
+    <div class="container-xl">
+      <ul class="nav nav-tabs">
+        <li th:replace="~{fragments/ui :: tab('/actions', '조치',
+                         ${remediationCount}, ${tab} != 'analyses')}"></li>
+        <li th:replace="~{fragments/ui :: tab('/actions?tab=analyses', '검토 결과',
+                         ${analysisCount}, ${tab} == 'analyses')}"></li>
+      </ul>
+    </div>
+  </div>
 
   <div class="page-body">
     <div class="container-xl">
@@ -91,8 +100,8 @@
       </div>
 
       <th:block th:if="${remediations.isEmpty()}">
-        <div th:replace="~{fragments/ui :: empty('등록된 조치가 없습니다',
-                          '취약점 화면에서 패키지를 골라 조치로 올립니다.',
+        <div th:replace="~{fragments/ui :: empty('조치 내역이 없습니다',
+                          '취약점 화면에서 패키지를 골라 조치로 등록',
                           '/vulns?group=package', '취약점 보기')}"></div>
       </th:block>
 
@@ -142,8 +151,8 @@
       </div>
 
       <th:block th:if="${analyses.isEmpty()}">
-        <div th:replace="~{fragments/ui :: empty('적어 둔 검토 결과가 없습니다',
-                          '취약점 화면에서 건을 골라 상태와 대응을 적습니다.',
+        <div th:replace="~{fragments/ui :: empty('검토 결과가 없습니다',
+                          '취약점 화면에서 건을 골라 상태와 대응을 작성',
                           '/vulns', '취약점 보기')}"></div>
       </th:block>
 

@@ -22,15 +22,22 @@
   <h2>구역 · 기간</h2>
   <div class="card">
     <div class="card-body">
+    <!--/*
+      **라벨을 칸에서 떼어 낸다.** 감싸 두면 `form-label` 의 아래 여백(8px)이
+      칸 바깥에 남아, 아래로 맞춘 줄에서 칸 셋만 단추보다 8px 떠 있었다 —
+      재서 찾았다(`scripts/check-rows.py`). 다른 화면의 거르개 줄과 같은
+      꼴로 나란히 두고 `for` 로 묶는다.
+    */-->
     <form method="get" th:action="@{/reports/zone}" class="report-picker" style="margin:0;border:0;padding:0">
-      <label class="form-label">구역
-        <select class="form-select" name="zone">
-          <option value="">전체</option>
-          <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}">DMZ</option>
-        </select>
-      </label>
-      <label class="form-label">시작 <input class="form-control" type="date" name="from" th:value="${thisMonth}"></label>
-      <label class="form-label">종료 <input class="form-control" type="date" name="to" th:value="${today}"></label>
+      <label class="form-label mb-0" for="report-zone">구역</label>
+      <select class="form-select w-auto" id="report-zone" name="zone">
+        <option value="">전체</option>
+        <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}">DMZ</option>
+      </select>
+      <label class="form-label mb-0" for="report-from">시작</label>
+      <input class="form-control w-auto" id="report-from" type="date" name="from" th:value="${thisMonth}">
+      <label class="form-label mb-0" for="report-to">종료</label>
+      <input class="form-control w-auto" id="report-to" type="date" name="to" th:value="${today}">
       <button class="btn btn-dark" type="submit">보고서 보기</button>
       <span class="spacer"></span>
       <a class="btn btn-sm" th:href="@{/reports/zone(from=${thisMonth}, to=${today})}">이번 달</a>
@@ -43,7 +50,7 @@
   <h2>자산</h2>
   <th:block th:if="${latest.isEmpty() and neverScanned.isEmpty()}">
     <div th:replace="~{fragments/ui :: empty('뽑을 보고서가 없습니다',
-                      '자산을 등록하고 그 자산에서 뽑은 SBOM 을 올립니다.',
+                      '자산을 등록하고 그 자산에서 추출한 SBOM 을 업로드',
                       '/assets', '자산 보기')}"></div>
   </th:block>
 

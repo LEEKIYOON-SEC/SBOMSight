@@ -84,7 +84,7 @@
     <!--/* ══ 항목별 ═══════════════════════════════════════════════════ */-->
     <th:block th:if="${group} == 'item'">
       <th:block th:if="${page.totalElements == 0}">
-        <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
+        <div th:replace="~{fragments/ui :: empty('조건에 맞는 취약점이 없습니다', null,
                           ${links.clear()}, '거르개 지우기')}"></div>
       </th:block>
 
@@ -111,7 +111,7 @@
     */-->
     <th:block th:if="${group} == 'cve'">
       <th:block th:if="${cveGroups.isEmpty()}">
-        <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
+        <div th:replace="~{fragments/ui :: empty('조건에 맞는 취약점이 없습니다', null,
                           ${links.clear()}, '거르개 지우기')}"></div>
       </th:block>
       <th:block th:unless="${cveGroups.isEmpty()}">
@@ -171,7 +171,7 @@
     */-->
     <th:block th:if="${group} == 'package'">
       <th:block th:if="${packageGroups.isEmpty()}">
-        <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
+        <div th:replace="~{fragments/ui :: empty('조건에 맞는 취약점이 없습니다', null,
                           ${links.clear()}, '거르개 지우기')}"></div>
       </th:block>
       <th:block th:unless="${packageGroups.isEmpty()}">

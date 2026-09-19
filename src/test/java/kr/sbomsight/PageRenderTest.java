@@ -491,7 +491,43 @@ class PageRenderTest {
         assertThat(html).contains("아직 담긴 패키지가 없습니다");
         assertThat(html)
                 .as("담긴 것이 없는 것과 패키지가 없는 것은 다른 말이다")
-                .doesNotContain("걸리는 패키지가 없습니다");
+                .doesNotContain("조건에 맞는 패키지가 없습니다");
+    }
+
+    /**
+     * 탭 줄이 <b>본문과 같은 칸 안에</b> 있는가.
+     *
+     * <p>대응 화면의 탭 줄만 감싸는 칸이 없어 화면 맨 왼쪽에 붙어 있었고,
+     * 그 아래 카드보다 16px 왼쪽에서 시작했다 — 화면을 옮길 때 눈이 자리를
+     * 다시 찾는다. 탭이 있는 화면(대응 · 설정 · 감사 로그 · 자산 상세)은
+     * 전부 {@code page-header > container-xl > ul.nav-tabs} 여야 한다.
+     *
+     * <p>렌더한 HTML 에서 잰다. 탭 줄 바로 앞의 {@code container-xl} 부터
+     * 탭 줄까지 {@code <div>} 와 {@code </div>} 를 세어, 닫은 것이 더 많으면
+     * 그 칸은 <b>이미 닫혔고</b> 탭은 칸 밖이다. (자산 상세는 머리글과 탭이
+     * 같은 칸을 쓰되 그 사이에 줄 하나가 열리고 닫힌다 — 닫는 태그가 있다는
+     * 것만으로는 밖이라고 말할 수 없다.)
+     */
+    @Test
+    @DisplayName("탭 줄은 본문과 같은 칸 안에서 시작한다")
+    void tabRowsSitInsideTheContainer() throws Exception {
+        for (String url : List.of("/actions", "/actions?tab=analyses",
+                                  "/settings", "/settings/audit",
+                                  "/assets/" + asset.getId())) {
+            String html = open(url);
+            int tabs = html.indexOf("nav nav-tabs");
+            assertThat(tabs).as("%s 에 탭 줄", url).isGreaterThan(0);
+
+            int container = html.lastIndexOf("container-xl", tabs);
+            assertThat(container).as("%s — 탭 줄 앞에 칸이 열려 있다", url).isGreaterThan(0);
+
+            String between = html.substring(container, tabs);
+            int opened = count(between, "<div");
+            int closed = count(between, "</div");
+            assertThat(opened)
+                    .as("%s — 칸이 닫힌 뒤에 탭 줄이 있다 (열림 %d · 닫힘 %d)", url, opened, closed)
+                    .isGreaterThanOrEqualTo(closed);
+        }
     }
 
     @Test

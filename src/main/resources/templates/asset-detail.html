@@ -242,7 +242,7 @@
     <div>
       <th:block th:if="${group} == 'item'">
         <th:block th:if="${page.totalElements == 0}">
-          <div th:replace="~{fragments/ui :: empty('걸리는 것이 없습니다', null,
+          <div th:replace="~{fragments/ui :: empty('조건에 맞는 취약점이 없습니다', null,
                             ${links.clear()}, '거르개 지우기')}"></div>
         </th:block>
         <!--/* 건수 줄·표·쪽 넘김 모두 `/vulns` 와 같은 조각이다. 두 벌을 두면
@@ -258,8 +258,8 @@
       <!--/* CVE별·패키지별은 전체 화면에서 본다. 자산 하나로 좁히면 CVE 마다
            자산 수가 언제나 1 이라 묶는 뜻이 없다. */-->
       <th:block th:if="${group} != 'item'">
-        <div th:replace="~{fragments/ui :: empty('이 묶음은 전체 화면에서 봅니다',
-                          '자산 하나로 좁히면 CVE 마다 자산 수가 언제나 1 이라 묶는 뜻이 없습니다.',
+        <div th:replace="~{fragments/ui :: empty('전체 화면에서 보는 묶기',
+                          '자산 하나로 좁히면 CVE 마다 자산 수가 언제나 1',
                           '/vulns?group=' + ${group}, '전체에서 보기')}"></div>
       </th:block>
     </div>
@@ -286,7 +286,7 @@
     <div class="container-xl">
     <th:block th:if="${assetPackages == null or assetPackages.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('아직 담긴 패키지가 없습니다',
-                        '패키지 목록은 검사할 때 SBOM 에서 담깁니다. 이 자산을 다시 검사하면 채워집니다.',
+                        '검사할 때 SBOM 에서 담김 · 이 자산을 다시 검사하면 채워짐',
                         '/assets/' + ${asset.id} + '?tab=history', '검사 이력')}"></div>
     </th:block>
 
@@ -340,7 +340,7 @@
     <div class="card">
     <th:block th:if="${history.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('아직 검사가 없습니다',
-                        'SBOM 을 올리면 grype 이 돌고 여기에 쌓입니다.',
+                        'SBOM 을 업로드하면 검사가 돌고 결과가 여기에 쌓임',
                         '/assets/' + ${asset.id}, 'SBOM 업로드')}"></div>
     </th:block>
 
@@ -443,7 +443,7 @@
     <div class="container-xl">
     <th:block th:if="${remediations.isEmpty() and assetAnalyses.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('등록된 조치도 검토 결과도 없습니다',
-                        '취약점 화면에서 건을 골라 조치로 올리거나 검토 결과를 적습니다.',
+                        '취약점 화면에서 건을 골라 조치로 등록하거나 검토 결과를 작성',
                         ${latest != null} ? '/assets/' + ${asset.id} + '?tab=vulns' : null,
                         '취약점 보기')}"></div>
     </th:block>

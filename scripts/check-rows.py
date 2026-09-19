@@ -12,8 +12,13 @@
 거르개 줄(한 줄에 칸이 둘 이상인 flex 줄)마다 칸들의 **세로 중심**을 재서,
 3px 넘게 벗어난 줄을 찍는다. 3px 은 글꼴 높이 차이로 생기는 흔들림이다.
 
-세로로 쌓는 form(계정 추가 · 보고서 뽑기)은 일부러 라벨이 위에 있다 —
-`.card-body:not(.d-flex)` 안쪽은 재지 않는다.
+줄은 **클래스가 아니라 계산된 `display:flex`** 로 찾는다. 클래스 이름으로
+고르던 때 `.report-picker`(flex 를 CSS 에서 받는다)가 빠져 있었고, 그 줄의
+라벨 셋이 8px 떠 있는 것을 사람이 먼저 봤다.
+
+세로로 쌓는 form(계정 추가 · 일괄 등록)은 일부러 라벨이 위에 있다 —
+`flex-direction: column` 인 줄과 `align-items` 가 `center` 가 아닌 줄의
+라벨 검사는 건너뛴다.
 """
 
 import sys, collections
@@ -28,8 +33,16 @@ SCREENS = ["/", "/?view=zones", "/assets/1", "/assets/1?tab=vulns", "/assets/1?t
 MEASURE = r"""
 () => {
   const out = [];
-  // 한 줄에 늘어놓는 줄만 본다. 세로로 쌓는 form 은 라벨이 위에 있는 것이 정상이다.
-  document.querySelectorAll('form.d-flex, .d-flex.flex-wrap, .card-body.d-flex').forEach(row => {
+  // **클래스가 아니라 그려진 모양으로 찾는다.** 앞서는
+  // `form.d-flex, .d-flex.flex-wrap, .card-body.d-flex` 로 골랐는데,
+  // 보고서 뽑는 줄(`.report-picker`)은 flex 를 CSS 에서 받으므로 그 셋 중
+  // 어디에도 안 걸렸다 — 라벨 셋만 8px 떠 있는 것을 사람이 먼저 봤다.
+  // 계산된 `display:flex` 이고 가로로 늘어놓는 것이면 전부 잰다.
+  const rows = Array.from(document.querySelectorAll('main *')).filter(el => {
+    const cs = getComputedStyle(el);
+    return cs.display === 'flex' && !cs.flexDirection.startsWith('column');
+  });
+  rows.forEach(row => {
     if (row.closest('.report') || row.closest('.navbar')) return;
     const items = Array.from(row.querySelectorAll(
         ':scope > input:not([type=hidden]), :scope > select, :scope > button,' +
@@ -55,7 +68,7 @@ MEASURE = r"""
     // **가운데로 맞추는 줄(거르개)만 본다.** 아래로 맞추는 줄
     // (`align-items-end`: 계정 추가 · 내 계정 · 일괄 등록)은 라벨을 칸 위에
     // 두는 것이 제 모양이다 — 거기서는 밑선이 맞는다.
-    if (row.classList.contains('align-items-center'))
+    if (getComputedStyle(row).alignItems === 'center')
     row.querySelectorAll(':scope > label').forEach(label => {
       const ctl = label.querySelector('input:not([type=hidden]), select, textarea');
       if (!ctl) return;

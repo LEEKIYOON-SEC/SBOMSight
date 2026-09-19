@@ -94,6 +94,33 @@ class ReportRenderTest {
     }
 
     /**
+     * {@code 조치 대상} 의 <b>비고</b> 칸은 줄로 쌓는다.
+     *
+     * <p>두 값을 한 줄에 흘려 두었더니 칸이 좁아졌을 때 딱지가
+     * {@code 실/제/악/용} 으로 한 글자씩 세로로 쪼개졌다 — 한국어는 글자
+     * 단위로 줄바꿈된다. 칸에 {@code remark} 를 붙여
+     * {@code white-space: nowrap} 을 걸고, 값마다 {@code <div>} 로 쌓는다.
+     *
+     * <p>여기서 잴 수 있는 것은 <b>markup</b> 까지다. 실제 픽셀은
+     * {@code scripts/check-rows.py} 와 화면에서 본다.
+     */
+    @Test
+    @DisplayName("조치 대상의 비고는 줄로 쌓는다")
+    void remarkCellStacks() throws Exception {
+        Scan scan = seed(true);
+
+        String html = mvc.perform(get("/reports/scan/" + scan.getId()).with(user("tester").roles("ADMIN")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+
+        assertThat(html).contains("<td class=\"remark\">");
+        // 딱지가 `<td>` 에 바로 붙어 있으면 옛 모양이다 — 줄로 감싸야 한다.
+        assertThat(html)
+                .as("딱지는 `<div>` 안에 든다")
+                .doesNotContain("<td class=\"remark\">\n          <span");
+    }
+
+    /**
      * 벡터가 하나도 없는 스캔(옛 grype·다른 자문 DB)에서도 터지지 않아야 한다.
      * 그럴 때 노출면 문단은 "0건"이라고 말하는 대신 빠진다.
      */

@@ -41,7 +41,12 @@
     <div class="container-xl">
 
     <div class="card">
-      <div class="card-header"><h2 class="card-title">grype 이 준 값</h2></div>
+      <!--/*
+        `grype 이 준 값` 이라고 붙여 두었다. 쓰는 사람에게 이 화면은 그냥
+        **취약점 정보**다 — 어느 도구가 냈는지는 각주 한 줄이면 된다.
+        (누가 말한 것인지 구분하는 것은 `검토 결과` 칸이 따로 한다.)
+      */-->
+      <div class="card-header"><h2 class="card-title">취약점 정보</h2></div>
       <div class="card-body">
         <table class="table kv">
           <tr><th>CVSS</th>
@@ -57,7 +62,9 @@
           <tr><th>실제 악용</th>
               <td>
                 <span class="tag kev" th:if="${first.kev != null and first.kev}">확인됨 (KEV)</span>
-                <span class="faint" th:if="${first.kev == null}">grype 이 주지 않았습니다</span>
+                <!--/* 값이 없는 것과 "아니다" 는 다르다. 둘 다 `확인` 을 기준으로
+                     적되, 모르는 것을 아니라고 말하지 않는다. */-->
+                <span class="faint" th:if="${first.kev == null}">확인되지 않음</span>
                 <span class="faint" th:if="${first.kev != null and !first.kev}">확인된 바 없음</span>
               </td></tr>
           <tr th:if="${!#strings.isEmpty(first.secondaryId)}">
@@ -77,7 +84,7 @@
                      th:text="${first.dataSource}">https://…</a></td></tr>
         </table>
         <p class="footnote" style="margin-top:12px">
-          ※ 전부 grype 출력 원본. 재계산 · 조정 없음.
+          ※ 검사 결과 그대로 · 재계산 없음
         </p>
       </div>
     </div>

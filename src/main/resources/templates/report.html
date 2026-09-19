@@ -114,7 +114,7 @@
       ※ 제외된 건도 탐지 건수에 포함. 검토 결과가 <b>해당 없음 · 오탐</b>인 건만 목록에서 제외.
     </p>
     <p class="footnote" th:if="${report.overview.hasAccountingNote()}">
-      ※ grype 원본
+      ※ 검사 결과 그대로
       <span th:text="${#numbers.formatInteger(report.overview.matchCount, 0, 'COMMA')}">0</span>건 ·
       중복 합침 <span th:text="${report.overview.mergedCount}">0</span>건 ·
       식별자 없어 제외 <span th:text="${report.overview.droppedCount}">0</span>건.
@@ -182,7 +182,7 @@
       </tbody>
     </table>
     <p class="footnote" th:unless="${report.summary.kevKnown}">
-      ※ 실제 악용 여부 — 이 grype 판이 제공하지 않아 미집계.
+      ※ 실제 악용 여부 — 이번 검사에 정보 없음 · 미집계
     </p>
 
     <h3 th:if="${report.summary.exposure.measured()}">2.3 접근 경로</h3>
@@ -208,7 +208,7 @@
       </tbody>
     </table>
     <p class="footnote" th:if="${report.summary.exposure.measured()}">
-      ※ grype CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
+      ※ CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
       권한 경계를 넘음 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
     </p>
   </section>
@@ -262,11 +262,16 @@
         <td class="num tight" th:text="${a.criticalCount > 0} ? ${a.criticalCount} : '—'">—</td>
         <td class="num tight" th:text="${a.highCount > 0} ? ${a.highCount} : '—'">—</td>
         <td class="num tight" th:text="${a.maxCvss != null} ? ${a.maxCvss} : '—'">—</td>
-        <td>
-          <span th:if="${a.kevCount > 0}" class="tag kev"
-                th:text="'실제 악용 ' + ${a.kevCount}">실제 악용</span>
-          <span th:if="${a.total > a.fixableCount}" class="faint"
-                th:text="'수정 버전 없음 ' + (${a.total} - ${a.fixableCount})"></span>
+        <!--/*
+          두 값을 **줄로 쌓는다.** 한 줄에 흘려 두었더니 칸이 좁아졌을 때
+          `실/제/악/용` 으로 한 글자씩 쪼개졌다 — 한국어는 글자 단위로
+          줄바꿈된다. 쌓아 두면 칸이 필요한 만큼만 넓어진다.
+        */-->
+        <td class="remark">
+          <div th:if="${a.kevCount > 0}"><span class="tag kev"
+               th:text="'실제 악용 ' + ${a.kevCount}">실제 악용</span></div>
+          <div class="faint" th:if="${a.total > a.fixableCount}"
+               th:text="'수정 버전 없음 ' + (${a.total} - ${a.fixableCount})"></div>
         </td>
         <!--/* 보고서를 읽다가 그 자리에서 담당을 정한다. 다른 화면으로 옮겨 가
              다시 찾는 동선이면 결국 아무도 등록하지 않는다. */-->
@@ -295,7 +300,7 @@
     </p>
     <p class="footnote" th:if="${!report.targets.fixTargets.isEmpty()}">
       ※ 순위 기준 — 원격 접근 → 실제 악용 → 최고 CVSS → 건수.
-      심각도 · 건수 · 수정 버전은 grype 원본.
+      심각도 · 건수 · 수정 버전은 검사 결과 그대로.
     </p>
   </section>
 
@@ -441,7 +446,7 @@
     `판정` 이라 불렀다(§4.1).
   */-->
   <p class="footnote">
-    ※ 탐지 · 심각도 · CVSS · 수정 버전은 grype 원본. 재계산 · 조정 없음.
+    ※ 탐지 · 심각도 · CVSS · 수정 버전은 검사 결과 그대로 · 재계산 없음
   </p>
 
   </div>

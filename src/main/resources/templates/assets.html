@@ -131,11 +131,11 @@
         */-->
         <th:block th:if="${assetCount == 0 and filter == null}">
           <div th:replace="~{fragments/ui :: empty('등록된 자산이 없습니다',
-                            '자산을 등록하고 그 자산에서 뽑은 SBOM 을 올립니다.', null, null)}"></div>
+                            '자산을 등록하고 그 자산에서 추출한 SBOM 을 업로드', null, null)}"></div>
         </th:block>
 
         <th:block th:if="${assetCount == 0 and filter != null}">
-          <div th:replace="~{fragments/ui :: empty('걸리는 자산이 없습니다', null, '/', '전체 보기')}"></div>
+          <div th:replace="~{fragments/ui :: empty('조건에 맞는 자산이 없습니다', null, '/', '전체 보기')}"></div>
         </th:block>
 
         <!--/* ══ 구역 보기 — 시안의 카드 격자 ══════════════════════════════ */-->

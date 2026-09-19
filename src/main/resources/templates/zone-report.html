@@ -162,7 +162,7 @@
         것으로만 읽힌다.
       */-->
       <b th:if="${report.scope.toolChanged()}" class="danger-text">
-        기간 중 grype 판 · DB 기준일 변경 — 증감에 도구 변화분 포함.
+        기간 중 검사 도구 · 취약점 DB 변경 — 증감에 도구 변화분 포함
       </b>
     </p>
   </section>
@@ -243,7 +243,7 @@
       </tbody>
     </table>
     <p class="footnote">
-      ※ grype CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
+      ※ CVSS 벡터 기준. 원격 접근 = AV:N / PR:N / UI:N ·
       권한 경계를 넘음 = S:C · 판단 불가 = CVSS 3.x 벡터 없음.
     </p>
   </section>
@@ -527,7 +527,7 @@
     `판정` 이라 불렀다(§4.1).
   */-->
   <p class="footnote" th:if="${report.scope.assetsInScope > 0}">
-    ※ 탐지 · 심각도 · CVSS · 수정 버전은 grype 원본. 재계산 · 조정 없음.
+    ※ 탐지 · 심각도 · CVSS · 수정 버전은 검사 결과 그대로 · 재계산 없음
   </p>
   </div>
     </div>

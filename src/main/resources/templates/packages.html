@@ -108,12 +108,12 @@
     */-->
     <th:block th:if="${inventoryEmpty}">
       <div th:replace="~{fragments/ui :: empty('아직 담긴 패키지가 없습니다',
-                        '패키지 목록은 검사할 때 SBOM 에서 담깁니다. 자산을 다시 검사하면 채워집니다.',
+                        '검사할 때 SBOM 에서 담김 · 자산을 다시 검사하면 채워짐',
                         '/', '자산 보기')}"></div>
     </th:block>
 
     <th:block th:if="${!inventoryEmpty and listing.rows().isEmpty()}">
-      <div th:replace="~{fragments/ui :: empty('걸리는 패키지가 없습니다', null,
+      <div th:replace="~{fragments/ui :: empty('조건에 맞는 패키지가 없습니다', null,
                         '/packages', '전체 보기')}"></div>
     </th:block>
 
@@ -226,7 +226,7 @@
 
     <p class="footnote" th:if="${!listing.rows().isEmpty()}">
       ※ 자산마다 <b>최신 검사</b>의 SBOM 기준. 표시 = 그 버전에 걸린 최고 등급
-      (▮ 있음 · ○ 없음). 취약점은 grype 원본.
+      (▮ 있음 · ○ 없음). 취약점 수는 검사 결과 그대로.
       <b th:if="${listing.more()}" class="danger-text"
          th:text="'이름 ' + ${#numbers.formatInteger(listing.total(), 0, 'COMMA')} + '개 중 앞 200개만 화면에. 검색으로 좁히거나 CSV 로 전부.'">—</b>
     </p>

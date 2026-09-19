@@ -64,6 +64,25 @@ class VocabularyTest {
     // 이미 없앴다 — 낱말 자체를 금지할 수 있는 종류가 아니다.
 
     /**
+     * <b>말투</b> — 낱말 하나가 아니라 꼴이 문제인 것들.
+     *
+     * <p>낱말 목록으로는 못 잡는다. {@code grype} 은 화면에 남아야 하는
+     * 자리가 있고(설정의 도구 상태 · 보고서의 <b>점검 도구</b> 줄 — 어느 판이
+     * 냈는지가 곧 정확성의 근거다), {@code 올리} 도 "값을 올리면" 처럼 쓸
+     * 자리가 있다. 막는 것은 <b>도구를 주어로 세운 서술</b>과 <b>지어낸
+     * 빈 화면 문구</b>다.
+     *
+     * <p>쓰는 사람에게 이 화면은 그냥 취약점 정보다. 어느 도구가 냈는지는
+     * 각주 한 줄이면 되고, 한 줄로 족한 것을 문장마다 되풀이하면 읽는 사람이
+     * 도구의 사정을 알아야 하는 것처럼 읽힌다.
+     */
+    private static final Map<String, String> BANNED_PHRASES = Map.of(
+            "grype\\s*이\\s*(준|주지|낸|돌)", "도구를 주어로 세우지 않는다 — '검사 결과 그대로' · '확인되지 않음'",
+            "grype\\s*(원본|출력)", "검사 결과 그대로",
+            "걸리는\\s*(것|자산|패키지|취약점)이\\s*없습니다", "조건에 맞는 … 이 없습니다",
+            "SBOM\\s*을?\\s*올리", "SBOM 업로드");
+
+    /**
      * 설명이 목적인 자리까지 막으면 무엇을 왜 바꿨는지 적을 수 없게 된다.
      * 화면에 나가는 글자만 본다 — 타임리프 주석({@code <!--/* ... *&#47;-->})과
      * HTML 주석은 브라우저 화면에 글자로 뜨지 않는다.
@@ -109,6 +128,41 @@ class VocabularyTest {
 
         assertThat(hits)
                 .as("docs/rework-plan.md §4.1 의 어휘표대로 고칩니다. 새 말을 짓지 않습니다.")
+                .isEmpty();
+    }
+
+    /**
+     * 말투.
+     *
+     * <p><b>왜 또 시험인가.</b> "화면에서 grype 이야기를 지워 달라" 는 말을
+     * 세 판에 걸쳐 들었다. 그때마다 눈에 띈 자리만 고쳤고, 다음 판에 다른
+     * 화면에서 같은 말투가 나왔다 — {@code vuln-detail} 의 카드 제목,
+     * {@code report} 의 각주, {@code zone-report} 의 각주가 차례로 그랬다.
+     * 눈으로 세는 방식은 화면 수만큼 샌다.
+     */
+    @Test
+    @DisplayName("쓰지 않기로 한 말투가 화면에 남아 있지 않다")
+    void noBannedPhrasingsReachTheScreen() throws IOException {
+        Path templates = Path.of("src/main/resources/templates");
+        List<String> hits = new ArrayList<>();
+
+        try (Stream<Path> files = Files.walk(templates)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".html")).sorted().toList()) {
+                List<String> lines = visibleLines(file);
+                for (int i = 0; i < lines.size(); i++) {
+                    for (var banned : BANNED_PHRASES.entrySet()) {
+                        if (Pattern.compile(banned.getKey()).matcher(lines.get(i)).find()) {
+                            hits.add("%s:%d  '%s' → %s".formatted(
+                                    templates.relativize(file), i + 1,
+                                    lines.get(i).strip(), banned.getValue()));
+                        }
+                    }
+                }
+            }
+        }
+
+        assertThat(hits)
+                .as("도구 이름은 근거를 적는 자리(설정의 도구 상태 · 보고서의 점검 도구)에만 둡니다.")
                 .isEmpty();
     }
 
