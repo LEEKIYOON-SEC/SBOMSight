@@ -1,8 +1,12 @@
 package kr.sbomsight;
 
+import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.AuditLog;
+import kr.sbomsight.domain.Remediation;
+import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.AuditLogRepository;
+import kr.sbomsight.repo.RemediationRepository;
 import kr.sbomsight.repo.ZoneRepository;
 import kr.sbomsight.service.AuditService;
 import kr.sbomsight.service.ZoneService;
@@ -51,6 +55,8 @@ class AuditLogTest {
     @Autowired AuditService audit;
     @Autowired ZoneService zoneService;
     @Autowired ZoneRepository zones;
+    @Autowired AssetRepository assets;
+    @Autowired RemediationRepository remediations;
 
     /**
      * DB 에 없는 이름을 쓴다.
@@ -109,6 +115,60 @@ class AuditLogTest {
 
         assertThat(recent(AuditEvent.ZONE_CREATED))
                 .extracting(AuditLog::getTarget).contains(name);
+    }
+
+    /**
+     * <b>잘못 등록한 조치를 지울 수 있고, 지운 자취가 남는다.</b>
+     *
+     * <p>앞서 등록만 있고 지우는 길이 아예 없었다. 보고서의 `조치 등록` 은
+     * 단추 한 번에 확인 창도 없어서, 잘못 누른 줄이 담당도 기한도 없이
+     * 목록에 영영 남았다 — 그러면 `미등록 15개` 가 `14개` 로 줄어
+     * <b>보고서의 수가 틀어진다.</b>
+     *
+     * <p>조치를 지우면 그 이력({@code remediation_events})도 함께
+     * 사라진다({@code cascade = ALL}). 남는 자취는 감사 로그 한 줄뿐이라
+     * 그 줄이 반드시 있어야 한다.
+     */
+    @Test
+    @DisplayName("잘못 등록한 조치를 지우면 감사 로그에 남는다")
+    void deletingARemediationIsRecorded() throws Exception {
+        Asset asset = new Asset();
+        asset.setName("rm-del-" + System.nanoTime());
+        asset.setZone(zoneService.unassigned());
+        assets.saveAndFlush(asset);
+
+        Remediation remediation = remediations.saveAndFlush(
+                new Remediation(asset, "openssl", ADMIN));
+        Long id = remediation.getId();
+
+        mvc.perform(post("/actions/" + id + "/delete")
+                        .with(user(ADMIN).roles("ADMIN")).with(csrf()))
+           .andExpect(status().is3xxRedirection());
+
+        assertThat(remediations.findById(id))
+                .as("지웠는데 남아 있다")
+                .isEmpty();
+        assertThat(recent(AuditEvent.REMEDIATION_DELETED))
+                .as("지운 뒤 남는 자취는 이 줄뿐인데 없다")
+                .extracting(AuditLog::getTarget)
+                .anySatisfy(t -> assertThat(t).contains(asset.getName()).contains("openssl"));
+    }
+
+    /** 조회 권한만 있는 사람은 지울 수 없다. */
+    @Test
+    @DisplayName("조회 권한은 조치를 지우지 못한다")
+    void viewersCannotDeleteARemediation() throws Exception {
+        Asset asset = new Asset();
+        asset.setName("rm-role-" + System.nanoTime());
+        asset.setZone(zoneService.unassigned());
+        assets.saveAndFlush(asset);
+        Long id = remediations.saveAndFlush(new Remediation(asset, "curl", ADMIN)).getId();
+
+        mvc.perform(post("/actions/" + id + "/delete")
+                        .with(user("viewer").roles("VIEWER")).with(csrf()))
+           .andExpect(status().isForbidden());
+
+        assertThat(remediations.findById(id)).isPresent();
     }
 
     /**

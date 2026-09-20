@@ -212,15 +212,13 @@
     <div class="card">
     <form method="get" class="card-body border-bottom py-2 d-flex flex-wrap align-items-center gap-2">
       <input type="hidden" name="tab" value="vulns">
-      <span class="btn-group">
-        <!--/* `links` 로 만든다. `@{…(group=${g}, q=${q}, …)}` 는 값이 없어도
-             이름을 적어서 `&q=&severity=&fixable=&kev=` 가 따라붙었다(N12). */-->
-        <a class="btn btn-sm" th:each="g : ${ {'item','cve','package'} }"
-           th:href="@{${links.group(g)}}"
-           th:classappend="${group} == ${g} ? 'active' : ''"
-           th:text="${g} == 'item' ? '항목별' : (${g} == 'cve' ? 'CVE별' : '패키지별')">항목별</a>
-      </span>
-      <input type="hidden" name="group" th:value="${group}">
+      <!--/*
+        **묶기 단추를 뗐다.** `항목별 · CVE별 · 패키지별` 셋을 두었는데,
+        자산 하나로 좁히면 CVE별은 자산 수가 언제나 1 이라 뜻이 없고
+        패키지별도 `영향 자산 1대` 만 늘어놓는다. 둘 다 눌러도 표가 아니라
+        "여기서는 못 본다" 는 빈 화면이 떴다 — 누를 수 있는데 갈 곳이 없는
+        단추는 두지 않는다. 넓게 보는 길은 아래 [구역 전체에서 보기] 하나.
+      */-->
       <input type="search" class="form-control form-control-sm" style="flex:1; min-width:12rem"
              name="q" th:value="${q}" autocomplete="off" aria-label="CVE 번호 · 패키지 이름"
              placeholder="CVE 번호 · 패키지 이름">
@@ -240,10 +238,19 @@
         `넓게 보기` 를 뗐다. 같은 검사를 `/vulns` 에서 여는 단추였는데, 이제
         이 탭이 그 화면과 **같은 표·같은 정렬·같은 페이지 넘김**을 쓴다 —
         넘어가서 달라지는 것은 자산 칸 하나뿐이다. 무엇이 달라지는지 알 수
-        없는 단추는 누를 이유를 만들지 못한다. CVE별·패키지별로 넓게 보는
-        길은 아래 묶기 단추가 안내한다.
+        없는 단추는 누를 이유를 만들지 못한다. 넓게 보는 길은 아래 링크
+        하나로 남겼다.
       */-->
       <button class="btn btn-sm btn-dark" type="submit">찾기</button>
+      <!--/*
+        CVE별·패키지별로 넓게 보는 길. 단추가 아니라 링크 하나다.
+
+        **`?asset=` 로 보내지 않는다.** 그 주소는 자산 상세로 되돌아오게
+        되어 있어서(`VulnController:79`) 제자리걸음이 된다. 구역으로 보낸다 —
+        전체는 너무 멀고, 이 자산이 속한 구역이 다음으로 볼 자리다.
+      */-->
+      <a class="btn btn-sm ms-auto"
+         th:href="@{/vulns(zone=${asset.zone.id})}">구역 전체에서 보기</a>
     </form>
 
     <div>
@@ -262,13 +269,6 @@
         </th:block>
       </th:block>
 
-      <!--/* CVE별·패키지별은 전체 화면에서 본다. 자산 하나로 좁히면 CVE 마다
-           자산 수가 언제나 1 이라 묶는 뜻이 없다. */-->
-      <th:block th:if="${group} != 'item'">
-        <div th:replace="~{fragments/ui :: empty('전체 화면에서만 보는 방식',
-                          'CVE별 · 패키지별은 자산 하나로 좁히면 자산 수가 언제나 1',
-                          '/vulns?group=' + ${group}, '전체에서 보기')}"></div>
-      </th:block>
     </div>
 
     <!--/*

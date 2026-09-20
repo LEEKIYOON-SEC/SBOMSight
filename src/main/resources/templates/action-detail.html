@@ -68,6 +68,21 @@
       </label>
       <button class="btn btn-dark" type="submit">저장</button>
     </form>
+
+    <!--/*
+      **잘못 등록한 것을 지우는 자리.** 보고서의 `조치 등록` 은 단추 한 번에
+      확인 창도 없다 — 되돌릴 길이 없으면 잘못 누른 줄이 목록에 영영 남고,
+      `미등록 15개` 가 `14개` 로 줄어 보고서의 수가 틀어진다.
+
+      갱신 form **밖**에 둔다. 안에 두면 [저장] 옆에 [삭제] 가 서고, 저장하려다
+      지우는 일이 생긴다.
+    */-->
+    <form method="post" th:action="@{'/actions/' + ${remediation.id} + '/delete'}"
+          sec:authorize="hasRole('ADMIN')" style="margin-top:12px"
+          onsubmit="return confirm('이 조치를 지웁니다. 상태 변경 이력도 함께 사라집니다.\n되돌릴 수 없습니다.\n\n계속할까요?')">
+      <button type="submit" class="btn btn-sm btn-outline-danger">조치 삭제</button>
+      <span class="faint ms-2">잘못 등록한 것을 지움 · 감사 로그에는 남음</span>
+    </form>
     <!--/*
       **없앤 상태를 찾는 사람에게 어디로 가라고 말한다.** 앞서 상태에
       `하지 않고 닫음` 이 있었는데, 근거도 재검토일도 없이 아무나 눌러 닫을

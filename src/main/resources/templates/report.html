@@ -263,7 +263,13 @@
         <th class="num tight">높음</th>
         <th class="num tight">최고 CVSS</th>
         <!--/*
-          비고만 `tight` 를 빼 둔다. 모든 칸이 `tight`(= 줄바꿈 금지)면 표에
+          **조치가 걸려 있는지 여기서 보인다.** 앞서는 이 표에서 등록만 하고
+          진행 여부는 5장까지 내려가 패키지 이름으로 대조해야 했다 — 열다섯
+          줄을 눈으로 맞추는 일이라 아무도 안 한다.
+        */-->
+        <th class="tight">조치 상태</th>
+        <!--/*
+          특이사항만 `tight` 를 빼 둔다. 모든 칸이 `tight`(= 줄바꿈 금지)면 표에
           늘어날 자리가 없어 A4 폭을 넘고, 넘은 만큼 인쇄에서 잘린다 —
           띄워서 인쇄 미리보기를 보고 찾았다.
         */-->
@@ -272,7 +278,12 @@
       </tr>
       </thead>
       <tbody>
-      <tr th:each="a, i : ${report.targets.fixTargets}">
+      <!--/*
+        **`progress.rows` 를 돈다.** 그 목록은 `targets.fixTargets` 와 같은
+        줄을 같은 순서로 들고 있되 조치가 함께 달려 있다(`ReportService:307`).
+        따로 돌면 두 장의 순서가 갈라지는 날이 온다.
+      */-->
+      <tr th:each="row, i : ${report.progress.rows}" th:with="a=${row.action()}">
         <td class="num tight" th:text="${i.count}">1</td>
         <!--/*
           패키지 이름과 판을 줄을 바꿔 쌓는다. 한 줄에 두면 이 칸이 넓어져
@@ -292,6 +303,10 @@
         <td class="num tight" th:text="${a.criticalCount > 0} ? ${a.criticalCount} : '—'">—</td>
         <td class="num tight" th:text="${a.highCount > 0} ? ${a.highCount} : '—'">—</td>
         <td class="num tight" th:text="${a.maxCvss != null} ? ${a.maxCvss} : '—'">—</td>
+        <td class="tight">
+          <span th:if="${row.isTracked()}" th:text="${row.remediation.status.label()}">대기</span>
+          <span class="faint" th:unless="${row.isTracked()}">미등록</span>
+        </td>
         <!--/*
           두 값을 **줄로 쌓는다.** 한 줄에 흘려 두었더니 칸이 좁아졌을 때
           `실/제/악/용` 으로 한 글자씩 쪼개졌다 — 한국어는 글자 단위로
@@ -305,8 +320,16 @@
         </td>
         <!--/* 보고서를 읽다가 그 자리에서 담당을 정한다. 다른 화면으로 옮겨 가
              다시 찾는 동선이면 결국 아무도 등록하지 않는다. */-->
+        <!--/*
+          이미 등록된 줄에 [조치 등록] 을 또 두지 않는다. 눌러도 같은 조치로
+          가지만(`RemediationService.open` 이 하나만 연다), 단추가 있으면
+          "아직 안 했나" 로 읽힌다.
+        */-->
         <td class="tight no-print" sec:authorize="hasRole('ADMIN')">
-          <form method="post" th:action="@{'/scans/' + ${report.scan.id} + '/remediations'}">
+          <a th:if="${row.isTracked()}" class="btn btn-sm"
+             th:href="@{'/actions/' + ${row.remediation.id}}">조치 보기</a>
+          <form th:unless="${row.isTracked()}" method="post"
+                th:action="@{'/scans/' + ${report.scan.id} + '/remediations'}">
             <input type="hidden" name="packageName" th:value="${a.packageName}">
             <button type="submit" class="btn btn-sm">조치 등록</button>
           </form>
@@ -320,6 +343,7 @@
         <td class="num tight" th:text="${report.targets.resolvableReach() > 0}
             ? ${report.targets.resolvableReach()} : '—'">—</td>
         <td class="num tight"></td><td class="num tight"></td><td class="num tight"></td>
+        <td class="tight"></td>
         <td></td>
         <td class="tight no-print" sec:authorize="hasRole('ADMIN')"></td>
       </tr>

@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.RemediationRepository;
 import kr.sbomsight.repo.ScanRepository;
+import kr.sbomsight.service.AuditService;
 import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.RemediationService;
@@ -47,15 +48,17 @@ public class ActionController {
     private final FindingAnalysisService analyses;
     private final ScanRepository scans;
     private final ZoneService zones;
+    private final AuditService audit;
 
     public ActionController(RemediationRepository remediations, RemediationService service,
                             FindingAnalysisService analyses, ScanRepository scans,
-                            ZoneService zones) {
+                            ZoneService zones, AuditService audit) {
         this.remediations = remediations;
         this.service = service;
         this.analyses = analyses;
         this.scans = scans;
         this.zones = zones;
+        this.audit = audit;
     }
 
     @GetMapping
@@ -130,6 +133,26 @@ public class ActionController {
         service.update(remediation, status, owner, dueDate, note, principal.getName(), comment);
         flash.addFlashAttribute("message", "조치를 갱신했습니다.");
         return "redirect:/actions/" + id;
+    }
+
+    /**
+     * 잘못 등록한 조치를 지운다.
+     *
+     * <p>이력까지 함께 사라지므로 <b>감사 로그에 남긴다</b> — 지운 뒤에
+     * 남는 자취는 그 줄 하나뿐이다. 무엇을 지웠는지(자산 · 패키지 ·
+     * 그때 상태)를 함께 적는다.
+     */
+    @PostMapping("/{id}/delete")
+    @PreAuthorize("hasRole('ADMIN')")
+    public String delete(@PathVariable Long id, RedirectAttributes flash) {
+        Remediation remediation = remediation(id);
+        String target = remediation.getAsset().getName() + " · " + remediation.getPackageName();
+        service.delete(remediation);
+        audit.record(AuditEvent.REMEDIATION_DELETED, target,
+                     "등록 당시 " + remediation.getOpenedCount() + "건 · "
+                     + remediation.getStatus().label());
+        flash.addFlashAttribute("message", target + " 조치를 지웠습니다.");
+        return "redirect:/actions";
     }
 
     /** 내려받기는 보고 있는 탭의 것이다. 다른 탭의 것이 섞여 나오면 대조를 못 한다. */

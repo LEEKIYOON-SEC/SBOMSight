@@ -359,6 +359,11 @@ public class AssetController {
         // 각자 자기 질의를 부르게 두면 한쪽만 고치는 날이 오고, 그때부터
         // 같은 데이터가 화면마다 다르게 보인다.
         if ("vulns".equals(tab) && latest != null) {
+            // **자산 하나에서는 항목별 하나뿐이다.** CVE별은 자산 수가 언제나
+            // 1 이라 뜻이 없고 패키지별도 `영향 자산 1대` 만 늘어놓는다.
+            // 화면에서 단추를 뗐으니 주소로 들어와도 같은 곳을 보여 준다 —
+            // 안 그러면 손으로 적은 `?group=cve` 가 빈 화면이 된다.
+            group = "item";
             model.addAttribute("scope", vulns.ofScan(latest.getId()));
             vulns.fill(model, vulns.ofScan(latest.getId()), group, q, severityFilter,
                        fixable, kev, page, size, sort, dir);

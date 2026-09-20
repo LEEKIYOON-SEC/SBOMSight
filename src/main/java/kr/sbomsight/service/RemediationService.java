@@ -63,6 +63,22 @@ public class RemediationService {
         return remediations.save(remediation);
     }
 
+    /**
+     * 조치를 지운다 — <b>이력까지 함께.</b>
+     *
+     * <p>왜 지울 수 있어야 하는가. 보고서의 `조치 등록` 은 단추 한 번이고
+     * 확인 창도 없다. 잘못 누른 줄이 담당도 기한도 없이 목록에 남으면,
+     * `미등록 15개` 가 `14개` 로 줄어 <b>보고서의 수가 틀어진다.</b>
+     * 되돌릴 수 없는 등록은 등록이 아니라 사고다.
+     *
+     * <p>지운 사실은 부르는 쪽이 감사 로그에 남긴다. 여기서 남기지 않는
+     * 것은 이 서비스가 요청 맥락(누가·어디서)을 모르기 때문이다.
+     */
+    @Transactional
+    public void delete(Remediation remediation) {
+        remediations.delete(remediation);
+    }
+
     @Transactional
     public void update(Remediation remediation, RemediationStatus status, String owner,
                        LocalDate dueDate, String note, String actor, String comment) {

@@ -45,6 +45,11 @@ public enum AuditEvent {
     // --- 조치 · 검토 결과 ---
     REMEDIATION_CREATED("조치 등록"),
     REMEDIATION_UPDATED("조치 변경"),
+    /**
+     * 지운 조치는 <b>이력까지 함께</b> 사라진다({@code cascade = ALL}).
+     * 그래서 지운 뒤에 남는 자취는 이 줄 하나뿐이다 — 반드시 남긴다.
+     */
+    REMEDIATION_DELETED("조치 삭제"),
     ANALYSIS_RECORDED("검토 결과 기록"),
 
     /**
