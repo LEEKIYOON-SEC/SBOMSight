@@ -13,6 +13,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -29,18 +30,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 class VocabularyTest {
 
     /** 쓰지 않기로 한 말 → 대신 쓰는 말. */
-    private static final Map<String, String> BANNED = Map.of(
-            "다시 볼 날", "재검토일",
-            "승인한 사람", "결재 문서 번호 (승인 절차는 없다 — 있는 척하지 않는다)",
-            "바로 닿음", "원격 접근",
-            "한 일", "행위",
-            "감춤", "(상태로 가른다)",
-            "컴포넌트", "패키지",
-            "수정본", "수정 버전",
-            "재검사", "다시 검사",
+    private static final Map<String, String> BANNED = Map.ofEntries(
+            // `Map.of` 는 짝 열 개가 한계다. 늘어나면 여기서 컴파일이 멈춘다.
+            entry("다시 볼 날", "재검토일"),
+            entry("승인한 사람", "결재 문서 번호 (승인 절차는 없다 — 있는 척하지 않는다)"),
+            entry("바로 닿음", "원격 접근"),
+            entry("한 일", "행위"),
+            entry("감춤", "(상태로 가른다)"),
+            entry("컴포넌트", "패키지"),
+            entry("수정본", "수정 버전"),
+            entry("재검사", "다시 검사"),
             // `Scan` 을 부르는 말은 `검사` 하나다. 감사 로그의 행위 이름과
             // 자산 삭제 안내에만 `스캔` 이 남아 있었다 — 같은 것을 두 말로.
-            "스캔", "검사");
+            entry("스캔", "검사"),
+            // 순우리말로 지어낸 말이다. 그 팀이 실제로 쓰는 말은 `필터` 다.
+            // 화면 전체가 일관되게 쓰고 있었을 뿐, 아무도 그렇게 부르지 않는다.
+            entry("거르개", "필터"),
+            entry("묶기", "묶는 방식 또는 탭 이름(항목별 · CVE별 · 패키지별)"));
 
     /**
      * <b>열 머리에서만</b> 쓰지 않는 말.

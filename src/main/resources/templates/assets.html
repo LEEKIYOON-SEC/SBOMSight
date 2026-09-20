@@ -83,7 +83,7 @@
           <!--/* 거른 것이 있으면 무엇으로 걸렀는지 보이고, 푸는 길이 그 자리에 있어야 한다. */-->
           <a th:if="${filter != null and !#strings.isEmpty(filter)}" class="btn btn-sm active"
              th:href="@{${links.copy().with('filter', null).here()}}"
-             th:text="(${filter} == 'noscan' ? '검사 안 한 자산' : '30일 넘은 자산') + ' ✕'">거름 ✕</a>
+             th:text="(${filter} == 'noscan' ? '검사 안 한 자산' : '30일 넘은 자산') + ' ✕'">필터 ✕</a>
 
           <span class="ms-auto"></span>
 

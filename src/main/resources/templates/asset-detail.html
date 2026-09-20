@@ -250,7 +250,7 @@
       <th:block th:if="${group} == 'item'">
         <th:block th:if="${page.totalElements == 0}">
           <div th:replace="~{fragments/ui :: empty('조건에 맞는 취약점이 없습니다', null,
-                            ${links.clear()}, '거르개 지우기')}"></div>
+                            ${links.clear()}, '필터 지우기')}"></div>
         </th:block>
         <!--/* 건수 줄·표·쪽 넘김 모두 `/vulns` 와 같은 조각이다. 두 벌을 두면
              한쪽만 고치는 날이 오고, 그때부터 같은 목록이 화면마다 다르게 센다. */-->
@@ -265,8 +265,8 @@
       <!--/* CVE별·패키지별은 전체 화면에서 본다. 자산 하나로 좁히면 CVE 마다
            자산 수가 언제나 1 이라 묶는 뜻이 없다. */-->
       <th:block th:if="${group} != 'item'">
-        <div th:replace="~{fragments/ui :: empty('전체 화면에서 보는 묶기',
-                          '자산 하나로 좁히면 CVE 마다 자산 수가 언제나 1',
+        <div th:replace="~{fragments/ui :: empty('전체 화면에서만 보는 방식',
+                          'CVE별 · 패키지별은 자산 하나로 좁히면 자산 수가 언제나 1',
                           '/vulns?group=' + ${group}, '전체에서 보기')}"></div>
       </th:block>
     </div>
