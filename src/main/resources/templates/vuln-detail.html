@@ -77,7 +77,7 @@
             낸 값이고 한 건을 따져 볼 때 필요한 자리가 여기다.
           */-->
           <tr th:if="${!#strings.isEmpty(first.matchType)}">
-              <th>매칭 방식</th><td class="mono faint" th:text="${first.matchType}">exact-direct-match</td></tr>
+              <th>대조 방식</th><td class="mono faint" th:text="${first.matchType}">exact-direct-match</td></tr>
           <tr th:if="${!#strings.isEmpty(first.dataSource)}">
               <th>출처</th>
               <td><a th:href="${first.dataSource}" target="_blank" rel="noreferrer"

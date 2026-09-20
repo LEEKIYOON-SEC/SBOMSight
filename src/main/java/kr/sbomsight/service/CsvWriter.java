@@ -64,8 +64,8 @@ public final class CsvWriter {
     public static void writeRemediations(OutputStream out, List<Remediation> list)
             throws IOException {
         try (Writer writer = start(out)) {
-            row(writer, "자산", "패키지", "현재 버전", "목표 버전", "상태", "담당", "기한",
-                        "등록 시 건수", "메모", "등록", "최종 변경");
+            row(writer, "자산", "패키지", "현재 버전", "목표 버전", "조치 상태", "담당", "기한",
+                        "등록 당시 건수", "설명", "등록", "최종 변경");
             for (Remediation r : list) {
                 row(writer,
                     r.getAsset().getName(),
@@ -96,7 +96,7 @@ public final class CsvWriter {
     public static void writeAnalyses(OutputStream out, List<FindingAnalysis> rows)
             throws IOException {
         try (Writer writer = start(out)) {
-            row(writer, "자산", "구역", "취약점", "패키지", "상태", "근거", "대응",
+            row(writer, "자산", "구역", "취약점", "패키지", "검토 상태", "근거", "대응 방안",
                         "설명", "추가 보안 통제", "결재 문서 번호", "재검토일",
                         "기록한 사람", "기록한 때");
             for (FindingAnalysis a : rows) {

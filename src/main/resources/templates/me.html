@@ -35,7 +35,7 @@
                    과 '관리자가 초기화함' 을 가르는 값이기도 하다. */-->
               <td th:text="${me.previousLoginAt != null}
                            ? ${#temporals.format(me.previousLoginAt, 'yyyy-MM-dd HH:mm')}
-                           : '이번이 처음입니다'">—</td></tr>
+                           : '이번이 처음'">—</td></tr>
           <tr><th>계정 만든 날</th>
               <td th:text="${#temporals.format(me.createdAt, 'yyyy-MM-dd')}">—</td>
               <th></th><td></td></tr>
@@ -78,13 +78,13 @@
               <td>
                 <span th:if="${daysUntilExpiry > 0}"
                       th:text="${daysUntilExpiry} + '일'">0일</span>
-                <b class="danger-text" th:if="${daysUntilExpiry <= 0 and daysUntilExpiry != -1}">지났습니다</b>
+                <b class="danger-text" th:if="${daysUntilExpiry <= 0 and daysUntilExpiry != -1}">지남</b>
                 <span class="faint" th:if="${daysUntilExpiry == -1}">—</span>
               </td></tr>
         </table>
 
         <div th:if="${reason.isForced()}" class="alert alert-warning" style="margin-top:12px"
-             th:text="${reason.lede()}">지금 바꿔야 합니다.</div>
+             th:text="${reason.lede()}">지금 변경 필요</div>
 
         <div class="btn-list" style="margin-top:16px">
           <a class="btn btn-dark" href="/password">비밀번호 변경</a>

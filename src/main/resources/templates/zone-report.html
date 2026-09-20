@@ -42,7 +42,7 @@
     </label>
     <label class="form-label">시작 <input class="form-control" type="date" name="from" th:value="${from}"></label>
     <label class="form-label">종료 <input class="form-control" type="date" name="to" th:value="${to}"></label>
-    <button class="btn btn-dark" type="submit">보기</button>
+    <button class="btn btn-dark" type="submit">보고서 보기</button>
     <span class="spacer"></span>
     <a class="btn btn-sm" th:href="@{${thisMonthLink}}">이번 달</a>
     <a class="btn btn-sm" th:href="@{${lastMonthLink}}">지난 달</a>
@@ -357,7 +357,7 @@
             늘어날 자리가 없어 A4 폭을 넘고, 넘은 만큼 인쇄에서 잘린다 —
             띄워서 인쇄 미리보기를 보고 찾았다.
           */-->
-          <th>비고</th>
+          <th>특이사항</th>
         </tr>
         </thead>
         <tbody>
@@ -474,7 +474,7 @@
       ※ 해당 없음 — 수정 버전이 하나도 없는 패키지 없음.
     </p>
     <p class="footnote" th:unless="${report.action.residual.isEmpty()}">
-      ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 4장 비고.
+      ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 4장 특이사항.
       검토 결과 = 검토 결과를 적은 자산 수.
       <b th:if="${report.action.unexplained() > 0}" class="danger-text"
          th:text="'검토 결과 없음 ' + ${report.action.unexplained()} + '개 패키지'">—</b>
@@ -528,7 +528,7 @@
     <table class="table" th:if="${!report.action.overdueRows.isEmpty()}">
       <thead>
       <tr><th class="tight">자산</th><th class="tight">패키지</th>
-          <th class="tight">기한</th><th class="tight">상태</th><th class="tight">담당</th></tr>
+          <th class="tight">기한</th><th class="tight">조치 상태</th><th class="tight">담당</th></tr>
       </thead>
       <tbody>
       <tr th:each="r : ${report.action.overdueRows}">

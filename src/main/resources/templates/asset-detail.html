@@ -173,8 +173,15 @@
           <tr><th>삭제</th>
               <td>
                 <span>
-                  <b th:text="'스캔 ' + ${impact.scanCount()} + '건'">스캔 0건</b> ·
-                  <b th:text="'탐지 ' + ${#numbers.formatInteger(impact.findingCount(), 0, 'COMMA')} + '건'">탐지 0건</b> ·
+                  <!--/*
+                    **모든 검사의 합이다.** 위 탭의 `취약점 30` 은 최신 검사
+                    하나의 수인데 여기는 두 검사를 더해 60 이 된다. 같은 말
+                    (`탐지`)로 다른 수를 내면 어느 쪽이 맞는지 묻게 된다 —
+                    무엇을 더한 수인지 밝힌다.
+                  */-->
+                  <b th:text="'검사 ' + ${impact.scanCount()} + '건'">검사 0건</b> ·
+                  <b th:text="'탐지 ' + ${#numbers.formatInteger(impact.findingCount(), 0, 'COMMA')} + '건'">탐지 0건</b>
+                  <span class="faint">(모든 검사 합계)</span> ·
                   <b th:text="'조치 ' + ${impact.remediationCount()} + '건'">조치 0건</b> ·
                   <b th:text="'검토 결과 ' + ${impact.analysisCount()} + '건'">검토 결과 0건</b> ·
                   보관된 SBOM·검사 결과 파일 <b>삭제</b>
@@ -348,7 +355,7 @@
       <table class="table table-vcenter card-table">
         <thead>
         <tr>
-          <th class="tight">시각</th><th class="tight">상태</th>
+          <th class="tight">시각</th><th class="tight">검사 상태</th>
           <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
           <th class="num tight">패키지</th>
           <!--/*
@@ -357,7 +364,7 @@
             공개된 취약점은 이 검사에 없다 — 그것이 이 칸을 보는 이유다.
           */-->
           <th class="tight">grype</th>
-          <th class="tight" title="grype 이 쓴 취약점 DB 가 만들어진 날. 이 날 뒤에 공개된 취약점은 이 검사에 없습니다.">취약점 DB</th>
+          <th class="tight" title="이 검사에 쓴 취약점 DB 가 만들어진 날 · 그 뒤에 공개된 취약점은 이 검사에 없음">취약점 DB</th>
           <th>SBOM</th><th class="tight"></th>
         </tr>
         </thead>
@@ -414,11 +421,11 @@
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
                   th:if="${s.status.name() == 'DONE'}" sec:authorize="hasRole('ADMIN')">
               <button type="submit" class="btn btn-sm"
-                      title="보관된 SBOM 을 갱신된 취약점 DB 로 다시 검사합니다">다시 검사</button>
+                      title="보관된 SBOM 을 최신 취약점 DB 로 다시 검사">다시 검사</button>
             </form>
             <a class="btn btn-sm" th:if="${!#strings.isEmpty(s.sbomPath)}"
                th:href="@{'/scans/' + ${s.id} + '/sbom'}"
-               title="올렸던 SBOM 원본을 내려받습니다">SBOM</a>
+               title="업로드한 SBOM 원본 내려받기">SBOM</a>
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/delete'}" class="inline"
                   sec:authorize="hasRole('ADMIN')"
                   onsubmit="return confirm('이 검사와 보관된 SBOM·검사 결과를 지웁니다.\n되돌릴 수 없습니다.\n\n계속할까요?')">
@@ -456,8 +463,8 @@
           <thead>
           <tr>
             <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
-            <th class="tight">상태</th><th class="tight">담당</th>
-            <th class="tight">기한</th><th>메모</th>
+            <th class="tight">조치 상태</th><th class="tight">담당</th>
+            <th class="tight">기한</th><th>설명</th>
           </tr>
           </thead>
           <tbody>
@@ -484,7 +491,7 @@
           <thead>
           <tr>
             <th class="tight">취약점</th><th class="tight">패키지</th>
-            <th class="tight">상태</th><th class="tight">대응</th>
+            <th class="tight">검토 상태</th><th class="tight">대응 방안</th>
             <th class="tight">근거</th><th>설명</th>
             <th class="tight">재검토일</th>
           </tr>

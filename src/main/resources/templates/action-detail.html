@@ -47,7 +47,7 @@
     <form method="post" th:action="@{'/actions/' + ${remediation.id}}"
           sec:authorize="hasRole('ADMIN')">
       <div class="d-flex align-items-end gap-2 flex-wrap">
-        <label class="form-label">상태
+        <label class="form-label">조치 상태
           <select class="form-select" name="status">
             <option th:each="s : ${statuses}" th:value="${s}" th:text="${s.label()}"
                     th:selected="${s == remediation.status}">대기</option>
@@ -60,10 +60,10 @@
           <input class="form-control" name="dueDate" type="date" th:value="${remediation.dueDate}">
         </label>
       </div>
-      <label class="form-label">메모
+      <label class="form-label">설명
         <input class="form-control" name="note" th:value="${remediation.note}" placeholder="조치 계획 · 제약 사항" autocomplete="off">
       </label>
-      <label class="form-label">변경 사유 (이력에 남습니다)
+      <label class="form-label">변경 사유
         <input class="form-control" name="comment" placeholder="예: 정기점검 창에서 적용 예정" autocomplete="off">
       </label>
       <button class="btn btn-dark" type="submit">저장</button>
@@ -79,10 +79,10 @@
       근거 · 재검토일 · 결재 문서 번호가 함께 남음.
     </p>
     <table class="table kv" sec:authorize="!hasRole('ADMIN')">
-      <tr><th>상태</th><td th:text="${remediation.status.label()}">대기</td></tr>
+      <tr><th>조치 상태</th><td th:text="${remediation.status.label()}">대기</td></tr>
       <tr><th>담당</th><td th:text="${#strings.isEmpty(remediation.owner)} ? '—' : ${remediation.owner}">—</td></tr>
       <tr><th>기한</th><td th:text="${remediation.dueDate != null} ? ${#temporals.format(remediation.dueDate, 'yyyy-MM-dd')} : '—'">—</td></tr>
-      <tr><th>메모</th><td th:text="${#strings.isEmpty(remediation.note)} ? '—' : ${remediation.note}">—</td></tr>
+      <tr><th>설명</th><td th:text="${#strings.isEmpty(remediation.note)} ? '—' : ${remediation.note}">—</td></tr>
     </table>
     </div>
   </div>
@@ -95,7 +95,7 @@
       <tr><th>현재 → 목표</th>
           <td><span th:text="${#strings.isEmpty(remediation.fromVersion)} ? '—' : ${remediation.fromVersion}">—</span>
               → <b th:text="${#strings.isEmpty(remediation.toVersion)} ? '확인 필요' : ${remediation.toVersion}">—</b></td></tr>
-      <tr><th>등록 시 건수</th><td th:text="${remediation.openedCount} + '건'">0건</td></tr>
+      <tr><th>등록 당시 건수</th><td th:text="${remediation.openedCount} + '건'">0건</td></tr>
       <tr><th>등록</th>
           <td th:text="${#temporals.format(remediation.createdAt, 'yyyy-MM-dd HH:mm')} + ' · ' + ${remediation.createdBy}">—</td></tr>
     </table>
@@ -110,7 +110,7 @@
         무엇을 처리했는지 적힌 줄 알고 보면 사람 이름이 있다.
       */-->
       <thead><tr><th class="tight">시각</th><th class="tight">변경</th>
-                 <th class="tight">계정</th><th>사유</th></tr></thead>
+                 <th class="tight">계정</th><th>변경 사유</th></tr></thead>
       <tbody>
       <tr th:each="e : ${remediation.events}">
         <td class="tight" th:text="${#temporals.format(e.at, 'yyyy-MM-dd HH:mm')}">—</td>

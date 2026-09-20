@@ -111,9 +111,9 @@
           <tr>
             <th class="tight">자산</th><th class="tight">구역</th>
             <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
-            <th class="tight">상태</th><th class="tight">담당</th>
-            <th class="tight">기한</th><th class="num tight">등록 시 건수</th>
-            <th>메모</th>
+            <th class="tight">조치 상태</th><th class="tight">담당</th>
+            <th class="tight">기한</th><th class="num tight">등록 당시 건수</th>
+            <th>설명</th>
           </tr>
           </thead>
           <tbody>
@@ -152,7 +152,7 @@
 
       <th:block th:if="${analyses.isEmpty()}">
         <div th:replace="~{fragments/ui :: empty('검토 결과가 없습니다',
-                          '취약점 화면에서 건을 골라 상태와 대응을 작성',
+                          '취약점 화면에서 건을 골라 검토 상태와 대응 방안을 작성',
                           '/vulns', '취약점 보기')}"></div>
       </th:block>
 
@@ -162,7 +162,7 @@
           <tr>
             <th class="tight">자산</th><th class="tight">구역</th>
             <th class="tight">취약점</th><th class="tight">패키지</th>
-            <th class="tight">상태</th><th>대응</th>
+            <th class="tight">검토 상태</th><th>대응 방안</th>
             <!--/* 한 칸에 두 가지를 넣지 않는다. 고르는 것(근거)과 적는 것(설명)은
                  다른 것이라 열을 가른다.
 
@@ -170,7 +170,7 @@
                  ("취약한 코드가 들어 있지 않음")이 줄바꿈 없이 들어가면 표가
                  칸을 넘고, 넘은 만큼 오른쪽 칸이 잘린다. */-->
             <th>근거</th><th>설명</th>
-            <th class="tight">기록</th><th class="tight">재검토일</th>
+            <th class="tight">기록한 사람</th><th class="tight">재검토일</th>
           </tr>
           </thead>
           <tbody>

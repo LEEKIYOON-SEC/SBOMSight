@@ -274,8 +274,11 @@ public class VulnQuery {
                 .filter(s -> zoneId == null || s.getAsset().getZone().getId().equals(zoneId))
                 .toList();
 
-        String label = (zoneId == null ? "전체 " : zones.require(zoneId).getName() + " ")
-                + latest.size() + "대 · 최신 검사 기준";
+        // **`전체 5대` 라고만 쓰면 자산이 다섯 대인 줄 읽힌다.** 여섯 대 중
+        // 검사된 것이 다섯일 뿐이다 — 검사 안 한 자산이 빠졌다는 사실이
+        // 부제에 없으면 이 화면의 건수가 전부인 것으로 읽힌다.
+        String label = (zoneId == null ? "전체" : zones.require(zoneId).getName())
+                + " · 검사된 " + latest.size() + "대의 최신 검사";
         return new Scope(label, latest.stream().map(Scan::getId).toList(),
                          latest.size() == 1 ? latest.get(0).getAsset().getId() : null,
                          latest.stream().map(s -> s.getAsset().getId()).toList());

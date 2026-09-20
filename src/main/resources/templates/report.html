@@ -267,7 +267,7 @@
           늘어날 자리가 없어 A4 폭을 넘고, 넘은 만큼 인쇄에서 잘린다 —
           띄워서 인쇄 미리보기를 보고 찾았다.
         */-->
-        <th>비고</th>
+        <th>특이사항</th>
         <th class="tight no-print" sec:authorize="hasRole('ADMIN')"></th>
       </tr>
       </thead>
@@ -347,7 +347,7 @@
       <tr>
         <th class="tight">패키지</th><th class="tight">현재 버전</th>
         <th class="num tight">건수</th><th class="num tight">최고 CVSS</th>
-        <th class="tight">검토 결과</th><th>근거</th>
+        <th class="tight">검토 상태</th><th>근거</th>
         <th class="tight">재검토일</th>
       </tr>
       </thead>
@@ -393,7 +393,7 @@
       어디 갔냐" 를 점검에서 듣는다.
     */-->
     <p class="footnote" th:if="${!report.targets.noFixRows.isEmpty()}">
-      ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 3장 비고.
+      ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 3장 특이사항.
       <b th:if="${report.progress.unexplained() > 0}" class="danger-text"
          th:text="'검토 결과 없음 ' + ${report.progress.unexplained()} + '개 패키지'">—</b>
     </p>
@@ -415,7 +415,7 @@
     <table class="table" th:if="${report.progress.tracked > 0}">
       <thead>
       <tr>
-        <th class="tight">패키지</th><th class="tight">상태</th>
+        <th class="tight">패키지</th><th class="tight">조치 상태</th>
         <th class="tight">담당</th><th class="tight">기한</th>
         <th class="num tight">해소 건수</th>
       </tr>

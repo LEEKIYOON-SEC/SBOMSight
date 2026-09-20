@@ -59,7 +59,7 @@
           <a th:if="${summary.stale() > 0}" th:href="@{/(filter='stale')}">
             <b th:text="${summary.stale()}">0</b> 30일 넘은 자산</a>
           <a th:if="${summary.actionOverdue() > 0}" class="overdue" th:href="@{/actions}">
-            <b th:text="${summary.actionOverdue()}">0</b> 기한 지난 대응</a>
+            <b th:text="${summary.actionOverdue()}">0</b> 기한 지난 조치</a>
         </div>
       </div>
 
@@ -99,7 +99,7 @@
             `30일 넘은 자산` 에도 계속 뜬다. 그래서 그 말로 부른다.
           */-->
           <label class="form-check form-check-inline mb-0"
-                 title="운영에서 내린 자산. 목록과 현황 숫자에서 빠지고 검사 이력은 남습니다. 켜면 함께 보입니다.">
+                 title="운영에서 내린 자산 · 목록과 현황 숫자에서 제외 · 검사 이력은 유지">
             <input class="form-check-input" type="checkbox" id="archived-toggle" th:checked="${archived}">
             <span class="form-check-label">운영 종료 자산 포함</span>
           </label>
@@ -117,9 +117,9 @@
             <!--/* 표 보기가 기본이라 `view` 를 안 적는다 — 주소가 짧아지고, 적어도
                  같은 화면이다. 구역 보기는 정렬이 없으므로 함께 뗀다. */-->
             <a class="btn btn-sm" th:href="@{${links.copy().with('view', null).here()}}"
-               th:classappend="${view} != 'zones' ? 'active' : ''">표</a>
+               th:classappend="${view} != 'zones' ? 'active' : ''">목록</a>
             <a class="btn btn-sm" th:href="@{${links.copy().with('view', 'zones').with('sort', null).with('dir', null).here()}}"
-               th:classappend="${view} == 'zones' ? 'active' : ''">구역</a>
+               th:classappend="${view} == 'zones' ? 'active' : ''">구역별</a>
           </div>
         </div>
 
@@ -170,7 +170,7 @@
                 <a th:href="@{${links.copy().with('sort', 'findings').with('dir', sort == 'findings' and dir == 'asc' ? 'desc' : 'asc').here()}}">탐지
                   <span class="sortmark" th:if="${sort == 'findings'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↓</span></a></th>
               <th class="tight">심각도</th>
-              <th class="num tight">대응</th>
+              <th class="num tight">조치</th>
               <th>비고</th>
               <th class="tight"></th>
             </tr>
@@ -206,7 +206,7 @@
             </tr>
 
             <tr class="zone-item" th:if="${g.isEmpty()}">
-              <td colspan="8" class="faint">이 구역에는 아직 자산이 없습니다.</td>
+              <td colspan="8" class="faint">아직 자산 없음</td>
             </tr>
 
             <tr class="zone-item" th:each="row : ${g.rows}"

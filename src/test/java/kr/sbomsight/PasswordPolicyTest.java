@@ -217,7 +217,7 @@ class PasswordPolicyTest {
         String html = mvc.perform(get("/password").with(user(NAME).roles("ADMIN")))
                          .andReturn().getResponse().getContentAsString();
 
-        assertThat(html).contains("비밀번호를 변경하신 지 오래되었습니다");
+        assertThat(html).contains("비밀번호 변경 주기 지남");
         assertThat(html).contains("현재 비밀번호");
         // 구현 동작을 옮겨 적은 옛 문구가 남아 있지 않아야 한다.
         assertThat(html).doesNotContain("다른 화면이 열리지 않습니다");
@@ -233,7 +233,7 @@ class PasswordPolicyTest {
         String html = mvc.perform(get("/password").with(user(NAME).roles("ADMIN")))
                          .andReturn().getResponse().getContentAsString();
 
-        assertThat(html).contains("임시 비밀번호로 로그인하셨습니다");
+        assertThat(html).contains("임시 비밀번호로 로그인");
         assertThat(html).contains("임시 비밀번호");
     }
 

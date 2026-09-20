@@ -154,8 +154,8 @@ class LoginFlowTest {
 
         assertThat(html)
                 .as("쓰던 계정을 초기화했는데 '최초 로그인' 이라고 말한다")
-                .contains("임시 비밀번호로 로그인하셨습니다")
-                .doesNotContain("최초 로그인입니다");
+                .contains("임시 비밀번호로 로그인")
+                .doesNotContain("최초 로그인");
     }
 
     // --- 정적 파일 -------------------------------------------------------
