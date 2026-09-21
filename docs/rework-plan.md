@@ -2407,6 +2407,130 @@ check-table-width 1280 · 1920  0개 · check-rows 0 · contrast 0 · links 0
 - **계정 목록**(`/settings`)도 나누지 않는다. 수십 줄이고, 권한을 보는
   화면은 전체가 한눈에 보여야 한다.
 
+### N29 — 운영물에 개발·시험 것이 섞이지 않는다 ✅
+
+> "운영인데 테스트로 작성된게 있다면 금감원이나 이런곳에서 지적사항이니까"
+
+#### 먼저 센 것 — 운영 jar 에 시험은 0개였다
+
+| | 어디 | 운영 jar 에 |
+|---|---|---|
+| 시험 코드 31개 파일 | `src/test/` | **안 들어감** (jar 안 `test` 0개) |
+| `h2` · `junit` · `spring-boot-starter-test` · `spring-security-test` | `pom.xml` 전부 `<scope>test</scope>` | **안 들어감** |
+| 주석 속 시험 이름 | `report.html` 등 — 왜 그렇게 했는지 적은 주석 | 타임리프 주석은 서버가 뗀다 |
+
+`src/main` 에 `test`·`demo`·`sample`·`dummy`·`mock`·`fake` 로 이름 붙은 코드는
+없었다. grep 이 잡은 79건은 전부 `latest`(최신 검사)였다. 마이그레이션의
+`INSERT` 셋도 예시 데이터가 아니라 이관이다.
+
+**그런데 다른 셋이 걸렸다.**
+
+#### 1. 운영 설정에 박힌 개발 비밀번호
+
+`application.yml` 은 운영 jar 안에 그대로 들어간다.
+
+| 앞서 | 무엇 |
+|---|---|
+| `password: ${SBOMSIGHT_DB_PASSWORD:devpass}` | 소스에 박힌 DB 비밀번호 — 이름도 `dev` |
+| `key-store-password: ${SBOMSIGHT_KEYSTORE_PASSWORD:changeit}` | 기본 키스토어 비밀번호 |
+| 머리 주석 `여기 적힌 값은 개발 기본값이다` | 운영 설정이 스스로 개발용이라고 적음 |
+
+**기본값이 있으면 넣지 않은 설치가 그대로 뜬다.** 환경변수를 넣은 줄
+알았는데 안 넣은 설치가 `devpass` 로 돌고, 그 비밀번호는 소스만 보면 누구나
+안다. 기본값을 없앴다 — 이제 안 넣으면 멈춘다.
+
+**멈추는 말이 문제였다.** 기본값만 빼고 띄워 보니 이렇게 멈췄다.
+
+```
+java.io.IOException: keystore password was incorrect
+Caused by: javax.crypto.BadPaddingException: Given final block not properly padded
+```
+
+인증서 파일이 깨진 것으로 읽힌다. 새벽에 이것을 받아 든 사람은 인증서를 다시
+만들기 시작한다. 그래서 컨텍스트가 뜨기 전에 보고 빠진 이름을 그대로 적는다
+(`RequiredSecretsPostProcessor:49`). 기동 전 점검도 함께 본다
+(`run-server.sh:47` · `run-server.ps1:158`).
+
+`EnvironmentPostProcessor` 는 **`spring.factories` 에서만 읽는다** —
+`META-INF/spring/*.imports` 로만 두었더니 한 번도 불리지 않았고, 위의 그
+암호 오류가 그대로 났다. 띄워 보고 알았다.
+
+#### 2. 로그인 없이 열리는 개발 문서
+
+`static/vendor/tabler/README.md` 가 **로그인 없이 200** 을 내주고 있었다 —
+내부 빌드 절차와 폴더 구조가 적힌 문서다. `docs/tabler.md` 로 옮겼다.
+`LICENSE` 는 그 자리에 남긴다: MIT 는 라이선스가 배포물과 함께 가기를
+요구하고, 그것은 감추는 것이 아니라 내걸어야 하는 것이다.
+
+#### 3. 운영 PC 에 남는 시험 코드
+
+`docs/windows-setup.md` 는 **운영 PC 에서 소스를 받아 그 자리에서 빌드**하라고
+한다. 그래서 시험 코드가 운영 PC 디스크에 남는다. 실행되지 않아도 그 자리에
+있다는 것이 점검에서 잡힌다.
+
+**지우는 것이 한 줄이 되게 한 폴더로 모았다.**
+
+```
+tests/
+  java/  resources/        ← src/test/java · src/test/resources
+  run.sh                   ← scripts/test.sh
+  check-mariadb.sh  check-migrations.sh
+  check-rows.py  check-links.py  check-contrast.py
+  check-uniform.py  check-table-width.py
+  README.md                ← 왜 여기 있고 어떻게 지우는가
+```
+
+`pom.xml:143` 의 `<testSourceDirectory>` 가 이 폴더를 가리킨다. 설치 문서에
+지우는 단계를 넣었다(`windows-setup.md:259`) — 갱신 절차에도 넣었다
+(`:639`): `git pull` 이 시험을 다시 가져오므로 매번 지워야 한다.
+
+**저장소에는 그대로 남는다.** 점검이 묻는 것은 "시험 코드가 있느냐" 가 아니라
+"운영에 시험 코드·시험 데이터가 섞였느냐" 이고, 시험을 수행했다는 증적은
+저장소 쪽에서 낸다. 지웠으면 시험 320개가 사라지고, 다음에 고칠 때 로그인이
+깨져도 띄워 보기 전까지 아무도 모른다.
+
+`scripts/` 에 남는 것은 운영 도구다 — `run-server` · `install-*` ·
+`make-keystore` · `make-notice` · `env.example`. `run-server.sh --check` 는
+기동 전 점검이라 시험이 아니다.
+
+#### 확인
+
+고치기 전 상태를 하나씩 되돌려 가드가 잡는지 먼저 봤다.
+
+| 되돌린 것 | `ProductionHygieneTest` |
+|---|---|
+| `devpass` 기본값 | `noFallbackSecretsInProductionConfig` 실패 |
+| `static` 에 `.md` | `noDeveloperDocsUnderStatic` 실패 |
+| `h2` 의 `<scope>test</scope>` 제거 | `testDependenciesStayOutOfTheJar` 실패 |
+| `scripts/` 에 `check-*.py` | `everythingTestRelatedLivesUnderTests` 실패 |
+
+```
+./mvnw -B test                             320개 통과 (H2)      ← 316 + 4
+DB_PORT=13306 tests/check-mariadb.sh       320개 통과 (MariaDB 10.11 + Flyway)
+check-table-width 1280 0 · check-rows 0 · contrast 0 · links 0
+```
+
+띄워서 직접 —
+
+- 환경변수 없이: 종료 코드 1, `설정하지 않은 값이 있어 기동하지 않았습니다 ·
+  없는 것 SBOMSIGHT_DB_PASSWORD · SBOMSIGHT_KEYSTORE_PASSWORD`
+- 넣고: 정상 기동, `/login` 200
+- `/vendor/tabler/README.md` **404** · `/vendor/tabler/LICENSE` 200
+- `run-server.sh --check` 가 빠진 환경변수 둘을 `안됨` 으로 적음
+- `tests` 폴더를 통째로 지운 사본에서 `mvnw package -DskipTests` → jar 생성됨
+
+**`clean` 없이 `package` 하면 지운 자원이 `target` 에 남는다.** README 를
+옮기고 `package` 만 했더니 jar 에 옛 파일이 그대로 들어가 여전히 200 이었다.
+설치·갱신 문서는 이미 `clean package` 라 운영에는 영향이 없다.
+
+#### 하다가 본 것 — 고치지 않는다
+
+`scripts/make-keystore.sh` 는 비밀번호 인자를 안 주면 `changeit` 으로 만든다.
+윈도우 쪽(`make-keystore.ps1`)은 이미 필수 인자라 운영 경로에는 해당이 없고,
+`.sh` 는 개발·리눅스용이다. 설정에서 기본값을 없앴으므로 그 키스토어를 쓰려면
+`changeit` 을 명시적으로 넣어야 한다 — 고르지 않은 값이 조용히 쓰이는 일은
+없어졌다.
+
 ---
 
 ## 9. 검증 (N11 에서 사람이 직접)

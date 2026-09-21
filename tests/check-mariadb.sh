@@ -12,12 +12,12 @@
 #      만든 스키마는 언제나 엔티티와 맞는다 — 엔티티가 만들었으니까.
 #      운영에서 쓰는 것은 db/migration/*.sql 이 만든 쪽이다.
 #
-# scripts/check-migrations.sh 는 마이그레이션이 도는지만 본다. 이 스크립트는
+# tests/check-migrations.sh 는 마이그레이션이 도는지만 본다. 이 스크립트는
 # 그 위에서 응용을 통째로 돌린다.
 #
-#   ./scripts/check-mariadb.sh
-#   DB_HOST=127.0.0.1 DB_PORT=13306 ./scripts/check-mariadb.sh
-#   DB_PORT=13306 ./scripts/check-mariadb.sh -Dtest=ZoneReportTest
+#   ./tests/check-mariadb.sh
+#   DB_HOST=127.0.0.1 DB_PORT=13306 ./tests/check-mariadb.sh
+#   DB_PORT=13306 ./tests/check-mariadb.sh -Dtest=ZoneReportTest
 set -euo pipefail
 
 HOST="${DB_HOST:-127.0.0.1}"

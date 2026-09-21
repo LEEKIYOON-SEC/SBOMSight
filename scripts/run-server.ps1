@@ -153,6 +153,15 @@ if ($excluded) {
     $ready = $false
 }
 
+# 비밀번호에는 기본값이 없다. 안 넣으면 스프링이 자리표시자를 못 풀고
+# 스택 트레이스로 멈춘다 — 여기서 한 줄로 먼저 말한다.
+foreach ($name in 'SBOMSIGHT_DB_PASSWORD', 'SBOMSIGHT_KEYSTORE_PASSWORD') {
+    $set = [bool] (Get-Item "Env:$name" -ErrorAction SilentlyContinue)
+    if (-not (Test-Line $set $name $(if ($set) { '설정됨' } else { 'config\env.ps1 에 넣으세요' }))) {
+        $ready = $false
+    }
+}
+
 Write-Host ("-" * 60)
 
 if ($Check) {

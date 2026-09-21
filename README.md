@@ -249,12 +249,12 @@ CVE 가 없으면 지어내지 않는다.
 시험에서 한 번도 실행되지 않는다.** 진짜 DB 와 마이그레이션은 따로 본다.
 
 ```bash
-DB_PORT=13306 ./scripts/check-mariadb.sh      # 진짜 DB + Flyway 스키마로 전체 시험
-DB_PORT=13306 ./scripts/check-migrations.sh   # 빈 DB 와 데이터가 있는 DB 양쪽에 태운다
-python3 scripts/check-table-width.py 1280     # 표가 칸을 넘는지 (브라우저로 실측)
-python3 scripts/check-links.py                # 주소에 빈 값이 붙는지
-python3 scripts/check-uniform.py              # 단추·입력칸이 한 모양인지
-python3 scripts/check-contrast.py             # 글자 대비 (WCAG 2.1 AA)
+DB_PORT=13306 ./tests/check-mariadb.sh        # 진짜 DB + Flyway 스키마로 전체 시험
+DB_PORT=13306 ./tests/check-migrations.sh     # 빈 DB 와 데이터가 있는 DB 양쪽에 태운다
+python3 tests/check-table-width.py 1280       # 표가 칸을 넘는지 (브라우저로 실측)
+python3 tests/check-links.py                  # 주소에 빈 값이 붙는지
+python3 tests/check-uniform.py                # 단추·입력칸이 한 모양인지
+python3 tests/check-contrast.py               # 글자 대비 (WCAG 2.1 AA)
 ```
 
 아래 둘은 **브라우저만 알 수 있는 것**이라 시험이 아니라 스크립트다. 표가

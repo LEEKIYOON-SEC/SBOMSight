@@ -57,8 +57,8 @@
 
 ```bash
 ./mvnw -B test                                       # 컴파일 + 시험 (H2)
-DB_PORT=13306 DB_USER=… ./scripts/check-mariadb.sh   # 진짜 DB + Flyway 스키마
-DB_PORT=13306 DB_USER=… ./scripts/check-migrations.sh # 마이그레이션만 (스키마 건드렸으면)
+DB_PORT=13306 DB_USER=… ./tests/check-mariadb.sh     # 진짜 DB + Flyway 스키마
+DB_PORT=13306 DB_USER=… ./tests/check-migrations.sh  # 마이그레이션만 (스키마 건드렸으면)
 ```
 
 - `mvnw test` 가 컴파일까지 한다. 따로 타입체크 명령은 없다.
@@ -159,8 +159,8 @@ grype 이 낸 것은 **탐지**, 우리가 적는 것은 **검토 결과**다. �
 
 ```bash
 ./mvnw -B test                                # 컴파일 + 시험 (H2)
-DB_PORT=13306 ./scripts/check-mariadb.sh      # 진짜 DB + Flyway 스키마
-DB_PORT=13306 ./scripts/check-migrations.sh   # 마이그레이션만
+DB_PORT=13306 ./tests/check-mariadb.sh        # 진짜 DB + Flyway 스키마
+DB_PORT=13306 ./tests/check-migrations.sh     # 마이그레이션만
 ./scripts/run-server.sh --check               # 준비 상태
 ```
 

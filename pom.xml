@@ -125,6 +125,28 @@
   </dependencies>
 
   <build>
+    <!--
+      시험은 `src/test` 가 아니라 **최상위 `tests/`** 에 둔다.
+
+      왜. 운영 PC 는 소스를 받아 그 자리에서 빌드한다(docs/windows-setup.md).
+      시험이 `src/test` 에 있으면 운영 PC 디스크에 시험 코드가 남고, 점검에서
+      "운영 시스템에 시험 코드가 있다" 로 잡힌다. 실행되지는 않지만 그 자리에
+      있다는 것이 지적 사항이다.
+
+      한 폴더에 모아 두면 **운영 PC 에서 `tests` 하나만 지우면 끝난다** —
+      시험 코드·시험 자원·시험 스크립트가 전부 그 안에 있다. 저장소에는
+      그대로 남으므로 시험 증적을 잃지 않는다.
+
+      **없어도 빌드는 된다.** 폴더가 없으면 testCompile 이 할 일이 없어
+      그냥 지나간다 — 운영 PC 에서 지운 뒤에도 `mvnw package` 가 돈다.
+    -->
+    <testSourceDirectory>${project.basedir}/tests/java</testSourceDirectory>
+    <testResources>
+      <testResource>
+        <directory>${project.basedir}/tests/resources</directory>
+      </testResource>
+    </testResources>
+
     <plugins>
       <plugin>
         <groupId>org.springframework.boot</groupId>

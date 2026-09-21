@@ -1,5 +1,10 @@
 # Tabler 1.5.1 — 여기 있는 것과 없는 것
 
+> 이 문서는 `static/vendor/tabler/` 에 있었다. 그 아래는 **로그인 없이 밖에서
+> 열리는 자리**라, 개발용 문서가 `/vendor/tabler/README.md` 로 그대로
+> 내려받아졌다. 문서는 `docs/` 에 둔다 — 그 자리에 남는 것은 CSS 와
+> 라이선스뿐이고, 라이선스는 MIT 가 배포물과 함께 가기를 요구한다.
+
 화면의 바탕이 되는 CSS 다. 폐쇄망이라 CDN 을 부르지 않고 **파일을 저장소에
 담는다.**
 
@@ -34,7 +39,7 @@ cp package/dist/css/tabler.min.css src/main/resources/static/vendor/tabler/
 그 이름이 바뀌면 조용히 안 먹는다.
 
 ```bash
-python3 scripts/check-uniform.py     # 단추·입력칸이 한 모양인가
-python3 scripts/check-contrast.py    # 글자 대비
-python3 scripts/check-table-width.py 1280
+python3 tests/check-uniform.py     # 단추·입력칸이 한 모양인가
+python3 tests/check-contrast.py    # 글자 대비
+python3 tests/check-table-width.py 1280
 ```

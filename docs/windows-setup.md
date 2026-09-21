@@ -249,18 +249,35 @@ $env:SBOMSIGHT_GRYPE = "$env:LOCALAPPDATA\SBOMSight\bin\grype.exe"
 `target\sbomsight-1.0.0.jar` 가 생긴다.
 
 > **`-DskipTests` 가 붙는 이유.** 시험은 개발에서 도는 것이고, 운영 PC 에서
-> 필요한 것은 결과물뿐이다. 빼면 시험 274개가 함께 돌면서 화면이 몇 분 동안
-> 시험 클래스 이름으로 채워진다 — 빌드가 느려지고, 무엇을 설치하고 있는지도
-> 잘 안 보인다. **컴파일은 그대로 한다** — 코드가 깨졌으면 여기서 멈춘다.
+> 필요한 것은 결과물뿐이다. 빼면 시험이 함께 돌면서 화면이 몇 분 동안 시험
+> 클래스 이름으로 채워진다 — 빌드가 느려지고, 무엇을 설치하고 있는지도 잘
+> 안 보인다. **컴파일은 그대로 한다** — 코드가 깨졌으면 여기서 멈춘다.
+
+### 시험 코드를 지운다
+
+```powershell
+Remove-Item -Recurse -Force tests
+```
+
+> **운영 시스템에 시험 코드를 두지 않는다.** 실행되지 않아도 디스크에 있다는
+> 것이 점검에서 지적된다. 시험은 `tests\` 한 폴더에 모여 있으므로 지우는
+> 것이 한 줄이고, **지운 뒤에도 빌드는 그대로 돈다** — 다음에 갱신받을 때
+> `git pull` 로 다시 따라온다. 그때 다시 지우면 된다.
+>
+> 저장소에는 시험이 그대로 남는다. 점검이 묻는 것은 "시험 코드가 있느냐" 가
+> 아니라 "운영에 시험 코드·시험 데이터가 섞였느냐" 이고, 시험을 수행했다는
+> 증적은 저장소 쪽에서 낸다.
 
 ### 확인
 
 ```powershell
-Test-Path target\sbomsight-1.0.0.jar
+Test-Path target\sbomsight-1.0.0.jar     # True
+Test-Path tests                          # False
 ```
 
-> 시험까지 돌려 보고 싶으면 `.\mvnw.cmd test`. H2 메모리 DB 로 돌기 때문에
-> 이 PC 의 DB 를 건드리지 않는다. 설치에 필요한 절차는 아니다.
+> 시험까지 돌려 보고 싶으면 **지우기 전에** `.\mvnw.cmd test`. H2 메모리
+> DB 로 돌기 때문에 이 PC 의 DB 를 건드리지 않는다. 설치에 필요한 절차는
+> 아니다.
 
 ---
 
@@ -619,9 +636,13 @@ mysqldump -u root -p --single-transaction --routines sbomsight > C:\work\backup-
 ```powershell
 git pull
 .\mvnw.cmd clean package -DskipTests
+Remove-Item -Recurse -Force tests        # `git pull` 이 다시 가져온다
 .\scripts\install-service.ps1 -Start     # 서비스로 등록했다면
 .\scripts\run-server.ps1                 # 아니면 이쪽
 ```
+
+> **`tests` 지우기를 매번 한다.** `git pull` 이 시험을 다시 가져오므로,
+> 갱신할 때마다 운영 PC 에 시험 코드가 되살아난다.
 
 표 변경은 첫 기동 때 Flyway 가 알아서 적용한다.
 

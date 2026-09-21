@@ -11,8 +11,8 @@
 # 데이터를 넣은 상태에서 — 태워 본다. 자리를 옮기는 마이그레이션은 빈 DB
 # 에서는 통과하고 데이터가 있을 때 깨지는 일이 흔하다.
 #
-#   ./scripts/check-migrations.sh                      # 127.0.0.1:3306 root
-#   DB_HOST=127.0.0.1 DB_PORT=13306 ./scripts/check-migrations.sh
+#   ./tests/check-migrations.sh                        # 127.0.0.1:3306 root
+#   DB_HOST=127.0.0.1 DB_PORT=13306 ./tests/check-migrations.sh
 set -euo pipefail
 
 HOST="${DB_HOST:-127.0.0.1}"

@@ -1,7 +1,15 @@
-## SBOMSight 기본 설정
+## SBOMSight 설정
 ##
-## 여기 적힌 값은 개발 기본값이다. 실제 운영 값(비밀번호·인증서 암호)은
-## application-prod.yml 이나 환경변수로 덮어쓴다 — 저장소에 두지 않는다.
+## **비밀번호에는 기본값을 두지 않는다.** 앞서 DB 비밀번호에 `devpass`,
+## 키스토어 비밀번호에 `changeit` 이 기본값으로 박혀 있었다. 환경변수를 안
+## 넣어도 일단 떴기 때문에, 넣은 줄 알았는데 안 넣은 설치가 그대로 남았고
+## 그 비밀번호는 소스만 보면 누구나 알 수 있었다.
+##
+## 이제 안 넣으면 기동이 멈춘다 — 조용히 약한 것보다 시끄럽게 멈추는 편이
+## 낫다. 무엇을 넣어야 하는지는 `scripts/env.example.ps1` 에 있다.
+##
+## 비밀번호가 아닌 값(포트·경로·기한)은 기본값을 둔다. 그것까지 넣게 하면
+## 설치가 길어지기만 하고 지키는 것이 없다.
 
 server:
   # 금융권 지침상 http 로는 열지 않는다. 443 고정.
@@ -12,7 +20,8 @@ server:
     # 형식이 PKCS12 라 사내 CA 가 내주는 .pfx 를 그대로 쓸 수 있다.
     key-store: ${SBOMSIGHT_KEYSTORE:file:./config/keystore.p12}
     key-store-type: PKCS12
-    key-store-password: ${SBOMSIGHT_KEYSTORE_PASSWORD:changeit}
+    # 기본값 없음 — 안 넣으면 기동이 멈춘다.
+    key-store-password: ${SBOMSIGHT_KEYSTORE_PASSWORD}
     key-alias: ${SBOMSIGHT_KEY_ALIAS:sbomsight}
     # 구형 프로토콜은 열지 않는다. 점검에서 가장 먼저 지적되는 항목이다.
     enabled-protocols: TLSv1.3,TLSv1.2
@@ -58,7 +67,8 @@ spring:
     # sslMode=trust 로 붙는다 — 암호화된 연결 위에서는 공개키가 필요 없다.
     url: ${SBOMSIGHT_DB_URL:jdbc:mariadb://127.0.0.1:13306/sbomsight?sslMode=disable&rewriteBatchedStatements=true&allowPublicKeyRetrieval=true}
     username: ${SBOMSIGHT_DB_USER:sbomsight}
-    password: ${SBOMSIGHT_DB_PASSWORD:devpass}
+    # 기본값 없음 — 안 넣으면 기동이 멈춘다.
+    password: ${SBOMSIGHT_DB_PASSWORD}
     hikari:
       # grype 한 번에 수만 건이 들어온다. 배치 저장이 커넥션을 오래 쥔다.
       maximum-pool-size: 10

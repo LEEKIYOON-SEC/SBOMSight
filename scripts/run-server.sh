@@ -42,6 +42,15 @@ ks="${KEYSTORE#file:}"
 
 command -v "$GRYPE" >/dev/null 2>&1 && say ok "grype  $GRYPE" || say no "grype  $GRYPE"
 
+# 비밀번호에는 기본값이 없다. 안 넣으면 스프링이 자리표시자를 못 풀고
+# 스택 트레이스로 멈춘다 — 여기서 한 줄로 먼저 말한다.
+[ -n "${SBOMSIGHT_DB_PASSWORD+x}" ] \
+  && say ok "DB 비밀번호  SBOMSIGHT_DB_PASSWORD" \
+  || say no "DB 비밀번호  SBOMSIGHT_DB_PASSWORD 가 없습니다"
+[ -n "${SBOMSIGHT_KEYSTORE_PASSWORD+x}" ] \
+  && say ok "키스토어 비밀번호  SBOMSIGHT_KEYSTORE_PASSWORD" \
+  || say no "키스토어 비밀번호  SBOMSIGHT_KEYSTORE_PASSWORD 가 없습니다"
+
 printf -- '-%.0s' {1..60}; echo
 
 if [ "${1:-}" = "--check" ]; then
