@@ -334,9 +334,12 @@
       <div th:replace="~{fragments/ui :: pager(${assetPackages}, ${links})}"></div>
       <div class="card-footer">
         <p class="footnote" style="margin-top:0;padding-top:0;border-top:0">
+          ※ 세는 단위 — <b>설치된 줄</b> · 같은 이름도 경로·버전마다 한 줄.
+        </p>
+        <p class="footnote" style="margin-top:0;padding-top:0;border-top:0">
           ※ 기준 — 이 자산의 최신 검사
-          (<span th:text="${#numbers.formatInteger(packageCount, 0, 'COMMA')}">0</span>개).
-          같은 패키지가 다른 자산에 몇 버전으로 깔렸는지는 패키지 화면에서.
+          (<span th:text="${#numbers.formatInteger(packageCount, 0, 'COMMA')}">0</span>줄).
+          다른 자산 것은 <a th:href="@{/packages}">패키지 화면</a>에서.
         </p>
       </div>
     </div>

@@ -41,13 +41,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li><b>머리의 수는 거른 뒤 전체다.</b> 쪽에 실린 줄 수를 찍으면 `100건`
  *       인데 쪽이 다섯인 화면이 된다.</li>
  * </ol>
+ *
+ * <p><b>{@code @Transactional} 이다.</b> 240개 넘는 씨앗을 남기면 다른 시험의
+ * 목록·건수가 흔들린다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-/**
- * <b>{@code @Transactional} 이다.</b> 240개 넘는 씨앗을 남기면 다른 시험의
- * 목록·건수가 흔들린다.
- */
 @Transactional
 class ListPagingTest {
 
@@ -176,6 +175,38 @@ class ListPagingTest {
 
         assertThat(open("/vulns?group=cve")).contains("가지");
         assertThat(open("/vulns?group=package")).contains("개");
+    }
+
+    /**
+     * <b>같은 `패키지` 를 세는 세 화면이 세는 단위를 말한다.</b>
+     *
+     * <p>쓰는 사람이 물었다 — "취약점탭에서 결국 패키지별로 볼 수 있는데
+     * 패키지탭은 왜 별도로 있는거야? 근데 왜 서로 개수가 달라?"
+     *
+     * <pre>
+     *   /packages                  인벤토리의 **이름** 수
+     *   /assets/{id}?tab=packages  그 자산의 **설치 줄** 수 (이름+버전+경로)
+     *   /vulns?group=package       grype 이 **탐지를 낸 이름** 수
+     * </pre>
+     *
+     * <p>셋 다 맞는 수다. 무엇을 세는지 화면이 말하지 않으면 어느 쪽이
+     * 맞는지 물어볼 자리가 없고, 그 순간 세 수가 다 못 미덥게 된다.
+     */
+    @Test
+    @DisplayName("패키지를 세는 세 화면이 세는 단위를 말한다")
+    void threePackageScreensSayWhatTheyCount() throws Exception {
+        Asset asset = seedAsset("unit3");
+        Scan scan = seedScan(asset);
+        seedComponent(asset, scan, "openssl", "3.0.7");
+        seedFinding(scan, "CVE-2024-22222", "openssl");
+
+        assertThat(open("/packages"))
+                .as("패키지 화면이 이름을 센다는 말이 없다").contains("패키지 이름")
+                .as("탐지가 없는 것도 여기 있다는 말이 없다").contains("깔린 것 전부");
+        assertThat(open("/vulns?group=package"))
+                .as("탐지가 난 것만 센다는 말이 없다").contains("탐지가 난 패키지 이름");
+        assertThat(open("/assets/" + asset.getId() + "?tab=packages"))
+                .as("설치 줄을 센다는 말이 없다").contains("설치된 줄");
     }
 
     /**

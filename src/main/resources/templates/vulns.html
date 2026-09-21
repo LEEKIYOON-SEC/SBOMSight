@@ -244,6 +244,14 @@
           </table>
         </div>
         <div th:replace="~{fragments/ui :: pager(${packagePage}, ${links})}"></div>
+        <!--/* 패키지 화면과 세는 것이 다르다. 적어 두지 않으면 두 화면의
+             수가 다른 것이 오류로 읽힌다. */-->
+        <p class="footnote">
+          ※ 세는 단위 — <b>탐지가 난 패키지 이름</b> · 최신 검사 기준.
+        </p>
+        <p class="footnote">
+          ※ 깔린 것 전부는 <a th:href="@{/packages}">패키지 화면</a>.
+        </p>
       </th:block>
     </th:block>
   </div>

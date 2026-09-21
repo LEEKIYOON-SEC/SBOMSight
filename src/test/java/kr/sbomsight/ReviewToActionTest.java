@@ -42,14 +42,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       같은 조치 하나를 가리킨다 — 두 번 눌러도 조치가 늘지 않는다.</li>
  *   <li><b>조회 권한은 열 수 없다.</b></li>
  * </ol>
+ *
+ * <p><b>{@code @Transactional} 이다.</b> 남긴 줄이 그대로 쌓이면 다른 시험이
+ * 흔들린다 — 여기서 만든 {@code CVE-2021-44228} 이 남아 "CVE 번호로도 찾힌다"
+ * 가 1건 대신 2건을 보게 했다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-/**
- * <b>{@code @Transactional} 이다.</b> 남긴 줄이 그대로 쌓이면 다른 시험이
- * 흔들린다 — 여기서 만든 {@code CVE-2021-44228} 이 남아 "CVE 번호로도
- * 찾힌다" 가 1건 대신 2건을 보게 했다.
- */
 @Transactional
 class ReviewToActionTest {
 
