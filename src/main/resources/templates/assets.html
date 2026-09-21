@@ -154,6 +154,8 @@
           정렬 머리의 주소는 `links` 로 만든다. 문자열로 짜면 고르지 않은 값도
           `filter=&archived=false` 로 따라붙는다(N12).
         */-->
+        <div th:if="${view != 'zones' and assetCount > 0}"
+             th:replace="~{fragments/ui :: countline(${rowPage}, ${links}, '대')}"></div>
         <div class="table-responsive" th:if="${view != 'zones' and assetCount > 0}">
           <table class="table table-vcenter card-table table-sticky asset-table"
                  th:attr="data-zone-picked=${selectedZone != null}">
@@ -184,7 +186,15 @@
                           th:title="${g.zone.name} + ' 접기'">▾</button>
                   <i class="zrail" th:style="'background:' + (${#strings.isEmpty(g.zone.color)} ? '#6f7e8d' : ${g.zone.color})"></i>
                   <b th:text="${g.zone.name}">DMZ</b>
+                  <!--/*
+                    **구역의 수는 구역 전체의 것이다.** 이 쪽에 실린 것만
+                    세면 `DMZ 5대` 가 쪽을 넘길 때마다 달라진다 — 구역의
+                    크기는 내가 몇 쪽을 보고 있느냐에 따라 달라지는 값이
+                    아니다. 잘린 쪽에서는 몇 줄이 보이는지 함께 적는다.
+                  */-->
                   <span class="faint num" th:text="${g.serverCount()} + '대'">0대</span>
+                  <span class="faint" th:if="${g.partial()}"
+                        th:text="'이 쪽 ' + ${g.shown().size()} + '대'">이 쪽 3대</span>
                   <span class="spacer"></span>
                   <th:block th:unless="${g.isEmpty()}">
                     <!--/* 실제 악용이 맨 앞. 확인된 사실이 등급보다 급하다. */-->
@@ -209,7 +219,7 @@
               <td colspan="8" class="faint">아직 자산 없음</td>
             </tr>
 
-            <tr class="zone-item" th:each="row : ${g.rows}"
+            <tr class="zone-item" th:each="row : ${g.shown()}"
                 th:style="${row.asset.archivedAt != null} ? 'opacity:.55' : ''">
               <td class="tight">
                 <a class="fw-bold" th:href="@{'/assets/' + ${row.asset.id}}"
@@ -249,6 +259,8 @@
             </tbody>
           </table>
         </div>
+        <div th:if="${view != 'zones' and assetCount > 0}"
+             th:replace="~{fragments/ui :: pager(${rowPage}, ${links})}"></div>
       </div>
     </div>
 

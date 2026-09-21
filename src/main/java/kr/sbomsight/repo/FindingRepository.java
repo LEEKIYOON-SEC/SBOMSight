@@ -492,12 +492,41 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
            GROUP BY f.packageName, f.packageType
+           ORDER BY COUNT(f) DESC, f.packageName ASC
            """)
     List<ZonePackageGroup> groupByPackageIn(@Param("scanIds") Collection<Long> scanIds,
                                             @Param("q") String q,
                                             @Param("severity") String severity,
                                             @Param("fixable") Boolean fixable,
                                             @Param("kev") Boolean kev);
+
+    /**
+     * 거르개를 건 키 목록 — <b>묶어 보는 화면의 `검토 n/N`.</b>
+     *
+     * <p>{@link #findKeysIn} 과 달리 화면의 거르개 넷을 그대로 받는다.
+     * 세는 쪽이 안 걸면 `7건 중 2건 검토` 의 7 이 같은 화면의 건수와
+     * 달라진다 — 그 순간 이 칸은 없느니만 못하다. {@code groupByCveIn} 과
+     * <b>같은 식</b>을 쓴다.
+     */
+    @Query("""
+           SELECT s.asset.id AS assetId, f.cve AS cve, f.relatedCve AS relatedCve,
+                  f.packageName AS packageName
+           FROM Finding f JOIN f.scan s
+           WHERE s.id IN :scanIds
+             AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
+             AND (:fixable IS NULL
+                  OR (:fixable = TRUE  AND f.fixState = 'fixed')
+                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+             AND (:kev IS NULL OR f.kev = :kev)
+             AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+           """)
+    List<AssetFindingKey> findKeysFiltered(@Param("scanIds") Collection<Long> scanIds,
+                                           @Param("q") String q,
+                                           @Param("severity") String severity,
+                                           @Param("fixable") Boolean fixable,
+                                           @Param("kev") Boolean kev);
 
     /**
      * 증감 대조용 키. {@code (자산, CVE, 패키지명)} 세 축이다.

@@ -4,11 +4,14 @@ import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.ScanRepository;
+import kr.sbomsight.service.Paging;
+import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -41,9 +44,35 @@ public class ReportsController {
         this.zoneService = zoneService;
     }
 
+    /**
+     * 목록 한 줄 — 자산 하나.
+     *
+     * <p>검사된 자산과 <b>한 번도 검사되지 않은 자산</b>을 한 목록에 담는다.
+     * 앞서는 표 하나에 반복을 두 벌 두었는데, 쪽으로 나누려면 두 목록이
+     * 한 줄씩 번갈아 세어져야 한다. 검사가 없는 자산을 빼지는 않는다 —
+     * 빠지면 "안 본 것" 과 "문제가 없는 것" 을 구분할 수 없다.
+     *
+     * @param scan 완료된 검사가 없으면 {@code null}
+     */
+    public record ReportRow(Asset asset, Scan scan) {
+
+        public boolean scanned() {
+            return scan != null;
+        }
+    }
+
     @GetMapping("/reports")
     @Transactional(readOnly = true)
-    public String reports(Model model) {
+    public String reports(@RequestParam(defaultValue = "0") int page,
+                          @RequestParam(required = false) Integer size,
+                          @RequestParam(required = false) Integer jump,
+                          Model model) {
+        VulnQuery.Links links = new VulnQuery.Links("/reports", null).size(size);
+        String jumped = Paging.jump(links, jump);
+        if (jumped != null) {
+            return jumped;
+        }
+
         List<Scan> latest = scans.findLatestDonePerAssetWithAsset();
 
         Set<Long> scanned = latest.stream()
@@ -53,8 +82,16 @@ public class ReportsController {
                 .filter(a -> !scanned.contains(a.getId()))
                 .toList();
 
+        // 검사된 것이 먼저, 안 된 것이 뒤. 순서를 섞으면 첫 쪽에서 무엇을
+        // 뽑을 수 있는지 한눈에 안 들어온다.
+        List<ReportRow> rows = new java.util.ArrayList<>(
+                latest.stream().map(s -> new ReportRow(s.getAsset(), s)).toList());
+        neverScanned.forEach(a -> rows.add(new ReportRow(a, null)));
+
         LocalDate today = LocalDate.now();
 
+        model.addAttribute("links", links);
+        model.addAttribute("rows", Paging.slice(rows, page, size));
         model.addAttribute("latest", latest);
         model.addAttribute("neverScanned", neverScanned);
         model.addAttribute("zones", zoneService.all());

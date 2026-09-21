@@ -27,7 +27,10 @@
       <span th:if="${first.kev != null and first.kev}" class="tag kev">실제 악용 확인</span>
     </div>
     <div class="text-secondary mt-1">
-      영향 자산 <b th:text="${assetCount}">0</b>대 · 탐지 <b th:text="${rows.size()}">0</b>건
+      <!--/* **자른 쪽이 아니라 전부를 센다.** 한 쪽에 실린 줄 수를 찍으면
+           `100건` 인데 쪽이 다섯인 화면이 된다. */-->
+      영향 자산 <b th:text="${assetCount}">0</b>대 ·
+      탐지 <b th:text="${rows.totalElements}">0</b>건
       <th:block th:each="s, i : ${spread}">
         <th:block th:if="${i.first}"> · </th:block>
         <span th:text="${s.zoneName} + ' ' + ${s.assetCount} + '대'">DMZ 2대</span><th:block
@@ -92,6 +95,7 @@
     <div class="card">
       <div class="card-header"><h2 class="card-title">이 CVE 가 있는 자산</h2>
         <span class="faint" style="font-size:13px" th:text="${assetCount} + '대'">0대</span></div>
+      <div th:replace="~{fragments/ui :: countline(${rows}, ${links}, '건')}"></div>
       <div class="table-responsive">
         <table class="table table-vcenter card-table">
           <thead><tr>
@@ -100,7 +104,7 @@
             <th class="tight">검사 시각</th><th class="tight"></th>
           </tr></thead>
           <tbody>
-          <tr th:each="f : ${rows}">
+          <tr th:each="f : ${rows.content}">
             <td class="tight"><a th:href="@{'/assets/' + ${f.scan.asset.id}}"
                                  style="font-weight:600" th:text="${f.scan.asset.name}">web-01</a></td>
             <td class="tight faint">
@@ -123,6 +127,7 @@
           </tbody>
         </table>
       </div>
+      <div th:replace="~{fragments/ui :: pager(${rows}, ${links})}"></div>
     </div>
   </div>
     </div>

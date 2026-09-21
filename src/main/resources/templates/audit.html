@@ -57,7 +57,7 @@
   <div>
     <!--/* 건수 줄과 페이지 넘김은 목록이 있는 화면 전부가 같은 조각을 쓴다
          — 여기만 다른 모양이면 화면을 옮길 때 눈이 다시 자리를 찾는다. */-->
-    <div th:replace="~{fragments/ui :: countline(${page}, ${links})}"></div>
+    <div th:replace="~{fragments/ui :: countline(${page}, ${links}, '건')}"></div>
 
     <div class="table-responsive">
       <table class="table table-vcenter card-table">

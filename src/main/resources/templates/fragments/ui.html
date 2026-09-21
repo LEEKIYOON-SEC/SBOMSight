@@ -85,25 +85,34 @@
 
 <!--/*
   ─── 건수 줄 ──────────────────────────────────────────────────────────
-  목록 위 한 줄. 몇 건인지, 한 페이지에 몇 건씩 낼지. 목록이 있는 화면은
-  **전부 같은 것을 쓴다**(취약점 · 자산의 취약점 탭 · 감사 로그) — 두 벌을
-  두면 한쪽만 고치는 날이 오고, 그때부터 같은 목록이 화면마다 다르게 센다.
+  목록 위 한 줄. 몇인지, 한 쪽에 몇씩 낼지. **목록이 있는 화면은 전부 이것을
+  쓴다** — 두 벌을 두면 한쪽만 고치는 날이 오고, 그때부터 같은 목록이 화면마다
+  다르게 센다.
 
   `1–100번째` 는 뺐다. 지금 몇 쪽인지는 아래 쪽 넘김이 말하고, 위아래 두
   곳이 같은 것을 다르게 세면 읽는 사람이 둘을 맞춰 봐야 한다.
 
-    <div th:replace="~{fragments/ui :: countline(${page}, ${links})}"></div>
+    <div th:replace="~{fragments/ui :: countline(${page}, ${links}, '건')}"></div>
 
-  페이지 사이즈는 주소에 남는다. 기본값(100)은 적지 않는다.
+  마지막이 **단위**다. 세는 것이 화면마다 다르다 — 탐지는 `건`, CVE별은
+  `가지`, 패키지는 `개`, 자산은 `대`.
+
+  쪽 크기는 주소에 남는다. 기본값(100)은 적지 않는다.
 */-->
-<div th:fragment="countline(page, links)"
+<div th:fragment="countline(page, links, unit)"
      class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
   <b class="num" th:text="${#numbers.formatInteger(page.totalElements, 0, 'COMMA')}">0</b>
-  <span class="text-secondary">건</span>
+  <!--/*
+    **단위를 받는다.** `건` 을 박아 두면 CVE별 화면 머리가 `3,102건` 이 되는데
+    그것은 탐지 건수가 아니라 취약점 **가지** 수다. 한 가지가 자산 열 대에
+    있으면 탐지는 열 건이다 — 세는 단위를 말하지 않으면 두 수가 같은 것으로
+    읽힌다.
+  */-->
+  <span class="text-secondary" th:text="${unit}">건</span>
   <span style="flex:1"></span>
   <span class="faint" style="font-size:13px">페이지 사이즈</span>
-  <span class="btn-group" th:with="fallback=${T(kr.sbomsight.service.VulnQuery).PAGE_SIZE}">
-    <a class="btn btn-sm" th:each="n : ${T(kr.sbomsight.service.VulnQuery).PAGE_SIZES}"
+  <span class="btn-group" th:with="fallback=${T(kr.sbomsight.service.Paging).PAGE_SIZE}">
+    <a class="btn btn-sm" th:each="n : ${T(kr.sbomsight.service.Paging).PAGE_SIZES}"
        th:href="@{${links.change('size', n == fallback ? null : n)}}"
        th:classappend="${page.size == n} ? 'active' : ''" th:text="${n}">100</a>
   </span>
@@ -142,6 +151,26 @@
   <a class="btn btn-sm" th:if="${page.hasNext()}"
      th:href="@{${links.page(page.number + 1)}}">다음</a>
 </div>
+
+
+<!--/*
+  ─── 묶은 줄의 검토 진행 ──────────────────────────────────────────────
+  CVE별·패키지별 한 줄은 **자산 여러 대·건 여러 개를 묶은 줄**이라 검토 결과
+  하나를 그 줄에 붙일 수 없다 — 검토 결과는 (자산, CVE, 패키지) 하나에
+  하나씩 붙는다. 붙이는 대신 센다.
+
+    <div th:replace="~{fragments/ui :: reviewmark(${r})}"></div>
+
+  수는 **거르개를 건 뒤**의 것이라 같은 화면의 탐지 수와 어긋나지 않는다.
+  0 을 `0/7` 로 적지 않는다 — `미검토` 라고 말한다. 0 은 세어 본 결과처럼
+  보이지만 아무도 보지 않았다는 뜻이다.
+*/-->
+<span th:fragment="reviewmark(r)" th:remove="tag">
+  <span th:if="${r == null or r.none()}" class="faint">미검토</span>
+  <span th:if="${r != null and r.all()}" class="tag" th:text="'전부 ' + ${r.total} + '건'">전부 7건</span>
+  <span th:if="${r != null and !r.none() and !r.all()}"
+        th:text="${r.done} + ' / ' + ${r.total} + '건'">2 / 7건</span>
+</span>
 
 
 <!--/*

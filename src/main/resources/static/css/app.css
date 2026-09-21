@@ -76,9 +76,26 @@ th.num, td.num { text-align: right; }
 
 .mono, .path, code { font-family: var(--tblr-font-monospace); }
 
-/* 설치 경로. 길어서 한 줄로 자르고 전체는 title 로 본다. */
-.path { font-size: 12.5px; max-width: 22rem;
+/* 설치 경로. 길어서 한 줄로 자르고 전체는 title 로 본다.
+
+   **22rem 에서 10rem 으로 줄였다.** 취약점 표에 `조치` 칸을 넣자 표가
+   1280px 에서 넘쳤고, 넘친 만큼 오른쪽 끝(그 `조치` 칸)이 잘렸다. 이 칸은
+   이미 잘라서 보여 주는 칸이고 전체는 올리면 뜬다 — 폭을 줄여도 잃는 것이
+   가장 적은 자리가 여기다. */
+.path { font-size: 12.5px; max-width: 10rem;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 모양은 링크, 하는 일은 POST.
+
+   표 안에서 `작성`(검토 결과) 옆에 `조치 등록`(조치)이 선다. 하나는 링크
+   하나는 단추면 같은 성격의 조작이 두 모양으로 놀고, 단추는 칸을 96px 먹어
+   표를 넘긴다. 링크로 보이되 **submit 이어야 한다** — 맨 링크로 두면 주소만
+   알면 눌리지 않고도 조치가 열린다. */
+button.linkbtn {
+  background: none; border: 0; padding: 0; font: inherit; font-size: 12.5px;
+  color: var(--tblr-primary, #206bc4); cursor: pointer; text-align: left;
+}
+button.linkbtn:hover { text-decoration: underline; }
 
 .muted { color: var(--fg-muted); }
 .faint { color: var(--fg-faint); }
@@ -99,6 +116,22 @@ td.overdue { color: var(--critical); font-weight: 600; }
 
 /* 내용만큼만 차지하는 열. 남는 폭은 tight 가 아닌 열이 가져간다. */
 th.tight, td.tight { width: 1%; white-space: nowrap; }
+
+/* `tight` 가 아닌 머리는 접힌다.
+
+   Tabler 는 표 머리 전체에 `white-space: nowrap` 을 건다. 그러면 **칸 이름이
+   그 칸의 최소 폭을 정한다** — 값이 `확인` 두 글자인데도 `실제 악용` 때문에
+   72px 를 쓴다. 취약점 표에 `조치` 칸을 넣자 표가 1280px 에서 68px 넘쳤고,
+   넘친 만큼 오른쪽 끝(그 `조치` 칸)이 잘렸다.
+
+   `tight` 를 붙인 칸만 한 줄로 둔다 — 그것이 `tight` 의 뜻이다. 칸의 값은
+   여전히 `td.tight` 가 지키므로 `CVE-2021-44228` 이 쪼개지지 않는다.
+
+   **`word-break: keep-all` 이 함께 있어야 한다.** 한국어는 기본이 글자
+   단위 줄바꿈이라, 그냥 풀면 `실제 악용` 이 `실제 악` / `용` 으로 쪼개진다
+   — 이 저장소가 앞서 한 번 해 보고 버린 그 모양이다. 어절(빈칸)에서만
+   접게 하면 `실제` / `악용` 이 된다. */
+.table thead th:not(.tight) { white-space: normal; word-break: keep-all; }
 
 /* ── 좁은 화면(노트북 1366×768 이 흔하다)의 표 ──────────────────────────────
    **들어가지 않는다. 억지로 넣지 않는다.** 취약점 표는 아홉 칸이고 CVE 번호

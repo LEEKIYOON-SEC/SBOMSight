@@ -8,6 +8,7 @@ import kr.sbomsight.service.AssetService;
 import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.SbomStorage;
 import kr.sbomsight.service.PackageService;
+import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ScanService;
 import kr.sbomsight.service.ZoneService;
@@ -106,6 +107,9 @@ public class AssetController {
                         @RequestParam(defaultValue = "name") String sort,
                         @RequestParam(defaultValue = "asc") String dir,
                         @RequestParam(defaultValue = "false") boolean archived,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(required = false) Integer size,
+                        @RequestParam(required = false) Integer jump,
                         Model model) {
         List<Asset> list = archived ? assets.findAllWithZone() : assets.findLiveWithZone();
 
@@ -135,21 +139,48 @@ public class AssetController {
         // 을 눌렀을 때 숫자가 3 에서 다른 값으로 바뀐다.
         model.addAttribute("summary", summarize(all));
 
+        // **구역 칩도 거르개다.** 앞서 이 줄 목록은 구역을 보지 않았고, 구역을
+        // 좁히는 일은 화면을 그리는 `groups` 에서만 했다. 세는 자리가 없을
+        // 때는 티가 안 났는데, 건수 줄을 붙이자 구역을 고른 화면 머리에
+        // `18대` 가 적히고 표에는 두 줄만 남았다 — 어느 쪽이 맞는지 물어볼
+        // 자리가 없다. 세는 것과 그리는 것을 같은 목록에서 낸다.
         List<AssetRow> rows = all.stream()
                 .filter(r -> matches(r, filter))
+                .filter(r -> zone == null || r.asset().getZone().getId().equals(zone))
                 .sorted(comparator(sort, dir))
                 .toList();
 
+        // 쪽은 **줄 단위**로 나눈다. 구역 단위로 나누면 자산 3천 대짜리
+        // 구역이 한 쪽에 통째로 들어가 아무것도 해결되지 않는다.
+        //
+        // **구역 카드 보기는 자르지 않는다.** 카드 한 장이 곧 구역 하나의
+        // 요약이라 구역 수만큼이고, 자르면 자산이 뒷쪽에 있는 구역의 카드가
+        // 통째로 사라진다.
+        boolean cards = "zones".equals(view);
+        Page<AssetRow> slice = Paging.slice(rows, page, size);
+        List<AssetRow> onScreen = cards ? rows : slice.getContent();
+        Set<Long> shownIds = onScreen.stream()
+                .map(r -> r.asset().getId()).collect(Collectors.toSet());
+
         // 구역 순서는 구역 목록이 정한다. 자산이 한 대도 없는 구역도 보여
         // 준다 — 없는 것처럼 보이면 "왜 안 보이지" 부터 물어야 한다.
+        // 다만 그것은 **첫 쪽에서만** 말한다: 쪽마다 되풀이하면 목록이 아니라
+        // 구역 목록이 된다.
         List<ZoneGroup> groups = zoneService.all().stream()
                 .filter(z -> zone == null || z.getId().equals(zone))
-                .map(z -> new ZoneGroup(z, rows.stream()
-                        .filter(r -> r.asset().getZone().getId().equals(z.getId()))
-                        .toList()))
+                .map(z -> {
+                    List<AssetRow> inZone = rows.stream()
+                            .filter(r -> r.asset().getZone().getId().equals(z.getId()))
+                            .toList();
+                    return new ZoneGroup(z, inZone, inZone.stream()
+                            .filter(r -> shownIds.contains(r.asset().getId()))
+                            .toList());
+                })
+                .filter(g -> g.onThisPage() || (g.isEmpty() && (cards || slice.getNumber() == 0)))
                 .toList();
 
         model.addAttribute("groups", groups);
+        model.addAttribute("rowPage", slice);
         model.addAttribute("zones", zoneService.all());
         model.addAttribute("zoneCounts", all.stream().collect(Collectors.groupingBy(
                 r -> r.asset().getZone().getId(), Collectors.counting())));
@@ -166,13 +197,19 @@ public class AssetController {
         //
         // **기본값은 적지 않는다.** `archived=false` 는 안 고른 것이 아니라
         // "운영 종료한 것은 빼기로 골랐다" 고 읽힌다.
-        model.addAttribute("links", new VulnQuery.Links("/", null)
+        VulnQuery.Links links = new VulnQuery.Links("/", null)
                 .with("zone", zone)
                 .with("filter", filter)
                 .with("view", "zones".equals(view) ? "zones" : null)
                 .with("sort", "name".equals(sort) ? null : sort)
                 .with("dir", "asc".equals(dir) ? null : dir)
-                .with("archived", archived ? "true" : null));
+                .with("archived", archived ? "true" : null)
+                .size(size);
+        String jumped = Paging.jump(links, jump);
+        if (jumped != null) {
+            return jumped;
+        }
+        model.addAttribute("links", links);
         model.addAttribute("sort", sort);
         model.addAttribute("dir", dir);
         model.addAttribute("archived", archived);
@@ -320,10 +357,12 @@ public class AssetController {
 
         // 페이지 이동. 사람이 적는 값은 1부터, 주소의 `page` 는 0부터 센다.
         // 자산 상세와 `/vulns` 가 같은 표·같은 쪽 넘김을 쓰므로 여기도 같다.
-        if ("vulns".equals(tab) && jump != null && jump > 0) {
-            return "redirect:" + vulnLinks(id, group, q, severityFilter, fixable, kev,
-                                           size, sort, dir)
-                    .page(jump - 1);
+        String jumped = "vulns".equals(tab) || "packages".equals(tab) || "history".equals(tab)
+                ? Paging.jump(tabLinks(id, tab, group, q, severityFilter, fixable, kev,
+                                       size, sort, dir), jump)
+                : null;
+        if (jumped != null) {
+            return jumped;
         }
         model.addAttribute("tab", tab);
         Asset asset = asset(id);
@@ -338,6 +377,7 @@ public class AssetController {
         model.addAttribute("asset", asset);
         model.addAttribute("zones", zoneService.all());
         model.addAttribute("history", history);
+        model.addAttribute("historyPage", Paging.slice(history, page, size));
         model.addAttribute("latest", latest);
         model.addAttribute("running", running);
         // 이력의 '이전 대비' — 바로 앞 완료 검사와 견준 탐지 수 변화.
@@ -367,8 +407,8 @@ public class AssetController {
             model.addAttribute("scope", vulns.ofScan(latest.getId()));
             vulns.fill(model, vulns.ofScan(latest.getId()), group, q, severityFilter,
                        fixable, kev, page, size, sort, dir);
-            model.addAttribute("links", vulnLinks(id, group, q, severityFilter, fixable, kev,
-                                                  size, sort, dir));
+            model.addAttribute("links", tabLinks(id, tab, group, q, severityFilter, fixable,
+                                                 kev, size, sort, dir));
             model.addAttribute("group", group);
             model.addAttribute("q", q);
             model.addAttribute("fixable", fixable);
@@ -383,31 +423,43 @@ public class AssetController {
         // 되읽지 않으므로, 다시 검사하기 전에는 인벤토리가 비어 있다.
         model.addAttribute("packageCount", components.countByAssetId(id));
         if ("packages".equals(tab)) {
-            model.addAttribute("assetPackages", packages.ofAsset(id, q));
+            // **한 쪽씩 읽는다.** 앞서는 그 자산에 깔린 것을 전부 한 번에
+            // 읽어 한 화면에 그렸다 — 4천 줄짜리 서버에서 표가 끝나지 않았다.
+            model.addAttribute("assetPackages", packages.ofAsset(id, q, page, size));
             model.addAttribute("q", q);
+        }
+        if ("packages".equals(tab) || "history".equals(tab)) {
+            model.addAttribute("links", tabLinks(id, tab, group, q, severityFilter, fixable,
+                                                 kev, size, sort, dir));
         }
         return "asset-detail";
     }
 
     /**
-     * 취약점 탭의 링크.
+     * 쪽을 넘기는 탭의 링크 — <b>취약점 · 패키지 · 검사 이력.</b>
      *
-     * <p>이 탭은 언제나 {@code tab=vulns} 를 달고 다닌다. 나머지는 고른 것만
-     * 붙고 <b>기본값은 적지 않는다</b> — {@code sort=severity&dir=desc&size=100}
-     * 은 고른 것이 아니라 아직 아무것도 고르지 않은 상태다.
+     * <p>탭은 언제나 {@code tab=} 를 달고 다닌다. 나머지는 고른 것만 붙고
+     * <b>기본값은 적지 않는다</b> — {@code sort=severity&dir=desc&size=100} 은
+     * 고른 것이 아니라 아직 아무것도 고르지 않은 상태다.
      *
-     * <p>한 벌로 둔다. 쪽 이동({@code at})이 되돌릴 주소와 화면이 그리는
-     * 주소가 갈리면, 거르개를 하나 더할 때 한쪽만 고치는 날이 온다.
+     * <p>한 벌로 둔다. 쪽 이동이 되돌릴 주소와 화면이 그리는 주소가 갈리면,
+     * 거르개를 하나 더할 때 한쪽만 고치는 날이 온다.
      */
-    private VulnQuery.Links vulnLinks(Long id, String group, String q, String severity,
-                                      Boolean fixable, Boolean kev, Integer size,
-                                      String sort, String dir) {
-        return new VulnQuery.Links("/assets/" + id, "tab=vulns")
-                .with("group", group).with("q", q)
+    private VulnQuery.Links tabLinks(Long id, String tab, String group, String q,
+                                     String severity, Boolean fixable, Boolean kev,
+                                     Integer size, String sort, String dir) {
+        // 취약점 탭 말고도 쪽을 넘기는 탭이 있다(패키지 · 검사 이력). 그 탭들은
+        // 취약점 탭의 거르개를 달고 다니지 않는다 — 붙여 두면 패키지 탭 주소에
+        // `severity=Critical` 이 따라다니며 아무 일도 안 하고 남는다.
+        VulnQuery.Links links = new VulnQuery.Links("/assets/" + id, "tab=" + tab)
+                .with("q", q)
+                .size(size);
+        if (!"vulns".equals(tab)) {
+            return links;
+        }
+        return links.with("group", group)
                 .with("severity", severity)
                 .with("fixable", fixable).with("kev", kev)
-                .with("size", VulnQuery.sizeOf(size) == VulnQuery.PAGE_SIZE
-                              ? null : VulnQuery.sizeOf(size))
                 .with("sort", "severity".equals(sort) ? null : sort)
                 .with("dir", "desc".equals(dir) ? null : dir);
     }
@@ -698,7 +750,24 @@ public class AssetController {
     }
 
     /** 구역 하나와 그 안의 자산들. 머리줄에 쓸 합계를 함께 낸다. */
-    public record ZoneGroup(Zone zone, List<AssetRow> rows) {
+    /**
+     * 구역 한 덩이.
+     *
+     * @param rows  <b>구역 전체</b>(거른 뒤). 머리줄의 수가 이것을 센다 —
+     *              쪽에 실린 것만 세면 `DMZ 5대` 가 쪽을 넘길 때마다 달라진다
+     * @param shown 이 쪽에 실리는 줄. 표가 그리는 것은 이것뿐이다
+     */
+    public record ZoneGroup(Zone zone, List<AssetRow> rows, List<AssetRow> shown) {
+
+        /** 이 쪽에 그릴 줄이 있는가. 없으면 머리줄도 그리지 않는다. */
+        public boolean onThisPage() {
+            return !shown.isEmpty();
+        }
+
+        /** 구역 전체가 이 쪽에 다 실렸는가. 아니면 머리가 `이 쪽 N대` 를 적는다. */
+        public boolean partial() {
+            return shown.size() != rows.size();
+        }
 
         public int serverCount() {
             return rows.size();

@@ -54,7 +54,8 @@
                       '/assets', '자산 보기')}"></div>
   </th:block>
 
-  <div class="card" th:if="${!latest.isEmpty() or !neverScanned.isEmpty()}">
+  <div class="card" th:if="${rows.totalElements > 0}">
+    <div th:replace="~{fragments/ui :: countline(${rows}, ${links}, '대')}"></div>
     <table class="table table-vcenter card-table">
       <thead>
       <tr>
@@ -66,37 +67,38 @@
       </tr>
       </thead>
       <tbody>
-      <tr th:each="s : ${latest}">
-        <td class="tight">
-          <a th:href="@{'/assets/' + ${s.asset.id}}" th:text="${s.asset.name}">web-01</a>
-        </td>
-        <td class="tight faint" th:text="${s.asset.zone.name}">DMZ</td>
-        <td class="tight" th:text="${#temporals.format(s.createdAt, 'yyyy-MM-dd HH:mm')}">—</td>
-        <td class="num tight"
-            th:text="${#numbers.formatInteger(s.findingCount, 0, 'COMMA')}">0</td>
-        <td class="actions">
-          <a class="btn btn-sm" th:href="@{'/reports/scan/' + ${s.id}}">보고서</a>
-        </td>
-      </tr>
       <!--/*
         검사가 없는 자산도 줄을 차지한다. 목록에서 빠지면 "안 본 것" 과
         "문제가 없는 것" 을 구분할 수 없다 — 이 도구에서 반복해 지키는 것이다.
+
+        **반복은 한 벌이다.** 앞서 검사된 것과 안 된 것이 각자 반복을 돌았다.
+        쪽으로 나누려면 두 목록이 한 줄씩 번갈아 세어져야 한다.
       */-->
-      <tr th:each="a : ${neverScanned}" style="opacity:.6">
+      <tr th:each="r : ${rows.content}" th:style="${r.scanned()} ? '' : 'opacity:.6'">
         <td class="tight">
-          <a th:href="@{'/assets/' + ${a.id}}" th:text="${a.name}">db-01</a>
+          <a th:href="@{'/assets/' + ${r.asset.id}}" th:text="${r.asset.name}">web-01</a>
         </td>
-        <td class="tight faint" th:text="${a.zone.name}">내부업무</td>
-        <td class="tight faint" colspan="2">완료된 검사가 없습니다</td>
+        <td class="tight faint" th:text="${r.asset.zone.name}">DMZ</td>
+        <th:block th:if="${r.scanned()}">
+          <td class="tight"
+              th:text="${#temporals.format(r.scan.createdAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(r.scan.findingCount, 0, 'COMMA')}">0</td>
+        </th:block>
+        <td class="tight faint" colspan="2" th:unless="${r.scanned()}">완료된 검사가 없습니다</td>
         <td class="actions">
+          <a class="btn btn-sm" th:if="${r.scanned()}"
+             th:href="@{'/reports/scan/' + ${r.scan.id}}">보고서</a>
           <!--/* `?tab=scans` 라는 탭은 없다(이력 탭의 이름은 `history`). 모르는
                이름이 오면 개요로 되돌아가는데, 업로드 칸이 개요에 있어 우연히
                맞아 보였을 뿐이다. 개요를 그대로 가리킨다. */-->
-          <a class="btn btn-sm" th:href="@{'/assets/' + ${a.id}}">SBOM 업로드</a>
+          <a class="btn btn-sm" th:unless="${r.scanned()}"
+             th:href="@{'/assets/' + ${r.asset.id}}">SBOM 업로드</a>
         </td>
       </tr>
       </tbody>
     </table>
+    <div th:replace="~{fragments/ui :: pager(${rows}, ${links})}"></div>
   </div>
 
   <p class="footnote">

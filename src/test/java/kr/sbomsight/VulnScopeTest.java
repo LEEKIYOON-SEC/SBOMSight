@@ -2,6 +2,7 @@ package kr.sbomsight;
 
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
+import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.BeforeEach;
@@ -358,14 +359,14 @@ class VulnScopeTest {
     @Test
     @DisplayName("쪽 크기는 고를 수 있는 값만 받고, 나머지는 기본값으로 되돌린다")
     void pageSizeOnlyTakesOfferedValues() {
-        assertThat(VulnQuery.PAGE_SIZES).containsExactly(10, 30, 50, 100);
-        for (int offered : VulnQuery.PAGE_SIZES) {
-            assertThat(VulnQuery.sizeOf(offered)).isEqualTo(offered);
+        assertThat(Paging.PAGE_SIZES).containsExactly(10, 30, 50, 100);
+        for (int offered : Paging.PAGE_SIZES) {
+            assertThat(Paging.sizeOf(offered)).isEqualTo(offered);
         }
         for (Integer bad : new Integer[] { null, 0, -1, 7, 101, 50_000 }) {
-            assertThat(VulnQuery.sizeOf(bad))
+            assertThat(Paging.sizeOf(bad))
                     .as("고를 수 없는 값 %s 이 그대로 들어갔다", bad)
-                    .isEqualTo(VulnQuery.PAGE_SIZE);
+                    .isEqualTo(Paging.PAGE_SIZE);
         }
     }
 
@@ -477,7 +478,7 @@ class VulnScopeTest {
                          .andExpect(status().isOk())
                          .andReturn().getResponse().getContentAsString();
         // 표 부분만 본다 — 거르개의 `<option>` 이나 링크에 이름이 섞이지 않게.
-        int from = html.indexOf("개 패키지");
+        int from = html.indexOf("<tbody>");
         return from < 0 ? "" : html.substring(from);
     }
 
@@ -551,7 +552,7 @@ class VulnScopeTest {
     void csvCarriesEverythingNotOnePage() throws Exception {
         Asset web = asset("web", dmz);
         Scan s = scan(web, Instant.now());
-        for (int i = 0; i < VulnQuery.PAGE_SIZE + 20; i++) {
+        for (int i = 0; i < Paging.PAGE_SIZE + 20; i++) {
             finding(s, String.format("CVE-2024-%04d", i), "pkg-" + i, "High", "fixed");
         }
 
@@ -563,6 +564,6 @@ class VulnScopeTest {
         assertThat(csv).startsWith("﻿");
         assertThat(csv).contains("구역");
         // 머리줄 하나 + 탐지 전부.
-        assertThat(csv.lines().count()).isEqualTo(VulnQuery.PAGE_SIZE + 20 + 1);
+        assertThat(csv.lines().count()).isEqualTo(Paging.PAGE_SIZE + 20 + 1);
     }
 }

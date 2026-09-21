@@ -6,13 +6,17 @@ import kr.sbomsight.domain.Severity;
 import kr.sbomsight.repo.ComponentRepository;
 import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.repo.ScanRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 무엇이 어디에 몇 버전으로 깔려 있나 — <b>취약점이 붙기 전에도.</b>
@@ -31,9 +35,6 @@ import java.util.Map;
 @Service
 public class PackageService {
 
-    /** 한 번에 보여 줄 패키지 수. 버전 분포를 물어 볼 이름 수이기도 하다. */
-    private static final int PAGE = 200;
-
     private final ComponentRepository components;
     private final FindingRepository findings;
     private final ScanRepository scans;
@@ -45,29 +46,73 @@ public class PackageService {
         this.scans = scans;
     }
 
+    /**
+     * 화면의 표 한 쪽.
+     *
+     * <p><b>거른 뒤에 자른다.</b> 앞서는 앞 200개를 자른 뒤에 거르개를
+     * 걸었다. 그래서 `취약점 있는 것만` 은 3,908개 이름 중 <b>앞 200개
+     * 안에서만</b> 찾았고, 201번째 이후에 있는 취약한 패키지는 화면에도
+     * 수에도 나오지 않았다. 잘렸다는 각주가 있었지만, 각주는 "거르개가
+     * 전부를 보지 못한다" 는 말까지 하지는 않는다.
+     *
+     * <p>버전 분포({@link #assemble})는 <b>이 쪽에 실리는 이름만</b> 물어
+     * 본다. 전부 물으면 자산 백 대의 인벤토리에서 수백만 행이 된다.
+     */
     @Transactional(readOnly = true)
     public Listing list(Long zoneId, String type, String q, boolean vulnerableOnly,
-                        boolean mixedOnly) {
+                        boolean mixedOnly, int page, Integer size) {
+        String kind = blankToNull(type);
+        String term = blankToNull(q);
         List<ComponentRepository.PackageRow> grouped =
-                components.groupByName(zoneId, blankToNull(type), blankToNull(q));
+                components.groupByName(zoneId, kind, term);
 
-        boolean more = grouped.size() > PAGE;
-        List<ComponentRepository.PackageRow> page =
-                more ? grouped.subList(0, PAGE) : grouped;
+        if (vulnerableOnly || mixedOnly) {
+            Set<String> keep = namesMatching(zoneId, kind, term, vulnerableOnly, mixedOnly);
+            grouped = grouped.stream().filter(r -> keep.contains(r.getName())).toList();
+        }
 
-        List<String> names = page.stream().map(ComponentRepository.PackageRow::getName).toList();
+        Page<ComponentRepository.PackageRow> slice = Paging.slice(grouped, page, size);
+        List<String> names = slice.getContent().stream()
+                .map(ComponentRepository.PackageRow::getName).toList();
         List<PackageRow> rows = names.isEmpty()
                 ? List.of()
-                : assemble(page, names, zoneId);
+                : assemble(slice.getContent(), names, zoneId);
 
-        // 거르개는 조립 뒤에 걸린다 — "취약점 있는 것만" 과 "일부 자산만
-        // 것만" 은 버전 분포를 다 세어 봐야 알 수 있다.
-        List<PackageRow> filtered = rows.stream()
-                .filter(r -> !vulnerableOnly || r.findingCount() > 0)
-                .filter(r -> !mixedOnly || r.mixed())
-                .toList();
+        return new Listing(new PageImpl<>(rows, slice.getPageable(), slice.getTotalElements()),
+                           components.types());
+    }
 
-        return new Listing(filtered, grouped.size(), more, components.types());
+    /**
+     * 거르개 둘에 걸리는 <b>이름 전부.</b>
+     *
+     * <p>`취약점 있는 것만` 과 `일부 자산만 업그레이드` 는 패키지 단위
+     * 성질이라 버전 분포를 다 세어 봐야 판단이 선다. 자르기 전에 세야
+     * 하므로 이름 전체를 훑는다 — 행 수는 {@code (이름, 버전)} 쌍만큼이라
+     * 인벤토리 전체보다 작고, 내보내기가 이미 같은 질의를 쓰고 있다.
+     */
+    private Set<String> namesMatching(Long zoneId, String type, String q,
+                                      boolean vulnerableOnly, boolean mixedOnly) {
+        Map<String, Map<String, Long>> severities = severities(null);
+        // 이름 → [걸린 버전이 있다, 안 걸린 버전이 있다]
+        Map<String, boolean[]> flags = new LinkedHashMap<>();
+        for (ComponentRepository.TypedVersionRow row
+                : components.versionSpreadAll(zoneId, type, q)) {
+            boolean[] seen = flags.computeIfAbsent(row.getName(), name -> new boolean[2]);
+            long total = severities.getOrDefault(key(row.getName(), row.getVersion()), Map.of())
+                    .values().stream().mapToLong(Long::longValue).sum();
+            seen[total > 0 ? 0 : 1] = true;
+        }
+        Set<String> keep = new LinkedHashSet<>();
+        flags.forEach((name, seen) -> {
+            if (vulnerableOnly && !seen[0]) {
+                return;
+            }
+            if (mixedOnly && !(seen[0] && seen[1])) {
+                return;
+            }
+            keep.add(name);
+        });
+        return keep;
     }
 
     /** 펼쳤을 때 — 이 패키지가 어느 자산에 어느 버전으로 깔려 있나. */
@@ -82,8 +127,8 @@ public class PackageService {
      * <p>한 줄이 {@code (패키지, 버전)} 하나다. 화면의 버전 조각 하나가 한
      * 줄이 된다 — 버전 분포를 한 칸에 몰아 넣으면 엑셀에서 쓸 수 없다.
      *
-     * <p><b>{@link #PAGE} 에서 자르지 않는다.</b> 화면은 앞 200개만 싣지만,
-     * 잘린 파일은 그것이 잘렸다는 사실을 들고 다니지 않는다.
+     * <p><b>보고 있던 쪽이 아니라 거른 것 전부다.</b> 화면에 한 쪽만
+     * 보이는데 파일도 그 쪽뿐이면 그 파일로 대조를 할 수 없다.
      */
     @Transactional(readOnly = true)
     public List<ExportRow> export(Long zoneId, String type, String q, boolean vulnerableOnly,
@@ -122,10 +167,10 @@ public class PackageService {
         return out;
     }
 
-    /** 자산 상세의 `패키지` 탭. 그 자산 것만, 설치 경로까지. */
+    /** 자산 상세의 `패키지` 탭. 그 자산 것만, 설치 경로까지 — 한 쪽씩. */
     @Transactional(readOnly = true)
-    public List<Component> ofAsset(Long assetId, String q) {
-        return components.findByAsset(assetId, blankToNull(q));
+    public Page<Component> ofAsset(Long assetId, String q, int page, Integer size) {
+        return components.findByAsset(assetId, blankToNull(q), Paging.request(page, size));
     }
 
     // -----------------------------------------------------------------------
@@ -200,28 +245,17 @@ public class PackageService {
     // -----------------------------------------------------------------------
 
     /**
-     * @param total 거르개 전 전체 이름 수
-     * @param more  {@link #PAGE} 를 넘어 잘렸는가 — 잘린 것을 숨기지 않는다
+     * 화면에 넘기는 한 쪽.
+     *
+     * <p><b>잘림 각주가 없어졌다.</b> 앞서는 앞 200개만 싣고 "이름 3,908개
+     * 중 앞 200개만 화면에" 라고 적어 두었다. 이제 쪽으로 넘기므로 잘리는
+     * 것이 없다 — 화면 머리의 수와 쪽 넘김이 같은 것을 말한다.
      */
-    public record Listing(List<PackageRow> rows, int total, boolean more, List<String> types) {
+    public record Listing(Page<PackageRow> rows, List<String> types) {
 
-        /**
-         * 화면 머리에 찍는 수. <b>표에 실린 줄 수와 어긋나지 않게 한다.</b>
-         *
-         * <p>{@link #total} 은 거르개 전 이름 수다. 그것만 찍으면 `일부 자산만
-         * 업그레이드` 를 켜서 한 줄만 남은 화면 머리에 {@code 6개} 가 적힌다.
-         * 어느 숫자가 맞는지 물어볼 자리가 없으므로 <b>둘을 같이 적는다.</b>
-         *
-         * <p>{@link #PAGE} 에서 잘린 것도 같은 모양으로 드러난다 — 왜 잘렸는지는
-         * 표 아래 각주가 말한다.
-         */
+        /** 화면 머리에 찍는 수 — 거르개를 건 뒤의 이름 수. */
         public String label() {
-            String shown = comma(rows.size());
-            return rows.size() == total ? shown + "개" : comma(total) + "개 중 " + shown + "개";
-        }
-
-        private static String comma(int value) {
-            return String.format("%,d", value);
+            return String.format("%,d", rows.getTotalElements()) + "개";
         }
     }
 

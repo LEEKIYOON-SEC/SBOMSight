@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -127,6 +128,22 @@ public class RemediationService {
         List<RemediationStatus> statuses =
                 status == null ? List.of(RemediationStatus.values()) : List.of(status);
         return remediations.findForList(zoneId, statuses, LocalDate.now());
+    }
+
+    /**
+     * 여러 자산치를 {@code (자산id, 패키지명)} 키로.
+     *
+     * <p>목록이 줄마다 `조치 등록`/`조치 보기` 중 무엇을 그릴지 정하는 데
+     * 쓴다. 키에 <b>자산 id 를 넣는다</b> — 구역·전체 범위는 자산이 섞여
+     * 있어서 패키지명으로만 맞추면 web-01 의 조치가 api-01 행에 붙는다.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Remediation> byAssetPackage(Collection<Long> assetIds) {
+        return assetIds.isEmpty() ? Map.of()
+                : remediations.findByAssets(assetIds).stream()
+                              .collect(Collectors.toMap(
+                                      r -> r.getAsset().getId() + "|" + r.getPackageName(),
+                                      Function.identity(), (a, b) -> a));
     }
 
     @Transactional(readOnly = true)

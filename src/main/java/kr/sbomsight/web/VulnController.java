@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.service.CsvWriter;
+import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
 import org.springframework.data.domain.PageRequest;
@@ -87,17 +88,15 @@ public class VulnController {
                 .with("zone", zone).with("scan", scan).with("group", group)
                 .with("q", q).with("severity", severity)
                 .with("fixable", fixable).with("kev", kev)
-                .with("size", VulnQuery.sizeOf(size) == VulnQuery.PAGE_SIZE
-                              ? null : VulnQuery.sizeOf(size))
+                .size(size)
                 .with("sort", "severity".equals(sort) ? null : sort)
                 .with("dir", "desc".equals(dir) ? null : dir);
 
-        // 페이지 이동. **사람이 적는 값은 1부터**이고 주소의 `page` 는 0부터
-        // 센다(스프링의 셈). 같은 이름으로 받으면 한 칸 어긋난 페이지로 가므로
-        // 다른 이름으로 받아 여기서 환산하고, 주소에는 남기지 않는다 —
-        // 남기면 거르개를 바꿀 때마다 따라다니며 엉뚱한 페이지로 튄다.
-        if (jump != null && jump > 0) {
-            return "redirect:" + links.page(jump - 1);
+        // 쪽 이동. 셈을 맞추는 일은 Paging 한 곳에서 한다 — 화면마다 적으면
+        // 한쪽만 고치는 날이 오고, 그때부터 화면마다 한 칸씩 어긋난다.
+        String jumped = Paging.jump(links, jump);
+        if (jumped != null) {
+            return jumped;
         }
 
         VulnQuery.Scope scope = scan != null ? query.ofScan(scan) : query.ofZone(zone);
@@ -122,7 +121,17 @@ public class VulnController {
     @GetMapping("/{cve}")
     public String detail(@PathVariable String cve,
                          @RequestParam(required = false) Long zone,
+                         @RequestParam(defaultValue = "0") int page,
+                         @RequestParam(required = false) Integer size,
+                         @RequestParam(required = false) Integer jump,
                          Model model) {
+        VulnQuery.Links links = new VulnQuery.Links("/vulns/" + cve, null)
+                .with("zone", zone).size(size);
+        String jumped = Paging.jump(links, jump);
+        if (jumped != null) {
+            return jumped;
+        }
+
         VulnQuery.Scope scope = query.ofZone(zone);
         List<Finding> rows = scope.scanIds().isEmpty()
                 ? List.of() : findings.findByCveIn(scope.scanIds(), cve);
@@ -131,10 +140,13 @@ public class VulnController {
         }
 
         model.addAttribute("cve", cve);
-        model.addAttribute("rows", rows);
+        model.addAttribute("links", links);
+        model.addAttribute("rows", Paging.slice(rows, page, size));
         // 대표로 한 건을 쓴다 — CVSS·벡터·심각도는 취약점의 속성이라 같다.
         model.addAttribute("first", rows.get(0));
         model.addAttribute("spread", findings.zoneSpread(scope.scanIds(), cve));
+        // **자른 쪽이 아니라 전부에서 센다.** 한 쪽에 보이는 자산 수를
+        // 찍으면 `3대` 인데 쪽이 다섯인 화면이 된다.
         model.addAttribute("assetCount",
                 rows.stream().map(f -> f.getScan().getAsset().getId()).distinct().count());
         return "vuln-detail";

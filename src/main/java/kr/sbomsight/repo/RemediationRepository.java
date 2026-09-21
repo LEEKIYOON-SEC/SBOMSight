@@ -66,6 +66,18 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
                                   @Param("statuses") List<RemediationStatus> statuses,
                                   @Param("today") LocalDate today);
 
+    /**
+     * 여러 자산치 — 목록이 줄마다 "조치가 걸렸나" 를 찍는 데 쓴다.
+     *
+     * <p>줄마다 물으면 표 한 장에 수백 번 왕복한다. 한 번에 가져와 자바에서
+     * {@code (자산id, 패키지명)} 으로 맞춘다.
+     */
+    @Query("""
+           SELECT r FROM Remediation r JOIN FETCH r.asset a
+           WHERE a.id IN :assetIds
+           """)
+    List<Remediation> findByAssets(@Param("assetIds") java.util.Collection<Long> assetIds);
+
     /** 기한이 지난 채 아직 안 닫힌 것. 첫 화면에서 먼저 보여야 하는 값이다. */
     @Query("""
            SELECT r FROM Remediation r JOIN FETCH r.asset

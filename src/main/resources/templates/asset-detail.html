@@ -262,9 +262,9 @@
         <!--/* 건수 줄·표·쪽 넘김 모두 `/vulns` 와 같은 조각이다. 두 벌을 두면
              한쪽만 고치는 날이 오고, 그때부터 같은 목록이 화면마다 다르게 센다. */-->
         <th:block th:if="${page.totalElements > 0}">
-          <div th:replace="~{fragments/ui :: countline(${page}, ${links})}"></div>
+          <div th:replace="~{fragments/ui :: countline(${page}, ${links}, '건')}"></div>
           <div th:replace="~{fragments/finding-table :: items(${page.content}, false,
-                            ${analyses}, ${links}, ${sort}, ${dir})}"></div>
+                            ${analyses}, ${actions}, ${links}, ${sort}, ${dir})}"></div>
           <div th:replace="~{fragments/ui :: pager(${page}, ${links})}"></div>
         </th:block>
       </th:block>
@@ -291,13 +291,13 @@
   */-->
   <div class="page-body" th:if="${tab} == 'packages'">
     <div class="container-xl">
-    <th:block th:if="${assetPackages == null or assetPackages.isEmpty()}">
+    <th:block th:if="${assetPackages == null or assetPackages.totalElements == 0}">
       <div th:replace="~{fragments/ui :: empty('아직 담긴 패키지가 없습니다',
                         '검사할 때 SBOM 에서 담김 · 이 자산을 다시 검사하면 채워짐',
                         '/assets/' + ${asset.id} + '?tab=history', '검사 이력')}"></div>
     </th:block>
 
-    <div class="card" th:if="${assetPackages != null and !assetPackages.isEmpty()}">
+    <div class="card" th:if="${assetPackages != null and assetPackages.totalElements > 0}">
       <div class="card-header">
         <h2 class="card-title">설치된 패키지</h2>
         <form method="get" class="ms-auto d-flex gap-2 align-items-center">
@@ -307,6 +307,7 @@
           <button class="btn btn-sm" type="submit">찾기</button>
         </form>
       </div>
+      <div th:replace="~{fragments/ui :: countline(${assetPackages}, ${links}, '개')}"></div>
       <div class="table-responsive">
         <table class="table table-vcenter card-table">
           <thead>
@@ -316,7 +317,7 @@
           </tr>
           </thead>
           <tbody>
-          <tr th:each="c : ${assetPackages}">
+          <tr th:each="c : ${assetPackages.content}">
             <td>
               <a th:href="@{/packages(q=${c.name}, open=${c.name})}" th:text="${c.name}">openssl-libs</a>
             </td>
@@ -330,6 +331,7 @@
           </tbody>
         </table>
       </div>
+      <div th:replace="~{fragments/ui :: pager(${assetPackages}, ${links})}"></div>
       <div class="card-footer">
         <p class="footnote" style="margin-top:0;padding-top:0;border-top:0">
           ※ 기준 — 이 자산의 최신 검사
@@ -351,6 +353,8 @@
                         '/assets/' + ${asset.id}, 'SBOM 업로드')}"></div>
     </th:block>
 
+    <div th:unless="${history.isEmpty()}"
+         th:replace="~{fragments/ui :: countline(${historyPage}, ${links}, '건')}"></div>
     <div class="table-responsive" th:unless="${history.isEmpty()}">
       <table class="table table-vcenter card-table">
         <thead>
@@ -369,7 +373,7 @@
         </tr>
         </thead>
         <tbody>
-        <tr th:each="s : ${history}">
+        <tr th:each="s : ${historyPage.content}">
           <td class="tight">
             <span class="mono" th:text="${#temporals.format(s.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
             <!--/*
@@ -436,6 +440,8 @@
         </tbody>
       </table>
     </div>
+    <div th:unless="${history.isEmpty()}"
+         th:replace="~{fragments/ui :: pager(${historyPage}, ${links})}"></div>
     </div>
     </div>
   </div>

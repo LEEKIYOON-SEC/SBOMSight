@@ -1,6 +1,8 @@
 package kr.sbomsight.repo;
 
 import kr.sbomsight.domain.Component;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -33,14 +35,21 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
 
     long countByAssetId(Long assetId);
 
-    /** 이 자산에 깔린 것. 자산 상세의 `패키지` 탭. */
+    /**
+     * 이 자산에 깔린 것. 자산 상세의 `패키지` 탭.
+     *
+     * <p><b>한 쪽씩 읽는다.</b> 앞서는 전부 한 번에 읽어 한 화면에 그렸다 —
+     * 4천 줄짜리 서버에서 표가 끝나지 않았고, 4천 개 엔티티를 되살리느라
+     * 그 탭만 눈에 띄게 느렸다.
+     */
     @Query("""
            SELECT c FROM Component c
            WHERE c.asset.id = :assetId
              AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
            ORDER BY c.name ASC, c.version ASC
            """)
-    List<Component> findByAsset(@Param("assetId") Long assetId, @Param("q") String q);
+    Page<Component> findByAsset(@Param("assetId") Long assetId, @Param("q") String q,
+                                Pageable pageable);
 
     /**
      * 패키지 이름으로 묶은 한 줄 — {@code /packages} 의 표.

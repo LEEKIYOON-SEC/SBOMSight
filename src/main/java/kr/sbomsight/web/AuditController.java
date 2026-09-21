@@ -5,6 +5,7 @@ import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.AuditLog;
 import kr.sbomsight.repo.AuditLogRepository;
 import kr.sbomsight.service.CsvWriter;
+import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.VulnQuery;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -55,8 +56,7 @@ public class AuditController {
         VulnQuery.Links filters = new VulnQuery.Links("/settings/audit", null)
                 .with("actor", actor).with("action", action)
                 .with("from", from).with("to", to).with("q", q)
-                .with("size", VulnQuery.sizeOf(size) == VulnQuery.PAGE_SIZE
-                              ? null : VulnQuery.sizeOf(size));
+                .size(size);
 
         // 페이지 이동. 사람이 적는 값은 1부터, 주소의 `page` 는 0부터 센다.
         if (jump != null && jump > 0) {
@@ -66,7 +66,7 @@ public class AuditController {
         Page<AuditLog> result = logs.search(blankToNull(actor), action,
                                             startOf(from), endOf(to), blankToNull(q),
                                             PageRequest.of(Math.max(page, 0),
-                                                           VulnQuery.sizeOf(size)));
+                                                           Paging.sizeOf(size)));
 
         model.addAttribute("page", result);
         model.addAttribute("events", AuditEvent.values());

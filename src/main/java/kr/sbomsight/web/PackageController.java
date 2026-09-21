@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.repo.ComponentRepository;
 import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.PackageService;
+import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
 import org.springframework.stereotype.Controller;
@@ -59,11 +60,22 @@ public class PackageController {
                        @RequestParam(name = "vulnerable", required = false) Boolean vulnerableParam,
                        @RequestParam(name = "mixed", required = false) Boolean mixedParam,
                        @RequestParam(required = false) String open,
+                       @RequestParam(defaultValue = "0") int page,
+                       @RequestParam(required = false) Integer size,
+                       @RequestParam(required = false) Integer jump,
                        Model model) {
         boolean vulnerable = Boolean.TRUE.equals(vulnerableParam);
         boolean mixed = Boolean.TRUE.equals(mixedParam);
 
-        PackageService.Listing listing = packages.list(zone, type, q, vulnerable, mixed);
+        VulnQuery.Links links = filters(new VulnQuery.Links("/packages", null),
+                                        zone, type, q, vulnerable, mixed).size(size);
+        String jumped = Paging.jump(links, jump);
+        if (jumped != null) {
+            return jumped;
+        }
+
+        PackageService.Listing listing =
+                packages.list(zone, type, q, vulnerable, mixed, page, size);
 
         model.addAttribute("listing", listing);
         model.addAttribute("zones", zoneService.all());
@@ -80,8 +92,7 @@ public class PackageController {
         //
         // 거짓말이 되는 자리도 있다 — `vulnerable=false` 는 안 고른 것이
         // 아니라 **끄기로 골랐다**고 읽힌다.
-        model.addAttribute("links", filters(new VulnQuery.Links("/packages", null),
-                                            zone, type, q, vulnerable, mixed));
+        model.addAttribute("links", links);
         model.addAttribute("csv", filters(new VulnQuery.Links("/packages/export.csv", null),
                                           zone, type, q, vulnerable, mixed));
         // 그 패키지의 취약점으로 — 구역은 이어 간다.
@@ -112,10 +123,10 @@ public class PackageController {
     /**
      * CSV 내려받기 — 결재와 공유는 엑셀로 돈다.
      *
-     * <p><b>화면의 200개 상한을 따르지 않는다.</b> 화면은 앞 200개만 싣지만,
-     * 잘린 파일은 그것이 잘렸다는 사실을 들고 다니지 않는다 — 거른 것 전부를
-     * 낸다. 거르개는 그대로 따른다: 보고 있던 것과 다른 파일이 떨어지면
-     * 어느 쪽이 맞는지 물어볼 자리가 없다.
+     * <p><b>보고 있던 쪽이 아니라 거른 것 전부다.</b> 화면에 한 쪽만 보이는데
+     * 파일도 그 쪽뿐이면 그 파일로 대조를 할 수 없다. 거르개는 그대로
+     * 따른다: 보고 있던 것과 다른 파일이 떨어지면 어느 쪽이 맞는지 물어볼
+     * 자리가 없다.
      */
     @GetMapping("/packages/export.csv")
     public void export(@RequestParam(required = false) Long zone,

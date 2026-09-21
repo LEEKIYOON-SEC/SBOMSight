@@ -9,6 +9,7 @@ import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Pageable;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
@@ -133,7 +134,7 @@ class ComponentInventoryTest {
         assertThat(info.format()).isEqualTo("syft-json");
         assertThat(info.componentCount()).isEqualTo(2);
 
-        List<Component> rows = components.findByAsset(asset.getId(), null);
+        List<Component> rows = ofAsset(asset.getId());
         assertThat(rows).extracting(Component::getName)
                 .containsExactly("log4j-core", "openssl-libs");
 
@@ -167,7 +168,7 @@ class ComponentInventoryTest {
 
         assertThat(ingest(asset, scan, CYCLONEDX_JSON).format()).isEqualTo("cyclonedx-json");
 
-        Component only = components.findByAsset(asset.getId(), null).get(0);
+        Component only = ofAsset(asset.getId()).get(0);
         assertThat(only.getName()).isEqualTo("openssl-libs");
         // `library` 를 유형으로 찍으면 유형 거르개가 전부 library 가 된다.
         assertThat(only.getType()).isEqualTo("rpm");
@@ -196,7 +197,7 @@ class ComponentInventoryTest {
 
         assertThat(ingest(asset, scan, SPDX_JSON).format()).isEqualTo("spdx-json");
 
-        Component only = components.findByAsset(asset.getId(), null).get(0);
+        Component only = ofAsset(asset.getId()).get(0);
         assertThat(only.getName()).isEqualTo("openssl-libs");
         assertThat(only.getVersion()).isEqualTo("3.0.7-24");
         assertThat(only.getType()).isEqualTo("rpm");
@@ -220,7 +221,19 @@ class ComponentInventoryTest {
         // 센 것은 둘이다 — 버리고 세지 않으면 회계가 어긋난다.
         assertThat(info.componentCount()).isEqualTo(2);
         // 담은 것은 하나다. 이름이 없으면 목록에서 가리킬 수 없다.
-        assertThat(components.findByAsset(asset.getId(), null)).hasSize(1);
+        assertThat(ofAsset(asset.getId())).hasSize(1);
+    }
+
+    /** 그 자산에 깔린 것 전부. 화면은 쪽으로 나눠 보지만 시험은 전부 본다. */
+    private List<Component> ofAsset(Long assetId) {
+        return components.findByAsset(assetId, null, Pageable.unpaged()).getContent();
+    }
+
+    /** 거른 뒤 전체 줄. 화면은 첫 쪽만 그린다. */
+    private List<PackageService.PackageRow> rows(String type, String q,
+                                                 boolean vulnerableOnly, boolean mixedOnly) {
+        return packages.list(null, type, q, vulnerableOnly, mixedOnly, 0, null)
+                       .rows().getContent();
     }
 
     // --- 다시 검사 -------------------------------------------------------------
@@ -255,10 +268,10 @@ class ComponentInventoryTest {
                 .as("다시 검사했더니 행이 쌓였다")
                 .isEqualTo(2);
         // 남아 있는 것은 새 검사 것이다.
-        assertThat(components.findByAsset(asset.getId(), null))
+        assertThat(ofAsset(asset.getId()))
                 .extracting(Component::getVersion)
                 .containsExactly("2.17.1", "3.0.7-25");
-        assertThat(components.findByAsset(asset.getId(), null))
+        assertThat(ofAsset(asset.getId()))
                 .allMatch(c -> c.getScan().getId().equals(second.getId()));
     }
 
@@ -352,8 +365,7 @@ class ComponentInventoryTest {
                                    "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.17.1" } ] }
                 """);
 
-        PackageService.PackageRow row = packages.list(null, null, "log4j-core", false, false)
-                .rows().stream()
+        PackageService.PackageRow row = rows(null, "log4j-core", false, false).stream()
                 .filter(r -> r.name().equals("log4j-core"))
                 .findFirst().orElseThrow(() -> new AssertionError("목록에 log4j-core 가 없습니다"));
 
@@ -377,7 +389,7 @@ class ComponentInventoryTest {
         // 섞여 있다 — 이 줄에 표시를 따로 단다.
         assertThat(row.mixed()).isTrue();
         // `일부 자산만 업그레이드` 거르개에 걸린다.
-        assertThat(packages.list(null, null, "log4j-core", false, true).rows())
+        assertThat(rows(null, "log4j-core", false, true))
                 .extracting(PackageService.PackageRow::name)
                 .contains("log4j-core");
     }
@@ -393,15 +405,15 @@ class ComponentInventoryTest {
                                    "purl": "pkg:rpm/rocky/glibc@2.34-83" } ] }
                 """);
 
-        PackageService.PackageRow row = packages.list(null, null, "glibc", false, false)
-                .rows().stream().filter(r -> r.name().equals("glibc"))
+        PackageService.PackageRow row = rows(null, "glibc", false, false).stream()
+                .filter(r -> r.name().equals("glibc"))
                 .findFirst().orElseThrow();
 
         assertThat(row.versions()).hasSize(1);
         assertThat(row.mixed()).isFalse();
         assertThat(row.findingCount()).isZero();
         // 걸린 것이 없으면 `취약점 있는 것만` 에 걸리지 않는다.
-        assertThat(packages.list(null, null, "glibc", true, false).rows())
+        assertThat(rows(null, "glibc", true, false))
                 .extracting(PackageService.PackageRow::name)
                 .doesNotContain("glibc");
     }
@@ -496,15 +508,15 @@ class ComponentInventoryTest {
                                    "purl": "pkg:maven/org.apache.logging.log4j/head-log4j@2.17.1" } ] }
                 """);
 
-        // 거르개 없이 — 이름 둘이 다 실린다. 그러면 수 하나만 적는다.
-        assertThat(packages.list(null, null, "head-", false, false).rows()).hasSize(2);
+        // 거르개 없이 — 이름 둘이 다 실린다.
+        assertThat(rows(null, "head-", false, false)).hasSize(2);
         assertThat(subtitle("/packages?q=head-")).isEqualTo("2개");
 
         // 거르개를 켜면 한 줄만 남는다. 그때 `2개` 라고 적으면 거짓이다.
-        assertThat(packages.list(null, null, "head-", false, true).rows()).hasSize(1);
+        assertThat(rows(null, "head-", false, true)).hasSize(1);
         assertThat(subtitle("/packages?q=head-&mixed=true"))
-                .as("머리에 적힌 수가 표에 실린 줄 수와 다르면 어느 쪽이 맞는지 물어볼 자리가 없다")
-                .isEqualTo("2개 중 1개");
+                .as("머리에 적힌 수는 거른 뒤 전체 줄 수다 — 다르면 어느 쪽이 맞는지 물어볼 자리가 없다")
+                .isEqualTo("1개");
     }
 
     // --- 실패한 검사 -----------------------------------------------------------
@@ -559,7 +571,7 @@ class ComponentInventoryTest {
             assertThat(remaining)
                     .as("실패한 검사의 패키지가 남아 한 패키지가 두 버전으로 보인다")
                     .isEqualTo(2);
-            assertThat(components.findByAsset(asset.getId(), null))
+            assertThat(ofAsset(asset.getId()))
                     .allMatch(c -> c.getScan().getId().equals(good.getId()));
         } finally {
             // 트랜잭션이 없으니 롤백도 없다. 실패해도 치운다 — 남기면 다른

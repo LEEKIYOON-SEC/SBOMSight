@@ -1,12 +1,12 @@
 package kr.sbomsight.service;
 
 import kr.sbomsight.domain.Finding;
+import kr.sbomsight.domain.FindingAnalysis;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.repo.ScanRepository;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.JpaSort;
 import org.springframework.stereotype.Service;
@@ -18,6 +18,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
@@ -31,32 +32,19 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 @Service
 public class VulnQuery {
 
-    public static final int PAGE_SIZE = 100;
-
-    /**
-     * 한 쪽에 몇 건. 화면에서 고른다.
-     *
-     * <p>고를 수 있는 값만 받는다 — 주소에 손으로 적은 {@code size=50000} 이
-     * 그대로 질의로 들어가면 한 사람이 화면 한 장으로 DB 를 붙잡는다.
-     */
-    public static final List<Integer> PAGE_SIZES = List.of(10, 30, 50, 100);
-
-    /** 목록에 없는 값은 기본값으로 되돌린다. {@code null} 도 기본값이다. */
-    public static int sizeOf(Integer size) {
-        return size != null && PAGE_SIZES.contains(size) ? size : PAGE_SIZE;
-    }
-
     private final FindingRepository findings;
     private final ScanRepository scans;
     private final ZoneService zones;
     private final FindingAnalysisService analyses;
+    private final RemediationService remediations;
 
     public VulnQuery(FindingRepository findings, ScanRepository scans, ZoneService zones,
-                     FindingAnalysisService analyses) {
+                     FindingAnalysisService analyses, RemediationService remediations) {
         this.findings = findings;
         this.scans = scans;
         this.zones = zones;
         this.analyses = analyses;
+        this.remediations = remediations;
     }
 
     /**
@@ -142,6 +130,17 @@ public class VulnQuery {
 
         public String sort(String sort) {
             return build("sort", sort);
+        }
+
+        /**
+         * 쪽 크기. <b>기본값은 주소에 적지 않는다</b> — {@code size=100} 은
+         * 고른 것이 아니라 아직 아무것도 고르지 않은 상태다.
+         *
+         * <p>화면마다 이 세 줄을 적고 있었다. 한 곳에 둔다.
+         */
+        public Links size(Integer size) {
+            int rows = Paging.sizeOf(size);
+            return with("size", rows == Paging.PAGE_SIZE ? null : rows);
         }
 
         public String page(int page) {
@@ -292,33 +291,40 @@ public class VulnQuery {
         String term = blankToNull(q);
         String sev = blankToNull(severity);
 
-        model.addAttribute("cveGroups", List.of());
-        model.addAttribute("packageGroups", List.of());
+        model.addAttribute("cvePage", Page.<FindingRepository.CveGroup>empty());
+        model.addAttribute("packagePage",
+                           Page.<FindingRepository.ZonePackageGroup>empty());
         model.addAttribute("page", Page.<Finding>empty());
 
         if (scope.scanIds().isEmpty()) {
-            model.addAttribute("analyses", java.util.Map.of());
+            model.addAttribute("analyses", Map.of());
+            model.addAttribute("actions", Map.of());
+            model.addAttribute("reviewed", Map.of());
             return;
         }
 
         switch (group == null ? "item" : group) {
-            case "cve" -> model.addAttribute("cveGroups",
-                    findings.groupByCveIn(scope.scanIds(), term, sev, fixable, kev));
+            // 묶어 세는 둘은 DB 에서 자르지 않는다 — `GROUP BY` 를 쪽으로
+            // 나누려면 세는 질의를 따로 들고 있어야 하고, 두 질의의 거르개가
+            // 갈리는 날 화면의 수와 쪽 수가 어긋난다. 읽는 양은 그대로 두고
+            // 그린 뒤에 자른다.
+            case "cve" -> model.addAttribute("cvePage", Paging.slice(
+                    findings.groupByCveIn(scope.scanIds(), term, sev, fixable, kev),
+                    page, size));
             // 거르개를 **넷 다** 넘긴다. 앞서는 `scanIds` 만 넘겼고, 화면에는
             // 고른 값이 그대로 남아 있는데 목록이 한 줄도 바뀌지 않았다.
-            case "package" -> model.addAttribute("packageGroups",
-                    findings.groupByPackageIn(scope.scanIds(), term, sev, fixable, kev));
+            case "package" -> model.addAttribute("packagePage", Paging.slice(
+                    findings.groupByPackageIn(scope.scanIds(), term, sev, fixable, kev),
+                    page, size));
             default -> {
-                int p = Math.max(page, 0);
-                int rows = sizeOf(size);
                 boolean asc = "asc".equals(dir);
                 model.addAttribute("page", "severity".equals(sort) || sort == null
                         // 심각도는 글자다. Critical 이 High 보다 앞이라는 것은
                         // 알파벳 순서가 아니라 뜻이고, ORDER BY CASE 로만 낸다.
                         ? findings.findInBySeverity(scope.scanIds(), term, sev, fixable, kev,
-                                                    asc, PageRequest.of(p, rows))
+                                                    asc, Paging.request(page, size))
                         : findings.findIn(scope.scanIds(), term, sev, fixable, kev,
-                                          PageRequest.of(p, rows, order(sort, dir))));
+                                          Paging.request(page, size, order(sort, dir))));
             }
         }
 
@@ -329,7 +335,81 @@ public class VulnQuery {
         // (CVE, 패키지명) 으로만 맞추면 web-01 의 검토 결과가 api-01 행에
         // 붙는다. 자산 하나짜리 범위에서는 눈에 띄지 않다가 범위를 넓히는
         // 순간 틀리는 종류의 버그다.
-        model.addAttribute("analyses", analyses.byAssetKey(scope.assetIds()));
+        Map<String, FindingAnalysis> byAssetKey = analyses.byAssetKey(scope.assetIds());
+        model.addAttribute("analyses", byAssetKey);
+
+        // 줄마다 **조치가 걸렸는지.** 검토 결과를 적은 다음 그것을 조치로
+        // 올리려면 앞서는 보고서를 새로 만들어 3장까지 내려가야 했다.
+        // 조치는 `(자산, 패키지)` 하나에 하나라, 같은 패키지의 여러 건이
+        // 같은 조치를 가리킨다 — 화면은 그것을 숨기지 않는다.
+        model.addAttribute("actions", remediations.byAssetPackage(scope.assetIds()));
+
+        // 묶어 보는 두 화면에서 **그 줄이 얼마나 검토됐는지.**
+        boolean byCve = "cve".equals(group);
+        model.addAttribute("reviewed", byCve || "package".equals(group)
+                ? reviewedCounts(scope, byCve, term, sev, fixable, kev, byAssetKey)
+                : Map.of());
+    }
+
+    /**
+     * 묶은 줄 하나가 <b>몇 건 중 몇 건 검토됐는가.</b>
+     *
+     * <p>CVE별·패키지별 한 줄은 자산 여러 대·건 여러 개를 묶은 줄이라,
+     * 검토 결과 하나를 그 줄에 붙일 수 없다 — 검토 결과는
+     * {@code (자산, CVE, 패키지)} 하나에 하나씩 붙는다. 그래서 <b>붙이는
+     * 대신 센다.</b> 화면은 이 수와 함께, 그 줄을 항목별로 펼치는 링크를
+     * 건다.
+     *
+     * <p><b>거르개를 그대로 건다.</b> 세는 쪽이 안 걸면 `7건 중 2건 검토`
+     * 의 7 이 같은 화면의 건수와 달라진다.
+     *
+     * <p>검토됐는지 맞추는 규칙은 목록의 행과 <b>같아야 한다</b> — 번호를
+     * 둘 다 보고(GHSA 가 주 식별자인 건), 손대지 않은 행
+     * ({@code untouched})은 세지 않는다. 한쪽만 고치면 같은 건이 표에서는
+     * `작성` 인데 묶은 줄에서는 `검토됨` 으로 센다.
+     */
+    private Map<String, Reviewed> reviewedCounts(Scope scope, boolean byCve, String q,
+                                                 String severity, Boolean fixable, Boolean kev,
+                                                 Map<String, FindingAnalysis> byAssetKey) {
+        Map<String, long[]> counts = new LinkedHashMap<>();
+        for (FindingRepository.AssetFindingKey key
+                : findings.findKeysFiltered(scope.scanIds(), q, severity, fixable, kev)) {
+            String related = key.getRelatedCve();
+            String display = related != null && !related.isBlank() ? related : key.getCve();
+            long[] row = counts.computeIfAbsent(byCve ? display : key.getPackageName(),
+                                                name -> new long[2]);
+            row[1]++;
+            if (touched(byAssetKey, key.getAssetId(), display, key.getPackageName())
+                    || touched(byAssetKey, key.getAssetId(), key.getCve(), key.getPackageName())) {
+                row[0]++;
+            }
+        }
+        Map<String, Reviewed> out = new LinkedHashMap<>();
+        counts.forEach((name, row) -> out.put(name, new Reviewed(row[0], row[1])));
+        return out;
+    }
+
+    private static boolean touched(Map<String, FindingAnalysis> byAssetKey, Long assetId,
+                                   String cve, String packageName) {
+        FindingAnalysis found = byAssetKey.get(assetId + "|" + cve + "|" + packageName);
+        return found != null && !found.isUntouched();
+    }
+
+    /**
+     * 묶은 줄의 검토 진행 — {@code 7건 중 2건}.
+     *
+     * @param done  적어 둔 것이 있는 건 수. 손대지 않은 행은 세지 않는다
+     * @param total 그 줄에 묶인 건 수 — <b>거르개를 건 뒤</b>의 수다
+     */
+    public record Reviewed(long done, long total) {
+
+        public boolean none() {
+            return done == 0;
+        }
+
+        public boolean all() {
+            return total > 0 && done == total;
+        }
     }
 
     /**

@@ -7,6 +7,7 @@ import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.AuditService;
 import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.FindingAnalysisService;
+import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.RemediationService;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
@@ -20,6 +21,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.security.Principal;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
@@ -66,7 +68,23 @@ public class ActionController {
                         @RequestParam(required = false) Long zone,
                         @RequestParam(required = false) RemediationStatus status,
                         @RequestParam(defaultValue = "false") boolean includeDone,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(required = false) Integer size,
+                        @RequestParam(required = false) Integer jump,
                         Model model) {
+        // 화면 안의 링크. 탭·거르개·쪽 크기를 이어 간다 — 쪽을 넘길 때
+        // 구역을 잃으면 다른 목록을 보게 된다.
+        VulnQuery.Links links = new VulnQuery.Links("/actions", null)
+                .with("tab", "analyses".equals(tab) ? "analyses" : null)
+                .with("zone", zone)
+                .with("status", "analyses".equals(tab) ? null : status)
+                .with("includeDone", includeDone ? "true" : null)
+                .size(size);
+        String jumped = Paging.jump(links, jump);
+        if (jumped != null) {
+            return jumped;
+        }
+        model.addAttribute("links", links);
         // 탭 숫자는 **거르기 전** 전체를 센다. 거른 뒤 세면 구역을 고르는
         // 순간 탭의 수가 함께 줄어, 다른 탭에 무엇이 있는지 알 수 없게 된다.
         model.addAttribute("remediationCount", service.all().size());
@@ -90,10 +108,17 @@ public class ActionController {
                 .with("includeDone", includeDone ? "true" : null));
 
         if ("analyses".equals(tab)) {
-            model.addAttribute("analyses", analyses.list(includeDone, zone));
+            List<FindingAnalysis> rows = analyses.list(includeDone, zone);
+            model.addAttribute("analyses", Paging.slice(rows, page, size));
             model.addAttribute("overdue", analyses.reviewOverdue());
+            // 검토 결과 줄에서 조치로 넘어가는 길. 조치는 `(자산, 패키지)`
+            // 하나에 하나라 검토 여러 건이 조치 하나를 가리킨다 — 이미
+            // 열려 있으면 `조치 등록` 이 아니라 `조치 보기` 다.
+            model.addAttribute("actions", service.byAssetPackage(
+                    rows.stream().map(a -> a.getAsset().getId()).distinct().toList()));
         } else {
-            model.addAttribute("remediations", service.list(zone, status));
+            model.addAttribute("remediations",
+                               Paging.slice(service.list(zone, status), page, size));
             model.addAttribute("overdue", remediations.findOverdue(LocalDate.now()));
         }
         return "actions";

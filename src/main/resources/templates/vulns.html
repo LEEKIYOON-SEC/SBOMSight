@@ -95,10 +95,11 @@
         그렇게 돌고, 한 번 더 누르면 방향이 뒤집힌다.
       */-->
       <th:block th:if="${page.totalElements > 0}">
-        <div th:replace="~{fragments/ui :: countline(${page}, ${links})}"></div>
+        <div th:replace="~{fragments/ui :: countline(${page}, ${links}, '건')}"></div>
 
         <div th:replace="~{fragments/finding-table :: items(${page.content},
-                          ${selectedScan == null}, ${analyses}, ${links}, ${sort}, ${dir})}"></div>
+                          ${selectedScan == null}, ${analyses}, ${actions},
+                          ${links}, ${sort}, ${dir})}"></div>
 
         <div th:replace="~{fragments/ui :: pager(${page}, ${links})}"></div>
       </th:block>
@@ -110,15 +111,18 @@
       항목별 목록은 같은 CVE 가 자산 수만큼 반복되어 그 답을 세기 어렵다.
     */-->
     <th:block th:if="${group} == 'cve'">
-      <th:block th:if="${cveGroups.isEmpty()}">
+      <th:block th:if="${cvePage.totalElements == 0}">
         <div th:replace="~{fragments/ui :: empty('조건에 맞는 취약점이 없습니다', null,
                           ${links.clear()}, '필터 지우기')}"></div>
       </th:block>
-      <th:block th:unless="${cveGroups.isEmpty()}">
-        <div class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
-          <b th:text="${#numbers.formatInteger(cveGroups.size(), 0, 'COMMA')}">0</b>
-          <span>가지 취약점</span>
-        </div>
+      <th:block th:if="${cvePage.totalElements > 0}">
+        <!--/*
+          건수 줄·쪽 넘김은 항목별과 **같은 조각**이다. 앞서는 이 표에만
+          둘 다 없어서, 취약점이 3천 가지면 3천 줄이 한 쪽에 쏟아졌다.
+          `n 가지 취약점` 이라고 적던 자리를 조각이 대신한다 — 세는 단위는
+          표 머리가 말한다.
+        */-->
+        <div th:replace="~{fragments/ui :: countline(${cvePage}, ${links}, '가지')}"></div>
         <div class="table-responsive">
           <table class="table table-vcenter card-table">
             <thead><tr>
@@ -126,9 +130,17 @@
               <th class="num tight">CVSS</th><th class="num tight">악용 확률</th>
               <th class="num tight">영향 자산</th><th class="num tight">탐지</th>
               <th class="tight">패키지</th><th class="tight">수정 버전</th>
+              <!--/*
+                **한 줄에 검토 결과 하나를 붙일 수 없다.** 검토 결과는
+                `(자산, CVE, 패키지)` 하나에 하나씩 붙는데 이 줄은 자산
+                여러 대·패키지 여러 개를 묶은 줄이다. 그래서 붙이는 대신
+                <b>몇 건 중 몇 건인지 센다.</b> 적는 것은 항목별에서 건마다
+                한다 — 그 줄만 걸러 보내는 링크를 함께 둔다.
+              */-->
+              <th class="tight">검토</th>
             </tr></thead>
             <tbody>
-            <tr th:each="g : ${cveGroups}">
+            <tr th:each="g : ${cvePage.content}">
               <td class="tight mono"><a th:href="@{'/vulns/' + ${g.cve}}" th:text="${g.cve}">CVE-0000-0000</a></td>
               <td class="tight">
                 <span class="sev" th:classappend="${#strings.toLowerCase(g.severity)}"><i></i>
@@ -157,10 +169,20 @@
                 <span class="faint" th:if="${g.fixable > 0 and g.fixable < g.total}"
                       th:text="${g.fixable} + ' / ' + ${g.total}">0 / 0</span>
               </td>
+              <td class="tight" th:with="r=${reviewed.get(g.cve)}">
+                <div th:replace="~{fragments/ui :: reviewmark(${r})}"></div>
+                <!--/* 진행과 링크를 한 줄에 두면 `미검토 항목별로 보기` 가 한
+                     구절로 읽힌다. 아래 줄로 내린다 — 패키지 칸의 유형·경로와
+                     같은 꼴이다. */-->
+                <div><a class="faint" style="font-size:12px"
+                   th:href="@{${links.copy().with('group','item').with('q', g.cve).here()}}"
+                   sec:authorize="hasRole('ADMIN')">항목별로 보기</a></div>
+              </td>
             </tr>
             </tbody>
           </table>
         </div>
+        <div th:replace="~{fragments/ui :: pager(${cvePage}, ${links})}"></div>
       </th:block>
     </th:block>
 
@@ -170,15 +192,12 @@
       몇 건이 사라지나" 에 답한다.
     */-->
     <th:block th:if="${group} == 'package'">
-      <th:block th:if="${packageGroups.isEmpty()}">
+      <th:block th:if="${packagePage.totalElements == 0}">
         <div th:replace="~{fragments/ui :: empty('조건에 맞는 취약점이 없습니다', null,
                           ${links.clear()}, '필터 지우기')}"></div>
       </th:block>
-      <th:block th:unless="${packageGroups.isEmpty()}">
-        <div class="card-body py-2 border-bottom d-flex align-items-center gap-2 flex-wrap">
-          <b th:text="${#numbers.formatInteger(packageGroups.size(), 0, 'COMMA')}">0</b>
-          <span>개 패키지</span>
-        </div>
+      <th:block th:if="${packagePage.totalElements > 0}">
+        <div th:replace="~{fragments/ui :: countline(${packagePage}, ${links}, '개')}"></div>
         <div class="table-responsive">
           <table class="table table-vcenter card-table">
             <thead><tr>
@@ -186,9 +205,11 @@
               <th class="num tight">영향 자산</th><th class="num tight">탐지</th>
               <th class="num tight">해소 가능</th><th class="tight">최고 심각도</th>
               <th class="tight">목표 버전</th>
+              <!--/* CVE별과 같은 이유로 세기만 한다 — 위 주석. */-->
+              <th class="tight">검토</th>
             </tr></thead>
             <tbody>
-            <tr th:each="g : ${packageGroups}">
+            <tr th:each="g : ${packagePage.content}">
               <td class="tight"><b th:text="${g.packageName}">openssl</b></td>
               <td class="tight faint" th:text="${g.packageType}">rpm</td>
               <td class="num tight"><b th:text="${g.assetCount}">0</b>대</td>
@@ -212,10 +233,17 @@
                 <span class="faint" th:if="${g.versionCount != 1}"
                       th:text="'설치 판 ' + ${g.versionCount} + '가지'">설치 판 2가지</span>
               </td>
+              <td class="tight" th:with="r=${reviewed.get(g.packageName)}">
+                <div th:replace="~{fragments/ui :: reviewmark(${r})}"></div>
+                <div><a class="faint" style="font-size:12px"
+                   th:href="@{${links.copy().with('group','item').with('q', g.packageName).here()}}"
+                   sec:authorize="hasRole('ADMIN')">항목별로 보기</a></div>
+              </td>
             </tr>
             </tbody>
           </table>
         </div>
+        <div th:replace="~{fragments/ui :: pager(${packagePage}, ${links})}"></div>
       </th:block>
     </th:block>
   </div>
