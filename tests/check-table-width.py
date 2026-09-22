@@ -24,12 +24,22 @@ CVE 번호 하나가 110px 쯤을 쓴다 — 1024px 에서 표에 주어지는 �
 import sys
 from playwright.sync_api import sync_playwright
 
+from screens import resolve
+
 SCREENS = ["/", "/?view=zones", "/assets/1", "/assets/1?tab=vulns", "/assets/1?tab=scans",
            "/assets/1?tab=actions", "/assets/1?tab=packages", "/vulns", "/vulns?group=cve",
-           "/vulns?group=package", "/vulns/CVE-2021-44228",
+           "/vulns?group=package", "@CVE상세",
+           # **수정 버전 없는 것만도 본다.** `현재 → 목표` 칸에 `수정 버전 없음`
+           # 딱지가 서면 그 칸이 넓어진다 — 앞서 여기만 18px 넘치고 있었는데,
+           # 폭을 재 볼 때 쓴 자료가 전부 수정 버전이 있는 것이라 안 보였다.
+           # 보고서 4장이 통째로 다루는 것이 이 행들이다.
+           "/vulns?fixable=false",
            # 펼친 줄은 표 안에 표를 둔다 — 바깥 표에 자리가 없으면 안쪽이 눌린다.
            "/packages", "/packages?vulnerable=true", "/packages?open=jackson-databind",
-           "/actions", "/actions?tab=analyses", "/actions/1",
+           # 이 둘은 번호가 자료마다 다르다. 띄운 앱에서 찾아 넣는다(아래) —
+           # 하드코딩해 두었더니 404 로 조용히 건너뛰고 있었고, 그동안 두 화면은
+           # 한 번도 재지 않았다.
+           "/actions", "/actions?tab=analyses", "@조치상세",
            "/reports", "/reports/scan/3", "/reports/zone", "/settings", "/settings?tab=ips",
            "/settings?tab=tools", "/settings/audit", "/me", "/assets/import"]
 WIDTH = int(sys.argv[1]) if len(sys.argv) > 1 else 1280
@@ -42,8 +52,10 @@ with sync_playwright() as p:
     pg.fill('input[name=username]','admin'); pg.fill('input[name=password]','devadmin1234')
     pg.click('button[type=submit]'); pg.wait_for_load_state('networkidle')
 
+    screens = resolve(pg, "https://localhost:8443", SCREENS)
+
     over = 0
-    for url in SCREENS:
+    for url in screens:
         r = pg.goto("https://localhost:8443" + url)
         if r.status >= 400:
             print(f"  {url}  HTTP {r.status}"); continue

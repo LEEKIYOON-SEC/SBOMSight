@@ -24,12 +24,14 @@ import re
 import sys
 from playwright.sync_api import sync_playwright
 
+from screens import resolve
+
 SCREENS = ["/", "/?view=zones", "/assets/1", "/assets/1?tab=vulns", "/assets/1?tab=scans",
            "/assets/1?tab=actions", "/assets/1?tab=packages", "/vulns", "/vulns?group=cve",
-           "/vulns?group=package", "/vulns/CVE-2021-44228",
+           "/vulns?group=package", "@CVE상세",
            "/packages", "/packages?vulnerable=true", "/packages?mixed=true",
            "/packages?open=jackson-databind",
-           "/actions", "/actions?tab=analyses", "/actions/1",
+           "/actions", "/actions?tab=analyses", "@조치상세",
            "/reports", "/reports/zone", "/settings", "/settings?tab=ips",
            "/settings?tab=tools", "/settings/audit", "/me", "/assets/import"]
 
@@ -49,7 +51,7 @@ with sync_playwright() as p:
     pg.wait_for_load_state('networkidle')
 
     empty, false = 0, 0
-    for url in SCREENS:
+    for url in resolve(pg, BASE, SCREENS):
         r = pg.goto(BASE + url)
         if r.status >= 400:
             print(f"  {url}  HTTP {r.status}")

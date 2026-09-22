@@ -23,10 +23,12 @@
 import sys
 from playwright.sync_api import sync_playwright
 
+from screens import resolve
+
 SCREENS = ["/", "/?view=zones", "/assets/1", "/assets/1?tab=vulns", "/assets/1?tab=packages",
            "/assets/1?tab=history", "/assets/1?tab=actions", "/vulns", "/vulns?group=cve",
-           "/vulns/CVE-2021-44228", "/packages", "/packages?open=jackson-databind",
-           "/actions", "/actions?tab=analyses", "/actions/1", "/reports", "/reports/zone",
+           "@CVE상세", "/packages", "/packages?open=jackson-databind",
+           "/actions", "/actions?tab=analyses", "@조치상세", "/reports", "/reports/zone",
            "/settings", "/settings?tab=ips", "/settings?tab=tools", "/settings/audit",
            "/me", "/assets/import", "/login"]
 
@@ -127,7 +129,7 @@ with sync_playwright() as p:
     # 같은 자리를 화면마다 다시 내지 않는다. 한 번 고치면 한 번에 사라진다.
     seen = {}
     unreadable = {}
-    for url in SCREENS:
+    for url in resolve(pg, BASE, SCREENS):
         r = pg.goto(BASE + url)
         if r.status >= 400:
             print(f"  {url}  HTTP {r.status}")
