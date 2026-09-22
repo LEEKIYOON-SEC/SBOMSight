@@ -120,6 +120,37 @@ class ProductionHygieneTest {
      * 실린다. 쓰지도 않는 DB 엔진이 운영 시스템에 있는 셈이고, 그 자체가
      * 이 도구가 찾아내는 종류의 항목이 된다.
      */
+    /**
+     * <b>CSRF 에 예외 구간을 두지 않는다.</b>
+     *
+     * <p>{@code ignoringRequestMatchers} 가 한 줄 있으면 그 구간은 토큰 없이
+     * 눌린다. 앞서 {@code "/api/**"} 가 적혀 있었는데 <b>이 저장소에
+     * {@code /api} 로 시작하는 길은 없다</b> — 쓰이지 않는 예외였고, 설정을
+     * 읽는 사람(점검하는 사람이 먼저 읽는다)에게는 "CSRF 를 끈 구간이 있다"
+     * 로 보였다.
+     *
+     * <p>정말 그런 길이 필요해지면 이 시험이 먼저 막는다. 막힌 자리에서
+     * 한 번 생각하고 지나가는 것이 요점이다 — 화면이 전부 서버 렌더링 폼인
+     * 동안 이 예외는 필요하지 않다.
+     */
+    @Test
+    @DisplayName("CSRF 를 끄거나 예외 구간을 두지 않는다")
+    void csrfHasNoExemptions() throws IOException {
+        String config = Files.readString(
+                Path.of("src/main/java/kr/sbomsight/config/SecurityConfig.java"));
+        // 주석에 적힌 설명은 세지 않는다 — 왜 두지 않는지를 적어 둔 자리다.
+        String code = config.replaceAll("(?m)^\\s*//.*$", "");
+
+        assertThat(code)
+                .as("CSRF 를 끄면 점검에서 바로 지적됩니다")
+                .doesNotContain("csrf.disable()")
+                .doesNotContain("AbstractHttpConfigurer::disable");
+        assertThat(code)
+                .as("예외 구간을 두면 그 길은 토큰 없이 눌립니다. 정말 "
+                    + "필요하면 이 시험을 함께 고치면서 왜 필요한지 적으세요.")
+                .doesNotContain("ignoringRequestMatchers");
+    }
+
     @Test
     @DisplayName("시험 의존성은 test 범위다")
     void testDependenciesStayOutOfTheJar() throws IOException {

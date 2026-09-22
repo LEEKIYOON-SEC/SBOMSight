@@ -88,8 +88,12 @@ public class SecurityConfig {
                     .expiredUrl("/login?taken"))
 
             // 화면이 전부 서버 렌더링 폼이라 CSRF 토큰이 자동으로 실린다.
-            // 끄지 않는다 — 끄는 순간 점검에서 바로 지적된다.
-            .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**"))
+            // **끄지도, 예외를 두지도 않는다.**
+            //
+            // 앞서 `/api/**` 를 예외로 적어 두었는데 이 저장소에 `/api` 로
+            // 시작하는 길은 없다 — 쓰이지 않는 예외였고, 설정을 읽는 사람
+            // (점검하는 사람이 먼저 읽는다)에게는 "CSRF 를 끈 구간이 있다" 로
+            // 보였다. 나중에 정말 그런 길이 생기면 그때 함께 정한다.
 
             .headers(headers -> headers
                 // https 전용이므로 브라우저에도 그렇게 못박는다.
