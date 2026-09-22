@@ -51,6 +51,16 @@ public enum AuditEvent {
     SCAN_RESCANNED("다시 검사"),
 
     // --- 조치 · 검토 결과 ---
+    REMEDIATION_CREATED("조치 등록"),
+    /**
+     * 담당·기한·설명만 바꾼 것도 여기에 남는다.
+     *
+     * <p>{@link Remediation#moveTo} 는 <b>상태가 바뀔 때만</b> 발자취에 한 줄을
+     * 더한다. 그래서 상태를 그대로 두고 기한만 미루면 조치 발자취에는 아무것도
+     * 남지 않고, "누가 기한을 밀었나" 에 답할 것이 {@code updated_by} 하나뿐인데
+     * 그것은 다음 수정이 덮어쓴다. 이 줄이 그 자리를 메운다.
+     */
+    REMEDIATION_UPDATED("조치 변경"),
     /**
      * 지운 조치는 <b>이력까지 함께</b> 사라진다({@code cascade = ALL}).
      * 그래서 지운 뒤에 남는 자취는 이 줄 하나뿐이다 — 반드시 남긴다.

@@ -155,9 +155,55 @@ public class ActionController {
                          @RequestParam(required = false) String comment,
                          Principal principal, RedirectAttributes flash) {
         Remediation remediation = remediation(id);
+        // **고치기 전에 읽는다.** `service.update` 가 같은 객체를 바꾼다.
+        String changed = changes(remediation, status, owner, dueDate, note);
         service.update(remediation, status, owner, dueDate, note, principal.getName(), comment);
+        if (!changed.isEmpty()) {
+            audit.record(AuditEvent.REMEDIATION_UPDATED,
+                         remediation.getAsset().getName() + " · "
+                         + remediation.getPackageName(), changed);
+        }
         flash.addFlashAttribute("message", "조치를 갱신했습니다.");
         return "redirect:/actions/" + id;
+    }
+
+    /**
+     * 무엇이 바뀌었는가 — <b>바뀐 칸만</b> 적는다.
+     *
+     * <p>상태를 그대로 두고 담당·기한만 고치면 조치 발자취에는 한 줄도 남지
+     * 않는다({@link Remediation#moveTo} 는 상태가 바뀔 때만 부른다). 그러면
+     * "누가 기한을 밀었나" 에 답할 것이 {@code updated_by} 하나뿐이고 그것은
+     * 다음 수정이 덮어쓴다.
+     *
+     * <p>바뀐 것이 없으면 빈 글자다 — <b>누른 적만 있는 것을 기록하지
+     * 않는다.</b> 손대지 않은 칸까지 쌓으면 감사 로그가 읽히지 않는다.
+     *
+     * <p>설명은 <b>바뀐 사실만</b> 적는다. 1,000자까지 들어오는 자유 기술이라
+     * 그대로 담으면 감사 로그 한 줄이 화면을 밀어낸다 — 적힌 내용은 조치
+     * 상세에 있다.
+     */
+    private String changes(Remediation before, RemediationStatus status, String owner,
+                           LocalDate dueDate, String note) {
+        List<String> changed = new java.util.ArrayList<>();
+        if (before.getStatus() != status) {
+            changed.add("조치 상태 " + before.getStatus().label() + " → " + status.label());
+        }
+        String newOwner = owner == null ? "" : owner.trim();
+        if (!before.getOwner().equals(newOwner)) {
+            changed.add("담당 " + or(before.getOwner()) + " → " + or(newOwner));
+        }
+        if (!java.util.Objects.equals(before.getDueDate(), dueDate)) {
+            changed.add("기한 " + or(before.getDueDate()) + " → " + or(dueDate));
+        }
+        if (!before.getNote().equals(note == null ? "" : note)) {
+            changed.add("설명 고침");
+        }
+        return String.join(" · ", changed);
+    }
+
+    /** 빈 값은 {@code —} 로. 화살표 양쪽이 비면 무엇이 바뀌었는지 읽히지 않는다. */
+    private static String or(Object value) {
+        return value == null || value.toString().isBlank() ? "—" : value.toString();
     }
 
     /**

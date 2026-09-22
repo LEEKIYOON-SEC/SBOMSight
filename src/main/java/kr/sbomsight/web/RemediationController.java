@@ -1,11 +1,13 @@
 package kr.sbomsight.web;
 
 import kr.sbomsight.domain.Asset;
+import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.ScanRepository;
+import kr.sbomsight.service.AuditService;
 import kr.sbomsight.service.RemediationService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
@@ -36,12 +38,14 @@ public class RemediationController {
     private final ScanRepository scans;
     private final AssetRepository assets;
     private final RemediationService service;
+    private final AuditService audit;
 
     public RemediationController(ScanRepository scans, AssetRepository assets,
-                                 RemediationService service) {
+                                 RemediationService service, AuditService audit) {
         this.scans = scans;
         this.assets = assets;
         this.service = service;
+        this.audit = audit;
     }
 
     /**
@@ -95,11 +99,28 @@ public class RemediationController {
      * <p>{@link RemediationService#open} 은 같은 {@code (자산, 패키지)} 에
      * 둘을 만들지 않는다. 이미 있으면 그것을 돌려주므로 두 번 눌러도 조치가
      * 늘지 않는다 — 대신 말이 달라야 한다. "등록했습니다" 라고 해 놓고
-     * 아무것도 안 생기면 다음에 또 누른다.
+     * 아무것도 안 생기면 다음에 또 누른다. <b>앞서 이 주석만 있고 코드는
+     * 양쪽에 같은 말을 하고 있었다.</b>
+     *
+     * <p>새로 만든 것만 감사 로그에 남긴다. 등록 당시 건수와 목표 버전을
+     * 함께 적는다 — 조치를 지우면 그 스냅샷이 함께 사라지고, 남는 것은
+     * 감사 로그의 이 줄뿐이다.
      */
-    private String opened(Remediation remediation, String packageName,
+    private String opened(RemediationService.Opened opened, String packageName,
                           RedirectAttributes flash) {
-        flash.addFlashAttribute("message", packageName + " 조치를 등록했습니다.");
+        Remediation remediation = opened.remediation();
+        if (opened.created()) {
+            audit.record(AuditEvent.REMEDIATION_CREATED,
+                         remediation.getAsset().getName() + " · " + packageName,
+                         "등록 당시 " + remediation.getOpenedCount() + "건"
+                         + (remediation.getFromVersion().isBlank() ? ""
+                            : " · 현재 " + remediation.getFromVersion())
+                         + (remediation.getToVersion().isBlank() ? ""
+                            : " · 목표 " + remediation.getToVersion()));
+            flash.addFlashAttribute("message", packageName + " 조치를 등록했습니다.");
+        } else {
+            flash.addFlashAttribute("message", packageName + " 조치는 이미 등록되어 있습니다.");
+        }
         return "redirect:/actions/" + remediation.getId();
     }
 }

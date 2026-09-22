@@ -32,15 +32,25 @@ public class RemediationService {
     }
 
     /**
+     * 연 결과 — <b>새로 만들었는지 함께 알려 준다.</b>
+     *
+     * <p>부르는 쪽이 감사 로그에 남기는데, 이미 있던 것을 돌려받은 경우까지
+     * `등록` 으로 남기면 단추를 두 번 누른 것이 등록 두 번으로 보인다.
+     */
+    public record Opened(Remediation remediation, boolean created) {
+    }
+
+    /**
      * 조치를 만들거나, 이미 있으면 그것을 돌려준다.
      *
      * <p>같은 패키지에 조치를 두 개 만들 수 있게 두면 담당이 갈리고 이력이
      * 쪼개진다. 하나만 열어 두고, 닫힌 것을 다시 열 때도 같은 줄을 쓴다.
      */
     @Transactional
-    public Remediation open(Asset asset, Scan scan, String packageName, String actor) {
+    public Opened open(Asset asset, Scan scan, String packageName, String actor) {
         return remediations.findByAssetIdAndPackageName(asset.getId(), packageName)
-                .orElseGet(() -> create(asset, scan, packageName, actor));
+                .map(existing -> new Opened(existing, false))
+                .orElseGet(() -> new Opened(create(asset, scan, packageName, actor), true));
     }
 
     private Remediation create(Asset asset, Scan scan, String packageName, String actor) {
