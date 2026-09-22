@@ -126,11 +126,16 @@ public class SettingsController {
     public String resetPassword(@PathVariable String username, Principal principal,
                                 RedirectAttributes flash) {
         try {
-            accounts.resetPassword(username, principal.getName());
+            String temporary = accounts.resetPassword(username, principal.getName());
+            // **비밀번호 자체는 감사 로그에 남기지 않는다.** 감사 로그는
+            // 화면에도 CSV 에도 그대로 나간다.
             audit.record(AuditEvent.USER_PASSWORD_RESET, username, "");
+            // 이 화면을 떠나면 다시 볼 길이 없다. 그래서 그 사실을 함께 적는다 —
+            // 적어 두지 않으면 새로고침 한 번으로 계정이 잠긴 것과 같아진다.
             flash.addFlashAttribute("message",
-                    username + " 의 비밀번호를 계정 이름과 같게 되돌렸습니다. "
-                    + "본인이 로그인해 새 비밀번호를 정해야 합니다.");
+                    username + " 의 임시 비밀번호는 " + temporary
+                    + " 입니다. 이 화면을 떠나면 다시 볼 수 없으니 지금 본인에게 "
+                    + "전달하세요. 본인이 로그인해 새 비밀번호를 정합니다.");
         } catch (AccountService.AccountException e) {
             flash.addFlashAttribute("error", e.getMessage());
         }

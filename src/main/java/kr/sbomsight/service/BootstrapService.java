@@ -13,8 +13,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
-import java.security.SecureRandom;
-import java.util.Base64;
 
 /**
  * 첫 기동 준비 — 보관 폴더와 최초 관리자.
@@ -53,7 +51,9 @@ public class BootstrapService implements ApplicationRunner {
         zones.unassigned();
 
         if (users.count() == 0) {
-            String password = randomPassword();
+            // 만드는 방식은 관리자 `초기화` 와 같은 곳에 둔다 — 두 벌을
+            // 두면 한쪽만 규칙을 지키는 날이 온다.
+            String password = PasswordStrength.temporary();
             AppUser admin = new AppUser(properties.bootstrapAdmin(),
                                         encoder.encode(password), Role.ADMIN);
             admin.setDisplayName("최초 관리자");
@@ -82,9 +82,4 @@ public class BootstrapService implements ApplicationRunner {
         }
     }
 
-    private String randomPassword() {
-        byte[] bytes = new byte[18];
-        new SecureRandom().nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
 }

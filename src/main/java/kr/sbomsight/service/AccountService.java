@@ -24,7 +24,6 @@ public class AccountService {
 
     private static final Logger log = LoggerFactory.getLogger(AccountService.class);
 
-    public static final int MIN_PASSWORD_LENGTH = 8;
     private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$");
 
     private final AppUserRepository users;
@@ -57,8 +56,9 @@ public class AccountService {
         if (users.existsByUsername(name)) {
             throw new AccountException("이미 있는 계정 이름입니다.");
         }
-        if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
-            throw new AccountException(MIN_PASSWORD_LENGTH + "자 이상으로 정해 주세요.");
+        String weak = PasswordStrength.rejection(password, name);
+        if (weak != null) {
+            throw new AccountException(weak);
         }
 
         AppUser user = new AppUser(name, encoder.encode(password), role);
@@ -113,8 +113,9 @@ public class AccountService {
         }
 
         if (newPassword != null && !newPassword.isBlank()) {
-            if (newPassword.length() < MIN_PASSWORD_LENGTH) {
-                throw new AccountException(MIN_PASSWORD_LENGTH + "자 이상으로 정해 주세요.");
+            String weak = PasswordStrength.rejection(newPassword, username);
+            if (weak != null) {
+                throw new AccountException(weak);
             }
             user.setPasswordHash(encoder.encode(newPassword));
             // 관리자가 정해 준 비밀번호다. 본인이 받아서 곧바로 바꾸게 한다 —
@@ -151,16 +152,29 @@ public class AccountService {
     }
 
     /**
-     * 비밀번호를 계정 이름과 같게 되돌린다.
+     * 비밀번호를 <b>한 번 쓰고 버릴 임시 비밀번호</b>로 바꾼다.
      *
-     * <p>관리자가 새 비밀번호를 지어내지 않는다 — 지어내면 그것을 본인에게
-     * 전달하는 경로가 또 필요하고, 대개 메신저로 흘러간다. 대신 <b>다음 로그인에서
-     * 반드시 바꾸게</b> 하고, 바꾸기 전에는 다른 화면이 열리지 않는다.
+     * <p><b>앞서 계정 이름과 같게 만들고 있었다.</b> 계정 이름은 설정 화면과
+     * 감사 로그에 그대로 보이고 대개 사번이다 — <b>이름을 아는 사람이라면
+     * 누구든, 본인이 로그인하기 전에 그 계정으로 들어갈 수 있었다.</b>
+     * `다음 로그인에서 반드시 바꾸게` 하는 것도 도움이 되지 않는다: 먼저
+     * 들어간 사람이 새 비밀번호를 정하고, 그러면 본인은 못 들어온다.
+     *
+     * <p>{@link PasswordStrength#temporary()} 로 만들어 <b>돌려준다.</b>
+     * 부르는 쪽이 화면에 한 번만 찍고 그것으로 끝이다 — 저장하지도 로그에
+     * 남기지도 않는다. 감사 로그에는 `초기화했다` 는 사실만 남는다.
+     *
+     * <p>전달 경로가 필요해지는 것은 맞다(앞 주석이 그것을 피하려 했다).
+     * 그러나 <b>전달의 불편과 아무나 들어올 수 있는 것을 견줄 수는 없다.</b>
+     *
+     * @return 그 계정에 지금 들어갈 수 있는 임시 비밀번호. <b>이 값이 화면을
+     *         떠나면 다시 볼 길이 없다</b>
      */
     @Transactional
-    public void resetPassword(String username, String actor) {
+    public String resetPassword(String username, String actor) {
         AppUser user = require(username);
-        user.setPasswordHash(encoder.encode(username));
+        String temporary = PasswordStrength.temporary();
+        user.setPasswordHash(encoder.encode(temporary));
         user.setMustChange(true);
         // 주기 기준도 지금으로 옮긴다. 옛 시각을 남겨 두면 mustChange 와
         // 만료가 동시에 참이 되어, 바꾼 직후에도 "주기가 지났습니다" 로
@@ -171,7 +185,10 @@ public class AccountService {
         user.setFailedAttempts(0);
         user.setLockedAt(null);
         users.save(user);
+        // **임시 비밀번호는 로그에 남기지 않는다.** 로그는 파일로 남고
+        // 대개 여러 사람이 본다 — 거기 적히면 초기화한 뜻이 없어진다.
         log.info("{} 의 비밀번호를 초기화했습니다 ({})", username, actor);
+        return temporary;
     }
 
     // changeRole · setEnabled 는 update 로 합쳤다. 권한을 바꾸는 길이 둘이면

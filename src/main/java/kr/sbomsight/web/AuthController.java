@@ -4,6 +4,7 @@ import kr.sbomsight.domain.AppUser;
 import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.PasswordChangeReason;
 import kr.sbomsight.service.PasswordPolicy;
+import kr.sbomsight.service.PasswordStrength;
 import kr.sbomsight.service.AuditService;
 import kr.sbomsight.repo.AppUserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,7 +22,6 @@ import java.security.Principal;
 public class AuthController {
 
     /** 8자 미만은 받지 않는다. 그 이상은 사용자가 정한다. */
-    private static final int MIN_LENGTH = 8;
 
     private final AppUserRepository users;
     private final PasswordEncoder encoder;
@@ -91,8 +91,9 @@ public class AuthController {
             flash.addFlashAttribute("error", "현재 비밀번호가 맞지 않습니다.");
             return "redirect:/password";
         }
-        if (password.length() < MIN_LENGTH) {
-            flash.addFlashAttribute("error", MIN_LENGTH + "자 이상으로 정해 주세요.");
+        String weak = PasswordStrength.rejection(password, user.getUsername());
+        if (weak != null) {
+            flash.addFlashAttribute("error", weak);
             return "redirect:/password";
         }
         if (!password.equals(confirm)) {
