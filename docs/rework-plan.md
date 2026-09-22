@@ -2744,13 +2744,68 @@ N28 에서 `조치` 칸을 넣고 폭을 맞췄는데, 그때 재 본 자료는 
   괜찮은 것은 다른 말이다.
 - 폭 목록에 `/vulns?fixable=false` 를 넣었다. 위의 고장이 그 화면에만 있었다.
 
+#### 5. GHSA 가 주 식별자인 건이 자기 KEV·EPSS 를 버렸다
+
+**§12 의 첫 줄을 우리 코드가 어기고 있었다.**
+
+KEV 목록과 EPSS 는 **CVE 번호**로 온다. `GrypeMapper` 는 한 match 에 여러
+CVE 의 값이 실릴 수 있어 이 건의 것만 골라 썼는데, **주 식별자 하나로만**
+맞추고 있었다. grype 이 GHSA 를 주 식별자로 낸 건은 제 값을 스스로 버린다.
+
+```java
+// 고치기 전
+.filter(k -> k.cve() == null || k.cve().isBlank() || cve.equalsIgnoreCase(k.cve()))
+```
+
+`실제 악용 확인` 이 `확인 안 됨` 으로, `악용 확률 97.44%` 가 `—` 로 바뀐다.
+**그것은 grype 의 판정이 아니라 우리 코드가 만든 값이다.** 사소한 경우가
+아니다 — 이 저장소의 실측 픽스처(`grype-0.87-real.json`)는 **98건 모두**
+주 식별자가 GHSA 다(자바·npm 이 섞인 자산이면 늘 그렇다).
+
+같은 규칙이 이미 두 곳에 있었다. `relatedCve()` 가 함께 온 CVE 를 뽑아 두고
+(`GrypeMapper:150`), `FindingAnalysisService.stateOf` 가 **번호를 둘 다 본다**
+— "한쪽만 맞추면 적어 둔 검토 결과가 보고서에서 사라진다" 고 그 주석이
+적고 있다. 판정을 옮기는 자리만 한쪽을 보고 있었다.
+
+`ours(항목번호, 주식별자, 함께온CVE)` 로 **둘까지만** 본다
+(`GrypeMapper:263`). 남의 CVE 것을 끌어오면 이번에는 없는 판정을 만드는
+쪽으로 틀리므로, 그것도 시험으로 못 박았다.
+
+> 실측 픽스처가 쓰는 grype 0.87 은 `epss`·`knownExploited` 를 아예 내지
+> 않는다. 그래서 **이 고장은 픽스처로 재현되지 않았고** 판을 올리는 순간
+> 나타난다 — 코드를 읽어 찾았고 시험으로 고정했다.
+
+#### 6. 쓰이지 않는 CSRF 예외 구간
+
+`csrf.ignoringRequestMatchers("/api/**")` 가 있었는데 이 저장소에 `/api` 로
+시작하는 길은 없다(`grep` 으로 확인 — 자바·템플릿 어디에도). 쓰이지 않는
+예외였고, 설정을 읽는 사람에게는 **"CSRF 를 끈 구간이 있다"** 로 보인다 —
+점검하는 사람이 `SecurityConfig` 를 먼저 읽는다.
+
+빼고, 다시 생기지 않게 가드를 뒀다
+(`ProductionHygieneTest#csrfHasNoExemptions`). 정말 그런 길이 필요해지면
+그 시험이 먼저 막는다 — 막힌 자리에서 한 번 생각하고 지나가는 것이 요점이다.
+
 #### 확인
 
 ```
-./mvnw -B test                             331개 통과 (H2)      ← 321 + 6 + 4
-DB_PORT=13306 tests/check-mariadb.sh       331개 통과 (MariaDB 10.11 + Flyway)
+./mvnw -B test                             334개 통과 (H2)      ← 321 + 6 + 4 + 3
+DB_PORT=13306 tests/check-mariadb.sh       334개 통과 (MariaDB 10.11 + Flyway)
 check-table-width 1280  0 · check-rows 0 · check-contrast 0 · check-links 0
 ```
+
+새 시험은 넷 다 **고치기 전 코드에서 실패를 확인했다.**
+
+| 시험 | 고치기 전 |
+|---|---|
+| `RemediationAuditTest` 6개 | 5개 실패 (이름만 되살리고 기록은 안 한 상태로) |
+| `ReportReviewCoverageTest` 4개 | `isExplained` 가 1/3 검토된 패키지에 `true` |
+| `GrypeMapperTest` +2개 | GHSA 주 식별자 건의 `getKev()` 가 `false` |
+| `ProductionHygieneTest` +1개 | `ignoringRequestMatchers` 를 집어냈다 |
+
+띄워서 직접 — 상태를 바꾸는 길 27개를 다시 눌러 감사 로그를 읽고(세 길 다
+남는다), 보고서 4장을 열어 `1 / 3건 해당 없음` 을 확인하고, 폭·대비·링크
+점검을 **건너뛰는 화면 없이** 돌렸다.
 
 폭·대비·링크 셋 다 **404 로 건너뛰는 화면 없이** 돌았다.
 `check-links` 의 `=false` 둘은 `/vulns?fixable=false`(수정 버전 없는 것만)로,

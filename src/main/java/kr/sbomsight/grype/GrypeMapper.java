@@ -214,13 +214,25 @@ public class GrypeMapper {
      * <p>grype 이 주지 않으면 <b>null 로 남긴다.</b> 0 이나 false 로 채우면
      * "악용 확률 0%"·"악용된 적 없음"이라는, 아무도 확인하지 않은 판정이 화면에
      * 뜬다. 없는 것은 없는 것으로 표시해야 한다.
+     *
+     * <p><b>번호를 둘 다 본다.</b> 한 match 안에 여러 CVE 의 EPSS·KEV 가 실릴
+     * 수 있어 이 건의 것만 골라야 하는데, 주 식별자 하나로만 맞추면 grype 이
+     * GHSA 를 주 식별자로 낸 건은 <b>제 값을 스스로 버린다</b> — KEV 목록은
+     * CVE 번호로 오기 때문이다. 이 저장소의 실측 픽스처는
+     * {@code 98건 모두} 주 식별자가 GHSA 다. 그 건들의 `실제 악용` 이 전부
+     * `확인 안 됨` 으로 떨어지면 그것은 grype 의 판정이 아니라 우리 코드가
+     * 만든 값이다(§11).
+     *
+     * <p>맞추는 규칙은 {@code FindingAnalysisService.stateOf} 와 같다 —
+     * 주 식별자와 함께 온 CVE 둘 다. 번호가 아예 없는 항목은 그대로 받는다.
      */
     private void applyExploit(Finding finding, GrypeReport.Vulnerability vuln, String cve) {
+        String related = finding.getRelatedCve();
+
         if (vuln.epss() != null && !vuln.epss().isEmpty()) {
             vuln.epss().stream()
                 .filter(e -> e != null && e.epss() != null)
-                // 같은 match 안에 여러 CVE 의 EPSS 가 실릴 수 있다. 이 건의 것만 쓴다.
-                .filter(e -> e.cve() == null || e.cve().isBlank() || cve.equalsIgnoreCase(e.cve()))
+                .filter(e -> ours(e.cve(), cve, related))
                 .findFirst()
                 .ifPresent(e -> finding.setEpss(
                         BigDecimal.valueOf(e.epss()).setScale(8, RoundingMode.HALF_UP)));
@@ -229,7 +241,7 @@ public class GrypeMapper {
         if (vuln.knownExploited() != null) {
             List<GrypeReport.KnownExploited> kev = vuln.knownExploited().stream()
                     .filter(Objects::nonNull)
-                    .filter(k -> k.cve() == null || k.cve().isBlank() || cve.equalsIgnoreCase(k.cve()))
+                    .filter(k -> ours(k.cve(), cve, related))
                     .toList();
             // 목록 자체가 왔다는 것은 grype 이 KEV 를 확인했다는 뜻이다. 그때만
             // true/false 를 쓰고, 목록이 아예 없으면 null 로 둔다.
@@ -240,6 +252,21 @@ public class GrypeMapper {
         if (vuln.risk() != null) {
             finding.setGrypeRisk(BigDecimal.valueOf(vuln.risk()).setScale(4, RoundingMode.HALF_UP));
         }
+    }
+
+    /**
+     * 이 항목이 <b>이 건의 것인가.</b>
+     *
+     * <p>번호를 안 적은 항목은 이 건의 것으로 본다 — grype 이 이 취약점에
+     * 붙여 준 것이고, 버리면 값이 있는데 없는 것이 된다.
+     */
+    private static boolean ours(String entryCve, String primaryId, String relatedCve) {
+        if (entryCve == null || entryCve.isBlank()) {
+            return true;
+        }
+        return entryCve.equalsIgnoreCase(primaryId)
+                || (relatedCve != null && !relatedCve.isBlank()
+                    && entryCve.equalsIgnoreCase(relatedCve));
     }
 
     private void applyArtifact(Finding finding, GrypeReport.Artifact artifact) {

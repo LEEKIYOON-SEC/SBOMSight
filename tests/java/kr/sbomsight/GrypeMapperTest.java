@@ -162,6 +162,67 @@ class GrypeMapperTest {
         assertThat(finding.getGrypeRisk()).isEqualByComparingTo("8.7500");
     }
 
+    /**
+     * <b>GHSA 가 주 식별자여도 제 값을 버리지 않는다.</b>
+     *
+     * <p>KEV 목록과 EPSS 는 <b>CVE 번호</b>로 온다. 주 식별자 하나로만 맞추면
+     * grype 이 GHSA 를 주 식별자로 낸 건은 자기 KEV·EPSS 를 걸러 버린다 —
+     * `실제 악용 확인` 이 `확인 안 됨` 으로, `악용 확률 12.34%` 가 `—` 로
+     * 바뀐다. 그것은 grype 의 판정이 아니라 우리 코드가 만든 값이다.
+     *
+     * <p>사소한 경우가 아니다. 이 저장소의 실측 픽스처
+     * ({@code grype-0.87-real.json})는 <b>98건 모두</b> 주 식별자가 GHSA 다.
+     */
+    @Test
+    @DisplayName("GHSA 가 주 식별자여도 함께 온 CVE 의 EPSS·KEV 를 담는다")
+    void exploitDataIsFoundByTheRelatedCve() throws Exception {
+        GrypeMapper.Result result = map("""
+            {"matches":[{
+              "vulnerability":{"id":"GHSA-jfh8-c2jp-5v3q","severity":"Critical",
+                "epss":[{"cve":"CVE-2021-44228","epss":0.9744,"percentile":0.99}],
+                "knownExploited":[{"cve":"CVE-2021-44228",
+                                   "knownRansomwareCampaignUse":"Known"}]},
+              "relatedVulnerabilities":[{"id":"CVE-2021-44228","severity":"Critical"}],
+              "artifact":{"name":"log4j-core","version":"2.14.1","type":"java-archive"}}]}
+            """);
+
+        Finding finding = result.findings().get(0);
+        assertThat(finding.getRelatedCve()).isEqualTo("CVE-2021-44228");
+        assertThat(finding.getKev())
+                .as("grype 이 실제 악용으로 표시한 건입니다. 번호를 한쪽만 "
+                    + "맞춰서 `확인 안 됨` 으로 떨어뜨리면 우리가 판정을 "
+                    + "바꾼 것입니다")
+                .isTrue();
+        assertThat(finding.getKevRansomware()).isTrue();
+        assertThat(finding.getEpss()).isEqualByComparingTo("0.9744");
+    }
+
+    /**
+     * 남의 CVE 것은 그대로 버린다.
+     *
+     * <p>번호를 둘 다 보되 <b>둘까지만</b> 본다. 한 match 에 실린 다른 CVE 의
+     * 값을 끌어오면 이번에는 없는 판정을 만드는 쪽으로 틀린다.
+     */
+    @Test
+    @DisplayName("이 건의 번호 둘 중 어느 것도 아니면 쓰지 않는다")
+    void anotherCvesExploitDataIsNotBorrowed() throws Exception {
+        GrypeMapper.Result result = map("""
+            {"matches":[{
+              "vulnerability":{"id":"GHSA-aaaa-bbbb-cccc","severity":"Low",
+                "epss":[{"cve":"CVE-2099-9999","epss":0.5000}],
+                "knownExploited":[{"cve":"CVE-2099-9999",
+                                   "knownRansomwareCampaignUse":"Known"}]},
+              "relatedVulnerabilities":[{"id":"CVE-2020-0001","severity":"Low"}],
+              "artifact":{"name":"foo","version":"1.0","type":"rpm"}}]}
+            """);
+
+        Finding finding = result.findings().get(0);
+        assertThat(finding.getEpss()).isNull();
+        assertThat(finding.getKev())
+                .as("목록은 왔으니 `확인했고 이 건은 없었다`(false)입니다")
+                .isFalse();
+    }
+
     @Test
     @DisplayName("KEV 목록이 왔지만 이 CVE 가 없으면 false 다 — null 이 아니다")
     void kevCheckedButNotListed() throws Exception {
