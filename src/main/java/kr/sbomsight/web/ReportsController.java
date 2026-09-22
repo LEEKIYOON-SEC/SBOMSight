@@ -91,9 +91,9 @@ public class ReportsController {
         LocalDate today = LocalDate.now();
 
         model.addAttribute("links", links);
+        // 화면은 `rows` 하나만 본다. `latest`·`neverScanned` 는 그것을
+        // 만드는 재료라 여기서 끝난다.
         model.addAttribute("rows", Paging.slice(rows, page, size));
-        model.addAttribute("latest", latest);
-        model.addAttribute("neverScanned", neverScanned);
         model.addAttribute("zones", zoneService.all());
         model.addAttribute("today", today);
         model.addAttribute("thisMonth", today.withDayOfMonth(1));

@@ -118,17 +118,4 @@ public class ZoneService {
         }
         zones.delete(zone);
     }
-
-    /** 목록에 세우는 순서. 받은 차례대로 0,1,2… 를 매긴다. */
-    @Transactional
-    public void reorder(List<Long> idsInOrder) {
-        int order = 0;
-        for (Long id : idsInOrder) {
-            Zone zone = zones.findById(id).orElse(null);
-            // 없는 id 는 건너뛴다. 미분류는 언제나 맨 뒤에 두므로 순서를 주지 않는다.
-            if (zone != null && !zone.isUnassigned()) {
-                zone.setSortOrder(order++);
-            }
-        }
-    }
 }

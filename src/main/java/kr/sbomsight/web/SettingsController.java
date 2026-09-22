@@ -56,10 +56,9 @@ public class SettingsController {
         model.addAttribute("users", accounts.list().stream()
                 .map(u -> new UserRow(u, attempts.isLocked(u), attempts.minutesRemaining(u)))
                 .toList());
-        model.addAttribute("lockoutEnabled", properties.lockoutEnabled());
-        model.addAttribute("maxLoginFailures", properties.maxLoginFailures());
-        model.addAttribute("lockMinutes", properties.lockMinutes());
-        model.addAttribute("passwordMaxAgeDays", properties.passwordMaxAgeDays());
+        // 잠금·비밀번호 정책 값 넷은 넘기지 않는다 — 화면이 읽지 않는다.
+        // 지금 그 값들은 `설정 → 계정` 이 아니라 동작으로만 드러난다
+        // (잠긴 계정에 `잠김` 딱지 · 기한이 지나면 로그인 때 변경 강제).
         model.addAttribute("roles", Role.values());
         model.addAttribute("allowedIps", settings.allowedIpsText());
         model.addAttribute("grypePath", properties.grypePath());

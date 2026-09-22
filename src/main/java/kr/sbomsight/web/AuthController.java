@@ -73,7 +73,6 @@ public class AuthController {
             // 온 이유에 따라 할 말과 첫 칸의 이름이 달라진다.
             PasswordChangeReason reason = policy.reasonFor(user);
             model.addAttribute("reason", reason);
-            model.addAttribute("mustChange", reason.isForced());
             model.addAttribute("daysSinceChange", policy.daysSinceChange(user));
             model.addAttribute("maxAgeDays", policy.maxAgeDays());
         });

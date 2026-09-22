@@ -2531,6 +2531,90 @@ check-table-width 1280 0 · check-rows 0 · contrast 0 · links 0
 `changeit` 을 명시적으로 넣어야 한다 — 고르지 않은 값이 조용히 쓰이는 일은
 없어졌다.
 
+### N30 — 안 쓰는 것 걷어내기 ✅
+
+개편을 여러 판 돌리면서 부르는 곳이 없어진 것들. **기능은 그대로 두고**
+아무도 안 부르는 것만 뺐다.
+
+#### 1. 계산해서 넘기는데 화면이 안 읽는 모델 속성 열
+
+| 자리 | 속성 |
+|---|---|
+| `AssetController:407` | `scope` — 자산 상세는 자기 제목을 따로 그린다. `ofScan` 을 두 번 부르던 것도 한 번으로 |
+| `AuthController:74` | `mustChange` — 비밀번호 화면은 `reason` 하나로 다 그린다 |
+| `SettingsController:59` | `lockoutEnabled` · `maxLoginFailures` · `lockMinutes` · `passwordMaxAgeDays` — 넷 다 화면에 없다 |
+| `ZoneReportController:61` | `thisMonth` · `lastMonthFrom` · `lastMonthTo` · `quarterFrom` — 화면은 아래에서 만든 `*Link` **주소**를 쓴다 |
+| `ReportsController:94` | `latest` · `neverScanned` — `rows` 를 만드는 재료다. 빈 화면 조건도 `rows.totalElements == 0` 으로 합쳤다 |
+
+마지막 것은 **같은 조건을 두 식으로 적고 있던** 자리다
+(`latest.isEmpty() and neverScanned.isEmpty()` vs `rows.totalElements > 0`).
+
+#### 2. 부르는 곳이 없는 메서드 일곱
+
+`Severity.known` · `AuditEvent.isAuthEvent` · `RemediationService.byPackage` ·
+`FindingAnalysisService.countForAsset` · `ZoneService.reorder` ·
+`AppUserRepository.findByLockedAtIsNotNull` ·
+`AuditLogRepository.countByActorAndActionAndAtAfter`
+
+`ZoneService.reorder` 는 구역 순서를 바꾸는 **화면이 없다.** 그 시험
+(`ordersZones`)이 함께 확인하던 뜻 — <b>미분류는 목록 끝</b> — 은 남겼다
+(`ZoneServiceTest#unassignedSortsLast`). `sort_order` 열 자체는 자산 목록의
+정렬이 쓰므로(`AssetRepository:24`) 그대로 둔다.
+
+**`FindingRepository.countByScanId` 는 남긴다.** 운영 코드는 안 부르지만
+`FindingAnalysisTest:268` 이 <b>검토 결과를 적어도 탐지 건수가 줄지 않는다</b>
+는 것을 이것으로 확인한다 — 이 저장소에서 가장 중요한 규칙이다(§11).
+
+#### 3. 한 번도 기록된 적 없는 감사 행위 셋
+
+화면의 `행위` 고르개는 `AuditEvent.values()` 로 만들어진다
+(`AuditController:72`). 그래서 **선언만 하고 아무도 기록하지 않는 이름은
+고르면 언제나 0건인 선택지**다. 여섯 개가 그랬다.
+
+| | 처리 | 왜 |
+|---|---|---|
+| `REMEDIATION_CREATED` · `REMEDIATION_UPDATED` · `SETTING_CHANGED` | **뺐다** | `git log -S` 로 확인 — 어느 판에서도 기록한 적이 없다. DB 에 그 이름이 든 행이 있을 수 없다 |
+| `RISK_ACCEPTED` · `RISK_ACCEPTANCE_REVOKED` · `USER_ROLE_CHANGED` | **남긴다** | 옛 판에서 기록했다. `@Enumerated(STRING)` 이라 지우면 그 이름이 든 옛 행을 읽다 터진다 |
+
+가르는 근거는 "지금 쓰나" 가 아니라 **"옛 행이 있을 수 있나"** 다.
+`AuditLogTest#everyAuditEventIsEitherRecordedOrHistorical` 이 앞으로 이것을
+지킨다 — 기록하든가, 옛 이름 목록에 이유와 함께 적든가.
+
+#### 4. 죽은 CSS 둘 · 안 쓰는 import 하나
+
+`.accept-link`(옛 `위험 수용` 링크) · `.zone-head .sep` ·
+`IpAllowlistFilter` 의 `StandardCharsets`.
+
+#### 확인
+
+```
+./mvnw -B test                             321개 통과 (H2)      ← 320 + 1
+DB_PORT=13306 tests/check-mariadb.sh       321개 통과 (MariaDB 10.11 + Flyway)
+check-table-width 1280 0 · check-rows 0 · contrast 0 · links 0
+자바 13,619줄 → 13,587줄 · CSS 579줄 → 577줄
+```
+
+새 가드는 고치기 전 상태에서 실패를 확인했다 — `SETTING_CHANGED` 를 되살리자
+`everyAuditEventIsEitherRecordedOrHistorical` 이 그것을 집어냈다.
+
+띄워서 직접 — 손댄 화면 열하나가 전부 200, 감사 로그의 `행위` 선택지가
+31개에서 **28개**로 줄면서 뺀 셋은 사라지고 남긴 셋은 그대로, 비밀번호
+화면이 그대로 그려지고, 구역 보고서의 기간 단추 셋이 `from`·`to` 를 달고
+눌러서 실제로 넘어가고, 설정의 계정 상태 칸이 `—`(사용 중 · 잠김 아님 ·
+실패 0회)로 제대로 뜬다.
+
+#### 하다가 본 것 — 고치지 않는다
+
+넷 다 **쓰기만 하고 아무도 안 읽는** 것이다. 지우려면 스키마를 바꾸거나
+증적을 버려야 해서 따로 물어야 한다.
+
+| | 무엇 | 크기 |
+|---|---|---|
+| `findings.detail_json` | grype 상세를 탐지마다 `longtext` 로 저장하는데 아무도 읽지 않는다. grype 원본은 이미 `grype.json.gz` 로 따로 보관한다(`SbomStorage:96`) | 탐지 한 건마다 |
+| `finding_analysis_event` | **검토 결과 변경 이력**이 쌓이는데 화면 어디에도 안 보인다. 조치 이력(`remediation.events`)은 `action-detail.html:130` 에 보인다 | 변경마다 |
+| `Scan.grypePath` | grype 원본을 보관해 두는데 내려받을 길이 없다. SBOM 은 `/scans/{id}/sbom` 이 있다 | — |
+| `Finding` 의 접근자 다섯 | `getFindingKey` · `getPackagePurl` · `getPackageLanguage` · `getDetailJson` · `Component.getPurl` — 열은 채워지는데 읽는 곳이 없다 | — |
+
 ---
 
 ## 9. 검증 (N11 에서 사람이 직접)

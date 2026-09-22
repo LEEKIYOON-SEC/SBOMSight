@@ -48,7 +48,11 @@
   </div>
 
   <h2>자산</h2>
-  <th:block th:if="${latest.isEmpty() and neverScanned.isEmpty()}">
+  <!--/* 같은 조건을 두 식으로 적지 않는다. 아래 카드가 이미
+       `rows.totalElements > 0` 로 갈리고, 이 줄은 그 반대다 — 앞서는
+       `latest.isEmpty() and neverScanned.isEmpty()` 라고 따로 적혀 있어
+       목록을 고치면 둘 중 하나만 고치는 날이 온다. */-->
+  <th:block th:if="${rows.totalElements == 0}">
     <div th:replace="~{fragments/ui :: empty('뽑을 보고서가 없습니다',
                       '자산을 등록하고 그 자산에서 추출한 SBOM 을 업로드',
                       '/assets', '자산 보기')}"></div>

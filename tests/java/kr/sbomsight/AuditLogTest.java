@@ -95,9 +95,12 @@ class AuditLogTest {
         // 한 줄이 열 폭을 넘겨 전체가 실패하면 그 작업까지 함께 롤백된다.
         // 기록을 남기려다 자산 삭제가 취소되는 것은 앞뒤가 맞지 않는다.
         String tooLong = "가".repeat(2000);
-        audit.recordAs("tester", AuditEvent.SETTING_CHANGED, tooLong, tooLong);
+        // 아무 행위나 된다 — 자르는 것은 값이지 행위가 아니다. 실제로
+        // 기록되는 이름을 쓴다(`SETTING_CHANGED` 는 선언만 있고 아무도
+        // 기록하지 않아 지웠다).
+        audit.recordAs("tester", AuditEvent.IP_ALLOWLIST_CHANGED, tooLong, tooLong);
 
-        assertThat(recent(AuditEvent.SETTING_CHANGED))
+        assertThat(recent(AuditEvent.IP_ALLOWLIST_CHANGED))
                 .anySatisfy(row -> {
                     assertThat(row.getTarget().length()).isLessThanOrEqualTo(256);
                     assertThat(row.getDetail().length()).isLessThanOrEqualTo(1000);
@@ -242,5 +245,55 @@ class AuditLogTest {
         // 옛 주소로 우회해도 막혀야 한다. 넘겨주는 자리에 구멍이 나기 쉽다.
         mvc.perform(get("/audit").with(user("viewer").roles("VIEWER")))
            .andExpect(status().isForbidden());
+    }
+
+    /**
+     * 화면의 <b>행위</b> 고르개는 {@code AuditEvent.values()} 로 만들어진다
+     * ({@code AuditController:72}). 그래서 <b>선언만 하고 아무도 기록하지
+     * 않는 이름은 고르면 언제나 0건인 선택지</b>가 된다.
+     *
+     * <p>실제로 여섯 개가 그랬다. 셋({@code REMEDIATION_CREATED} ·
+     * {@code REMEDIATION_UPDATED} · {@code SETTING_CHANGED})은 어느 판에서도
+     * 기록한 적이 없어 지웠고, 셋({@code RISK_ACCEPTED} ·
+     * {@code RISK_ACCEPTANCE_REVOKED} · {@code USER_ROLE_CHANGED})은 옛
+     * 판에서 기록했으므로 <b>남긴다</b> — {@code @Enumerated(STRING)} 이라
+     * 지우면 그 이름이 든 옛 행을 읽다 터진다.
+     *
+     * <p>새로 더할 때도 둘 중 하나여야 한다: 기록하든가, 아래 목록에 이유와
+     * 함께 적든가.
+     */
+    @Test
+    @DisplayName("선언한 감사 행위는 기록되거나, 옛 이름으로 남긴 것이다")
+    void everyAuditEventIsEitherRecordedOrHistorical() throws java.io.IOException {
+        // 옛 판에서 기록했던 이름. 지우면 이미 쌓인 행을 읽을 수 없다.
+        List<AuditEvent> historical = List.of(AuditEvent.RISK_ACCEPTED,
+                                              AuditEvent.RISK_ACCEPTANCE_REVOKED,
+                                              AuditEvent.USER_ROLE_CHANGED);
+
+        StringBuilder code = new StringBuilder();
+        try (var files = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/java"))) {
+            for (java.nio.file.Path file : files.filter(java.nio.file.Files::isRegularFile)
+                                                .filter(f -> f.toString().endsWith(".java"))
+                                                .toList()) {
+                // 선언한 자리(AuditEvent.java)는 세지 않는다 — 거기 있는 것이
+                // 기록했다는 뜻은 아니다.
+                if (file.getFileName().toString().equals("AuditEvent.java")) {
+                    continue;
+                }
+                code.append(java.nio.file.Files.readString(file)).append('\n');
+            }
+        }
+
+        List<String> orphans = java.util.Arrays.stream(AuditEvent.values())
+                .filter(e -> !historical.contains(e))
+                .filter(e -> !code.toString().contains("AuditEvent." + e.name()))
+                .map(Enum::name)
+                .toList();
+
+        assertThat(orphans)
+                .as("선언만 되고 아무 데서도 기록하지 않는 행위입니다. 화면의 "
+                    + "`행위` 고르개에 뜨지만 고르면 언제나 0건입니다. 기록하든가, "
+                    + "옛 이름이면 이 시험의 historical 목록에 이유와 함께 적으세요.")
+                .isEmpty();
     }
 }

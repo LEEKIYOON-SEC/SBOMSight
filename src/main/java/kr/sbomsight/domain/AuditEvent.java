@@ -20,6 +20,14 @@ public enum AuditEvent {
     USER_CREATED("계정 생성"),
     USER_DELETED("계정 삭제"),
     USER_UPDATED("계정 수정"),
+    /**
+     * 옛 이름. <b>지우지 않는다.</b>
+     *
+     * <p>권한을 드롭다운으로 즉시 저장하던 시절에 이 이름으로 남겼다. 지금은
+     * `수정` 팝업이 한 번에 저장하고 {@code USER_UPDATED} 로 남지만, 이미
+     * 쌓인 감사 로그에는 이 이름이 들어 있다 — 지우면 그 행을 읽다 터진다
+     * ({@code @Enumerated(STRING)}).
+     */
     USER_ROLE_CHANGED("권한 변경"),
     USER_PASSWORD_RESET("비밀번호 초기화"),
     USER_UNLOCKED("계정 잠금 해제"),
@@ -43,8 +51,6 @@ public enum AuditEvent {
     SCAN_RESCANNED("다시 검사"),
 
     // --- 조치 · 검토 결과 ---
-    REMEDIATION_CREATED("조치 등록"),
-    REMEDIATION_UPDATED("조치 변경"),
     /**
      * 지운 조치는 <b>이력까지 함께</b> 사라진다({@code cascade = ALL}).
      * 그래서 지운 뒤에 남는 자취는 이 줄 하나뿐이다 — 반드시 남긴다.
@@ -64,8 +70,11 @@ public enum AuditEvent {
     RISK_ACCEPTANCE_REVOKED("위험 수용 철회"),
 
     // --- 설정 ---
-    IP_ALLOWLIST_CHANGED("접근 IP 변경"),
-    SETTING_CHANGED("설정 변경");
+    // `SETTING_CHANGED` 를 뺐다. 선언만 있고 어디서도 기록하지 않았는데
+    // 화면의 `행위` 고르개는 `values()` 로 만들어진다 — 고르면 언제나 0건인
+    // 선택지였다. 실제로 남는 설정 변경은 접근 IP 하나뿐이고 그것은 제
+    // 이름이 있다.
+    IP_ALLOWLIST_CHANGED("접근 IP 변경");
 
     private final String label;
 
@@ -76,11 +85,5 @@ public enum AuditEvent {
     /** 화면에 찍는 한글 이름. */
     public String label() {
         return label;
-    }
-
-    /** 로그인 관련인가 — 화면에서 따로 걸러 보는 일이 많다. */
-    public boolean isAuthEvent() {
-        return this == LOGIN_SUCCESS || this == LOGIN_FAILURE
-                || this == LOGIN_BLOCKED || this == LOGOUT;
     }
 }

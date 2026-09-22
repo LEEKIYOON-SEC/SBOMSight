@@ -145,10 +145,4 @@ public class RemediationService {
                                       r -> r.getAsset().getId() + "|" + r.getPackageName(),
                                       Function.identity(), (a, b) -> a));
     }
-
-    @Transactional(readOnly = true)
-    public Map<Long, Remediation> byPackage(Long assetId) {
-        return remediations.findByAssetIdOrderByStatusAscPackageNameAsc(assetId).stream()
-                .collect(Collectors.toMap(Remediation::getId, Function.identity()));
-    }
 }

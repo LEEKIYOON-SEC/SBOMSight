@@ -53,6 +53,4 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
                           @Param("to") Instant to,
                           @Param("q") String q);
 
-    /** 한 계정의 최근 로그인 실패 횟수 — 잠금 판단에 쓴다. */
-    long countByActorAndActionAndAtAfter(String actor, AuditEvent action, Instant after);
 }

@@ -185,11 +185,6 @@ public class FindingAnalysisService {
         return analyses.findReviewOverdue(LocalDate.now());
     }
 
-    @Transactional(readOnly = true)
-    public long countForAsset(Long assetId) {
-        return analyses.countByAsset(assetId);
-    }
-
     /**
      * 탐지 한 줄이 <b>어떤 검토 상태인가.</b>
      *

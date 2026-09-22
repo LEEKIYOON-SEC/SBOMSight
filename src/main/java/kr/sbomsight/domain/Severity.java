@@ -45,11 +45,6 @@ public enum Severity {
         return label;
     }
 
-    /** 취약점이 있다고 볼 수 있는 등급인가 — {@link #UNKNOWN} 도 있는 것이다. */
-    public boolean known() {
-        return this != UNKNOWN;
-    }
-
     /** 심각한 순서. 표와 집계가 이 순서를 쓴다. */
     public static final List<Severity> RANKED = List.of(values());
 

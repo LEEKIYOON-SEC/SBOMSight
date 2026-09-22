@@ -58,10 +58,9 @@ public class ZoneReportController {
         model.addAttribute("selectedZone", zone);
         model.addAttribute("from", start);
         model.addAttribute("to", end);
-        model.addAttribute("thisMonth", today.withDayOfMonth(1));
-        model.addAttribute("lastMonthFrom", today.minusMonths(1).withDayOfMonth(1));
-        model.addAttribute("lastMonthTo", today.withDayOfMonth(1).minusDays(1));
-        model.addAttribute("quarterFrom", today.minusMonths(2).withDayOfMonth(1));
+        // 기간 넷은 날짜로 넘기지 않는다 — 화면은 아래에서 만드는
+        // `thisMonthLink` 같은 **주소**를 쓴다. 날짜와 주소를 둘 다 넘기면
+        // 기간을 고칠 때 한쪽만 고치는 날이 온다.
         model.addAttribute("today", today);
 
         // 기간 단추의 주소를 자바에서 만든다. `@{/reports/zone(zone=${zone}, …)}`

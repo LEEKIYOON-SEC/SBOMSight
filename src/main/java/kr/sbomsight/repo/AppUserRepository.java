@@ -32,6 +32,4 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
     @Query("UPDATE AppUser u SET u.failedAttempts = u.failedAttempts + 1 WHERE u.username = :username")
     int incrementFailedAttempts(@Param("username") String username);
 
-    /** 잠긴 계정. 설정 화면에서 해제 대상을 찾는다. */
-    List<AppUser> findByLockedAtIsNotNull();
 }

@@ -120,18 +120,23 @@ class ZoneServiceTest {
                 .isEqualTo(zone.getId());
     }
 
+    /**
+     * <b>미분류는 언제나 끝이다.</b>
+     *
+     * <p>앞서 이 시험은 {@code reorder(...)} 로 순서를 바꿔 본 뒤 그것을
+     * 확인했다. 순서를 바꾸는 화면이 없어 그 메서드를 지웠고, 남은 뜻만
+     * 지킨다 — 어디에도 안 속한 자산이 목록 맨 위에 서면 그 화면은
+     * "무엇부터 볼까" 에 답하지 못한다. {@code sort_order 9999} 가 그 일을
+     * 하고, 자산 목록의 정렬도 이 값을 쓴다({@code AssetRepository:24}).
+     */
     @Test
-    @DisplayName("목록은 정한 순서대로 서고 미분류는 뒤에 남는다")
-    void ordersZones() {
+    @DisplayName("미분류 구역은 목록 끝에 선다")
+    void unassignedSortsLast() {
         service.unassigned();
-        Zone a = service.create("A-" + System.nanoTime(), "", "");
-        Zone b = service.create("B-" + System.nanoTime(), "", "");
-
-        service.reorder(java.util.List.of(b.getId(), a.getId()));
+        service.create("A-" + System.nanoTime(), "", "");
+        service.create("B-" + System.nanoTime(), "", "");
 
         var ordered = service.all().stream().map(Zone::getName).toList();
-        assertThat(ordered.indexOf(b.getName())).isLessThan(ordered.indexOf(a.getName()));
-        // 미분류는 sort_order 9999 라 언제나 끝쪽이다.
         assertThat(ordered).last().isEqualTo(Zone.UNASSIGNED);
     }
 }

@@ -404,7 +404,9 @@ public class AssetController {
             // 화면에서 단추를 뗐으니 주소로 들어와도 같은 곳을 보여 준다 —
             // 안 그러면 손으로 적은 `?group=cve` 가 빈 화면이 된다.
             group = "item";
-            model.addAttribute("scope", vulns.ofScan(latest.getId()));
+            // `scope` 는 넘기지 않는다 — 전체 취약점 화면은 머리에
+            // `scope.label()` 을 찍지만 자산 상세는 자기 제목을 따로 그린다.
+            // `ofScan` 을 두 번 부르던 것도 한 번으로 줄인다.
             vulns.fill(model, vulns.ofScan(latest.getId()), group, q, severityFilter,
                        fixable, kev, page, size, sort, dir);
             model.addAttribute("links", tabLinks(id, tab, group, q, severityFilter, fixable,
