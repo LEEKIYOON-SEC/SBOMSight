@@ -27,6 +27,9 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 @RequestMapping("/analyses")
 public class FindingAnalysisController {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(FindingAnalysisController.class);
+
     private final FindingAnalysisService analyses;
     private final AssetRepository assets;
 
@@ -60,12 +63,33 @@ public class FindingAnalysisController {
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "자산을 찾을 수 없습니다."));
         try {
             AnalysisState newState = enumOf(AnalysisState.class, state);
-            analyses.record(asset, cve, packageName,
-                            newState == null ? AnalysisState.NOT_SET : newState,
-                            enumOf(AnalysisJustification.class, justification),
-                            enumOf(AnalysisResponse.class, response),
-                            note, otherControl, approvalDoc, date(reviewBy),
-                            principal.getName());
+            AnalysisJustification newJustification =
+                    enumOf(AnalysisJustification.class, justification);
+            AnalysisResponse newResponse = enumOf(AnalysisResponse.class, response);
+            java.time.LocalDate newReviewBy = date(reviewBy);
+            try {
+                analyses.record(asset, cve, packageName,
+                                newState == null ? AnalysisState.NOT_SET : newState,
+                                newJustification, newResponse,
+                                note, otherControl, approvalDoc, newReviewBy,
+                                principal.getName());
+            } catch (org.springframework.dao.DataIntegrityViolationException race) {
+                // **동시에 두 번 눌렸다.** `record` 는 `없으면 만든다` 인데 그
+                // 사이에 다른 요청이 같은 `(자산, CVE, 패키지)` 를 만들 수 있다.
+                // DB 의 유일 제약(`ux_analysis_key`)이 막아 데이터는 갈라지지
+                // 않지만, 예외가 그대로 올라가면 화면이 500 이 되어 적은 것이
+                // 들어갔는지 알 수 없다.
+                //
+                // 한 번 더 부른다 — 이제 그 줄이 있으므로 `고치는 길` 로 가고,
+                // 바뀐 칸만 이력에 남는다. 두 번째도 겹치면 그때는 올린다.
+                log.info("검토 결과를 적는 요청이 겹쳤습니다 — 다시 한 번 적습니다: {} · {}",
+                         cve, packageName);
+                analyses.record(asset, cve, packageName,
+                                newState == null ? AnalysisState.NOT_SET : newState,
+                                newJustification, newResponse,
+                                note, otherControl, approvalDoc, newReviewBy,
+                                principal.getName());
+            }
             flash.addFlashAttribute("message", cve + " 의 검토 결과를 적었습니다.");
         } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
             flash.addFlashAttribute("error", message(e));

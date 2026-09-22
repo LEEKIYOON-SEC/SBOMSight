@@ -53,6 +53,27 @@ public class RemediationService {
                 .orElseGet(() -> new Opened(create(asset, scan, packageName, actor), true));
     }
 
+    /**
+     * 동시에 두 번 눌린 뒤 <b>먼저 들어간 것을 읽어 온다.</b>
+     *
+     * <p>{@link #open} 은 `없으면 만든다` 인데 그 사이에 다른 요청이 같은
+     * {@code (자산, 패키지)} 를 만들 수 있다. 그때 DB 의 유일 제약
+     * ({@code uk_remediation_open})이 막는다 — <b>데이터는 갈라지지
+     * 않는다.</b> 다만 그 예외가 그대로 올라가면 화면이 500 이 되고, 누른
+     * 사람은 조치가 열렸는지 아닌지 알 수 없다.
+     *
+     * <p><b>왜 {@code open} 안에서 못 잡는가.</b> 제약 위반은 flush 때 나고
+     * 그 시점에 트랜잭션은 이미 되돌리기로 표시된다 — 같은 트랜잭션에서
+     * 다시 읽을 수 없다. 부르는 쪽이 새 트랜잭션으로 읽어야 한다.
+     */
+    @Transactional(readOnly = true)
+    public Opened rejoin(Long assetId, String packageName) {
+        return remediations.findByAssetIdAndPackageName(assetId, packageName)
+                .map(existing -> new Opened(existing, false))
+                .orElseThrow(() -> new IllegalStateException(
+                        "조치를 열지 못했고 먼저 열린 것도 없습니다: " + packageName));
+    }
+
     private Remediation create(Asset asset, Scan scan, String packageName, String actor) {
         Remediation remediation = new Remediation(asset, packageName, actor);
 
