@@ -63,11 +63,11 @@
             <button type="submit" class="btn btn-sm">잠금 해제</button>
           </form>
           <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/reset'}" class="inline"
-                onsubmit="return confirm('비밀번호를 계정 이름과 같게 되돌립니다.\n본인이 로그인해 새 비밀번호를 정해야 합니다.\n\n계속할까요?')">
+                data-confirm="비밀번호를 계정 이름과 같게 되돌립니다.\n본인이 로그인해 새 비밀번호를 정해야 합니다.\n\n계속할까요?">
             <button type="submit" class="btn btn-sm">비밀번호 초기화</button>
           </form>
           <form method="post" th:action="@{'/settings/users/' + ${u.username} + '/delete'}" class="inline"
-                onsubmit="return confirm('이 계정을 지웁니다. 되돌릴 수 없습니다.\n\n계속할까요?')">
+                data-confirm="이 계정을 지웁니다. 되돌릴 수 없습니다.\n\n계속할까요?">
             <button type="submit" class="btn btn-sm btn-outline-danger">삭제</button>
           </form>
         </td>
@@ -199,31 +199,7 @@
     </form>
   </dialog>
 
-  <script>
-    (function () {
-      const dialog = document.querySelector('#user-dialog');
-      if (!dialog) return;
-      const form = dialog.querySelector('#user-form');
-
-      document.addEventListener('click', function (e) {
-        const button = e.target.closest('.edit-user');
-        if (button) {
-          // 주소는 계정마다 다르다. 폼 하나를 옮겨 쓴다.
-          form.action = '/settings/users/' + encodeURIComponent(button.dataset.username);
-          dialog.querySelector('#user-name').textContent = button.dataset.username;
-          dialog.querySelector('#user-display').value = button.dataset.display || '';
-          dialog.querySelector('#user-role').value = button.dataset.role;
-          dialog.querySelector('#user-enabled').checked = button.dataset.enabled === 'true';
-          // 열 때마다 비운다. 남아 있으면 이름만 고치려다 비밀번호까지 바뀐다.
-          dialog.querySelector('#user-password').value = '';
-          dialog.showModal();
-          return;
-        }
-        const close = e.target.closest('[data-close]');
-        if (close) { close.closest('dialog').close(); }
-      });
-    })();
-  </script>
+  <script src="/js/settings.js" defer></script>
 
 </main>
 </body>

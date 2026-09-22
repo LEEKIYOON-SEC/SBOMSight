@@ -79,7 +79,7 @@
     */-->
     <form method="post" th:action="@{'/actions/' + ${remediation.id} + '/delete'}"
           sec:authorize="hasRole('ADMIN')" style="margin-top:12px"
-          onsubmit="return confirm('이 조치를 지웁니다. 상태 변경 이력도 함께 사라집니다.\n되돌릴 수 없습니다.\n\n계속할까요?')">
+          data-confirm="이 조치를 지웁니다. 상태 변경 이력도 함께 사라집니다.\n되돌릴 수 없습니다.\n\n계속할까요?">
       <button type="submit" class="btn btn-sm btn-outline-danger">조치 삭제</button>
       <span class="faint ms-2">잘못 등록한 것을 지움 · 감사 로그에는 남음</span>
     </form>

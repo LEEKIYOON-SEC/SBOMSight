@@ -25,6 +25,30 @@ server:
     key-alias: ${SBOMSIGHT_KEY_ALIAS:sbomsight}
     # 구형 프로토콜은 열지 않는다. 점검에서 가장 먼저 지적되는 항목이다.
     enabled-protocols: TLSv1.3,TLSv1.2
+    # **암호 묶음도 골라 둔다.** 프로토콜만 조여 두면 TLS 1.2 에서 자바
+    # 기본값이 그대로 쓰이고, 그 안에는 전방 비밀성(ECDHE)이 없는 것과
+    # CBC 를 쓰는 것이 섞여 있다 — 점검에서 묶음까지 묻는다.
+    #
+    # 적은 것은 전부 전방 비밀성(ECDHE) + AEAD(GCM·ChaCha20)다. CBC 와
+    # 정적 RSA 는 한 줄도 없다. RSA 키와 ECDSA 키를 모두 받게 양쪽을 적어
+    # 둔다 — 사내 CA 가 어느 쪽을 내줄지 모르고, 한쪽만 적으면 인증서를
+    # 바꿔 끼운 날 안 뜬다.
+    #
+    # **TLS 1.3 묶음을 함께 적어야 한다.** 이름 체계가 달라서
+    # (`TLS_AES_256_GCM_SHA384`), 1.2 것만 적으면 1.3 에 남는 묶음이 하나도
+    # 없어 **1.3 핸드셰이크가 통째로 실패한다.** 프로토콜 목록에는 1.3 이
+    # 있는데 실제로는 1.2 로만 붙는, 눈으로는 안 보이는 모양이 된다 —
+    # `openssl s_client -tls1_3` 으로 재 보고 찾았다.
+    ciphers: >-
+      TLS_AES_256_GCM_SHA384,
+      TLS_CHACHA20_POLY1305_SHA256,
+      TLS_AES_128_GCM_SHA256,
+      TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+      TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+      TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+      TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+      TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+      TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
   servlet:
     session:
       # 놀고 있으면 끊는다. 마지막 요청으로부터 잰다 — 쓰고 있는 동안에는
@@ -33,8 +57,22 @@ server:
       cookie:
         http-only: true
         secure: true
-        same-site: lax
+        # **`lax` 에서 `strict` 로 조였다.** `lax` 는 남의 화면에서 이리로
+        # 건너오는 최상위 이동에 쿠키를 함께 보낸다. 주소창에 직접 치거나
+        # 즐겨찾기로 여는 것은 `strict` 에서도 그대로 보내므로, 이 도구를
+        # 쓰는 방식에서 잃는 것이 없다 — 사내에서 주소를 받아 처음 누를 때
+        # 한 번 로그인 화면이 뜰 수 있고, 그것이 맞는 동작이다.
+        same-site: strict
         name: SBOMSIGHT_SESSION
+  # **오류 화면이 안을 말하지 않는다.** 스프링 부트의 기본값이 이미
+  # `never` 지만 여기 적어 둔다 — 기본값에 기대면 판을 올릴 때 조용히
+  # 바뀔 수 있고, 그때 500 화면이 스택 트레이스와 DB 오류 문구를 그대로
+  # 내보낸다. 거기에는 테이블 이름과 질의가 들어 있다.
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+    include-exception: false
   tomcat:
     # SBOM 은 수백 MB 가 예사다. 업로드는 파일로 흘려보낸다.
     max-swallow-size: -1

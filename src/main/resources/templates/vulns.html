@@ -39,7 +39,7 @@
     */-->
     <label class="form-label mb-0" for="zone-filter">범위</label>
     <select class="form-select form-select-sm w-auto" id="zone-filter" name="zone"
-            onchange="this.form.submit()" th:disabled="${selectedScan != null}">
+            data-autosubmit th:disabled="${selectedScan != null}">
       <option value="">전체</option>
       <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
               th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>

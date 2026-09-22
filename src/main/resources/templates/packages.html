@@ -45,7 +45,7 @@
     */-->
     <label class="form-label mb-0" for="pkg-zone">구역</label>
     <select class="form-select form-select-sm w-auto" id="pkg-zone" name="zone"
-            onchange="this.form.submit()">
+            data-autosubmit>
       <option value="">전체</option>
       <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
               th:selected="${selectedZone != null and selectedZone == z.id}">DMZ</option>
@@ -68,14 +68,14 @@
       같은 꼴이다. 줄여서 뜻이 흐려지면 줄이지 않는다(§4.0.4).
     */-->
     <select class="form-select form-select-sm w-auto" name="type" aria-label="패키지 유형"
-            onchange="this.form.submit()">
+            data-autosubmit>
       <option value="">유형 전체</option>
       <option th:each="t : ${listing.types()}" th:value="${t}" th:text="${t}"
               th:selected="${type != null and type == t}">rpm</option>
     </select>
 
     <select class="form-select form-select-sm w-auto" name="vulnerable" aria-label="취약점"
-            onchange="this.form.submit()">
+            data-autosubmit>
       <option value="">취약점 전체</option>
       <option value="true" th:selected="${vulnerable}">취약점 있는 것만</option>
     </select>
@@ -90,7 +90,7 @@
       주소와 즐겨찾기가 죽지 않게.
     */-->
     <select class="form-select form-select-sm w-auto" name="mixed"
-            aria-label="업그레이드 상태" onchange="this.form.submit()"
+            aria-label="업그레이드 상태" data-autosubmit
             title="걸린 것이 있는 버전과 없는 버전이 함께 깔려 있는 패키지 — 일부 자산만 업그레이드한 상태">
       <option value="">업그레이드 상태 전체</option>
       <option value="true" th:selected="${mixed}">일부 자산만 업그레이드</option>

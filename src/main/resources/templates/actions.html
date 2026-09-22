@@ -57,7 +57,7 @@
     <!--/* 라벨은 고르개를 감싸지 않는다 — 취약점·패키지 화면과 같은 꼴이다. */-->
     <label class="form-label mb-0" for="action-zone">구역</label>
     <select class="form-select form-select-sm w-auto" id="action-zone" name="zone"
-            onchange="this.form.submit()">
+            data-autosubmit>
       <option value="">전체</option>
       <option th:each="z : ${zones}" th:value="${z.id}" th:text="${z.name}"
               th:selected="${selectedZone != null && selectedZone == z.id}">DMZ</option>
@@ -66,7 +66,7 @@
     <!--/* 조치 탭의 거르개 */-->
     <label class="form-label mb-0" for="action-status" th:if="${tab} != 'analyses'">상태</label>
     <select class="form-select form-select-sm w-auto" id="action-status" name="status"
-            th:if="${tab} != 'analyses'" onchange="this.form.submit()">
+            th:if="${tab} != 'analyses'" data-autosubmit>
       <option value="">전체</option>
       <option th:each="s : ${statuses}" th:value="${s}" th:text="${s.label()}"
               th:selected="${status != null && status == s}">대기</option>
@@ -84,7 +84,7 @@
     */-->
     <label class="form-check form-check-inline mb-0" th:if="${tab} == 'analyses'">
       <input class="form-check-input" type="checkbox" name="includeDone" value="true"
-             th:checked="${includeDone}" onchange="this.form.submit()">
+             th:checked="${includeDone}" data-autosubmit>
       <span class="form-check-label">검토 끝난 것 포함</span>
     </label>
 

@@ -124,5 +124,12 @@
   </div>
 </div>
 
+<!--/*
+  화면 전체가 쓰는 동작. **인라인으로 두지 않는다** — `<script>` 한 줄이든
+  `onclick=` 한 개든 남아 있으면 CSP 에 `unsafe-inline` 을 넣어야 하고,
+  그것을 넣는 순간 CSP 가 막으려던 것을 그대로 허용한다.
+*/-->
+<script src="/js/app.js" defer></script>
+
 </body>
 </html>

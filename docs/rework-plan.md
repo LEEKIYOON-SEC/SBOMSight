@@ -2857,6 +2857,113 @@ check-table-width 1280  0 · check-rows 0 · check-contrast 0 · check-links 0
 
 ---
 
+### N32 — 보안 강화
+
+N31 에서 "안 한 것" 으로 적어 둔 것 중 보안에 닿는 것을 전부 반영했다.
+**머리 셋을 더하고, 그러기 위해 화면의 스크립트를 전부 밖으로 뺐다.**
+
+#### 1. `Content-Security-Policy` — 없던 것을 넣었다
+
+```
+default-src 'self'; script-src 'self'; style-src 'self';
+style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self';
+connect-src 'self'; form-action 'self'; base-uri 'self';
+object-src 'none'; frame-ancestors 'none'
+```
+
+**바깥에서 받아 오는 것이 하나도 없다.** 글꼴(IBM Plex 292 파일)과 바탕
+CSS(Tabler)까지 저장소에 넣어 우리가 내려준다 — 폐쇄망에서 돌아야 하므로
+그럴 수밖에 없었고, 그 덕에 `'self'` 하나로 닫을 수 있다.
+
+두 자리만 느슨하다. 각각 왜인지 적어 둔다.
+
+| 자리 | 왜 |
+|---|---|
+| `style-src-attr 'unsafe-inline'` | 심각도 막대의 폭처럼 **값이 서버에서 오는 것**은 `style="width:37%"` 로만 낼 수 있다. 클래스로 낼 수 없는 수다. 글자를 내보내는 자리는 전부 Thymeleaf 가 이스케이프하고(`th:utext` 0개) 스크립트는 막혀 있으므로, 남는 위험은 모양이 흐트러지는 정도다 |
+| `img-src … data:` | 바탕 CSS 가 고르개 화살표와 체크 표시를 `data:image/svg+xml` 로 박아 두었다(28곳). **막으면 화면 여덟 장에서 그 표시가 사라진다** — 띄워서 콘솔을 읽고 찾았다. 이미지 data URI 는 실행되지 않으므로 스크립트와 성격이 다르다 |
+
+#### 2. 그러려면 화면에 스크립트가 없어야 한다
+
+`script-src 'self'` 는 인라인을 막는다. `'unsafe-inline'` 을 넣으면
+**CSP 가 막으려던 것을 그대로 허용한다** — 끼워 넣어진 `<script>` 와
+`onerror=` 가 함께 돈다. 그래서 전부 뺐다.
+
+| | 무엇 | 어디로 |
+|---|---|---|
+| 인라인 `<script>` 넷 | 자산 목록 · 검사 진행 · 설정 팝업 · 검토 결과 팝업 | `js/assets.js` · `js/scan-progress.js` · `js/settings.js` · `js/analysis-dialog.js` |
+| `onchange="this.form.submit()"` 아홉 | 거르개 고르개 | `data-autosubmit` |
+| `onsubmit="return confirm(…)"` 다섯 | 되돌릴 수 없는 것 | `data-confirm="문구"` |
+| `onclick="window.print()"` 둘 | 보고서 인쇄 | `data-print` |
+
+하는 일은 `js/app.js` 한 곳에 뒀다. **같은 동작이 화면마다 조금씩 다르게
+놀던 것도 함께 사라진다** — 팝업 닫기(`[data-close]`)가 세 군데에 따로
+적혀 있었다.
+
+화면이 정하는 것은 **무엇을 할지**(`data-…`)이고, 하는 방법은 한 곳이다.
+확인 문구는 화면이 정한다 — 무엇이 함께 사라지는지는 자리마다 다르고,
+한곳에서 지어내면 "정말 지울까요?" 한 마디가 되어 아무것도 알려 주지 못한다.
+
+#### 3. 나머지 머리와 설정
+
+| | 앞서 | 지금 | 왜 |
+|---|---|---|---|
+| `Referrer-Policy` | 없음 | `no-referrer` | 주소에 자산 번호·CVE 번호가 들어 있다(`/vulns/CVE-2021-44228`). `Referer` 로 새 나가면 그것만으로 **어느 서버에 무엇이 걸렸는지**가 읽힌다 |
+| `Permissions-Policy` | 없음 | 카메라·마이크·위치 등 여덟 가지 `()` | 안 쓰는 것을 열어 두면 점검에서 묻고, 답이 "안 쓴다" 면 닫아야 한다 |
+| `X-Frame-Options` | `SAMEORIGIN` | `DENY` | 이 도구는 스스로를 iframe 에 넣지 않는다(`grep iframe` → 0) |
+| 세션 쿠키 `SameSite` | `lax` | `strict` | `lax` 는 남의 화면에서 건너오는 최상위 이동에 쿠키를 함께 보낸다. 주소창·즐겨찾기는 `strict` 에서도 그대로 보내므로 **이 도구를 쓰는 방식에서 잃는 것이 없다** |
+| TLS 암호 묶음 | 지정 없음(자바 기본) | ECDHE + AEAD 아홉 | 프로토콜만 조이면 TLS 1.2 에서 CBC 와 전방 비밀성 없는 것이 섞인 기본값이 쓰인다 |
+| `server.error.include-*` | 지정 없음 | 전부 `never`/`false` | 기본값이 이미 그렇지만 **기본값에 기대면 판을 올릴 때 조용히 바뀐다.** 그때 500 화면이 스택 트레이스와 DB 오류 문구(테이블 이름·질의)를 그대로 내보낸다 |
+
+이미 있던 것: HSTS 1년 + `includeSubDomains` · `X-Content-Type-Options:
+nosniff` · `Cache-Control: no-store` · 쿠키 `Secure` + `HttpOnly` ·
+TLSv1.3/1.2 만 · CSRF 전 구간 · `Server` 머리 없음.
+
+#### 재 보고 찾은 것 둘 — 둘 다 눈으로는 안 보인다
+
+| | 무엇 | 어떻게 찾았나 |
+|---|---|---|
+| 1 | **TLS 1.3 이 통째로 막혔다.** `ciphers` 를 적으면 톰캣은 그 목록만 쓰는데, 1.3 묶음은 이름 체계가 달라(`TLS_AES_256_GCM_SHA384`) 1.2 것만 적은 목록에는 하나도 안 남는다 | `openssl s_client -tls1_3` → `New, (NONE), Cipher is (NONE)`. **설정에는 1.3 이 켜져 있고 점검 보고서에는 "TLS 1.3 지원" 으로 적힌다** |
+| 2 | **고르개 화살표가 화면 여덟 장에서 사라졌다.** `img-src 'self'` 가 바탕 CSS 의 `data:image/svg+xml` 을 막았다 | 브라우저 콘솔 — `Refused to load the image 'data:image/svg+xml…'` 8건 |
+
+둘 다 **화면을 봐서는 알 수 없고 시험도 통과한다.** 그래서 재 보는 길을
+저장소에 남겼다.
+
+- `ProductionHygieneTest#tls13HasCipherSuites` — 1.3 을 열었으면 1.3 묶음이
+  적혀 있어야 한다
+- `tests/check-csp.py` — 띄운 앱에서 `data-…` 넷과 화면마다의 스크립트를
+  **실제로 눌러 보고**, 콘솔에 CSP 위반이 한 줄도 없는지 본다
+
+#### 확인
+
+```
+./mvnw -B test                             340개 통과 (H2)      ← 331 + 9
+DB_PORT=13306 tests/check-mariadb.sh       340개 통과 (MariaDB 10.11 + Flyway)
+tests/check-csp.py                         확인 33개 · 어긋난 것 0개 · CSP 위반 0건
+check-table-width 1280 0 · rows 0 · contrast 0 · links 0
+```
+
+띄워서 직접 —
+
+```
+머리      CSP · Referrer-Policy: no-referrer · Permissions-Policy ·
+          X-Frame-Options: DENY · HSTS · nosniff · no-store
+쿠키      Secure · HttpOnly · SameSite=Strict
+TLS       1.3 → TLS_AES_256_GCM_SHA384 · 1.2 → ECDHE-RSA-AES256-GCM-SHA384
+          1.1 · 1.0 → 거부
+동작      거르개 여덟 · 확인 창 둘 · 인쇄 둘 · 팝업 셋 · 구역 접기 · 진행 표시
+          전부 그대로 (33/33) · 콘솔 오류 0건
+```
+
+#### 반영하지 않은 것
+
+| | 무엇 | 왜 |
+|---|---|---|
+| 1 | **업로드 크기 기본값 10GB** (`SBOMSIGHT_MAX_UPLOAD`) | 디스크를 채워 멎게 할 수 있다. 다만 관리자만 올릴 수 있고 IP 제한 뒤에 있으며, **얼마가 맞는지는 운영이 정할 값**이다 — 임의로 낮추면 진짜 큰 SBOM 이 막힌다. 환경변수로 조일 수 있다는 것만 적어 둔다 |
+| 2 | **DB 연결이 평문**(`sslMode=disable`) | 같은 PC 안이라는 전제다. DB 를 다른 PC 로 옮기면 `sslMode=trust` 로 바꿔야 하고, 그 줄은 설정에 이미 적혀 있다 |
+| 3 | 새 grype 로 KEV·EPSS 실측 | 이 컨테이너에 grype 이 없다(N31 §5) |
+
+---
+
 ## 9. 검증 (N11 에서 사람이 직접)
 
 | | 확인할 것 |

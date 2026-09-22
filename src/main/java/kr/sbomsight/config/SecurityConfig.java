@@ -9,6 +9,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
 
@@ -37,6 +38,57 @@ public class SecurityConfig {
             "/login", "/css/**", "/js/**", "/fonts/**", "/vendor/**",
             "/favicon.svg", "/favicon.ico", "/error"
     };
+
+    /**
+     * <b>바깥에서 받아 오는 것이 하나도 없다.</b>
+     *
+     * <p>글꼴(IBM Plex)·바탕 CSS(Tabler)까지 전부 저장소에 넣어 우리가
+     * 내려준다 — 폐쇄망에서 돌아야 하므로 그럴 수밖에 없었고, 그 덕에
+     * {@code 'self'} 하나로 닫을 수 있다. CDN 을 하나라도 쓰기 시작하면
+     * 그 주소를 여기 적어야 하고, 그때부터 이 줄이 느슨해진다.
+     *
+     * <p><b>{@code script-src} 에 {@code 'unsafe-inline'} 이 없다.</b> 그것을
+     * 넣으면 CSP 가 막으려던 것을 그대로 허용한다 — 끼워 넣어진
+     * {@code <script>} 와 {@code onerror=} 가 함께 돈다. 그래서 화면의
+     * 인라인 {@code <script>} 넷과 {@code onclick=} 류 열일곱 개를 전부
+     * {@code /js/*.js} 와 {@code data-…} 로 옮겼다({@code js/app.js}).
+     *
+     * <p><b>{@code style-src-attr} 만 {@code 'unsafe-inline'} 이다.</b> 심각도
+     * 막대의 폭처럼 값이 서버에서 오는 것은 {@code style="width:37%"} 로만
+     * 낼 수 있다(클래스로는 낼 수 없는 수다). 글자를 내보내는 자리는 전부
+     * Thymeleaf 가 이스케이프하고({@code th:utext} 0개) 스크립트는 막혀
+     * 있으므로, 남는 위험은 모양이 흐트러지는 정도다.
+     *
+     * <p><b>{@code form-action 'self'}</b> — 폼이 남의 서버로 가지 않는다.
+     * 자산 목록과 SBOM 이 담긴 폼이 바깥으로 제출되는 것을 막는 줄이다.
+     */
+    private static final String CSP = String.join("; ",
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self'",
+            "style-src-attr 'unsafe-inline'",
+            // **`data:` 를 열어 둔다.** 바탕 CSS(Tabler)가 고르개 화살표와
+            // 체크 표시를 `data:image/svg+xml` 로 박아 두었다(28곳). 막으면
+            // 화면 여덟 장에서 그 표시가 사라진다 — 띄워서 콘솔을 읽고
+            // 찾았다(`Refused to load the image 'data:image/svg+xml…'`).
+            // 이미지 data URI 는 실행되지 않으므로 스크립트와 성격이 다르다.
+            "img-src 'self' data:",
+            "font-src 'self'",
+            "connect-src 'self'",
+            "form-action 'self'",
+            "base-uri 'self'",
+            "object-src 'none'",
+            "frame-ancestors 'none'");
+
+    /**
+     * <b>쓰지 않는 장치를 전부 닫는다.</b>
+     *
+     * <p>이 도구는 카메라·마이크·위치를 쓰지 않는다. 안 쓰는 것을 열어 두면
+     * 점검에서 "왜 열려 있나" 를 묻고, 답이 "안 쓴다" 면 닫아야 한다.
+     */
+    private static final String PERMISSIONS_POLICY = String.join(", ",
+            "accelerometer=()", "camera=()", "geolocation=()", "gyroscope=()",
+            "magnetometer=()", "microphone=()", "payment=()", "usb=()");
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, AppUserDetailsService users,
@@ -99,7 +151,17 @@ public class SecurityConfig {
                 // https 전용이므로 브라우저에도 그렇게 못박는다.
                 .httpStrictTransportSecurity(hsts -> hsts
                         .includeSubDomains(true).maxAgeInSeconds(31_536_000))
-                .frameOptions(frame -> frame.sameOrigin()))
+                // **틀에 넣지 못한다.** 이 도구는 스스로를 iframe 에 넣지
+                // 않는다(`grep iframe` → 0). `SAMEORIGIN` 이던 것을 조인다 —
+                // 같은 출처라도 넣을 곳이 없으면 열어 둘 이유가 없다.
+                .frameOptions(frame -> frame.deny())
+                // **주소를 밖으로 흘리지 않는다.** 이 도구의 주소에는 자산
+                // 번호·CVE 번호·검사 번호가 들어 있다(`/assets/12?tab=vulns` ·
+                // `/vulns/CVE-2021-44228`). `Referer` 로 새 나가면 그것만으로
+                // 어느 서버에 무엇이 걸렸는지가 읽힌다 — 내부 정보다.
+                .referrerPolicy(ref -> ref.policy(ReferrerPolicy.NO_REFERRER))
+                .contentSecurityPolicy(csp -> csp.policyDirectives(CSP))
+                .permissionsPolicy(pp -> pp.policy(PERMISSIONS_POLICY)))
 
             .userDetailsService(users);
 

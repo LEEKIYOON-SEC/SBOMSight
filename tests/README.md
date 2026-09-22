@@ -39,6 +39,7 @@ rm -rf tests                           # 리눅스
 | `check-links.py` | 주소에 빈 값이 붙는지 |
 | `check-uniform.py` | 단추·입력칸이 한 모양인지 |
 | `check-contrast.py` | 글자 대비 (WCAG 2.1 AA) |
+| `check-csp.py` | 화면 동작이 CSP 아래에서 도는가 · 콘솔에 위반이 없는가 |
 
 `check-*.py` 는 **서버를 띄운 뒤** 돈다. 브라우저로 실제 픽셀을 재기
 때문이다 — HTML 만 봐서는 칸이 화면 밖으로 밀렸는지 알 수 없다.
@@ -56,6 +57,7 @@ python3 tests/check-rows.py
 python3 tests/check-links.py
 python3 tests/check-uniform.py
 python3 tests/check-contrast.py
+python3 tests/check-csp.py
 ```
 
 ## 여기 없는 것

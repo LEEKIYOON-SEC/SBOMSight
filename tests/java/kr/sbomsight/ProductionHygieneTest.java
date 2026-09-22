@@ -133,6 +133,32 @@ class ProductionHygieneTest {
      * 한 번 생각하고 지나가는 것이 요점이다 — 화면이 전부 서버 렌더링 폼인
      * 동안 이 예외는 필요하지 않다.
      */
+    /**
+     * <b>TLS 1.3 을 열어 두었으면 그 묶음도 적혀 있어야 한다.</b>
+     *
+     * <p>`ciphers` 를 적으면 톰캣은 <b>그 목록만</b> 쓴다. TLS 1.3 의 묶음은
+     * 이름 체계가 달라서({@code TLS_AES_256_GCM_SHA384}) 1.2 것만 적으면
+     * 1.3 에 남는 묶음이 하나도 없고, <b>1.3 핸드셰이크가 통째로 실패한다.</b>
+     *
+     * <p>설정에는 1.3 이 켜져 있는데 실제로는 1.2 로만 붙는다 — 화면으로는
+     * 절대 안 보이고 점검 보고서에는 "TLS 1.3 지원" 으로 적힌다. 실제로 그렇게
+     * 만들었고 {@code openssl s_client -tls1_3} 으로 재 보고 찾았다
+     * ({@code New, (NONE), Cipher is (NONE)}).
+     */
+    @Test
+    @DisplayName("TLS 1.3 을 켜 두었으면 1.3 암호 묶음이 적혀 있다")
+    void tls13HasCipherSuites() throws IOException {
+        String config = Files.readString(Path.of("src/main/resources/application.yml"));
+        if (!config.contains("TLSv1.3")) {
+            return;   // 1.3 을 안 열었으면 볼 것이 없다
+        }
+        assertThat(config)
+                .as("`ciphers` 를 적으면 톰캣은 그 목록만 씁니다. TLS 1.3 묶음"
+                    + "(TLS_AES_… · TLS_CHACHA20_…)이 없으면 1.3 이 켜져 있어도 "
+                    + "붙지 않습니다.")
+                .containsPattern("TLS_(AES|CHACHA20)_");
+    }
+
     @Test
     @DisplayName("CSRF 를 끄거나 예외 구간을 두지 않는다")
     void csrfHasNoExemptions() throws IOException {
