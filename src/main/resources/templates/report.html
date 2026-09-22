@@ -386,20 +386,34 @@
           적어 둔 것이 없으면 **비어 있다는 것을 그대로 보여 준다.** 점검에서
           "이건 왜 안 고쳤냐" 를 묻는 자리가 여기다.
         */-->
+        <!--/*
+          **적어 둔 상태 하나로 그 패키지를 말하지 않는다.** 검토는
+          (자산, CVE, 패키지) 하나에 하나씩 달리고 이 줄은 패키지 하나다.
+          `sudo 3건` 에 한 건만 적어 두었는데 `해당 없음` 이라고 찍고 있었고,
+          적어 둔 것은 CVSS 5.10 짜리였다 — 9.60 짜리는 아무도 본 적이 없다.
+          진행을 함께 찍는다. 조각은 화면과 같은 것을 쓴다.
+        */-->
         <td class="tight">
-          <span th:if="${r.isExplained()}" th:text="${r.analysis.state.label()}">해당 없음</span>
-          <b class="danger-text" th:unless="${r.isExplained()}">미검토</b>
+          <span th:if="${r.reviewed.all() and r.hasAnalysis()}"
+                th:text="${r.analysis.state.label()}">해당 없음</span>
+          <b class="danger-text" th:if="${r.reviewed.none()}">미검토</b>
+          <span th:if="${!r.reviewed.none() and !r.reviewed.all()}">
+            <b class="danger-text"
+               th:text="${r.reviewed.done} + ' / ' + ${r.reviewed.total} + '건'">1 / 3건</b>
+            <span class="faint" th:if="${r.hasAnalysis()}"
+                  th:text="${r.analysis.state.label()}">해당 없음</span>
+          </span>
         </td>
         <td class="faint">
-          <span th:if="${r.isExplained() and r.analysis.justification != null}"
+          <span th:if="${r.hasAnalysis() and r.analysis.justification != null}"
                 th:text="${r.analysis.justification.label()}">취약한 코드를 실행하지 않음</span>
-          <span th:if="${!r.isExplained() or r.analysis.justification == null}">—</span>
+          <span th:if="${!r.hasAnalysis() or r.analysis.justification == null}">—</span>
         </td>
         <td class="tight num">
-          <span th:if="${r.isExplained() and r.analysis.reviewBy != null}"
+          <span th:if="${r.hasAnalysis() and r.analysis.reviewBy != null}"
                 th:classappend="${r.analysis.reviewOverdue} ? 'overdue' : ''"
                 th:text="${#temporals.format(r.analysis.reviewBy, 'yyyy-MM-dd')}">—</span>
-          <span class="faint" th:if="${!r.isExplained() or r.analysis.reviewBy == null}">—</span>
+          <span class="faint" th:if="${!r.hasAnalysis() or r.analysis.reviewBy == null}">—</span>
         </td>
       </tr>
       <tr class="total">
@@ -418,8 +432,9 @@
     */-->
     <p class="footnote" th:if="${!report.targets.noFixRows.isEmpty()}">
       ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 3장 특이사항.
+      검토 상태 = 답 있는 건 / 건수.
       <b th:if="${report.progress.unexplained() > 0}" class="danger-text"
-         th:text="'검토 결과 없음 ' + ${report.progress.unexplained()} + '개 패키지'">—</b>
+         th:text="'답 없는 건이 남은 패키지 ' + ${report.progress.unexplained()} + '개'">—</b>
     </p>
     <!--/*
       **세는 단위가 다르다는 것을 여기서 밝힌다.** 2.2 는 `건` 으로 세고

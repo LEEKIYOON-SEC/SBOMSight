@@ -458,9 +458,10 @@
           `검토함` 한 마디로 쓰지 않는다. 세 대에 걸린 패키지를 한 대에서만
           검토해 놓고도 전부 검토한 것으로 읽혔다 — 띄워 보고 찾았다.
         */-->
-        <td class="tight" th:with="n=${report.action.explainedAssets(b.packageName)}">
-          <span th:if="${n > 0}" th:text="${n} + '대 검토'">1대 검토</span>
-          <b class="danger-text" th:if="${n == 0}">미검토</b>
+        <td class="tight" th:with="n=${report.action.explainedAssets(b.packageName)},
+                                   r=${report.action.reviewedIn(b.packageName)}">
+          <div th:replace="~{fragments/ui :: reviewmark(${r})}"></div>
+          <div class="faint" th:if="${n > 0}" th:text="${n} + '대'">1대</div>
         </td>
       </tr>
       <tr class="total">
@@ -475,9 +476,9 @@
     </p>
     <p class="footnote" th:unless="${report.action.residual.isEmpty()}">
       ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 4장 특이사항.
-      검토 결과 = 검토 결과를 적은 자산 수.
+      검토 결과 = 답 있는 건 / 건수 · 자산 수.
       <b th:if="${report.action.unexplained() > 0}" class="danger-text"
-         th:text="'검토 결과 없음 ' + ${report.action.unexplained()} + '개 패키지'">—</b>
+         th:text="'답 없는 건이 남은 패키지 ' + ${report.action.unexplained()} + '개'">—</b>
       <b th:if="${report.action.reviewOverdue() > 0}" class="danger-text"
          th:text="' · 재검토일 지남 ' + ${report.action.reviewOverdue()} + '건'">—</b>
     </p>

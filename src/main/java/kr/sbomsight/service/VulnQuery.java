@@ -396,23 +396,6 @@ public class VulnQuery {
     }
 
     /**
-     * 묶은 줄의 검토 진행 — {@code 7건 중 2건}.
-     *
-     * @param done  적어 둔 것이 있는 건 수. 손대지 않은 행은 세지 않는다
-     * @param total 그 줄에 묶인 건 수 — <b>거르개를 건 뒤</b>의 수다
-     */
-    public record Reviewed(long done, long total) {
-
-        public boolean none() {
-            return done == 0;
-        }
-
-        public boolean all() {
-            return total > 0 && done == total;
-        }
-    }
-
-    /**
      * 정렬 기준.
      *
      * <p>어느 축으로 정렬하든 <b>값이 없는 건은 항상 뒤로</b> 보낸다. CVSS 가

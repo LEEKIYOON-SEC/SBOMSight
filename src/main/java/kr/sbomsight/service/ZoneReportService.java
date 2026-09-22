@@ -419,7 +419,37 @@ public class ZoneReportService {
 
         return new Action(all.size(), open, overdue, openedInPeriod, closedInPeriod,
                           overdueRows, explained, judgement.blocked(),
-                          trackedFindings, untrackedFindings);
+                          trackedFindings, untrackedFindings,
+                          reviewByPackage(inScope, scanIds));
+    }
+
+    /**
+     * 패키지마다 <b>몇 건에 답이 있나</b> — 구역 전체에서.
+     *
+     * <p>3장(검토 결과 분포)과 <b>같은 걸음으로 센다.</b> 자산으로 한 번
+     * 갈라 맞춘다 — 구역은 자산이 섞여 있어서 {@code (CVE, 패키지명)} 으로만
+     * 맞추면 web-01 의 검토 결과가 api-01 의 탐지에 붙는다.
+     */
+    private Map<String, Reviewed> reviewByPackage(List<Asset> inScope, List<Long> scanIds) {
+        Map<Long, Map<String, FindingAnalysis>> byAsset = new HashMap<>();
+        analyses.byAssetKey(inScope.stream().map(Asset::getId).toList())
+                .forEach((key, value) -> byAsset
+                        .computeIfAbsent(value.getAsset().getId(), id -> new HashMap<>())
+                        .put(value.key(), value));
+
+        Map<String, long[]> counts = new LinkedHashMap<>();
+        for (FindingRepository.AssetFindingKey row : findings.findKeysIn(scanIds)) {
+            long[] cell = counts.computeIfAbsent(row.getPackageName(), name -> new long[2]);
+            cell[1]++;
+            if (FindingAnalysisService.stateOf(byAsset.getOrDefault(row.getAssetId(), Map.of()),
+                                               row.getCve(), row.getRelatedCve(),
+                                               row.getPackageName()) != AnalysisState.NOT_SET) {
+                cell[0]++;
+            }
+        }
+        Map<String, Reviewed> out = new LinkedHashMap<>();
+        counts.forEach((name, cell) -> out.put(name, new Reviewed(cell[0], cell[1])));
+        return out;
     }
 
     // -----------------------------------------------------------------------
@@ -664,10 +694,25 @@ public class ZoneReportService {
                          long openedInPeriod, long closedInPeriod,
                          List<Remediation> overdueRows, List<FindingAnalysis> explained,
                          List<ZonePackageAction> residual,
-                         long trackedFindings, long untrackedFindings) {
+                         long trackedFindings, long untrackedFindings,
+                         Map<String, Reviewed> reviewed) {
 
+        /**
+         * 이 패키지의 <b>모든 건</b>에 답이 있는가.
+         *
+         * <p>앞서 {@code explained} 에 그 이름이 한 번이라도 있으면 참이었다.
+         * 자산 수는 {@link #explainedAssets} 가 이미 가려 주고 있었지만, 한
+         * 자산 안에서 <b>탐지 열 건 중 한 건만</b> 적어 둔 것은 여전히 전부
+         * 설명된 것으로 세어졌다.
+         */
         public boolean isExplained(String packageName) {
-            return explained.stream().anyMatch(a -> a.getPackageName().equals(packageName));
+            Reviewed r = reviewed.get(packageName);
+            return r != null && r.all();
+        }
+
+        /** 그 패키지의 검토 진행 — 표의 `검토 결과` 칸이 이것을 그린다. */
+        public Reviewed reviewedIn(String packageName) {
+            return reviewed.get(packageName);
         }
 
         /**
@@ -694,7 +739,7 @@ public class ZoneReportService {
             return residual.stream().mapToLong(ZonePackageAction::total).sum();
         }
 
-        /** 손댈 수 없는데 검토 결과도 없는 패키지 — 설명이 비어 있는 자리다. */
+        /** 손댈 수 없는데 <b>답이 없는 건이 남은</b> 패키지 — 설명이 빈 자리다. */
         public long unexplained() {
             return residual.stream().filter(r -> !isExplained(r.packageName())).count();
         }
