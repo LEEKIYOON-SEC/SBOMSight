@@ -377,7 +377,7 @@
       <tr>
         <th class="tight">패키지</th><th class="tight">현재 버전</th>
         <th class="num tight">건수</th><th class="num tight">최고 CVSS</th>
-        <th class="tight">검토 상태</th><th>근거</th>
+        <th class="tight">검토</th><th>대응 방안</th>
         <th class="tight">재검토일</th>
       </tr>
       </thead>
@@ -391,35 +391,30 @@
         <!--/*
           적어 둔 것이 없으면 **비어 있다는 것을 그대로 보여 준다.** 점검에서
           "이건 왜 안 고쳤냐" 를 묻는 자리가 여기다.
-        */-->
-        <!--/*
-          **적어 둔 상태 하나로 그 패키지를 말하지 않는다.** 검토는
-          (자산, CVE, 패키지) 하나에 하나씩 달리고 이 줄은 패키지 하나다.
-          `sudo 3건` 에 한 건만 적어 두었는데 `해당 없음` 이라고 찍고 있었고,
-          적어 둔 것은 CVSS 5.10 짜리였다 — 9.60 짜리는 아무도 본 적이 없다.
-          진행을 함께 찍는다. 조각은 화면과 같은 것을 쓴다.
+
+          **한 건을 골라 그 줄을 말하지 않는다 — 모은다.** 앞서 그 패키지의
+          검토 결과 아무 한 건의 상태 · 근거 · 재검토일을 찍었다. 띄운 앱에서
+          nginx 네 건(해당 없음 둘 · 오탐 · 위험 수용)이 `오탐 · — · —` 로
+          찍혀, 위험 수용과 그 재검토일이 보고서 어디에도 없었다. 이제 해당
+          없음 · 오탐은 이 장에서 빠지고(1장이 그 수를 적는다), 남은 건의
+          진행 · 대응 방안 · 가장 이른 재검토일을 적는다. `근거` 는 해당 없음일
+          때만 고르는 값이라 이 장에서 늘 비어 칸을 뗐다.
         */-->
         <td class="tight">
-          <span th:if="${r.reviewed.all() and r.hasAnalysis()}"
-                th:text="${r.analysis.state.label()}">해당 없음</span>
           <b class="danger-text" th:if="${r.reviewed.none()}">미검토</b>
-          <span th:if="${!r.reviewed.none() and !r.reviewed.all()}">
-            <b class="danger-text"
-               th:text="${r.reviewed.done} + ' / ' + ${r.reviewed.total} + '건'">1 / 3건</b>
-            <span class="faint" th:if="${r.hasAnalysis()}"
-                  th:text="${r.analysis.state.label()}">해당 없음</span>
-          </span>
+          <span th:if="${r.reviewed.all()}" th:text="'전부 ' + ${r.reviewed.total} + '건'">전부 3건</span>
+          <b class="danger-text" th:if="${!r.reviewed.none() and !r.reviewed.all()}"
+             th:text="${r.reviewed.done} + ' / ' + ${r.reviewed.total} + '건'">1 / 3건</b>
         </td>
-        <td class="faint">
-          <span th:if="${r.hasAnalysis() and r.analysis.justification != null}"
-                th:text="${r.analysis.justification.label()}">취약한 코드를 실행하지 않음</span>
-          <span th:if="${!r.hasAnalysis() or r.analysis.justification == null}">—</span>
+        <td>
+          <span th:if="${!r.responses.isEmpty()}" th:text="${r.responseLine()}">조치 불가 2 · 위험 수용 1</span>
+          <span class="faint" th:if="${r.responses.isEmpty()}">—</span>
         </td>
         <td class="tight num">
-          <span th:if="${r.hasAnalysis() and r.analysis.reviewBy != null}"
-                th:classappend="${r.analysis.reviewOverdue} ? 'overdue' : ''"
-                th:text="${#temporals.format(r.analysis.reviewBy, 'yyyy-MM-dd')}">—</span>
-          <span class="faint" th:if="${!r.hasAnalysis() or r.analysis.reviewBy == null}">—</span>
+          <span th:if="${r.earliestReview != null}"
+                th:classappend="${r.reviewOverdue()} ? 'overdue' : ''"
+                th:text="${#temporals.format(r.earliestReview, 'yyyy-MM-dd')}">—</span>
+          <span class="faint" th:if="${r.earliestReview == null}">—</span>
         </td>
       </tr>
       <tr class="total">
@@ -438,7 +433,7 @@
     */-->
     <p class="footnote" th:if="${!report.targets.noFixRows.isEmpty()}">
       ※ 수정 버전이 하나도 없는 패키지. 일부만 해소되는 패키지는 3장 특이사항.
-      검토 상태 = 답 있는 건 / 건수.
+      검토 = 답 있는 건 / 건수 · 재검토일 = 가장 이른 날.
       <b th:if="${report.progress.unexplained() > 0}" class="danger-text"
          th:text="'답 없는 건이 남은 패키지 ' + ${report.progress.unexplained()} + '개'">—</b>
     </p>

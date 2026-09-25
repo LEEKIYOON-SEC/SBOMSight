@@ -234,49 +234,72 @@ public class ReportService {
         // 4장은 '손댈 수 없는 것' 에 우리가 적어 둔 검토 결과를 붙여 낸다.
         //
         // **패키지 하나에 검토 결과가 여럿 달린다** — 검토는 (자산, CVE,
-        // 패키지)에 하나씩이고 이 표는 패키지로 한 줄이다. 그중 하나를 골라
-        // 붙이는 것은 그 줄의 `근거` 를 채우기 위한 것이고, <b>그 패키지가
-        // 검토됐는지는 건 수로 센다</b>(`reviewByPackage`).
-        Map<String, FindingAnalysis> byPackage = analyses.forAsset(scan.getAsset().getId())
-                .stream()
-                .collect(Collectors.toMap(FindingAnalysis::getPackageName, a -> a, (a, b) -> a));
-        Map<String, Reviewed> reviewed = reviewByPackage(scan);
+        // 패키지)에 하나씩이고 이 표는 패키지로 한 줄이다. 앞서 그중 **아무
+        // 한 건**을 골라 상태 · 근거 · 재검토일을 찍었다(띄운 앱에서 nginx
+        // 네 건이 `오탐 · — · —` — 위험 수용과 그 재검토일이 사라졌다). 이제
+        // 그 줄에 실린 탐지들의 것을 **모은다**(reviewSummaries).
+        Map<String, NoFixReview> reviews = reviewSummaries(scan);
         List<NoFixRow> noFixRows = blocked.stream()
-                .map(b -> new NoFixRow(b, byPackage.get(b.packageName()),
-                                       reviewed.getOrDefault(b.packageName(),
-                                                             new Reviewed(0, b.total()))))
+                .map(b -> {
+                    NoFixReview r = reviews.get(b.packageName());
+                    return r == null
+                            ? new NoFixRow(b, new Reviewed(0, b.total()), Map.of(), null)
+                            : new NoFixRow(b, r.reviewed(), r.responses(), r.earliestReview());
+                })
                 .toList();
         return new Targets(actions, blocked, noFixRows, diff, exposure);
     }
 
     /**
-     * 패키지마다 <b>몇 건에 답이 있나.</b>
+     * 패키지마다 <b>몇 건에 답이 있나 · 대응 방안은 무엇 무엇인가 · 가장 먼저
+     * 오는 재검토일은 언제인가.</b>
      *
      * <p>2.4 와 <b>같은 걸음으로 센다</b> — 같은 탐지 목록을 훑고 같은
-     * {@link FindingAnalysisService#stateOf} 로 맞춘다. 규칙이 갈리면 한 보고서
-     * 안에서 2.4 의 `미검토 30건` 과 4장의 `해당 없음` 이 서로를 부정한다.
+     * {@link FindingAnalysisService#analysisOf} 로 맞춘다. 규칙이 갈리면 한
+     * 보고서 안에서 2.4 의 `미검토 30건` 과 4장이 서로를 부정한다.
      */
-    private Map<String, Reviewed> reviewByPackage(Scan scan) {
+    private Map<String, NoFixReview> reviewSummaries(Scan scan) {
         Map<String, FindingAnalysis> byKey = analyses.byKey(scan.getAsset().getId());
         Map<String, long[]> counts = new LinkedHashMap<>();
+        Map<String, Map<AnalysisResponse, Long>> responses = new HashMap<>();
+        Map<String, java.time.LocalDate> earliest = new HashMap<>();
         for (FindingRepository.FindingKey row : findings.findKeyRows(scan.getId())) {
-            AnalysisState state = FindingAnalysisService.stateOf(
+            FindingAnalysis found = FindingAnalysisService.analysisOf(
                     byKey, row.getCve(), row.getRelatedCve(), row.getPackageName());
+            AnalysisState state = found == null ? AnalysisState.NOT_SET : found.getState();
             // 4장은 목록이다 — 해당 없음 · 오탐으로 빠진 건은 그 줄의 `건수` 에도
             // `답 있는 건` 에도 넣지 않는다. 넣으면 `1 / 4건` 의 4 가 표의 건수(1)와
             // 다르다.
             if (!state.isOpen()) {
                 continue;
             }
-            long[] cell = counts.computeIfAbsent(row.getPackageName(), name -> new long[2]);
+            String name = row.getPackageName();
+            long[] cell = counts.computeIfAbsent(name, n -> new long[2]);
             cell[1]++;
-            if (state != AnalysisState.NOT_SET) {
-                cell[0]++;
+            if (state == AnalysisState.NOT_SET) {
+                continue;
+            }
+            cell[0]++;
+            if (found.getResponse() != null) {
+                responses.computeIfAbsent(name, n -> new java.util.EnumMap<>(AnalysisResponse.class))
+                         .merge(found.getResponse(), 1L, Long::sum);
+            }
+            if (found.getReviewBy() != null) {
+                earliest.merge(name, found.getReviewBy(),
+                               (a, b) -> a.isBefore(b) ? a : b);
             }
         }
-        Map<String, Reviewed> out = new LinkedHashMap<>();
-        counts.forEach((name, cell) -> out.put(name, new Reviewed(cell[0], cell[1])));
+        Map<String, NoFixReview> out = new LinkedHashMap<>();
+        counts.forEach((name, cell) -> out.put(name, new NoFixReview(
+                new Reviewed(cell[0], cell[1]),
+                responses.getOrDefault(name, Map.of()),
+                earliest.get(name))));
         return out;
+    }
+
+    /** 4장 한 줄에 붙는 검토 결과의 모음. */
+    private record NoFixReview(Reviewed reviewed, Map<AnalysisResponse, Long> responses,
+                               java.time.LocalDate earliestReview) {
     }
 
     /**
@@ -472,24 +495,33 @@ public class ReportService {
     }
 
     /**
-     * 4장 한 줄 — 손댈 수 없는 패키지와, 우리가 적어 둔 검토 결과.
+     * 4장 한 줄 — 손댈 수 없는 패키지와, 그 줄에 실린 탐지들의 검토 결과.
      *
-     * <p>검토 결과가 없으면 {@code analysis} 가 {@code null} 이다. <b>비어
-     * 있다는 것을 그대로 보여 준다</b> — 점검에서 "이건 왜 안 고쳤냐" 를
-     * 묻는 자리가 여기다.
+     * <p>적어 둔 것이 없으면 <b>비어 있다는 것을 그대로 보여 준다</b> — 점검에서
+     * "이건 왜 안 고쳤냐" 를 묻는 자리가 여기다.
      *
-     * <p><b>{@code analysis} 가 있다는 것이 "이 패키지를 검토했다" 는 뜻은
-     * 아니다.</b> 검토는 {@code (자산, CVE, 패키지)} 하나에 하나씩 달리고 이
-     * 줄은 패키지 하나다. {@code reviewed} 가 그 묶음의 <b>몇 건에 답이
-     * 있는지</b>를 센다 — 그것 없이 앞의 {@code null} 검사만으로 `해당 없음`
-     * 을 찍고 있었고, 세 건 중 한 건만 적어 둔 패키지가 전부 설명된 것으로
-     * 읽혔다.
+     * <p><b>한 건을 골라 그 줄을 말하지 않는다.</b> 검토는 {@code (자산, CVE,
+     * 패키지)} 하나에 하나씩 달리고 이 줄은 패키지 하나다. {@code reviewed} 가
+     * 몇 건에 답이 있는지, {@code responses} 가 대응 방안별로 몇 건인지,
+     * {@code earliestReview} 가 가장 먼저 오는 재검토일을 말한다.
+     *
+     * @param responses      대응 방안 → 건수. 비어 있으면 아직 정한 대응이 없다
+     * @param earliestReview 그 줄의 재검토일 가운데 가장 이른 날. 없으면 {@code null}
      */
-    public record NoFixRow(PackageAction action, FindingAnalysis analysis, Reviewed reviewed) {
+    public record NoFixRow(PackageAction action, Reviewed reviewed,
+                           Map<AnalysisResponse, Long> responses,
+                           java.time.LocalDate earliestReview) {
 
-        /** 그 줄에 붙일 근거가 있는가 — 검토가 <b>끝났는가와는 다르다.</b> */
-        public boolean hasAnalysis() {
-            return analysis != null;
+        /** 재검토일이 이미 지났는가. */
+        public boolean reviewOverdue() {
+            return earliestReview != null && earliestReview.isBefore(java.time.LocalDate.now());
+        }
+
+        /** `조치 불가 2 · 위험 수용 1` — 없으면 빈 문자열. */
+        public String responseLine() {
+            return responses.entrySet().stream()
+                    .map(e -> e.getKey().label() + " " + e.getValue())
+                    .collect(Collectors.joining(" · "));
         }
     }
 

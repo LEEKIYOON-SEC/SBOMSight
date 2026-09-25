@@ -200,17 +200,27 @@ public class FindingAnalysisService {
      */
     public static AnalysisState stateOf(Map<String, FindingAnalysis> byKey,
                                         String cve, String relatedCve, String packageName) {
+        FindingAnalysis found = analysisOf(byKey, cve, relatedCve, packageName);
+        return found == null ? AnalysisState.NOT_SET : found.getState();
+    }
+
+    /**
+     * 탐지 한 줄에 <b>적어 둔 검토 결과</b> — 없으면 {@code null}.
+     *
+     * <p>{@link #stateOf} 와 같은 규칙이다(주 식별자로 적힌 것이 먼저, 없으면
+     * 함께 온 CVE 번호로 적힌 것). 보고서 4장이 그 줄의 대응 방안과 재검토일을
+     * 모을 때 쓴다 — 상태만으로는 모자라다.
+     */
+    public static FindingAnalysis analysisOf(Map<String, FindingAnalysis> byKey,
+                                             String cve, String relatedCve, String packageName) {
         FindingAnalysis direct = byKey.get(cve + "|" + packageName);
         if (direct != null) {
-            return direct.getState();
+            return direct;
         }
         if (relatedCve != null && !relatedCve.isBlank()) {
-            FindingAnalysis related = byKey.get(relatedCve + "|" + packageName);
-            if (related != null) {
-                return related.getState();
-            }
+            return byKey.get(relatedCve + "|" + packageName);
         }
-        return AnalysisState.NOT_SET;
+        return null;
     }
 
     /** 상태마다 0 부터 시작하는 빈 표. 없는 줄이 빠지면 표가 판마다 달라진다. */

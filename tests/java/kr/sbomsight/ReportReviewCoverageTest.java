@@ -122,8 +122,8 @@ class ReportReviewCoverageTest {
                 .as("한 건만 적어 두고 그 패키지가 검토됐다고 말하면, 결재를 "
                     + "올리는 사람이 나머지 두 건도 정리된 것으로 읽습니다")
                 .isFalse();
-        // 근거를 붙일 검토 결과는 있다 — 그것과 `검토가 끝났다` 는 다른 말이다.
-        assertThat(row.hasAnalysis()).isTrue();
+        // 적어 둔 한 건의 대응은 보인다 — 그것과 `검토가 끝났다` 는 다른 말이다.
+        assertThat(row.responses()).containsEntry(AnalysisResponse.CAN_NOT_FIX, 1L);
     }
 
     @Test
@@ -140,6 +140,41 @@ class ReportReviewCoverageTest {
 
         assertThat(row.reviewed().all()).isTrue();
         assertThat(row.reviewed().done()).isEqualTo(3);
+    }
+
+    /**
+     * <b>4장 한 줄은 그 줄에 실린 탐지들의 검토 결과를 모아서 말한다.</b>
+     *
+     * <p>앞서 그 패키지의 검토 결과 <b>아무 한 건</b>을 골라 상태 · 근거 ·
+     * 재검토일을 찍었다. 띄운 앱에서 nginx 네 건(해당 없음 둘 · 오탐 하나 ·
+     * 위험 수용 하나)이 `오탐 · — · —` 로 찍혔다 — 위험 수용과 그 재검토일은
+     * 보고서 어디에도 없었다. 그리고 해당 없음 · 오탐이 4장에서 빠진 뒤로
+     * `근거`(해당 없음일 때만 고르는 값) 칸은 늘 비었다.
+     */
+    @Test
+    @DisplayName("4장 — 대응 방안은 모아서 세고, 재검토일은 가장 이른 날을 적는다")
+    void theNoFixRowSummarisesItsReviews() {
+        java.time.LocalDate soon = java.time.LocalDate.now().plusDays(10);
+        java.time.LocalDate later = java.time.LocalDate.now().plusDays(30);
+        analyses.record(asset, "CVE-2099-0001", pkg, AnalysisState.EXPLOITABLE, null,
+                        AnalysisResponse.CAN_NOT_FIX, "", "", "", later, "admin");
+        analyses.record(asset, "CVE-2099-0002", pkg, AnalysisState.EXPLOITABLE, null,
+                        AnalysisResponse.WILL_NOT_FIX, "", "", "보안-2026-0001", soon, "admin");
+        analyses.record(asset, "CVE-2099-0003", pkg, AnalysisState.EXPLOITABLE, null,
+                        AnalysisResponse.CAN_NOT_FIX, "", "", "", later, "admin");
+
+        ReportService.NoFixRow row = reports.build(scan).targets().noFixRows().stream()
+                .filter(r -> r.action().packageName().equals(pkg))
+                .findFirst().orElseThrow();
+
+        assertThat(row.reviewed().all()).isTrue();
+        assertThat(row.responses())
+                .as("대응 방안이 하나로 뭉개졌다")
+                .containsEntry(AnalysisResponse.CAN_NOT_FIX, 2L)
+                .containsEntry(AnalysisResponse.WILL_NOT_FIX, 1L);
+        assertThat(row.earliestReview())
+                .as("재검토일은 가장 먼저 오는 날이어야 한다 — 늦은 날을 적으면 그 사이에 지나간다")
+                .isEqualTo(soon);
     }
 
     /**
