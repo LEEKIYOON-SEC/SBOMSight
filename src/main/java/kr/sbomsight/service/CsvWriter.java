@@ -121,7 +121,7 @@ public final class CsvWriter {
      */
     public static void writeLookup(OutputStream out, List<Finding> findings) throws IOException {
         try (Writer writer = start(out)) {
-            row(writer, "자산", "구역", "CVE", "grype 식별자", "심각도", "CVSS",
+            row(writer, "자산", "구역", "CVE", "별칭", "심각도", "CVSS",
                         "패키지", "설치 버전", "수정 버전", "수정 상태", "검사 시각");
             for (Finding f : findings) {
                 var asset = f.getScan().getAsset();
@@ -154,7 +154,7 @@ public final class CsvWriter {
     public static void writePackages(OutputStream out, List<PackageService.ExportRow> rows)
             throws IOException {
         try (Writer writer = start(out)) {
-            row(writer, "패키지", "유형", "버전", "자산 수", "취약점", "최고 등급");
+            row(writer, "패키지", "유형", "버전", "자산 수", "취약점", "최고 심각도");
             for (PackageService.ExportRow r : rows) {
                 var version = r.version();
                 row(writer,

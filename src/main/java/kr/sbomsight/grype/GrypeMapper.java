@@ -427,7 +427,11 @@ public class GrypeMapper {
             DateTimeFormatter.ISO_OFFSET_DATE_TIME,
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss[.SSSSSSSSS][.SSSSSS][.SSS]Z"));
 
-    private Instant parseInstant(String text) {
+    /**
+     * grype 이 적는 시각을 읽는다 — 판마다 꼴이 조금씩 다르다. 못 읽으면
+     * {@code null}. 설정의 도구 상태도 이것으로 읽는다 — 검사 이력과 같은 날로.
+     */
+    public static Instant parseInstant(String text) {
         if (text == null || text.isBlank()) {
             return null;
         }

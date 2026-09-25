@@ -135,7 +135,8 @@
       <tr th:if="${grype.available()}">
         <th>취약점 DB</th>
         <td>
-          <b th:if="${!#strings.isEmpty(grype.dbBuilt())}" th:text="${grype.dbBuilt()}">2026-03-09T00:31:20Z</b>
+          <b th:if="${!#strings.isEmpty(grype.dbBuilt())}" th:text="${grype.dbBuiltDay()}"
+             th:title="${grype.dbBuilt()}">2026-03-09</b>
           <span class="faint" th:if="${#strings.isEmpty(grype.dbBuilt())}">
             확인되지 않음 · <code>grype db update</code></span>
         </td>

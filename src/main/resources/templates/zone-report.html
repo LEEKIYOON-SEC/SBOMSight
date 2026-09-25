@@ -114,7 +114,7 @@
           <td>검사 기록이 없는 자산</td>
           <td class="num tight danger-text"
               th:text="${report.scope.notScanned.size()} + '대'">0대</td></tr>
-      <tr><td>검사 실행</td>
+      <tr><td>완료된 검사</td>
           <td class="num tight" th:text="${report.scope.scanRuns} + '회'">0회</td></tr>
       <tr class="total"><td>탐지 건수</td>
           <td class="num tight">
@@ -434,7 +434,7 @@
     </p>
     <p class="footnote" th:if="${!report.judgement.actions.isEmpty()}">
       ※ 순위 기준 — 원격 접근 → 실제 악용 → 자산 수 → 최고 CVSS → 건수.
-      상위 5개가 덮는 건수 <b th:text="${report.judgement.topFiveCoverage()}">0</b>건 ·
+      상위 5개의 해소 건수 <b th:text="${report.judgement.topFiveCoverage()}">0</b>건 ·
       2대 이상 공통 <b th:text="${report.judgement.shared().size()} + '개'">0개</b>.
     </p>
   </section>

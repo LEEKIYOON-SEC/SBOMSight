@@ -64,7 +64,7 @@
     </select>
 
     <!--/* 조치 탭의 거르개 */-->
-    <label class="form-label mb-0" for="action-status" th:if="${tab} != 'analyses'">상태</label>
+    <label class="form-label mb-0" for="action-status" th:if="${tab} != 'analyses'">조치 상태</label>
     <select class="form-select form-select-sm w-auto" id="action-status" name="status"
             th:if="${tab} != 'analyses'" data-autosubmit>
       <option value="">전체</option>

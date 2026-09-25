@@ -73,7 +73,7 @@ public class AssetImportController {
         if (bytes == null) {
             // 세션이 끊겼거나 새로고침으로 두 번 눌렀다. 말없이 0건을
             // 등록하면 "왜 안 들어갔지" 가 된다.
-            flash.addFlashAttribute("error", "올린 파일이 남아 있지 않습니다. 다시 올려 주세요.");
+            flash.addFlashAttribute("error", "업로드한 파일이 남아 있지 않습니다. 다시 업로드해 주세요.");
             return "redirect:/assets/import";
         }
         session.removeAttribute(SESSION_KEY);

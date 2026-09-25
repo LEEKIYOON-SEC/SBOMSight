@@ -46,7 +46,22 @@ class VocabularyTest {
             // 순우리말로 지어낸 말이다. 그 팀이 실제로 쓰는 말은 `필터` 다.
             // 화면 전체가 일관되게 쓰고 있었을 뿐, 아무도 그렇게 부르지 않는다.
             entry("거르개", "필터"),
-            entry("묶기", "묶는 방식 또는 탭 이름(항목별 · CVE별 · 패키지별)"));
+            entry("묶기", "묶는 방식 또는 탭 이름(항목별 · CVE별 · 패키지별)"),
+            // 외래어. 보고서의 `대조 축` · 취약점 상세의 `대조 방식` 과 같은 말을
+            // 쓴다(§4.1). 검사 진행 단계의 설명에 남아 있었다.
+            entry("매칭", "대조"),
+            // 같은 수(그 패키지에 걸린 가장 높은 심각도)를 패키지 화면 · 그 CSV 는
+            // `최고 등급`, 취약점 화면은 `최고 심각도` 로 불렀다.
+            entry("최고 등급", "최고 심각도"),
+            // 취약점 상세는 같은 칸을 `별칭` 이라 부른다. 도구 이름을 주어로
+            // 세우지 않는다는 규칙과도 맞춘다.
+            entry("grype 식별자", "별칭"),
+            // `올리` 를 `업로드` 로 바꾸면서(N17 · N20) 자바 문자열 둘이 남아 있었다.
+            entry("다시 올려", "다시 업로드"),
+            // 모르는 값은 `확인되지 않음` 이다 — 취약점 상세 · 설정이 그렇게 쓴다.
+            // 보고서만 `판 미상` · `정보 없음` 이었다.
+            entry("미상", "확인되지 않음"),
+            entry("정보 없음", "확인되지 않음"));
 
     /**
      * <b>열 머리에서만</b> 쓰지 않는 말.
@@ -323,10 +338,13 @@ class VocabularyTest {
      * 가리킨 채로 둘 다 살아 있었다.
      */
     @Test
-    @DisplayName("표의 열 이름이 어휘표를 따른다")
+    @DisplayName("표의 열 이름과 입력칸 이름이 어휘표를 따른다")
     void columnHeadersFollowTheVocabulary() throws IOException {
         Path templates = Path.of("src/main/resources/templates");
-        Pattern header = Pattern.compile("<th[^>]*>\\s*([^<]*?)\\s*</th>");
+        // **입력칸의 이름도 본다.** 열 이름만 보았더니 조치 필터의 `상태` 와
+        // 검토 결과 창의 `상태` 가 그대로 남아 있었다 — 같은 화면(대응)의 두
+        // 탭이 각자 `상태` 를 쓰면 어느 상태인지 모른다.
+        Pattern header = Pattern.compile("<(?:th|label)[^>]*>\\s*([^<]*?)\\s*</(?:th|label)>");
         List<String> hits = new ArrayList<>();
 
         try (Stream<Path> files = Files.walk(templates)) {

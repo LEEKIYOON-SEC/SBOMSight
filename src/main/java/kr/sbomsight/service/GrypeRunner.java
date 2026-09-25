@@ -119,6 +119,17 @@ public class GrypeRunner {
      * @param message   실패했을 때 화면에 그대로 보여 줄 사유
      */
     public record Status(boolean available, String version, String dbBuilt, String message) {
+
+        /**
+         * 화면에 적는 꼴 — 검사 이력 · 보고서처럼 날짜만({@code 2026-03-09}).
+         * 앞서 받은 글자 그대로({@code 2026-03-09T00:31:20Z}) 찍어 이 화면만
+         * 달랐다. 읽지 못하면 받은 그대로 둔다 — 지어내지 않는다.
+         */
+        public String dbBuiltDay() {
+            java.time.Instant at = kr.sbomsight.grype.GrypeMapper.parseInstant(dbBuilt);
+            return at == null ? (dbBuilt == null ? "" : dbBuilt)
+                    : java.time.LocalDate.ofInstant(at, java.time.ZoneId.systemDefault()).toString();
+        }
     }
 
     public Status status() {

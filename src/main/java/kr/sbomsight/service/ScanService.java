@@ -312,7 +312,7 @@ public class ScanService {
         List<Scan> stuck = scans.findByStatusIn(List.of(ScanStatus.QUEUED, ScanStatus.RUNNING));
         stuck.forEach(scan -> {
             scan.setStatus(ScanStatus.FAILED);
-            scan.setErrorMessage("서버가 다시 시작되어 중단되었습니다. 다시 올려 주세요.");
+            scan.setErrorMessage("서버가 다시 시작되어 중단되었습니다. SBOM 을 다시 업로드해 주세요.");
             scan.setFinishedAt(Instant.now());
             inventory.discard(scan.getId());
         });

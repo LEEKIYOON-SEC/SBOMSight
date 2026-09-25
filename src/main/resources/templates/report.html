@@ -56,11 +56,11 @@
       <th>점검 도구</th>
       <td>
         grype <span th:text="${#strings.isEmpty(report.overview.grypeVersion)}
-                             ? '판 미상' : ${report.overview.grypeVersion}">0.87.0</span>
+                             ? '버전 확인되지 않음' : ${report.overview.grypeVersion}">0.87.0</span>
       </td>
       <th>취약점 DB 기준일</th>
       <td th:text="${report.overview.grypeDbBuilt != null}
-                   ? ${#temporals.format(report.overview.grypeDbBuilt, 'yyyy-MM-dd')} : '미상'">—</td>
+                   ? ${#temporals.format(report.overview.grypeDbBuilt, 'yyyy-MM-dd')} : '확인되지 않음'">—</td>
     </tr>
     <tr>
       <th>SBOM</th>
@@ -188,7 +188,7 @@
       </tbody>
     </table>
     <p class="footnote" th:unless="${report.summary.kevKnown}">
-      ※ 실제 악용 여부 — 이번 검사에 정보 없음 · 미집계
+      ※ 실제 악용 여부 — 이번 검사에서 확인되지 않음 · 미집계
     </p>
 
     <h3 th:if="${report.summary.exposure.measured()}">2.3 접근 경로</h3>

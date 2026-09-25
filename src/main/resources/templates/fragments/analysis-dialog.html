@@ -29,7 +29,7 @@
       grype 이 낸 것은 탐지, 여기 적는 것은 그 탐지에 대한 우리의 결정이다.
       무엇을 적어도 탐지 건수와 보고서의 원본 숫자는 줄지 않는다.
     */-->
-    <label class="form-label" for="analysis-state">상태</label>
+    <label class="form-label" for="analysis-state">검토 상태</label>
     <select class="form-select" name="state" id="analysis-state" data-gloss="analysis-state-gloss">
       <option th:each="s : ${T(kr.sbomsight.domain.AnalysisState).values()}"
               th:value="${s.name()}" th:text="${s.label()}"

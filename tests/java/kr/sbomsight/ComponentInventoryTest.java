@@ -729,7 +729,7 @@ class ComponentInventoryTest {
         // 엑셀이 UTF-8 로 읽는 유일한 방법.
         assertThat(csv).startsWith("﻿");
         assertThat(csv.lines().toList())
-                .containsSubsequence("﻿\"패키지\",\"유형\",\"버전\",\"자산 수\",\"취약점\",\"최고 등급\"",
+                .containsSubsequence("﻿\"패키지\",\"유형\",\"버전\",\"자산 수\",\"취약점\",\"최고 심각도\"",
                                      "\"csv-glibc\",\"rpm\",\"2.34-83\",\"1\",\"0\",\"\"",
                                      "\"csv-log4j\",\"maven\",\"2.14.1\",\"1\",\"1\",\"심각\"",
                                      "\"csv-log4j\",\"maven\",\"2.17.1\",\"1\",\"0\",\"\"");

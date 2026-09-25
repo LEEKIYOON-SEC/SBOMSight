@@ -23,7 +23,7 @@
             <span class="tag ms-2" th:if="${asset.archivedAt != null}">운영 종료</span>
           </h2>
           <div class="page-subtitle text-secondary mt-1">
-      <span th:text="${#strings.isEmpty(asset.osName)} ? '운영체제 미상' : ${asset.osName}">Rocky Linux 9.3</span>
+      <span th:text="${#strings.isEmpty(asset.osName)} ? '운영체제 —' : ${asset.osName}">Rocky Linux 9.3</span>
       <th:block th:if="${!#strings.isEmpty(asset.note)}">
         · <span th:text="${asset.note}">대외 웹</span></th:block>
       <th:block th:if="${latest != null}">
