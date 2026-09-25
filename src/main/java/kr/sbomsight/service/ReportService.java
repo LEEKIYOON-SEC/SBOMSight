@@ -210,6 +210,18 @@ public class ReportService {
         // `원격 접근` 은 넣으면 두 칸이 서로 다른 건을 센다.
         List<PackageGroup> groups = findings.groupByPackage(scan.getId(), false);
 
+        // 수정 버전은 하나로 고르지 않는다 — 그 줄에 실린 탐지(해당 없음 ·
+        // 오탐을 뺀 것)의 수정 버전 전부(FixVersions). 묶음 키와 같은
+        // (이름, 버전, 유형)으로 모은다.
+        Map<String, List<String>> fixes = findings
+                .fixVersionsIn(List.of(scan.getId()), null, false).stream()
+                .collect(Collectors.groupingBy(
+                        r -> groupKey(r.getPackageName(), r.getPackageVersion(), r.getPackageType()),
+                        Collectors.collectingAndThen(
+                                Collectors.mapping(FindingRepository.FixVersionRow::getFixedVersion,
+                                                   Collectors.toList()),
+                                FixVersions::collect)));
+
         // 조치 하나로 몇 건이 사라지는가. 이것이 보고서의 핵심 표다.
         //
         // 순서는 '밖에서 바로 닿는 건이 몇 개 딸려 있는가'를 먼저 본다. 같은
@@ -218,7 +230,10 @@ public class ReportService {
         // 건수도 심각도도 수정 상태도 grype 이 준 그대로다.
         List<PackageAction> actions = groups.stream()
                 .filter(g -> g.getFixable() > 0)
-                .map(g -> new PackageAction(g, exposure.reachableIn(g.getPackageName())))
+                .map(g -> new PackageAction(g, exposure.reachableIn(g.getPackageName()),
+                                            fixes.getOrDefault(groupKey(g.getPackageName(),
+                                                    g.getPackageVersion(), g.getPackageType()),
+                                                    List.of())))
                 .sorted(BY_URGENCY)
                 .toList();
 
@@ -226,7 +241,7 @@ public class ReportService {
         // 다른 통제(접근 제한·모니터링)가 필요한 자리다.
         List<PackageAction> blocked = groups.stream()
                 .filter(g -> g.getFixable() == 0)
-                .map(g -> new PackageAction(g, exposure.reachableIn(g.getPackageName())))
+                .map(g -> new PackageAction(g, exposure.reachableIn(g.getPackageName()), List.of()))
                 .sorted(BY_URGENCY)
                 .toList();
 
@@ -248,6 +263,12 @@ public class ReportService {
                 })
                 .toList();
         return new Targets(actions, blocked, noFixRows, diff, exposure);
+    }
+
+    /** 묶음 질의의 키 — 이름 · 버전 · 유형. 셋 중 하나라도 null 이면 빈 값으로 친다. */
+    private static String groupKey(String name, String version, String type) {
+        return Objects.toString(name, "") + '\u0000' + Objects.toString(version, "")
+                + '\u0000' + Objects.toString(type, "");
     }
 
     /**
@@ -630,22 +651,22 @@ public class ReportService {
         }
     }
 
-    /** 패키지 하나에 대한 조치 후보. */
+    /**
+     * 패키지 하나에 대한 조치 후보.
+     *
+     * @param fixVersions 그 줄에 실린 탐지의 수정 버전 전부 — 하나로 고르지 않는다
+     *                    ({@link FixVersions}). 4장의 줄은 늘 비어 있다
+     */
     public record PackageAction(String packageName, String packageType, String currentVersion,
-                                String targetVersion, long total, long fixableCount,
+                                List<String> fixVersions, long total, long fixableCount,
                                 long kevCount, long criticalCount, long highCount,
                                 BigDecimal maxCvss, BigDecimal maxEpss, long reachableCount) {
 
-        PackageAction(PackageGroup group, long reachableCount) {
+        PackageAction(PackageGroup group, long reachableCount, List<String> fixVersions) {
             this(group.getPackageName(), group.getPackageType(), group.getPackageVersion(),
-                 group.getTargetVersion() == null ? "" : group.getTargetVersion(),
-                 group.getTotal(), group.getFixable(), group.getKevCount(),
+                 fixVersions, group.getTotal(), group.getFixable(), group.getKevCount(),
                  group.getCriticalCount(), group.getHighCount(),
                  group.getMaxCvss(), group.getMaxEpss(), reachableCount);
-        }
-
-        public boolean hasTarget() {
-            return targetVersion != null && !targetVersion.isBlank();
         }
 
         public boolean hasReachable() {

@@ -38,7 +38,11 @@ public class Remediation {
     @Column(name = "from_version", nullable = false, length = 128)
     private String fromVersion = "";
 
-    @Column(name = "to_version", nullable = false, length = 128)
+    /**
+     * 등록 당시의 수정 버전 <b>전부</b> — 빈칸으로 잇는다({@link FixVersions}).
+     * 앞서는 CVSS 가 가장 높은 건의 것 하나였다. 넓힌 것은 {@code V15}.
+     */
+    @Column(name = "to_version", nullable = false, length = 4000)
     private String toVersion = "";
 
     @Enumerated(EnumType.STRING)
@@ -130,6 +134,25 @@ public class Remediation {
 
     public void setToVersion(String toVersion) {
         this.toVersion = toVersion == null ? "" : toVersion;
+    }
+
+    /** 등록 당시의 수정 버전 — 하나로 고르지 않은 목록. 화면 · CSV 는 이것을 쓴다. */
+    public List<String> getToVersions() {
+        return FixVersions.split(toVersion);
+    }
+
+    /**
+     * 수정 버전을 모아 적는다.
+     *
+     * <p>칸(4,000자)을 넘으면 넘는 것부터 뺀다 — 넘는 채로 저장하면 조치
+     * 등록이 500 으로 끝난다. 버전 스물다섯 가지(openjdk)가 237자였다.
+     */
+    public void setToVersions(List<String> versions) {
+        List<String> kept = new ArrayList<>(FixVersions.collect(versions));
+        while (!kept.isEmpty() && FixVersions.join(kept).length() > 4000) {
+            kept.remove(kept.size() - 1);
+        }
+        this.toVersion = FixVersions.join(kept);
     }
 
     public RemediationStatus getStatus() {

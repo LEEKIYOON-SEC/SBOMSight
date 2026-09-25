@@ -79,8 +79,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                   SUM(CASE WHEN LOWER(f.severity) = 'critical' THEN 1 ELSE 0 END) AS criticalCount,
                   SUM(CASE WHEN LOWER(f.severity) = 'high' THEN 1 ELSE 0 END)     AS highCount,
                   MAX(f.cvssScore)     AS maxCvss,
-                  MAX(f.epss)          AS maxEpss,
-                  MAX(f.fixedVersion)  AS targetVersion
+                  MAX(f.epss)          AS maxEpss
            FROM Finding f JOIN f.scan s
            WHERE s.id = :scanId
              AND (:includeReviewed = TRUE OR NOT EXISTS (
@@ -633,9 +632,9 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      * 된다. 자산 하나짜리 보고서에는 없는 값(몇 대에 걸쳐 있는가)이 여기서
      * 나오고, 그것이 구역 단위로 보는 이유다.
      *
-     * <p>버전은 묶음 축에서 뺀다 — 같은 openssl 이라도 자산마다 판이 다르다.
-     * 대신 몇 가지 판이 섞여 있는지를 세어, 하나가 아니면 화면에서 목표
-     * 버전을 단정하지 않는다.
+     * <p>버전은 묶음 축에서 뺀다 — 같은 openssl 이라도 자산마다 버전이 다르다.
+     * 대신 몇 가지가 섞여 있는지를 센다. 수정 버전은 여기서 내지 않는다 —
+     * {@link #fixVersionsIn} 이 전부를 낸다.
      *
      * <p><b>거르개를 받는다.</b> 취약점 화면의 `패키지별` 묶기가 이것을
      * 쓰는데, 앞서는 {@code scanIds} 만 넘기고 있었다 — 화면에는 고른 값이
@@ -657,9 +656,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                   SUM(CASE WHEN LOWER(f.severity) = 'critical' THEN 1 ELSE 0 END) AS criticalCount,
                   SUM(CASE WHEN LOWER(f.severity) = 'high' THEN 1 ELSE 0 END)     AS highCount,
                   MAX(f.cvssScore)               AS maxCvss,
-                  MAX(f.epss)                    AS maxEpss,
-                  MAX(f.fixedVersion)            AS targetVersion,
-                  COUNT(DISTINCT f.fixedVersion) AS targetCount
+                  MAX(f.epss)                    AS maxEpss
            FROM Finding f JOIN f.scan s
            WHERE s.id IN :scanIds
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
@@ -689,6 +686,41 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                                             @Param("fixable") Boolean fixable,
                                             @Param("kev") Boolean kev,
                                             @Param("includeReviewed") boolean includeReviewed);
+
+    /**
+     * 패키지마다 <b>수정 버전 전부</b> — 하나로 고르지 않는다
+     * ({@link kr.sbomsight.domain.FixVersions}).
+     *
+     * <p>앞서 두 묶음 질의가 {@code MAX(f.fixedVersion)} 하나를 냈다. 글자로
+     * 가장 큰 것이라 `9.0.90` 을 `9.0.107` 보다 크다고 보았다. 구역 쪽
+     * {@code COUNT(DISTINCT f.fixedVersion)} 은 수정 버전이 없는 건의 빈 값까지
+     * 한 가지로 세어, 수정 버전이 하나뿐인데도 `자산별 확인` 으로 적었다.
+     *
+     * <p>해당 없음 · 오탐을 빼는 규칙은 묶음 질의와 같다 — 표의 `해소 건수` 를
+     * 센 바로 그 건에서 모은다. {@code packageName} 이 {@code null} 이면 전부.
+     */
+    @Query("""
+           SELECT DISTINCT s.asset.id AS assetId, f.packageName AS packageName,
+                  f.packageVersion AS packageVersion, f.packageType AS packageType,
+                  f.fixedVersion AS fixedVersion
+           FROM Finding f JOIN f.scan s
+           WHERE s.id IN :scanIds
+             AND f.fixState = 'fixed' AND f.fixedVersion <> ''
+             AND (:packageName IS NULL OR f.packageName = :packageName)
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
+           """)
+    List<FixVersionRow> fixVersionsIn(@Param("scanIds") Collection<Long> scanIds,
+                                      @Param("packageName") String packageName,
+                                      @Param("includeReviewed") boolean includeReviewed);
 
     /**
      * 거르개를 건 키 목록 — <b>묶어 보는 화면의 `검토 n/N`.</b>
@@ -835,8 +867,19 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         java.math.BigDecimal getMaxCvss();
 
         java.math.BigDecimal getMaxEpss();
+    }
 
-        String getTargetVersion();
+    /** 수정 버전 한 줄 — {@link #fixVersionsIn}. */
+    interface FixVersionRow {
+        Long getAssetId();
+
+        String getPackageName();
+
+        String getPackageVersion();
+
+        String getPackageType();
+
+        String getFixedVersion();
     }
 
     /** 노출면 원재료에 자산 id 를 얹은 것. */
@@ -887,7 +930,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         /** 이 패키지가 걸린 자산 수. 구역 보고서에만 있는 값이다. */
         long getAssetCount();
 
-        /** 자산마다 설치된 판이 몇 가지인가. 1 이 아니면 목표 버전을 단정하지 않는다. */
+        /** 자산마다 설치된 버전이 몇 가지인가. 1 이 아니면 하나를 골라 적지 않는다. */
         long getVersionCount();
 
         String getAnyVersion();
@@ -903,10 +946,5 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         java.math.BigDecimal getMaxCvss();
 
         java.math.BigDecimal getMaxEpss();
-
-        String getTargetVersion();
-
-        /** grype 이 제시한 수정 버전이 몇 가지인가. 1 이 아니면 "자산별 확인" 이다. */
-        long getTargetCount();
     }
 }

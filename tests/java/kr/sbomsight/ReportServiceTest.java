@@ -284,7 +284,7 @@ class ReportServiceTest {
         ReportService.PackageAction openssl = ch.fixTargets().stream()
                 .filter(a -> a.packageName().equals("openssl")).findFirst().orElseThrow();
         assertThat(openssl.fixableCount()).isEqualTo(3);
-        assertThat(openssl.targetVersion()).isEqualTo("3.0.7");
+        assertThat(openssl.fixVersions()).containsExactly("3.0.7");
         assertThat(openssl.criticalCount()).isEqualTo(1);
         assertThat(openssl.maxCvss()).isEqualByComparingTo("9.80");
 

@@ -238,8 +238,7 @@ class ZoneReportTest {
         assertThat(openssl.fixableCount()).isEqualTo(6);
         assertThat(openssl.reachableCount()).isEqualTo(3);
         assertThat(openssl.oneVersion()).isTrue();
-        assertThat(openssl.oneTarget()).isTrue();
-        assertThat(openssl.targetVersion()).isEqualTo("3.0.7");
+        assertThat(openssl.fixVersions()).containsExactly("3.0.7");
     }
 
     @Test
@@ -252,10 +251,11 @@ class ZoneReportTest {
 
         ZonePackageAction openssl = action(report(), "openssl");
 
-        // 하나를 골라 "3.0.7 로 올리세요" 라고 쓰면 나머지 자산에는 틀린 지시다.
+        // 하나를 골라 "3.0.7 로 올리세요" 라고 쓰면 나머지 자산에는 틀린 지시다 —
+        // 고르지 않고 둘 다 적는다(FixVersions).
         assertThat(openssl.assetCount()).isEqualTo(2);
         assertThat(openssl.oneVersion()).isFalse();
-        assertThat(openssl.oneTarget()).isFalse();
+        assertThat(openssl.fixVersions()).containsExactly("3.0.7", "3.0.9");
         assertThat(openssl.versionCount()).isEqualTo(2);
     }
 

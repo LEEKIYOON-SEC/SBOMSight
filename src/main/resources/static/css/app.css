@@ -291,6 +291,12 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
    결재 문서에서 판을 잘못 읽는 것이 가장 나쁜 종류의 오류다(§5-9 와 같은
    이유). 줄을 바꿔야 하면 `현재` 와 `목표` 사이에서 바꾼다. */
 .report td.mono > span, .report td.mono > b { white-space: nowrap; }
+
+/* 수정 버전 목록(`fragments/ui :: fixversions`). 버전 하나는 한 덩이 — 위와
+   같은 이유 — 이고, 줄은 버전 사이에서 바뀐다. 스물다섯 가지(openjdk)를 한
+   줄로 두면 칸이 표 폭을 넘는다. */
+.fixlist { white-space: normal; font-size: 12px; color: var(--fg-faint); }
+.fixlist > span, .ver { white-space: nowrap; }
 .tag.kev   { background: var(--critical-bg); color: var(--critical); }
 .tag.fix   { background: var(--ok-bg);       color: var(--ok); }
 .tag.nofix { background: var(--medium-bg);   color: var(--medium); }

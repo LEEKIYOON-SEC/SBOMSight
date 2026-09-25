@@ -83,12 +83,14 @@ public class RemediationService {
                 .findByScanIdAndPackageNameOrderByCvssScoreDesc(scan.getId(), packageName);
         if (!current.isEmpty()) {
             remediation.setFromVersion(current.get(0).getPackageVersion());
-            current.stream()
-                   .filter(Finding::isFixAvailable)
-                   .map(Finding::getFixedVersion)
-                   .findFirst()
-                   .ifPresent(remediation::setToVersion);
         }
+        // 목표는 하나로 고르지 않는다 — 수정 버전 전부(FixVersions). 앞서는
+        // CVSS 가 가장 높은 건의 것 하나를 적었다(curl deb10u4 — 그리로 올려도
+        // 10건이 남는다). 보고서 3장과 같은 건(해당 없음 · 오탐 제외)에서 모은다.
+        remediation.setToVersions(findings
+                .fixVersionsIn(List.of(scan.getId()), packageName, false).stream()
+                .map(FindingRepository.FixVersionRow::getFixedVersion)
+                .toList());
         remediation.setOpenedScanId(scan.getId());
         remediation.setOpenedCount(current.size());
         remediation.moveTo(RemediationStatus.OPEN, actor, "조치 등록");

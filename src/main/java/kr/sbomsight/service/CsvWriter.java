@@ -3,6 +3,7 @@ package kr.sbomsight.service;
 import kr.sbomsight.domain.AuditLog;
 import kr.sbomsight.domain.FindingAnalysis;
 import kr.sbomsight.domain.Finding;
+import kr.sbomsight.domain.FixVersions;
 import kr.sbomsight.domain.Remediation;
 
 import java.io.IOException;
@@ -71,7 +72,8 @@ public final class CsvWriter {
                     r.getAsset().getName(),
                     r.getPackageName(),
                     r.getFromVersion(),
-                    r.getToVersion(),
+                    // 하나로 고르지 않는다 — 여럿이면 `수정 버전 N가지: a · b` (화면과 같은 규칙)
+                    FixVersions.describe(r.getToVersions()),
                     r.getStatus().label(),
                     r.getOwner(),
                     r.getDueDate() == null ? "" : r.getDueDate().format(DAY),

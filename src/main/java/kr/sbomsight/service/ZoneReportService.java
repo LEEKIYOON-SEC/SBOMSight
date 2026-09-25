@@ -3,6 +3,7 @@ package kr.sbomsight.service;
 import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.CvssVector;
+import kr.sbomsight.domain.FixVersions;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.FindingAnalysis;
 import kr.sbomsight.domain.Scan;
@@ -284,14 +285,29 @@ public class ZoneReportService {
             // 목록이므로 해당 없음 · 오탐은 뺀다.
             List<ZonePackageGroup> groups =
                     findings.groupByPackageIn(scanIds(current), null, null, null, null, false);
+            // 수정 버전은 하나로 고르지 않는다 — 자산 너머로 그 패키지의 수정
+            // 버전 전부(FixVersions). 자산마다 배포판이 다르면 가짓수가 늘 뿐,
+            // 그중 하나를 골라 "이걸로 올리세요" 라고 적지 않는다.
+            Map<String, List<String>> fixes = findings
+                    .fixVersionsIn(scanIds(current), null, false).stream()
+                    .collect(java.util.stream.Collectors.groupingBy(
+                            r -> r.getPackageName() + '\u0000' + r.getPackageType(),
+                            java.util.stream.Collectors.collectingAndThen(
+                                    java.util.stream.Collectors.mapping(
+                                            FindingRepository.FixVersionRow::getFixedVersion,
+                                            java.util.stream.Collectors.toList()),
+                                    FixVersions::collect)));
             actions = groups.stream()
                     .filter(g -> g.getFixable() > 0)
-                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName())))
+                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName()),
+                            fixes.getOrDefault(g.getPackageName() + '\u0000' + g.getPackageType(),
+                                               List.of())))
                     .sorted(BY_URGENCY)
                     .toList();
             blocked = groups.stream()
                     .filter(g -> g.getFixable() == 0)
-                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName())))
+                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName()),
+                                                    List.of()))
                     .sorted(BY_URGENCY)
                     .toList();
         }
@@ -653,38 +669,28 @@ public class ZoneReportService {
      * 패키지 하나에 대한 구역 단위 조치 후보.
      *
      * @param assetCount   몇 대에 걸려 있는가 — 구역 보고서에만 있는 값
-     * @param versionCount 자산마다 설치된 판이 몇 가지인가
-     * @param targetCount  grype 이 제시한 수정 버전이 몇 가지인가
+     * @param versionCount 자산마다 설치된 버전이 몇 가지인가
+     * @param fixVersions  자산 너머로 그 패키지의 수정 버전 전부 — 하나로 고르지
+     *                     않는다({@link FixVersions}). 앞서 여러 가지면 `자산별
+     *                     확인` 으로만 적고 목록을 싣지 않았다
      */
     public record ZonePackageAction(String packageName, String packageType,
                                     String anyVersion, long versionCount,
-                                    String targetVersion, long targetCount,
+                                    List<String> fixVersions,
                                     long total, long fixableCount, long assetCount,
                                     long kevCount, long criticalCount, long highCount,
                                     BigDecimal maxCvss, BigDecimal maxEpss, long reachableCount) {
 
-        ZonePackageAction(ZonePackageGroup g, long reachableCount) {
+        ZonePackageAction(ZonePackageGroup g, long reachableCount, List<String> fixVersions) {
             this(g.getPackageName(), g.getPackageType(), g.getAnyVersion(), g.getVersionCount(),
-                 g.getTargetVersion() == null ? "" : g.getTargetVersion(), g.getTargetCount(),
-                 g.getTotal(), g.getFixable(), g.getAssetCount(), g.getKevCount(),
+                 fixVersions, g.getTotal(), g.getFixable(), g.getAssetCount(), g.getKevCount(),
                  g.getCriticalCount(), g.getHighCount(), g.getMaxCvss(), g.getMaxEpss(),
                  reachableCount);
         }
 
-        /** 설치된 판이 하나뿐일 때만 버전을 적는다. 섞여 있으면 "N종" 이다. */
+        /** 설치된 버전이 하나뿐일 때만 버전을 적는다. 섞여 있으면 "N가지" 다. */
         public boolean oneVersion() {
             return versionCount == 1;
-        }
-
-        /**
-         * 목표 버전을 단정할 수 있는가.
-         *
-         * <p>자산마다 배포판이 다르면 grype 이 주는 수정 버전도 다르다. 그중
-         * 하나를 골라 "이걸로 올리세요" 라고 쓰면 나머지 자산에 대해 <b>틀린
-         * 지시</b>가 된다. 여러 가지면 단정하지 않고 자산별 보고서로 보낸다.
-         */
-        public boolean oneTarget() {
-            return targetCount == 1 && targetVersion != null && !targetVersion.isBlank();
         }
 
         public boolean hasReachable() {

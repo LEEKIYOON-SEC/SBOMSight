@@ -2,6 +2,7 @@ package kr.sbomsight.web;
 
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.AuditEvent;
+import kr.sbomsight.domain.FixVersions;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
@@ -143,8 +144,9 @@ public class RemediationController {
                          "등록 당시 " + remediation.getOpenedCount() + "건"
                          + (remediation.getFromVersion().isBlank() ? ""
                             : " · 현재 " + remediation.getFromVersion())
-                         + (remediation.getToVersion().isBlank() ? ""
-                            : " · 목표 " + remediation.getToVersion()));
+                         + (remediation.getToVersions().isEmpty() ? ""
+                            : (remediation.getToVersions().size() == 1 ? " · 목표 " : " · ")
+                              + FixVersions.describe(remediation.getToVersions())));
             flash.addFlashAttribute("message", packageName + " 조치를 등록했습니다.");
         } else {
             flash.addFlashAttribute("message", packageName + " 조치는 이미 등록되어 있습니다.");

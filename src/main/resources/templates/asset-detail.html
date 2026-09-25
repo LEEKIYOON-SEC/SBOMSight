@@ -481,7 +481,7 @@
         <table class="table table-vcenter card-table">
           <thead>
           <tr>
-            <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
+            <th class="tight">패키지</th><th>현재 → 목표</th>
             <th class="tight">조치 상태</th><th class="tight">담당</th>
             <th class="tight">기한</th><th>설명</th>
           </tr>
@@ -489,7 +489,10 @@
           <tbody>
           <tr th:each="r : ${remediations}">
             <td class="tight"><a th:href="@{'/actions/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td>
-            <td class="tight faint mono" th:text="${r.fromVersion} + ' → ' + ${r.toVersion}">—</td>
+            <td class="faint mono">
+              <span class="ver" th:text="${r.fromVersion}">3.0.1</span> →
+              <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
+            </td>
             <td class="tight" th:text="${r.status.label()}">대기</td>
             <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
             <td class="tight" th:classappend="${r.overdue} ? 'overdue' : ''"

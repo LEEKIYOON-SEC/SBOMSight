@@ -110,6 +110,37 @@ for f in $MIGRATIONS; do
         echo "  └ 조치 3행을 넣었다 (하지 않고 닫음 2 · 완료 1)" ;;
     esac
 
+    # V15 가 조치의 목표 버전을 등록한 검사에서 다시 모은다. 모을 것이 있는
+    # 상태에서 태워야 한다 — 빈 표를 옮기는 것은 아무것도 확인하지 못한다.
+    # 경계 사례를 일부러 섞는다: 글자 순과 버전 순이 다른 것(9.0.107 · 9.0.90),
+    # 같은 버전이 둘, 해당 없음으로 적은 건, 수정 버전이 없는 건, 그리고
+    # 등록한 검사가 지워진 조치.
+    case "$(basename "$f")" in V14__*)
+        run "$DB" -e "
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename)
+        VALUES (1, 'DONE', NOW(6), 'v15check', 'sbom.json');
+        SET @s = LAST_INSERT_ID();
+        INSERT INTO findings (scan_id, finding_key, cve, package_name, fix_state, fixed_version) VALUES
+         (@s, 'CVE-2025-1|tomcat-coyote', 'CVE-2025-1', 'tomcat-coyote', 'fixed', '9.0.68'),
+         (@s, 'CVE-2025-2|tomcat-coyote', 'CVE-2025-2', 'tomcat-coyote', 'fixed', '9.0.90'),
+         (@s, 'CVE-2025-3|tomcat-coyote', 'CVE-2025-3', 'tomcat-coyote', 'fixed', '9.0.107'),
+         (@s, 'CVE-2025-4|tomcat-coyote', 'CVE-2025-4', 'tomcat-coyote', 'fixed', '9.0.68'),
+         (@s, 'CVE-2025-5|tomcat-coyote', 'CVE-2025-5', 'tomcat-coyote', 'fixed', '9.0.200'),
+         (@s, 'CVE-2025-6|tomcat-coyote', 'CVE-2025-6', 'tomcat-coyote', 'not-fixed', '');
+        INSERT INTO finding_analysis (asset_id, cve, package_name, state, justification,
+                                      created_at, updated_at)
+        VALUES (1, 'CVE-2025-5', 'tomcat-coyote', 'NOT_AFFECTED', 'CODE_NOT_PRESENT', NOW(6), NOW(6));
+        INSERT INTO remediations
+          (asset_id, package_name, from_version, to_version, status, owner, opened_scan_id,
+           opened_count, note, created_at, created_by, updated_at, updated_by)
+        VALUES
+         (1, 'tomcat-coyote', '9.0.50', '9.0.68', 'OPEN', '', @s,
+          6, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (2, 'libxml2', '2.9.4', '2.9.4+dfsg1-7+deb10u4', 'OPEN', '', 999999,
+          3, '', NOW(6), 'admin', NOW(6), 'admin');"
+        echo "  └ 조치 2행과 등록한 검사(탐지 6건 · 해당 없음 1건)를 넣었다 — 하나는 등록한 검사가 지워진 것" ;;
+    esac
+
     case "$(basename "$f")" in V9__*)
         run "$DB" -e "
         INSERT INTO risk_acceptances
@@ -161,7 +192,10 @@ run "$DB" -e "SHOW TABLES LIKE 'risk_acceptances';" | grep -q risk_acceptances \
     && { echo "  risk_acceptances 가 남아 있습니다 — 두 벌이 되면 갈라집니다"; exit 1; }
 echo "  risk_acceptances 제거됨"
 
-TOTAL=$(run "$DB" -N -e "SELECT COUNT(*) FROM finding_analysis;")
+# V11 이 옮긴 세 키만 센다 — 뒤(V15 확인)에서 검토 결과를 더 넣는다.
+TOTAL=$(run "$DB" -N -e "
+    SELECT COUNT(*) FROM finding_analysis
+    WHERE cve IN ('CVE-2024-0001', 'CVE-2024-0002', 'CVE-2024-0003');")
 [ "$TOTAL" = "3" ] || { echo "  검토 결과가 $TOTAL 행 (3 이어야 함) — 키마다 한 행이 아닙니다"; exit 1; }
 echo "  검토 결과 3행 (키마다 하나)"
 
@@ -290,6 +324,33 @@ echo "  되돌린 사실이 이력 2줄로 남음 (from ACCEPTED → to OPEN)"
 DONE_KEPT=$(run "$DB" -N -e "SELECT COUNT(*) FROM remediations WHERE status='DONE';")
 [ "$DONE_KEPT" = "1" ] || { echo "  완료 조치가 $DONE_KEPT 행입니다"; exit 1; }
 echo "  완료였던 조치는 그대로"
+
+# --- V15: 조치의 목표 버전 — 하나로 고르지 않는다 --------------------------
+#
+# 앞서 조치는 CVSS 가 가장 높은 건의 수정 버전 하나였다(여기서는 9.0.68 —
+# 그리로 올려도 둘이 남는다). 등록한 검사에서 전부를 다시 모아야 하고,
+# 모을 데가 없는 조치는 적혀 있던 것을 지우지 않아야 한다.
+
+TV=$(run "$DB" -N -e "SELECT to_version FROM remediations WHERE package_name='tomcat-coyote';")
+[ "$TV" = "9.0.107 9.0.68 9.0.90" ] || {
+    echo "  목표 버전이 '$TV' 입니다 (기대 '9.0.107 9.0.68 9.0.90')"; exit 1; }
+echo "  등록한 검사에서 수정 버전 전부를 모음 (글자 순 · 해당 없음과 수정 버전 없는 건은 뺌)"
+
+GONE=$(run "$DB" -N -e "SELECT to_version FROM remediations WHERE package_name='libxml2';")
+[ "$GONE" = "2.9.4+dfsg1-7+deb10u4" ] || {
+    echo "  등록한 검사가 지워진 조치의 목표가 '$GONE' 로 바뀌었습니다"; exit 1; }
+echo "  등록한 검사가 지워진 조치는 그대로"
+
+LEGACY=$(run "$DB" -N -e "SELECT to_version FROM remediations WHERE package_name='zlib';")
+[ "$LEGACY" = "1.2.13" ] || {
+    echo "  등록한 검사를 모르는 옛 조치의 목표가 '$LEGACY' 로 바뀌었습니다"; exit 1; }
+echo "  등록한 검사를 모르는 옛 조치(opened_scan_id 없음)도 그대로"
+
+WIDTH=$(run "$DB" -N -e "
+    SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA='$DB' AND TABLE_NAME='remediations' AND COLUMN_NAME='to_version';")
+[ "$WIDTH" = "4000" ] || { echo "  to_version 이 $WIDTH 자입니다 (4000 이어야 함)"; exit 1; }
+echo "  to_version 4000자"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

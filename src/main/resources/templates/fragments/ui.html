@@ -200,6 +200,32 @@
 
 
 <!--/*
+  ─── 수정 버전 ────────────────────────────────────────────────────────
+  **하나로 고르지 않는다** (FixVersions). 하나면 그 버전, 여럿이면
+  `수정 버전 N가지` 와 그 목록. 조치 화면 · 보고서 · CSV 가 같은 규칙이다 —
+  앞서 같은 curl 조치의 목표가 조치 화면은 deb10u4, 보고서는 deb10u9 였다.
+
+    <span th:text="${a.currentVersion}">1.0</span> →
+    <th:block th:replace="~{fragments/ui :: fixversions(${a.fixVersions}, '확인 필요')}"></th:block>
+
+  목록은 글자 순이다 — 마지막 것이 가장 높은 버전이라는 뜻이 아니다.
+  버전 하나는 쪼개지지 않고(`.ver` · `.fixlist > span`), 줄은 버전 사이에서
+  바뀐다. 이 칸의 열 머리에 `tight`(폭 1%)를 주지 않는다 — 주면 칸이 버전
+  하나 폭으로 줄어 목록이 한 줄에 하나씩 선다(조치 목록에서 그렇게 떴다).
+  `empty` 는 목록이 비었을 때 적을 말 — 조치 대상인데 수정 버전이 없으면
+  `확인 필요`, 목록 표의 빈 칸은 `—`.
+*/-->
+<span th:fragment="fixversions(versions, empty)" th:remove="tag">
+  <b class="ver" th:if="${versions.size() == 1}" th:text="${versions[0]}">3.0.7</b>
+  <b class="ver" th:if="${versions.size() > 1}" th:text="'수정 버전 ' + ${versions.size()} + '가지'">수정 버전 3가지</b>
+  <div class="fixlist" th:if="${versions.size() > 1}"><th:block
+       th:each="v, st : ${versions}"><span th:text="${v}">3.0.5</span><th:block
+       th:unless="${st.last}"> · </th:block></th:block></div>
+  <span class="faint" th:if="${versions.isEmpty()}" th:text="${empty}">—</span>
+</span>
+
+
+<!--/*
   ─── 심각도 막대 ──────────────────────────────────────────────────────
   목록 한 줄에 `심각 3 · 높음 12 · 보통 61 · 낮음 111` 네 덩이를 쓰면
   자산 스무 대를 세로로 훑을 수 없다. 누적 막대 하나로 줄인다.
