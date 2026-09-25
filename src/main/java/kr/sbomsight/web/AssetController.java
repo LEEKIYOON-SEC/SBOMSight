@@ -345,6 +345,7 @@ public class AssetController {
                          @RequestParam(name = "severity", required = false) String severityFilter,
                          @RequestParam(required = false) Boolean fixable,
                          @RequestParam(required = false) Boolean kev,
+                         @RequestParam(defaultValue = "false") boolean includeDone,
                          @RequestParam(defaultValue = "0") int page,
                          @RequestParam(required = false) Integer size,
                          @RequestParam(required = false) Integer jump,
@@ -361,7 +362,7 @@ public class AssetController {
         // 자산 상세와 `/vulns` 가 같은 표·같은 쪽 넘김을 쓰므로 여기도 같다.
         String jumped = "vulns".equals(tab) || "packages".equals(tab) || "history".equals(tab)
                 ? Paging.jump(tabLinks(id, tab, group, q, severityFilter, fixable, kev,
-                                       size, sort, dir), jump)
+                                       includeDone, size, sort, dir), jump)
                 : null;
         if (jumped != null) {
             return jumped;
@@ -389,6 +390,13 @@ public class AssetController {
         model.addAttribute("origins", history.stream()
                 .collect(Collectors.toMap(Scan::getId, s -> s, (a, b) -> a)));
         model.addAttribute("severity", latest == null ? Map.of() : severityMap(latest.getId()));
+        // 취약점 탭의 숫자는 **그 탭이 처음 열었을 때 보여 주는 줄 수**다 —
+        // 해당 없음 · 오탐은 기본에서 빠진다. 탐지 건수(개요 · 이력 · 자산
+        // 목록)와 다를 수 있고, 그 차이는 탭 안의 `해당 없음·오탐 포함 (n건)` 이
+        // 말한다.
+        model.addAttribute("vulnTabCount", latest == null ? 0
+                : findings.countByScanId(latest.getId()) - findings.countReviewedOut(
+                        List.of(latest.getId()), null, null, null, null, null));
         model.addAttribute("remediations",
                 remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id));
         // 이 자산에 대해 내린 결정 둘을 한 탭에서 본다. 검토 결과를 대응
@@ -410,9 +418,9 @@ public class AssetController {
             // `scope.label()` 을 찍지만 자산 상세는 자기 제목을 따로 그린다.
             // `ofScan` 을 두 번 부르던 것도 한 번으로 줄인다.
             vulns.fill(model, vulns.ofScan(latest.getId()), group, q, severityFilter,
-                       fixable, kev, page, size, sort, dir);
+                       fixable, kev, includeDone, page, size, sort, dir);
             model.addAttribute("links", tabLinks(id, tab, group, q, severityFilter, fixable,
-                                                 kev, size, sort, dir));
+                                                 kev, includeDone, size, sort, dir));
             model.addAttribute("group", group);
             model.addAttribute("q", q);
             model.addAttribute("fixable", fixable);
@@ -434,7 +442,7 @@ public class AssetController {
         }
         if ("packages".equals(tab) || "history".equals(tab)) {
             model.addAttribute("links", tabLinks(id, tab, group, q, severityFilter, fixable,
-                                                 kev, size, sort, dir));
+                                                 kev, includeDone, size, sort, dir));
         }
         return "asset-detail";
     }
@@ -451,7 +459,8 @@ public class AssetController {
      */
     private VulnQuery.Links tabLinks(Long id, String tab, String group, String q,
                                      String severity, Boolean fixable, Boolean kev,
-                                     Integer size, String sort, String dir) {
+                                     boolean includeDone, Integer size, String sort,
+                                     String dir) {
         // 취약점 탭 말고도 쪽을 넘기는 탭이 있다(패키지 · 검사 이력). 그 탭들은
         // 취약점 탭의 거르개를 달고 다니지 않는다 — 붙여 두면 패키지 탭 주소에
         // `severity=Critical` 이 따라다니며 아무 일도 안 하고 남는다.
@@ -464,6 +473,7 @@ public class AssetController {
         return links.with("group", group)
                 .with("severity", severity)
                 .with("fixable", fixable).with("kev", kev)
+                .with("includeDone", includeDone ? "true" : null)
                 .with("sort", "severity".equals(sort) ? null : sort)
                 .with("dir", "desc".equals(dir) ? null : dir);
     }

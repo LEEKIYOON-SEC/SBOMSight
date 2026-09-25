@@ -96,7 +96,13 @@ public class PackageController {
         model.addAttribute("csv", filters(new VulnQuery.Links("/packages/export.csv", null),
                                           zone, type, q, vulnerable, mixed));
         // 그 패키지의 취약점으로 — 구역은 이어 간다.
-        model.addAttribute("vulnLinks", new VulnQuery.Links("/vulns", null).with("zone", zone));
+        //
+        // **패키지별로 묶어 보낸다.** 검색어는 부분 일치라 `curl` 로 찾으면
+        // `libcurl4` 까지 걸린다. 항목별로 보내면 이 줄의 수(curl 67건)와 다른
+        // 수(134건)가 뜨고, 패키지별이면 각 패키지가 제 수로 한 줄씩 선다.
+        // 이 화면의 수는 탐지 건수이므로 해당 없음 · 오탐도 넣어 연다.
+        model.addAttribute("vulnLinks", new VulnQuery.Links("/vulns", null)
+                .with("zone", zone).with("group", "package").with("includeDone", "true"));
 
         // 펼친 줄. 주소에 남는다 — 새로고침하면 접히는 화면은 공유할 수 없다.
         model.addAttribute("open", open);

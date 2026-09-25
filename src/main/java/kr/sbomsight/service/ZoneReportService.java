@@ -278,7 +278,7 @@ public class ZoneReportService {
         if (!current.isEmpty()) {
             // 보고서는 거르지 않는다 — 기간 안의 것을 전부 센다. 넷 다 null.
             List<ZonePackageGroup> groups =
-                    findings.groupByPackageIn(scanIds(current), null, null, null, null);
+                    findings.groupByPackageIn(scanIds(current), null, null, null, null, true);
             actions = groups.stream()
                     .filter(g -> g.getFixable() > 0)
                     .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName())))

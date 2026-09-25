@@ -41,19 +41,23 @@
 
         `심각`·`높음` 은 grype 이 준 단계 이름 그대로다. 우리가 다시 나누거나
         다른 말로 부르지 않는다(§11).
+
+        **숫자는 탐지 건수다** — 검토 결과가 해당 없음 · 오탐인 것도 센다
+        (검토는 grype 의 판정을 바꾸지 않는다). 그래서 목록을 `해당 없음·오탐
+        포함` 을 켠 채로 연다. 끈 채로 열면 누른 숫자와 뜬 건수가 다르다.
       */-->
       <div class="card mb-3" th:if="${summary.kev() + summary.critical() + summary.high()
                                      + summary.noScan() + summary.stale()
                                      + summary.actionOverdue() + summary.reviewOverdue()
                                      + summary.noFix() > 0}">
         <div class="card-body py-2 summaryline">
-          <a th:if="${summary.kev() > 0}" class="sev-critical" th:href="@{/vulns(kev='true')}">
+          <a th:if="${summary.kev() > 0}" class="sev-critical" th:href="@{/vulns(kev='true', includeDone='true')}">
             <b th:text="${#numbers.formatInteger(summary.kev(), 0, 'COMMA')}">0</b> 실제 악용</a>
-          <a th:if="${summary.critical() > 0}" class="sev-critical" th:href="@{/vulns(severity='Critical')}">
+          <a th:if="${summary.critical() > 0}" class="sev-critical" th:href="@{/vulns(severity='Critical', includeDone='true')}">
             <b th:text="${#numbers.formatInteger(summary.critical(), 0, 'COMMA')}">0</b> 심각</a>
-          <a th:if="${summary.high() > 0}" class="sev-high" th:href="@{/vulns(severity='High')}">
+          <a th:if="${summary.high() > 0}" class="sev-high" th:href="@{/vulns(severity='High', includeDone='true')}">
             <b th:text="${#numbers.formatInteger(summary.high(), 0, 'COMMA')}">0</b> 높음</a>
-          <a th:if="${summary.noFix() > 0}" th:href="@{/vulns(fixable='false')}">
+          <a th:if="${summary.noFix() > 0}" th:href="@{/vulns(fixable='false', includeDone='true')}">
             <b th:text="${#numbers.formatInteger(summary.noFix(), 0, 'COMMA')}">0</b> 수정 버전 없음</a>
           <a th:if="${summary.noScan() > 0}" th:href="@{/(filter='noscan')}">
             <b th:text="${summary.noScan()}">0</b> 검사 안 한 자산</a>

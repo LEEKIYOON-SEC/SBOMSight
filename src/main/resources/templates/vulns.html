@@ -76,6 +76,7 @@
       <option value="true" th:selected="${fixable != null and fixable}">있음</option>
       <option value="false" th:selected="${fixable != null and !fixable}">없음</option>
     </select>
+    <div th:replace="~{fragments/ui :: reviewedout(${includeDone}, ${reviewedOut})}"></div>
     <button class="btn btn-sm btn-dark" type="submit">찾기</button>
   </form>
 

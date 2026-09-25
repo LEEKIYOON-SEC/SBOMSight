@@ -127,9 +127,9 @@ public class ReportService {
                 excludedByAnalysis(scan));
     }
 
-    /** 고유 취약점 수 — 같은 CVE 가 여러 패키지에 걸리면 한 가지로 센다. */
+    /** 고유 취약점 수 — 같은 CVE 가 여러 패키지에 걸리면 한 가지로 센다. 1장은 탐지 전부를 센다. */
     private long distinctVulnerabilities(Scan scan) {
-        return findings.groupByCveIn(List.of(scan.getId()), null, null, null, null).size();
+        return findings.groupByCveIn(List.of(scan.getId()), null, null, null, null, true).size();
     }
 
     /**

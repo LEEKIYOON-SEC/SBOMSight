@@ -65,6 +65,30 @@
 
 
 <!--/*
+  ─── 해당 없음·오탐 포함 ──────────────────────────────────────────────
+  탐지 목록은 검토 결과가 **해당 없음 · 오탐**인 건을 기본에서 뺀다 — 볼
+  일이 끝났다(rework-plan §4.5 · operations.md). 켜면 함께 보인다. 거르기가
+  아니라 보기를 넓히는 것이라 체크박스다(자산 목록의 `운영 종료 자산 포함`
+  과 같은 자리).
+
+  **이름은 상태 이름 그대로 적는다.** 문서의 `검토 끝난 것도 보기` 를 쓰지
+  않는다 — 위험 수용(해당됨 · 조치 안 함)도 검토가 끝난 것처럼 읽히는데,
+  그것은 빠지지 않고 목록에 남는다. 빠지는 것은 정확히 이 두 상태다.
+
+  **빠진 건수를 붙인다** `(n건)`. 빠진 것이 있다는 사실을 목록이 말하지
+  않으면 숫자가 조용히 줄어든 목록이 된다.
+
+    <div th:replace="~{fragments/ui :: reviewedout(${includeDone}, ${reviewedOut})}"></div>
+*/-->
+<label th:fragment="reviewedout(includeDone, count)" class="form-check form-check-inline mb-0">
+  <input class="form-check-input" type="checkbox" name="includeDone" value="true"
+         th:checked="${includeDone}" data-autosubmit>
+  <span class="form-check-label"
+        th:text="'해당 없음·오탐 포함' + (${count != null and count > 0} ? ' (' + ${count} + '건)' : '')">해당 없음·오탐 포함</span>
+</label>
+
+
+<!--/*
   ─── 빈 화면 ──────────────────────────────────────────────────────────
   제목 · 한 줄 · 단추 하나. 설명을 두 줄 넘기지 않는다.
 

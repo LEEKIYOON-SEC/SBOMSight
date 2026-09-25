@@ -82,11 +82,12 @@
       목록의 `운영 종료 자산 포함` 과 같은 자리). 글자는 `form-check-label`
       로 감싼다 — 맨 글자로 두면 Tabler 가 이름표로 보지 않는다.
     */-->
-    <label class="form-check form-check-inline mb-0" th:if="${tab} == 'analyses'">
-      <input class="form-check-input" type="checkbox" name="includeDone" value="true"
-             th:checked="${includeDone}" data-autosubmit>
-      <span class="form-check-label">검토 끝난 것 포함</span>
-    </label>
+    <!--/* 탐지 목록과 같은 조각·같은 이름이다 — 빠지는 것이 같은 두 상태다.
+         `th:replace` 는 같은 태그의 `th:if` 보다 먼저 돌아 조건을 지우므로
+         감싸서 건다. */-->
+    <th:block th:if="${tab} == 'analyses'">
+      <div th:replace="~{fragments/ui :: reviewedout(${includeDone}, ${reviewedOut})}"></div>
+    </th:block>
 
     <button class="btn btn-sm btn-dark" type="submit">적용</button>
   </form>

@@ -70,6 +70,7 @@ public class VulnController {
                         @RequestParam(required = false) String severity,
                         @RequestParam(required = false) Boolean fixable,
                         @RequestParam(required = false) Boolean kev,
+                        @RequestParam(defaultValue = "false") boolean includeDone,
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(required = false) Integer size,
                         @RequestParam(required = false) Integer jump,
@@ -88,6 +89,8 @@ public class VulnController {
                 .with("zone", zone).with("scan", scan).with("group", group)
                 .with("q", q).with("severity", severity)
                 .with("fixable", fixable).with("kev", kev)
+                // 끈 것은 적지 않는다 — 빼는 것이 기본이다.
+                .with("includeDone", includeDone ? "true" : null)
                 .size(size)
                 .with("sort", "severity".equals(sort) ? null : sort)
                 .with("dir", "desc".equals(dir) ? null : dir);
@@ -113,7 +116,8 @@ public class VulnController {
         model.addAttribute("dir", dir);
         model.addAttribute("links", links);
 
-        query.fill(model, scope, group, q, severity, fixable, kev, page, size, sort, dir);
+        query.fill(model, scope, group, q, severity, fixable, kev, includeDone,
+                   page, size, sort, dir);
         return "vulns";
     }
 
@@ -121,30 +125,44 @@ public class VulnController {
     @GetMapping("/{cve}")
     public String detail(@PathVariable String cve,
                          @RequestParam(required = false) Long zone,
+                         @RequestParam(defaultValue = "false") boolean includeDone,
                          @RequestParam(defaultValue = "0") int page,
                          @RequestParam(required = false) Integer size,
                          @RequestParam(required = false) Integer jump,
                          Model model) {
         VulnQuery.Links links = new VulnQuery.Links("/vulns/" + cve, null)
-                .with("zone", zone).size(size);
+                .with("zone", zone)
+                .with("includeDone", includeDone ? "true" : null)
+                .size(size);
         String jumped = Paging.jump(links, jump);
         if (jumped != null) {
             return jumped;
         }
 
+        // 목록과 같은 규칙 — 해당 없음 · 오탐은 기본에서 뺀다. 빼지 않으면
+        // CVE별 목록의 `영향 자산 3대` 를 눌렀는데 여기서 `4대` 라고 말한다.
         VulnQuery.Scope scope = query.ofZone(zone);
         List<Finding> rows = scope.scanIds().isEmpty()
-                ? List.of() : findings.findByCveIn(scope.scanIds(), cve);
+                ? List.of() : findings.findByCveIn(scope.scanIds(), cve, includeDone);
+        long reviewedOut = scope.scanIds().isEmpty() ? 0
+                : findings.countReviewedOut(scope.scanIds(), cve, null, null, null, null);
+        // 걸린 것이 전부 해당 없음 · 오탐이면 없는 CVE 가 아니다 — 그 사실과
+        // 함께 보는 길을 보여 준다. 검토 결과의 CVE 번호를 누르면 여기로 온다.
+        if (rows.isEmpty() && reviewedOut == 0) {
+            throw new ResponseStatusException(NOT_FOUND, cve + " 에 걸린 탐지가 없습니다.");
+        }
         if (rows.isEmpty()) {
-            throw new ResponseStatusException(NOT_FOUND, cve + " 로 걸리는 탐지가 없습니다.");
+            return "redirect:" + links.copy().with("includeDone", "true").here();
         }
 
         model.addAttribute("cve", cve);
         model.addAttribute("links", links);
+        model.addAttribute("includeDone", includeDone);
+        model.addAttribute("reviewedOut", reviewedOut);
         model.addAttribute("rows", Paging.slice(rows, page, size));
         // 대표로 한 건을 쓴다 — CVSS·벡터·심각도는 취약점의 속성이라 같다.
         model.addAttribute("first", rows.get(0));
-        model.addAttribute("spread", findings.zoneSpread(scope.scanIds(), cve));
+        model.addAttribute("spread", findings.zoneSpread(scope.scanIds(), cve, includeDone));
         // **자른 쪽이 아니라 전부에서 센다.** 한 쪽에 보이는 자산 수를
         // 찍으면 `3대` 인데 쪽이 다섯인 화면이 된다.
         model.addAttribute("assetCount",
@@ -159,6 +177,7 @@ public class VulnController {
                        @RequestParam(required = false) String severity,
                        @RequestParam(required = false) Boolean fixable,
                        @RequestParam(required = false) Boolean kev,
+                       @RequestParam(defaultValue = "false") boolean includeDone,
                        HttpServletResponse response) throws IOException {
         VulnQuery.Scope scope = scan != null ? query.ofScan(scan) : query.ofZone(zone);
         // 내려받기는 한 페이지가 아니라 걸린 것 전부다. 화면에 100건만 보이는데
@@ -168,7 +187,8 @@ public class VulnController {
                 // 않는다 — 내려받은 파일이 어떤 순서였는지 나중에 알 수 없으면
                 // 두 파일을 나란히 놓고 대조할 수 없다.
                 : findings.findInBySeverity(scope.scanIds(), blank(q), blank(severity),
-                                            fixable, kev, false, PageRequest.of(0, 100_000))
+                                            fixable, kev, includeDone, false,
+                                            PageRequest.of(0, 100_000))
                           .getContent();
 
         response.setContentType("text/csv; charset=UTF-8");

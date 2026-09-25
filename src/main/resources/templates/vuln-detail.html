@@ -95,6 +95,15 @@
     <div class="card">
       <div class="card-header"><h2 class="card-title">이 CVE 가 있는 자산</h2>
         <span class="faint" style="font-size:13px" th:text="${assetCount} + '대'">0대</span></div>
+      <!--/* 목록과 같은 규칙 — 해당 없음 · 오탐은 기본에서 뺀다. 빠진 것이
+           있을 때만 줄을 세운다. 숨은 칸에 `includeDone` 을 싣지 않는다 —
+           실으면 체크를 풀어도 켠 값이 함께 가서 끌 수 없다. */-->
+      <form method="get" th:action="@{'/vulns/' + ${cve}}"
+            class="card-body border-bottom py-2 d-flex align-items-center gap-2"
+            th:if="${reviewedOut > 0 or includeDone}">
+        <input type="hidden" name="zone" th:if="${param.zone != null}" th:value="${param.zone}">
+        <div th:replace="~{fragments/ui :: reviewedout(${includeDone}, ${reviewedOut})}"></div>
+      </form>
       <div th:replace="~{fragments/ui :: countline(${rows}, ${links}, '건')}"></div>
       <div class="table-responsive">
         <table class="table table-vcenter card-table">

@@ -93,7 +93,7 @@ class VulnScopeTest {
         VulnQuery.Scope scope = query.ofZone(null);
         return scope.scanIds().isEmpty() ? List.of()
                 : findings.findInBySeverity(scope.scanIds(), q, null, null, null,
-                                            false, PageRequest.of(0, 100)).getContent();
+                                            true, false, PageRequest.of(0, 100)).getContent();
     }
 
     // --- 범위 -----------------------------------------------------------------
@@ -124,7 +124,7 @@ class VulnScopeTest {
         // 검사 하나를 여는 것은 "그때 무엇이 있었나" 를 묻는 일이다.
         VulnQuery.Scope old = query.ofScan(before.getId());
         assertThat(findings.findInBySeverity(old.scanIds(), "log4j", null, null, null,
-                                             false, PageRequest.of(0, 100)))
+                                             true, false, PageRequest.of(0, 100)))
                 .hasSize(1);
     }
 
@@ -217,7 +217,7 @@ class VulnScopeTest {
 
         VulnQuery.Scope scope = query.ofZone(dmz.getId());
         assertThat(findings.findInBySeverity(scope.scanIds(), "log4j", null, null, null,
-                                             false, PageRequest.of(0, 100)))
+                                             true, false, PageRequest.of(0, 100)))
                 .hasSize(1)
                 .extracting(f -> f.getScan().getAsset().getName())
                 .containsExactly(web.getName());
@@ -233,7 +233,7 @@ class VulnScopeTest {
 
         VulnQuery.Scope scope = query.ofScan(s.getId());
         assertThat(findings.findInBySeverity(scope.scanIds(), "log4j", null, false, null,
-                                             false, PageRequest.of(0, 100)))
+                                             true, false, PageRequest.of(0, 100)))
                 .extracting(Finding::getPackageName).containsExactly("log4j-api");
     }
 
@@ -259,18 +259,21 @@ class VulnScopeTest {
 
         VulnQuery.Scope scope = query.ofScan(s.getId());
         assertThat(findings.findInBySeverity(scope.scanIds(), "nf-", null, false, null,
-                                             false, PageRequest.of(0, 100)))
+                                             true, false, PageRequest.of(0, 100)))
                 .as("`없음` 에 확인 필요(unknown)가 섞였다")
                 .extracting(Finding::getPackageName).containsExactlyInAnyOrder("nf-a", "nf-b");
 
         // 요약 줄의 숫자와, 그 숫자를 눌렀을 때 뜨는 목록의 건수.
         String home = mvc.perform(get("/").with(user("tester").roles("ADMIN")))
                          .andReturn().getResponse().getContentAsString();
+        // 링크는 화면에 찍힌 그대로 따라간다 — 손으로 적으면 링크가 바뀌어도
+        // 이 시험은 모른다.
         java.util.regex.Matcher summary = java.util.regex.Pattern
-                .compile("<b>([\\d,]+)</b> 수정 버전 없음").matcher(home);
+                .compile("href=\"([^\"]+)\">\\s*<b>([\\d,]+)</b> 수정 버전 없음").matcher(home);
         assertThat(summary.find()).as("요약 줄에 `수정 버전 없음` 이 없다").isTrue();
+        String href = summary.group(1).replace("&amp;", "&");
 
-        String list = mvc.perform(get("/vulns?fixable=false").with(user("tester").roles("ADMIN")))
+        String list = mvc.perform(get(href).with(user("tester").roles("ADMIN")))
                          .andReturn().getResponse().getContentAsString();
         java.util.regex.Matcher count = java.util.regex.Pattern
                 .compile("<b class=\"num\">([\\d,]+)</b>\\s*<span class=\"text-secondary\">건</span>")
@@ -279,7 +282,7 @@ class VulnScopeTest {
 
         assertThat(count.group(1))
                 .as("요약 줄의 `수정 버전 없음` 과 그것을 누른 목록의 건수가 다르다")
-                .isEqualTo(summary.group(1));
+                .isEqualTo(summary.group(2));
     }
 
     // --- 정렬 -----------------------------------------------------------------
@@ -305,7 +308,7 @@ class VulnScopeTest {
 
         VulnQuery.Scope scope = query.ofScan(s.getId());
         assertThat(findings.findInBySeverity(scope.scanIds(), null, null, null, null,
-                                             false, PageRequest.of(0, 100)).getContent())
+                                             true, false, PageRequest.of(0, 100)).getContent())
                 .extracting(Finding::getCve)
                 .containsExactly("CVE-CRIT", "CVE-HIGH", "CVE-MED", "CVE-LOW", "CVE-NONE");
 
@@ -313,7 +316,7 @@ class VulnScopeTest {
         // 오름차순에서 맨 앞은 "가장 안 위험한 것" 자리이고, 심각도를 모르는
         // 건을 그 자리에 놓으면 아무도 내리지 않은 판정이 된다.
         assertThat(findings.findInBySeverity(scope.scanIds(), null, null, null, null,
-                                             true, PageRequest.of(0, 100)).getContent())
+                                             true, true, PageRequest.of(0, 100)).getContent())
                 .extracting(Finding::getCve)
                 .containsExactly("CVE-LOW", "CVE-MED", "CVE-HIGH", "CVE-CRIT", "CVE-NONE");
     }
@@ -353,7 +356,7 @@ class VulnScopeTest {
         VulnQuery.Scope scope = query.ofScan(s.getId());
         for (String axis : new String[] { "cvss", "epss" }) {
             for (String dir : new String[] { "asc", "desc" }) {
-                List<Finding> rows = findings.findIn(scope.scanIds(), null, null, null, null,
+                List<Finding> rows = findings.findIn(scope.scanIds(), null, null, null, null, true,
                                 PageRequest.of(0, 100, VulnQuery.order(axis, dir)))
                         .getContent();
                 assertThat(rows).extracting(Finding::getCve)
@@ -467,7 +470,7 @@ class VulnScopeTest {
         finding(b, "CVE-2021-44228", "log4j-core", "Critical", "fixed");
 
         VulnQuery.Scope scope = query.ofZone(null);
-        var groups = findings.groupByCveIn(scope.scanIds(), "log4j", null, null, null);
+        var groups = findings.groupByCveIn(scope.scanIds(), "log4j", null, null, null, true);
 
         assertThat(groups)
                 .as("같은 취약점이 번호가 달라 두 묶음으로 갈렸다")

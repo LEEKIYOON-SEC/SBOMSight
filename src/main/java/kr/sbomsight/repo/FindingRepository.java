@@ -114,6 +114,18 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
     // 질의를 쓸 수 없었고 따로 한 벌을 더 들고 있었다. 지금은 <b>범위를
     // 스캔 id 목록으로 받는다</b> — 무엇이 범위인지는 VulnQuery 가 정하고,
     // 여기는 그 목록 안에서만 센다. 질의가 한 벌로 줄었다.
+    //
+    // **해당 없음 · 오탐은 기본 목록에서 뺀다**(`includeReviewed = false`).
+    // 검토 결과가 그 둘인 건은 볼 일이 끝났다 — 문서(rework-plan §4.5 ·
+    // operations.md)가 그렇게 약속했는데 어느 목록도 빼지 않고 있었고,
+    // 보고서 1장만 "목록에서 제외" 라고 적고 있었다. 탐지 건수(보고서 2장 ·
+    // 자산 목록의 `탐지`)는 그대로 둔다 — 검토는 grype 의 판정을 바꾸지 않는다.
+    //
+    // 맞추는 규칙은 FindingAnalysisService.stateOf 와 **같다**: 탐지의 주
+    // 식별자(cve)로 적힌 검토가 있으면 그것, 없으면 함께 온 CVE(relatedCve)로
+    // 적힌 것. 이 식이 아래 질의마다 같은 모양으로 들어 있다(JPQL 에는 조각을
+    // 나눠 쓰는 길이 없다). 한 곳을 고치면 전부 고친다 — ReviewedOutRuleTest 가
+    // 두 규칙이 갈라지는지 본다.
 
     /**
      * 범위 안의 탐지 한 페이지.
@@ -147,6 +159,16 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            """,
            countQuery = """
            SELECT COUNT(f) FROM Finding f JOIN f.scan s
@@ -159,12 +181,23 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            """)
     Page<Finding> findIn(@Param("scanIds") Collection<Long> scanIds,
                          @Param("q") String q,
                          @Param("severity") String severity,
                          @Param("fixable") Boolean fixable,
                          @Param("kev") Boolean kev,
+                         @Param("includeReviewed") boolean includeReviewed,
                          Pageable pageable);
 
     /**
@@ -199,6 +232,16 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            ORDER BY CASE WHEN :asc = TRUE
                            THEN CASE LOWER(f.severity)
                                   WHEN 'low'      THEN 0 WHEN 'medium'   THEN 1
@@ -221,12 +264,23 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            """)
     Page<Finding> findInBySeverity(@Param("scanIds") Collection<Long> scanIds,
                                    @Param("q") String q,
                                    @Param("severity") String severity,
                                    @Param("fixable") Boolean fixable,
                                    @Param("kev") Boolean kev,
+                                   @Param("includeReviewed") boolean includeReviewed,
                                    @Param("asc") boolean asc,
                                    Pageable pageable);
 
@@ -258,8 +312,8 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                   MIN(f.packageName) AS anyPackage,
                   SUM(CASE WHEN f.fixState = 'fixed' THEN 1 ELSE 0 END) AS fixable,
                   SUM(CASE WHEN f.kev = TRUE THEN 1 ELSE 0 END) AS kevCount
-           FROM Finding f
-           WHERE f.scan.id IN :scanIds
+           FROM Finding f JOIN f.scan s
+           WHERE s.id IN :scanIds
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
@@ -268,6 +322,16 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            GROUP BY CASE WHEN f.relatedCve <> '' THEN f.relatedCve ELSE f.cve END,
                     f.severity
            ORDER BY CASE LOWER(f.severity)
@@ -280,27 +344,92 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                                 @Param("q") String q,
                                 @Param("severity") String severity,
                                 @Param("fixable") Boolean fixable,
-                                @Param("kev") Boolean kev);
+                                @Param("kev") Boolean kev,
+                                @Param("includeReviewed") boolean includeReviewed);
 
-    /** CVE 상세 — 이 CVE 가 걸린 자산 전부. */
+    /**
+     * CVE 상세 — 이 CVE 가 걸린 자산 전부.
+     *
+     * <p>목록과 같은 규칙으로 해당 없음 · 오탐을 기본에서 뺀다. 빼지 않으면
+     * CVE별 목록의 `영향 자산 3대` 를 눌렀는데 상세가 `4대` 라고 말한다.
+     */
     @Query("""
            SELECT f FROM Finding f
-             JOIN FETCH f.scan s JOIN FETCH s.asset a JOIN FETCH a.zone
+             JOIN FETCH f.scan s JOIN FETCH s.asset ax JOIN FETCH ax.zone
            WHERE s.id IN :scanIds AND (f.cve = :cve OR f.relatedCve = :cve)
-           ORDER BY a.name ASC, f.packageName ASC
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
+           ORDER BY ax.name ASC, f.packageName ASC
            """)
     List<Finding> findByCveIn(@Param("scanIds") Collection<Long> scanIds,
-                              @Param("cve") String cve);
+                              @Param("cve") String cve,
+                              @Param("includeReviewed") boolean includeReviewed);
 
-    /** 구역 분포 — "어디까지 번졌나". 자산 수를 구역 이름별로 센다. */
+    /** 구역 분포 — "어디까지 번졌나". 자산 수를 구역 이름별로 센다. 상세와 같은 규칙. */
     @Query("""
-           SELECT z.name AS zoneName, COUNT(DISTINCT a.id) AS assetCount
-           FROM Finding f JOIN f.scan s JOIN s.asset a JOIN a.zone z
+           SELECT z.name AS zoneName, COUNT(DISTINCT ax.id) AS assetCount
+           FROM Finding f JOIN f.scan s JOIN s.asset ax JOIN ax.zone z
            WHERE s.id IN :scanIds AND (f.cve = :cve OR f.relatedCve = :cve)
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            GROUP BY z.name ORDER BY z.name
            """)
     List<ZoneSpread> zoneSpread(@Param("scanIds") Collection<Long> scanIds,
-                                @Param("cve") String cve);
+                                @Param("cve") String cve,
+                                @Param("includeReviewed") boolean includeReviewed);
+
+    /**
+     * 걸린 것 가운데 <b>해당 없음 · 오탐으로 빠진 건수</b> — 목록의
+     * `해당 없음·오탐 포함 (n건)` 이 이 수를 말한다.
+     *
+     * <p>빠진 것이 있다는 사실을 목록이 말하지 않으면 숫자가 조용히 줄어든
+     * 목록이 된다. 거르개 넷은 목록과 같게 받는다.
+     */
+    @Query("""
+           SELECT COUNT(f) FROM Finding f JOIN f.scan s
+           WHERE s.id IN :scanIds
+             AND (:cve IS NULL OR f.cve = :cve OR f.relatedCve = :cve)
+             AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
+             AND (:fixable IS NULL
+                  OR (:fixable = TRUE  AND f.fixState = 'fixed')
+                  OR (:fixable = FALSE AND f.fixState IN ('not-fixed', 'wont-fix')))
+             AND (:kev IS NULL OR f.kev = :kev)
+             AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
+                             OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve))))
+           """)
+    long countReviewedOut(@Param("scanIds") Collection<Long> scanIds,
+                          @Param("cve") String cve,
+                          @Param("q") String q,
+                          @Param("severity") String severity,
+                          @Param("fixable") Boolean fixable,
+                          @Param("kev") Boolean kev);
 
     interface CveGroup {
         String getCve();
@@ -497,6 +626,16 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            GROUP BY f.packageName, f.packageType
            ORDER BY COUNT(f) DESC, f.packageName ASC
            """)
@@ -504,7 +643,8 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                                             @Param("q") String q,
                                             @Param("severity") String severity,
                                             @Param("fixable") Boolean fixable,
-                                            @Param("kev") Boolean kev);
+                                            @Param("kev") Boolean kev,
+                                            @Param("includeReviewed") boolean includeReviewed);
 
     /**
      * 거르개를 건 키 목록 — <b>묶어 보는 화면의 `검토 n/N`.</b>
@@ -527,12 +667,23 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.relatedCve) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            """)
     List<AssetFindingKey> findKeysFiltered(@Param("scanIds") Collection<Long> scanIds,
                                            @Param("q") String q,
                                            @Param("severity") String severity,
                                            @Param("fixable") Boolean fixable,
-                                           @Param("kev") Boolean kev);
+                                           @Param("kev") Boolean kev,
+                                           @Param("includeReviewed") boolean includeReviewed);
 
     /**
      * 증감 대조용 키. {@code (자산, CVE, 패키지명)} 세 축이다.

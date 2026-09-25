@@ -110,6 +110,10 @@ public class ActionController {
         if ("analyses".equals(tab)) {
             List<FindingAnalysis> rows = analyses.list(includeDone, zone);
             model.addAttribute("analyses", Paging.slice(rows, page, size));
+            // 해당 없음 · 오탐으로 닫혀 빠진 줄 수 — 체크박스가 `(n건)` 으로 말한다.
+            model.addAttribute("reviewedOut", includeDone
+                    ? rows.stream().filter(a -> !a.isOpen()).count()
+                    : analyses.list(true, zone).size() - rows.size());
             model.addAttribute("overdue", analyses.reviewOverdue());
             // 검토 결과 줄에서 조치로 넘어가는 길. 조치는 `(자산, 패키지)`
             // 하나에 하나라 검토 여러 건이 조치 하나를 가리킨다 — 이미

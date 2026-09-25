@@ -200,7 +200,10 @@ public class VulnQuery {
                     .with("q", current.get("q"))
                     .with("severity", current.get("severity"))
                     .with("fixable", current.get("fixable"))
-                    .with("kev", current.get("kev"));
+                    .with("kev", current.get("kev"))
+                    // 내려받은 파일이 화면과 같은 것을 담아야 한다 — 화면은
+                    // 해당 없음·오탐을 뺐는데 파일은 넣었으면 두 수가 다르다.
+                    .with("includeDone", current.get("includeDone"));
             return download.here();
         }
 
@@ -302,10 +305,11 @@ public class VulnQuery {
     /** 목록을 모델에 담는다. 묶는 방식에 따라 담기는 값이 다르다. */
     @Transactional(readOnly = true)
     public void fill(Model model, Scope scope, String group, String q, String severity,
-                     Boolean fixable, Boolean kev, int page, Integer size,
-                     String sort, String dir) {
+                     Boolean fixable, Boolean kev, boolean includeReviewed, int page,
+                     Integer size, String sort, String dir) {
         String term = blankToNull(q);
         String sev = blankToNull(severity);
+        model.addAttribute("includeDone", includeReviewed);
 
         model.addAttribute("cvePage", Page.<FindingRepository.CveGroup>empty());
         model.addAttribute("packagePage",
@@ -316,8 +320,14 @@ public class VulnQuery {
             model.addAttribute("analyses", Map.of());
             model.addAttribute("actions", Map.of());
             model.addAttribute("reviewed", Map.of());
+            model.addAttribute("reviewedOut", 0L);
             return;
         }
+
+        // 해당 없음 · 오탐으로 빠진 건수. 체크박스가 `(n건)` 으로 말한다 —
+        // 빠진 것이 있다는 사실을 목록이 말하지 않으면 숫자가 조용히 줄어든다.
+        model.addAttribute("reviewedOut",
+                findings.countReviewedOut(scope.scanIds(), null, term, sev, fixable, kev));
 
         switch (group == null ? "item" : group) {
             // 묶어 세는 둘은 DB 에서 자르지 않는다 — `GROUP BY` 를 쪽으로
@@ -325,12 +335,14 @@ public class VulnQuery {
             // 갈리는 날 화면의 수와 쪽 수가 어긋난다. 읽는 양은 그대로 두고
             // 그린 뒤에 자른다.
             case "cve" -> model.addAttribute("cvePage", Paging.slice(
-                    findings.groupByCveIn(scope.scanIds(), term, sev, fixable, kev),
+                    findings.groupByCveIn(scope.scanIds(), term, sev, fixable, kev,
+                                          includeReviewed),
                     page, size));
             // 거르개를 **넷 다** 넘긴다. 앞서는 `scanIds` 만 넘겼고, 화면에는
             // 고른 값이 그대로 남아 있는데 목록이 한 줄도 바뀌지 않았다.
             case "package" -> model.addAttribute("packagePage", Paging.slice(
-                    findings.groupByPackageIn(scope.scanIds(), term, sev, fixable, kev),
+                    findings.groupByPackageIn(scope.scanIds(), term, sev, fixable, kev,
+                                              includeReviewed),
                     page, size));
             default -> {
                 boolean asc = "asc".equals(dir);
@@ -338,8 +350,10 @@ public class VulnQuery {
                         // 심각도는 글자다. Critical 이 High 보다 앞이라는 것은
                         // 알파벳 순서가 아니라 뜻이고, ORDER BY CASE 로만 낸다.
                         ? findings.findInBySeverity(scope.scanIds(), term, sev, fixable, kev,
-                                                    asc, Paging.request(page, size))
+                                                    includeReviewed, asc,
+                                                    Paging.request(page, size))
                         : findings.findIn(scope.scanIds(), term, sev, fixable, kev,
+                                          includeReviewed,
                                           Paging.request(page, size, order(sort, dir))));
             }
         }
@@ -363,7 +377,8 @@ public class VulnQuery {
         // 묶어 보는 두 화면에서 **그 줄이 얼마나 검토됐는지.**
         boolean byCve = "cve".equals(group);
         model.addAttribute("reviewed", byCve || "package".equals(group)
-                ? reviewedCounts(scope, byCve, term, sev, fixable, kev, byAssetKey)
+                ? reviewedCounts(scope, byCve, term, sev, fixable, kev, includeReviewed,
+                                 byAssetKey)
                 : Map.of());
     }
 
@@ -386,10 +401,12 @@ public class VulnQuery {
      */
     private Map<String, Reviewed> reviewedCounts(Scope scope, boolean byCve, String q,
                                                  String severity, Boolean fixable, Boolean kev,
+                                                 boolean includeReviewed,
                                                  Map<String, FindingAnalysis> byAssetKey) {
         Map<String, long[]> counts = new LinkedHashMap<>();
         for (FindingRepository.AssetFindingKey key
-                : findings.findKeysFiltered(scope.scanIds(), q, severity, fixable, kev)) {
+                : findings.findKeysFiltered(scope.scanIds(), q, severity, fixable, kev,
+                                            includeReviewed)) {
             String related = key.getRelatedCve();
             String display = related != null && !related.isBlank() ? related : key.getCve();
             long[] row = counts.computeIfAbsent(byCve ? display : key.getPackageName(),

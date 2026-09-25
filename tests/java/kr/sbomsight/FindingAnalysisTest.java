@@ -320,7 +320,9 @@ class FindingAnalysisTest {
                        AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE, null,
                        "해당 클래스를 로드하지 않습니다", "", "", null, "tester");
 
+        // 해당 없음은 기본 목록에서 빠진다 — 켜고 본다.
         String html = mvc.perform(get("/vulns").param("scan", scan.getId().toString())
+                            .param("includeDone", "true")
                             .with(user("tester").roles("ADMIN")))
                          .andExpect(status().isOk())
                          .andReturn().getResponse().getContentAsString();
@@ -335,6 +337,16 @@ class FindingAnalysisTest {
                 .as("적어 둔 것이 목록에 안 보인다 — 번호가 어긋났다")
                 .contains("data-state=\"NOT_AFFECTED\"")
                 .contains(">수정</a>");
+
+        // 기본 목록에서는 빠진다 — 함께 온 CVE 번호로 적은 것도 같은 규칙으로
+        // 맞춘다(FindingAnalysisService.stateOf). 빠졌다는 사실은 체크박스가 말한다.
+        String byDefault = mvc.perform(get("/vulns").param("scan", scan.getId().toString())
+                                 .with(user("tester").roles("ADMIN")))
+                              .andReturn().getResponse().getContentAsString();
+        assertThat(byDefault)
+                .as("CVE 번호로 적은 해당 없음이 기본 목록에서 빠지지 않았다")
+                .doesNotContain("data-state=\"NOT_AFFECTED\"")
+                .contains("해당 없음·오탐 포함 (1건)");
     }
 
     /** 옛 주 식별자로 적힌 것(위험 수용에서 옮겨 온 행)도 찾아야 한다. */
