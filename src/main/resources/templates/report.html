@@ -286,7 +286,7 @@
       <tbody>
       <!--/*
         **`progress.rows` 를 돈다.** 그 목록은 `targets.fixTargets` 와 같은
-        줄을 같은 순서로 들고 있되 조치가 함께 달려 있다(`ReportService:307`).
+        줄을 같은 순서로 들고 있되 조치가 함께 달려 있다(`ReportService.progress`).
         따로 돌면 두 장의 순서가 갈라지는 날이 온다.
       */-->
       <tr th:each="row, i : ${report.progress.rows}" th:with="a=${row.action()}">
@@ -309,8 +309,14 @@
         <td class="num tight" th:text="${a.criticalCount > 0} ? ${a.criticalCount} : '—'">—</td>
         <td class="num tight" th:text="${a.highCount > 0} ? ${a.highCount} : '—'">—</td>
         <td class="num tight" th:text="${a.maxCvss != null} ? ${a.maxCvss} : '—'">—</td>
+        <!--/*
+          완료로 닫았는데 이 표에 있으면 해소 건수가 남은 것이다 — `완료` 만
+          찍으면 "끝났다는데 왜 조치 대상에 있나" 로 읽힌다. 5장과 같은 말.
+        */-->
         <td class="tight">
-          <span th:if="${row.isTracked()}" th:text="${row.remediation.status.label()}">대기</span>
+          <span th:if="${row.isDoneRemaining()}">완료 · 탐지 남음</span>
+          <span th:if="${row.isTracked() and !row.isDoneRemaining()}"
+                th:text="${row.remediation.status.label()}">대기</span>
           <span class="faint" th:unless="${row.isTracked()}">미등록</span>
         </td>
         <!--/*
@@ -450,9 +456,55 @@
   </section>
 
   <!--/* ══ 5. 조치 진행 현황 — 비어도 장은 남긴다(4장과 같은 이유) ═══ */-->
-  <section>
+  <section th:with="p=${report.progress}">
     <h2>5. 조치 진행 현황</h2>
-    <table class="table" th:if="${report.progress.tracked > 0}">
+    <!--/*
+      **세 갈래 — 대기 · 진행 / 완료 · 탐지 남음 / 미등록.** 구역 보고서
+      6장과 같은 갈래, 같은 말이다. 앞서 완료로 닫았는데 탐지가 남은 것을
+      이 장은 `등록` 으로, 구역 보고서는 `미등록` 으로 셌다 — 같은 자산
+      하나를 두고 두 보고서가 달랐다.
+
+      **개수만 적지 않는다.** 조치는 (자산, 패키지)로 등록되고 2장은 건으로
+      센다. `미등록 15개` 만 쓰면 그 15 가 48건 중 얼마인지 말해 주지 않아,
+      보고받는 사람이 두 수를 이을 수 없다 — 단위가 말없이 바뀌는 자리다.
+      패키지 수와 그것이 덮는 건수를 늘 함께 적는다. 세 갈래의 건수를
+      더하면 3장 합계다 — 합계 줄이 그것을 보인다. 패키지 수는 더하지
+      않는다: 대기 · 진행에는 이 검사에 해소 건수가 없는 조치도 든다.
+    */-->
+    <table class="table" th:unless="${p.isEmpty()}">
+      <thead>
+      <tr><th class="tight">구분</th><th class="num tight">패키지</th>
+          <th class="num tight">해소 건수</th></tr>
+      </thead>
+      <tbody>
+      <tr><td class="tight">대기 · 진행</td>
+          <td class="num tight" th:text="${p.openPackages()} + '개'">0개</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(p.openFindings(), 0, 'COMMA')} + '건'">0건</td></tr>
+      <tr><td class="tight">완료 · 탐지 남음</td>
+          <td class="num tight" th:text="${p.doneRemainingPackages()} + '개'">0개</td>
+          <td class="num tight" th:classappend="${p.doneRemainingFindings() > 0} ? 'danger-text' : ''"
+              th:text="${#numbers.formatInteger(p.doneRemainingFindings(), 0, 'COMMA')} + '건'">0건</td></tr>
+      <tr><td class="tight">미등록</td>
+          <td class="num tight" th:text="${p.untracked()} + '개'">0개</td>
+          <td class="num tight" th:classappend="${p.untrackedFindings() > 0} ? 'danger-text' : ''"
+              th:text="${#numbers.formatInteger(p.untrackedFindings(), 0, 'COMMA')} + '건'">0건</td></tr>
+      <tr class="total"><td class="tight">합계</td><td class="num tight"></td>
+          <td class="num tight"><b th:text="${#numbers.formatInteger(report.targets.resolvableFindings(), 0, 'COMMA')} + '건'">0건</b></td></tr>
+      </tbody>
+    </table>
+    <!--/*
+      **조치가 달린 것만 싣는다.** 앞서 조치 대상 전부를 실어서, 아무것도
+      등록하지 않은 보고서는 `미등록 / — / —` 열다섯 줄로 한 쪽을 채웠다.
+      미등록은 위 표의 수로 족하다 — 무엇이 미등록인지는 3장이 이미 같은
+      순서로 말하고 있다.
+
+      **`rows` 가 비었는가로 가르지 않는다.** 그 목록은 미등록까지 들고
+      있어서 거의 비지 않는다 — 조건을 거기 걸었더니 등록이 하나도 없을 때
+      머리만 있고 줄이 없는 빈 표가 남았다(띄워 보고 찾았다).
+      가르는 것은 **실을 조치가 있는가**다.
+    */-->
+    <table class="table" th:if="${p.tracked() > 0}">
       <thead>
       <tr>
         <th class="tight">패키지</th><th class="tight">조치 상태</th>
@@ -461,53 +513,30 @@
       </tr>
       </thead>
       <tbody>
-      <!--/*
-        **등록된 것만 싣는다.** 앞서 조치 대상 전부를 실어서, 아무것도
-        등록하지 않은 보고서는 `미등록 / — / —` 열다섯 줄로 한 쪽을 채웠다.
-        미등록은 수로 족하다(아래 각주) — 무엇이 미등록인지는 3장이 이미
-        같은 순서로 말하고 있다.
-      */-->
-      <tr th:each="row : ${report.progress.rows}" th:if="${row.isTracked()}">
-        <td class="tight"><b th:text="${row.action.packageName}">openssl</b></td>
+      <tr th:each="t : ${p.tracking}" th:with="r=${t.remediation}">
+        <td class="tight"><b th:text="${r.packageName}">openssl</b></td>
         <td class="tight">
-          <span th:if="${row.isTracked()}" th:text="${row.remediation.status.label()}">대기</span>
-          <span class="faint" th:unless="${row.isTracked()}">미등록</span>
+          <span th:if="${t.isDoneRemaining()}">완료 · 탐지 남음</span>
+          <span th:unless="${t.isDoneRemaining()}" th:text="${r.status.label()}">대기</span>
         </td>
-        <td class="tight" th:text="${row.isTracked() and !#strings.isEmpty(row.remediation.owner)}
-            ? ${row.remediation.owner} : '—'">—</td>
-        <td class="tight num" th:classappend="${row.isTracked() and row.remediation.overdue} ? 'overdue' : ''"
-            th:text="${row.isTracked() and row.remediation.dueDate != null}
-                     ? ${#temporals.format(row.remediation.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
-        <td class="num tight" th:text="${row.action.fixableCount}">0</td>
+        <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
+        <td class="tight num" th:classappend="${r.overdue} ? 'overdue' : ''"
+            th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
+        <td class="num tight" th:text="${t.fixableCount}">0</td>
       </tr>
       </tbody>
     </table>
-    <!--/*
-      **`rows` 가 비었는가로 가르지 않는다.** 그 목록은 미등록까지 들고
-      있어서 거의 비지 않는다 — 조건을 거기 걸었더니 등록이 하나도 없을 때
-      머리만 있고 줄이 없는 빈 표가 남았다(띄워 보고 찾았다).
-      가르는 것은 **등록된 것이 있는가**다.
-    */-->
-    <!--/*
-      **개수만 적지 않는다.** 조치는 (자산, 패키지)로 등록되고 2장은 건으로
-      센다. `미등록 15개` 만 쓰면 그 15 가 48건 중 얼마인지 말해 주지 않아,
-      보고받는 사람이 두 수를 이을 수 없다 — 단위가 말없이 바뀌는 자리다.
-      패키지 수와 그것이 덮는 건수를 늘 함께 적는다.
-    */-->
-    <p class="footnote" th:if="${report.progress.tracked == 0}">
-      ※ 해당 없음 — 등록된 조치 없음 · 미등록
-      <b th:text="${report.progress.untracked} + '개 패키지'">0개 패키지</b>
-      (<b th:text="${#numbers.formatInteger(report.progress.untrackedFindings(), 0, 'COMMA')} + '건'">0건</b>)
+    <p class="footnote" th:if="${p.isEmpty()}">
+      ※ 해당 없음 — 조치 대상도, 대기 · 진행인 조치도 없음.
+      <b th:if="${p.reviewOverdue() > 0}" class="danger-text"
+         th:text="'재검토일 지남 ' + ${p.reviewOverdue()} + '건'">—</b>
     </p>
-    <p class="footnote" th:if="${report.progress.tracked > 0}">
-      ※ 등록 <span th:text="${report.progress.tracked}">0</span>개 패키지
-      (<span th:text="${#numbers.formatInteger(report.progress.trackedFindings(), 0, 'COMMA')}">0</span>건) ·
-      미등록 <span th:text="${report.progress.untracked}">0</span>개 패키지
-      (<span th:text="${#numbers.formatInteger(report.progress.untrackedFindings(), 0, 'COMMA')}">0</span>건)
-      <b th:if="${report.progress.overdue > 0}" class="danger-text"
-         th:text="' · 기한 지남 ' + ${report.progress.overdue} + '개'">—</b>
-      <b th:if="${report.progress.reviewOverdue() > 0}" class="danger-text"
-         th:text="' · 재검토일 지남 ' + ${report.progress.reviewOverdue()} + '건'">—</b>
+    <p class="footnote" th:unless="${p.isEmpty()}">
+      ※ 완료 · 탐지 남음 = 조치 상태는 완료인데 이 검사에 해소 건수가 남은 것.
+      <b th:if="${p.overdue() > 0}" class="danger-text"
+         th:text="'기한 지남 ' + ${p.overdue()} + '개'">—</b>
+      <b th:if="${p.reviewOverdue() > 0}" class="danger-text"
+         th:text="(${p.overdue() > 0} ? ' · ' : '') + '재검토일 지남 ' + ${p.reviewOverdue()} + '건'">—</b>
     </p>
   </section>
 

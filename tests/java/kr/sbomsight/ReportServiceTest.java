@@ -203,17 +203,19 @@ class ReportServiceTest {
      * 올라가는 문서에서 가장 먼저 의심받는다.
      *
      * <p>여기서 못 박는 것은 <b>두 수가 실제로 맞물린다</b>는 것이다:
-     * 등록 건수 + 미등록 건수 = 2.2 의 `수정 버전 있음`. 어긋나면 어느
-     * 쪽이든 틀린 것이고, 보고서가 스스로와 모순된다.
+     * 대기 · 진행 + 완료 · 탐지 남음 + 미등록 건수 = 2.2 의 `수정 버전 있음`.
+     * 어긋나면 어느 쪽이든 틀린 것이고, 보고서가 스스로와 모순된다. 세
+     * 갈래가 된 까닭은 {@code RemediationProgressTest} 에 있다.
      */
     @Test
-    @DisplayName("5장의 등록·미등록 건수가 2.2 의 수정 버전 있음과 맞는다")
+    @DisplayName("5장의 세 갈래 건수가 2.2 의 수정 버전 있음과 맞는다")
     void chapter5FindingCountsReconcileWithChapter2() {
         Scan scan = seedTypicalScan();      // 6건 — openssl 3 · curl 1 (고칠 수 있음), glibc 2 (없음)
 
         // 아직 아무것도 등록하지 않았다.
         ReportService.Report before = reports.build(scan);
-        assertThat(before.progress().trackedFindings()).isZero();
+        assertThat(before.progress().openFindings()).isZero();
+        assertThat(before.progress().doneRemainingFindings()).isZero();
         assertThat(before.progress().untrackedFindings())
                 .as("등록이 없으면 고칠 수 있는 건 전부가 미등록이다")
                 .isEqualTo(before.summary().fixable());
@@ -225,13 +227,14 @@ class ReportServiceTest {
         assertThat(after.progress().tracked())
                 .as("패키지로는 하나")
                 .isEqualTo(1);
-        assertThat(after.progress().trackedFindings())
+        assertThat(after.progress().openFindings())
                 .as("건으로는 셋 — 이 차이가 보이지 않으면 두 수를 이을 수 없다")
                 .isEqualTo(3);
         assertThat(after.progress().untrackedFindings()).isEqualTo(1);   // curl
 
-        assertThat(after.progress().trackedFindings() + after.progress().untrackedFindings())
-                .as("등록 + 미등록 이 2.2 의 `수정 버전 있음` 과 어긋나면 보고서가 스스로와 모순된다")
+        assertThat(after.progress().openFindings() + after.progress().doneRemainingFindings()
+                   + after.progress().untrackedFindings())
+                .as("세 갈래의 합이 2.2 의 `수정 버전 있음` 과 어긋나면 보고서가 스스로와 모순된다")
                 .isEqualTo(after.summary().fixable());
     }
 

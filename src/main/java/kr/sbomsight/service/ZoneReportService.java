@@ -406,21 +406,29 @@ public class ZoneReportService {
         // **단위를 잇는다.** 조치는 (자산, 패키지)로 등록되고 탐지는 건이다.
         // "등록된 조치 3개" 만 적으면 읽는 사람은 그 3 이 138건 중 얼마인지
         // 알 수 없다 — 결재로 올라가는 문서에서 가장 먼저 의심받는 자리다.
-        Set<String> tracked = all.stream()
-                .filter(r -> !r.getStatus().isClosed())
-                .map(r -> r.getAsset().getId() + "|" + r.getPackageName())
-                .collect(java.util.stream.Collectors.toSet());
-        long trackedFindings = 0, untrackedFindings = 0;
+        //
+        // **세 갈래로 가른다** — 대기 · 진행 / 완료 · 탐지 남음 / 미등록.
+        // 앞서 완료로 닫힌 조치의 패키지에 탐지가 남아 있으면 `미등록` 으로
+        // 셌다. 자산 보고서는 같은 것을 `등록` 으로 셌다 — 같은 자산 하나를
+        // 두고 두 보고서가 달랐다(RemediationProgressTest).
+        Map<String, Remediation> byKey = all.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        r -> r.getAsset().getId() + "|" + r.getPackageName(), r -> r, (a, b) -> a));
+        long openFindings = 0, doneRemaining = 0, doneRemainingFindings = 0, untrackedFindings = 0;
         // 4장의 `해소 건수` 와 같은 축이다 — 해당 없음 · 오탐은 넣지 않는다.
         for (FindingRepository.AssetPackageCount row
                 : findings.countPerAssetPackage(scanIds, false)) {
             if (row.getFixable() == 0) {
                 continue;   // 올려서 해소되는 것이 없는 패키지는 조치 대상이 아니다
             }
-            if (tracked.contains(row.getAssetId() + "|" + row.getPackageName())) {
-                trackedFindings += row.getFixable();
-            } else {
+            Remediation r = byKey.get(row.getAssetId() + "|" + row.getPackageName());
+            if (r == null) {
                 untrackedFindings += row.getFixable();
+            } else if (r.getStatus().isClosed()) {
+                doneRemaining++;
+                doneRemainingFindings += row.getFixable();
+            } else {
+                openFindings += row.getFixable();
             }
         }
 
@@ -428,7 +436,8 @@ public class ZoneReportService {
         Map<String, Reviewed> reviewed = reviewByPackage(inScope, scanIds, answeredAssets);
         return new Action(all.size(), open, overdue, openedInPeriod, closedInPeriod,
                           overdueRows, explained, judgement.blocked(),
-                          trackedFindings, untrackedFindings, reviewed, answeredAssets);
+                          openFindings, doneRemaining, doneRemainingFindings, untrackedFindings,
+                          reviewed, answeredAssets);
     }
 
     /**
@@ -702,20 +711,26 @@ public class ZoneReportService {
         }
     }
 
-    /** 6장 — 조치 진행 현황. */
     /**
      * 6장 — 조치 진행 현황.
      *
-     * <p><b>단위가 둘이다.</b> {@code total}·{@code open} 은 <b>조치</b> 수
-     * ((자산, 패키지)로 등록된다)이고, {@code trackedFindings} ·
-     * {@code untrackedFindings} 는 그것이 덮는 <b>건</b> 수다. 둘을 함께
-     * 적지 않으면 "등록된 조치 3개" 가 138건 중 얼마인지 말해 주지 않는다.
+     * <p><b>단위가 둘이다.</b> {@code total} · {@code open} ·
+     * {@code doneRemaining} 은 <b>조치</b> 수((자산, 패키지)로 등록된다)이고,
+     * {@code …Findings} 는 그것이 덮는 <b>건</b> 수다. 둘을 함께 적지 않으면
+     * "등록된 조치 3개" 가 138건 중 얼마인지 말해 주지 않는다.
+     *
+     * <p>대기 · 진행 / 완료 · 탐지 남음 / 미등록 — 자산 보고서 5장과 같은
+     * 세 갈래다. 세 갈래의 건수를 더하면 4장 합계다.
+     *
+     * @param open          대기 · 진행인 조치 전부 — 기간 중 마지막 검사에 해소 건수가 없는 것도 든다
+     * @param doneRemaining 조치 상태는 완료인데 기간 중 마지막 검사에 해소 건수가 남은 조치
      */
     public record Action(long total, long open, long overdue,
                          long openedInPeriod, long closedInPeriod,
                          List<Remediation> overdueRows, List<FindingAnalysis> explained,
                          List<ZonePackageAction> residual,
-                         long trackedFindings, long untrackedFindings,
+                         long openFindings, long doneRemaining, long doneRemainingFindings,
+                         long untrackedFindings,
                          Map<String, Reviewed> reviewed, Map<String, Set<Long>> answeredAssets) {
 
         /**

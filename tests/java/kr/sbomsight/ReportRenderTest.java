@@ -226,10 +226,14 @@ class ReportRenderTest {
      * <p>등록된 조치만 싣기로 하면서 조건을 {@code rows.isEmpty()} 에
      * 걸었는데, 그 목록은 <b>미등록까지 들고 있어서 거의 비지 않는다.</b>
      * 그래서 등록이 하나도 없을 때 열 머리만 있고 줄이 없는 표가 남았다 —
-     * 띄워서 보고 찾았다. 가르는 것은 <b>등록된 것이 있는가</b>다.
+     * 띄워서 보고 찾았다. 가르는 것은 <b>실을 조치가 있는가</b>다.
+     *
+     * <p>미등록이 몇 개 · 몇 건인지는 세 갈래 표(대기 · 진행 / 완료 · 탐지
+     * 남음 / 미등록)가 말한다. 앞서는 `※ 해당 없음 — 등록된 조치 없음 ·
+     * 미등록 2개 패키지` 각주 한 줄이었다.
      */
     @Test
-    @DisplayName("등록된 조치가 없으면 표 대신 한 줄")
+    @DisplayName("등록된 조치가 없으면 조치 표를 그리지 않는다")
     void progressShowsNoEmptyTable() throws Exception {
         // 조치 대상은 있고(고칠 수 있는 패키지) 등록된 조치는 없는 상태.
         Scan scan = seedPackages("openssl", "fixed", "curl", "fixed");
@@ -237,18 +241,16 @@ class ReportRenderTest {
         String html = report(scan);
 
         assertThat(html).contains("<h2>5. 조치 진행 현황</h2>");
-        assertThat(html)
-                .as("등록이 없으면 표를 그리지 않는다 — 머리만 남는다")
-                .contains("※ 해당 없음 — 등록된 조치 없음");
-        assertThat(html)
-                .as("몇 개가 미등록인지는 남긴다")
-                .contains("미등록");
-        // 5장 안에 `<th>담당</th>` 이 있으면 표가 그려진 것이다.
         String chapter5 = html.substring(html.indexOf("<h2>5. 조치 진행 현황</h2>"),
                                          html.indexOf("<h2>6."));
+        // 5장 안에 `<th>담당</th>` 이 있으면 조치 표가 그려진 것이다.
         assertThat(chapter5)
                 .as("빈 표가 남아 있다")
                 .doesNotContain("<th class=\"tight\">담당</th>");
+        assertThat(chapter5.replaceAll("\\s+", " "))
+                .as("몇 개 · 몇 건이 미등록인지는 남긴다")
+                .contains("<td class=\"tight\">미등록</td> <td class=\"num tight\">2개</td>")
+                .contains("2건");
     }
 
     /**

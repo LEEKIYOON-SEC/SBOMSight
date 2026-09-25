@@ -500,19 +500,29 @@
       **열 이름이 `건수` 였다.** 이 표가 세는 것은 건이 아니라 조치다 —
       조치 하나는 (자산, 패키지)이고 여러 건을 덮는다. 2장이 건으로 세는데
       여기가 말없이 조치로 바뀌면 두 수를 이을 수 없다. 열 이름을 바로잡고,
-      그것이 덮는 건수를 옆 열에 함께 적는다.
+      그것이 덮는 건수를 옆 열에 함께 적는다. 그 열은 4장과 같은
+      `해소 건수` 다 — 앞서 `덮는 건수` 라는 다른 이름이었다.
+
+      **세 갈래 — 대기 · 진행 / 완료 · 탐지 남음 / 미등록.** 자산 보고서
+      5장과 같은 갈래, 같은 말이다. 앞서 완료로 닫았는데 탐지가 남은 것을
+      이 장은 `미등록` 으로, 자산 보고서는 `등록` 으로 셌다. 세 갈래의
+      해소 건수를 더하면 4장 합계다.
     */-->
     <table class="table">
       <thead><tr><th class="tight">구분</th><th class="num tight">조치</th>
-                 <th class="num tight">덮는 건수</th></tr></thead>
+                 <th class="num tight">해소 건수</th></tr></thead>
       <tbody>
       <tr><td class="tight">등록된 조치</td>
           <td class="num tight" th:text="${report.action.total} + '개'">0개</td>
           <td class="num tight faint">—</td></tr>
-      <tr><td class="tight">아직 열려 있음</td>
+      <tr><td class="tight">대기 · 진행</td>
           <td class="num tight" th:text="${report.action.open} + '개'">0개</td>
           <td class="num tight"
-              th:text="${#numbers.formatInteger(report.action.trackedFindings, 0, 'COMMA')} + '건'">0건</td></tr>
+              th:text="${#numbers.formatInteger(report.action.openFindings, 0, 'COMMA')} + '건'">0건</td></tr>
+      <tr><td class="tight">완료 · 탐지 남음</td>
+          <td class="num tight" th:text="${report.action.doneRemaining} + '개'">0개</td>
+          <td class="num tight" th:classappend="${report.action.doneRemainingFindings > 0} ? 'danger-text' : ''"
+              th:text="${#numbers.formatInteger(report.action.doneRemainingFindings, 0, 'COMMA')} + '건'">0건</td></tr>
       <!--/* 아무도 맡지 않은 것. 이 줄이 없으면 "등록 3개" 가 전부처럼 읽힌다. */-->
       <tr><td class="tight">미등록</td>
           <td class="num tight faint">—</td>
@@ -531,7 +541,8 @@
       </tbody>
     </table>
     <p class="footnote">
-      ※ 조치 하나 = (자산, 패키지). 2장은 건으로 셈 — 덮는 건수로 잇는다.
+      ※ 조치 하나 = (자산, 패키지). 완료 · 탐지 남음 = 조치 상태는 완료인데
+      기간 중 마지막 검사에 해소 건수가 남은 것.
     </p>
 
     <h3 th:if="${!report.action.overdueRows.isEmpty()}">기한이 지난 조치</h3>
