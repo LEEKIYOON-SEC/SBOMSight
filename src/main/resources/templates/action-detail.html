@@ -129,7 +129,7 @@
       <tbody>
       <tr th:each="e : ${remediation.events}">
         <td class="tight" th:text="${#temporals.format(e.at, 'yyyy-MM-dd HH:mm')}">—</td>
-        <td class="tight" th:text="${e.fromStatus.label()} + ' → ' + ${e.toStatus.label()}">—</td>
+        <td class="tight" th:text="${e.fromLabel} + ' → ' + ${e.toLabel}">—</td>
         <td class="tight" th:text="${e.actor}">admin</td>
         <td class="faint" th:text="${#strings.isEmpty(e.comment)} ? '—' : ${e.comment}">—</td>
       </tr>

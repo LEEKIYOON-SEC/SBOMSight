@@ -19,6 +19,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -50,6 +51,8 @@ class RemediationAuditTest {
     @Autowired RemediationRepository remediations;
     @Autowired AuditLogRepository logs;
     @Autowired ZoneService zoneService;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired jakarta.persistence.EntityManager entityManager;
 
     private Asset asset;
     private Scan scan;
@@ -197,6 +200,41 @@ class RemediationAuditTest {
            .andExpect(status().is3xxRedirection());
 
         assertThat(rows(AuditEvent.REMEDIATION_UPDATED)).isEmpty();
+    }
+
+    /**
+     * <b>V14 가 남긴 이력이 있어도 조치 상세가 열린다.</b>
+     *
+     * <p>V14 는 없앤 상태(`하지 않고 닫음`, {@code ACCEPTED})로 닫혀 있던 조치를
+     * 대기로 되돌리며 {@code from_status = 'ACCEPTED'} 인 이력을 남긴다 — 누가
+     * 언제 닫았는지 지우지 않으려고 일부러 남긴 줄이다. 그런데 이력을 지금의
+     * 상태 목록으로 읽고 있어서 그 줄을 읽는 순간 상세 화면이 500 이 됐다.
+     * 되돌려진 조치 전부가 그랬다. 시험은 H2 에 JPA 가 만든 스키마로 돌아
+     * 마이그레이션을 한 번도 지나가지 않으므로, 그 줄을 여기서 직접 넣는다.
+     */
+    @Test
+    @DisplayName("V14 가 남긴 `하지 않고 닫음 → 대기` 이력이 있어도 조치 상세가 열린다")
+    void aHistoryRowFromV14StillRenders() throws Exception {
+        open("/assets/" + asset.getId() + "/remediations");
+        Remediation opened = remediations.findByAssetIdAndPackageName(asset.getId(), pkg)
+                                         .orElseThrow();
+        remediations.flush();
+
+        // V14__drop_remediation_accepted.sql 의 1) 과 같은 모양이다.
+        jdbc.update("INSERT INTO remediation_events "
+                    + "(remediation_id, at, actor, from_status, to_status, comment) "
+                    + "VALUES (?, CURRENT_TIMESTAMP, 'system', 'ACCEPTED', 'OPEN', 'V14')",
+                    opened.getId());
+        // 앞서 읽어 둔 이력이 캐시에 남아 있으면 새 줄을 읽지 않고 통과한다.
+        entityManager.clear();
+
+        String html = mvc.perform(get("/actions/" + opened.getId())
+                                          .with(user("tester").roles("ADMIN")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+        assertThat(html)
+                .as("없앤 상태로 적힌 이력 줄이 그 이름으로 보여야 한다")
+                .contains("하지 않고 닫음 → 대기");
     }
 
     // -----------------------------------------------------------------------
