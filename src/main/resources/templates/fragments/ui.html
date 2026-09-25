@@ -68,10 +68,12 @@
   ─── 빈 화면 ──────────────────────────────────────────────────────────
   제목 · 한 줄 · 단추 하나. 설명을 두 줄 넘기지 않는다.
 
-    <div th:replace="~{fragments/ui :: empty('등록된 자산이 없습니다',
-         '자산을 등록하고 그 자산에서 뽑은 SBOM 을 올립니다.', '/assets', '자산 등록')}"></div>
+    <div th:replace="~{fragments/ui :: empty('뽑을 보고서가 없습니다',
+         '자산을 등록하고 그 자산에서 추출한 SBOM 을 업로드', '/', '자산 보기')}"></div>
 
   단추가 없으면 href 에 null 을 준다 — 그러면 단추 자리가 아예 안 그려진다.
+  **href 는 GET 으로 열리는 주소여야 한다.** 자산 목록은 `/` 다 — `/assets` 는
+  등록(POST)만 받아 405 를 낸다(PageRenderTest 가 템플릿의 링크를 전부 연다).
 */-->
 <div th:fragment="empty(title, message, href, label)" class="empty">
   <p class="empty-title" th:text="${title}">아무것도 없습니다</p>

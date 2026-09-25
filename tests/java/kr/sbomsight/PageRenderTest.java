@@ -555,6 +555,53 @@ class PageRenderTest {
         assertThat(me).contains("계정 정보").contains("마지막 로그인").contains("그 전 로그인");
     }
 
+    /**
+     * 템플릿에 <b>글자 그대로 적힌 내부 링크</b>가 전부 열리는가.
+     *
+     * <p>빈 화면 조각은 단추 주소를 인자로 받는다({@code empty(…, '/assets', …)}).
+     * 그 화면이 빈 상태로 그려질 때만 보이는 단추라, 자료가 있는 시험에서는
+     * 한 번도 눌리지 않는다. 보고서 화면의 빈 화면 단추가 {@code GET /assets}
+     * 로 가서 405(영문 오류 화면)를 냈다 — 자산 목록은 {@code /} 다.
+     *
+     * <p>자리값이 들어간 주소({@code ${…}})는 여기서 보지 않는다. 그것은
+     * 화면마다의 시험이 실제 값으로 연다.
+     */
+    @Test
+    @DisplayName("템플릿에 적힌 내부 링크가 전부 열린다")
+    void everyLiteralLinkInTheTemplatesOpens() throws Exception {
+        java.util.regex.Pattern[] patterns = {
+                // th:href="@{/reports/zone(from=…)}" → /reports/zone
+                java.util.regex.Pattern.compile("th:href=\"@\\{(/[^(}'\"$]*)"),
+                // href="/password"
+                java.util.regex.Pattern.compile("[^:]href=\"(/[^\"#?$]*)\""),
+                // empty('제목', '설명', '/', '단추') — 인자 전체가 글자일 때만.
+                // '/assets/' + ${asset.id} 처럼 이어 붙인 것은 자리값이 있다.
+                java.util.regex.Pattern.compile("::\\s*empty\\([^)]*?'(/[^']*)'\\s*,")
+        };
+        java.util.Set<String> paths = new java.util.TreeSet<>();
+        try (var files = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/resources/templates"))) {
+            for (java.nio.file.Path file : files.filter(p -> p.toString().endsWith(".html")).toList()) {
+                // 개발자 주석(<!--/* … */-->) 안의 예시는 링크가 아니다.
+                String html = java.nio.file.Files.readString(file)
+                        .replaceAll("(?s)<!--.*?-->", "");
+                for (java.util.regex.Pattern pattern : patterns) {
+                    java.util.regex.Matcher m = pattern.matcher(html);
+                    while (m.find()) {
+                        paths.add(m.group(1));
+                    }
+                }
+            }
+        }
+        assertThat(paths).as("템플릿에서 링크를 하나도 못 찾았다 — 정규식이 틀렸다")
+                         .contains("/password", "/reports/zone");
+
+        for (String path : paths) {
+            int code = mvc.perform(get(path).with(user("tester").roles("ADMIN")))
+                          .andReturn().getResponse().getStatus();
+            assertThat(code).as("템플릿의 링크 %s 가 %d 를 낸다", path, code).isLessThan(400);
+        }
+    }
+
     // --- 내려받기 -------------------------------------------------------------
 
     @Test

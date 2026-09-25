@@ -55,7 +55,7 @@
   <th:block th:if="${rows.totalElements == 0}">
     <div th:replace="~{fragments/ui :: empty('뽑을 보고서가 없습니다',
                       '자산을 등록하고 그 자산에서 추출한 SBOM 을 업로드',
-                      '/assets', '자산 보기')}"></div>
+                      '/', '자산 보기')}"></div>
   </th:block>
 
   <div class="card" th:if="${rows.totalElements > 0}">
