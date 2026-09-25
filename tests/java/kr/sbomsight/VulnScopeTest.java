@@ -237,6 +237,51 @@ class VulnScopeTest {
                 .extracting(Finding::getPackageName).containsExactly("log4j-api");
     }
 
+    /**
+     * <b>`수정 버전 없음` 은 어느 화면에서나 같은 건을 센다.</b>
+     *
+     * <p>grype 의 수정 상태는 넷이다 — {@code fixed} · {@code not-fixed} ·
+     * {@code wont-fix} · {@code unknown}. 자산 목록의 요약 줄과 보고서와 표의
+     * 딱지는 {@code not-fixed + wont-fix} 를 `수정 버전 없음`, {@code unknown} 을
+     * `확인 필요` 로 가르는데, 거르개의 `없음` 만 {@code fixed 가 아닌 것 전부}
+     * 를 셌다. 요약 줄의 `585 수정 버전 없음` 을 누르면 586건이 떴다.
+     */
+    @Test
+    @DisplayName("`수정 버전 없음` 은 요약 줄·거르개·표가 같은 건을 센다 — 확인 필요는 넣지 않는다")
+    void noFixMeansTheSameEverywhere() throws Exception {
+        Asset web = asset("nofix", dmz);
+        Scan s = scan(web, Instant.now());
+        finding(s, "CVE-NF-1", "nf-a", "High", "not-fixed");
+        finding(s, "CVE-NF-2", "nf-b", "High", "wont-fix");
+        finding(s, "CVE-NF-3", "nf-c", "High", "unknown");
+        finding(s, "CVE-NF-4", "nf-d", "High", "fixed");
+        findings.flush();
+
+        VulnQuery.Scope scope = query.ofScan(s.getId());
+        assertThat(findings.findInBySeverity(scope.scanIds(), "nf-", null, false, null,
+                                             false, PageRequest.of(0, 100)))
+                .as("`없음` 에 확인 필요(unknown)가 섞였다")
+                .extracting(Finding::getPackageName).containsExactlyInAnyOrder("nf-a", "nf-b");
+
+        // 요약 줄의 숫자와, 그 숫자를 눌렀을 때 뜨는 목록의 건수.
+        String home = mvc.perform(get("/").with(user("tester").roles("ADMIN")))
+                         .andReturn().getResponse().getContentAsString();
+        java.util.regex.Matcher summary = java.util.regex.Pattern
+                .compile("<b>([\\d,]+)</b> 수정 버전 없음").matcher(home);
+        assertThat(summary.find()).as("요약 줄에 `수정 버전 없음` 이 없다").isTrue();
+
+        String list = mvc.perform(get("/vulns?fixable=false").with(user("tester").roles("ADMIN")))
+                         .andReturn().getResponse().getContentAsString();
+        java.util.regex.Matcher count = java.util.regex.Pattern
+                .compile("<b class=\"num\">([\\d,]+)</b>\\s*<span class=\"text-secondary\">건</span>")
+                .matcher(list);
+        assertThat(count.find()).as("목록의 건수 줄을 못 찾았다").isTrue();
+
+        assertThat(count.group(1))
+                .as("요약 줄의 `수정 버전 없음` 과 그것을 누른 목록의 건수가 다르다")
+                .isEqualTo(summary.group(1));
+    }
+
     // --- 정렬 -----------------------------------------------------------------
 
     /**

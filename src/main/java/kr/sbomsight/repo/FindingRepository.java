@@ -31,7 +31,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
-                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+                  OR (:fixable = FALSE AND f.fixState IN ('not-fixed', 'wont-fix')))
              AND (:kev IS NULL OR f.kev = :kev)
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve) LIKE LOWER(CONCAT('%', :q, '%'))
@@ -128,6 +128,12 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      * <p>자산·구역을 {@code JOIN FETCH} 로 함께 끌어온다. {@code open-in-view}
      * 가 꺼져 있어 화면에서 {@code f.scan.asset.zone.name} 을 읽는 순간 세션이
      * 없으면 터진다.
+     *
+     * <p><b>{@code fixable = false} 는 {@code not-fixed · wont-fix} 둘이다.</b>
+     * {@code unknown} 은 넣지 않는다 — 요약 줄·보고서·표의 딱지가 그것을
+     * `확인 필요` 로 따로 부르는데, 거르개만 {@code fixed 가 아닌 것 전부} 를
+     * 세서 `585 수정 버전 없음` 을 누르면 586건이 떴다. 이 파일의 거르개는
+     * 전부 같은 식이다.
      */
     @Query(value = """
            SELECT f FROM Finding f
@@ -136,7 +142,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
-                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+                  OR (:fixable = FALSE AND f.fixState IN ('not-fixed', 'wont-fix')))
              AND (:kev IS NULL OR f.kev = :kev)
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
@@ -148,7 +154,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
-                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+                  OR (:fixable = FALSE AND f.fixState IN ('not-fixed', 'wont-fix')))
              AND (:kev IS NULL OR f.kev = :kev)
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
@@ -188,7 +194,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
-                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+                  OR (:fixable = FALSE AND f.fixState IN ('not-fixed', 'wont-fix')))
              AND (:kev IS NULL OR f.kev = :kev)
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
@@ -210,7 +216,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
-                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+                  OR (:fixable = FALSE AND f.fixState IN ('not-fixed', 'wont-fix')))
              AND (:kev IS NULL OR f.kev = :kev)
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
@@ -257,7 +263,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
-                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+                  OR (:fixable = FALSE AND f.fixState IN ('not-fixed', 'wont-fix')))
              AND (:kev IS NULL OR f.kev = :kev)
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
@@ -486,7 +492,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
-                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+                  OR (:fixable = FALSE AND f.fixState IN ('not-fixed', 'wont-fix')))
              AND (:kev IS NULL OR f.kev = :kev)
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
@@ -516,7 +522,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
              AND (:fixable IS NULL
                   OR (:fixable = TRUE  AND f.fixState = 'fixed')
-                  OR (:fixable = FALSE AND f.fixState <> 'fixed'))
+                  OR (:fixable = FALSE AND f.fixState IN ('not-fixed', 'wont-fix')))
              AND (:kev IS NULL OR f.kev = :kev)
              AND (:q IS NULL OR LOWER(f.packageName) LIKE LOWER(CONCAT('%', :q, '%'))
                              OR LOWER(f.cve)        LIKE LOWER(CONCAT('%', :q, '%'))
