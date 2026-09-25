@@ -176,6 +176,47 @@ class LoginFlowTest {
     }
 
     /**
+     * <b>비밀번호를 바꿔야 하는 계정도 변경 화면의 CSS·글꼴은 받아야 한다.</b>
+     *
+     * <p>변경 화면에 붙잡는 인터셉터가 정적 파일 중 {@code /css/} 만 열어 두고
+     * {@code /vendor/}(Tabler)·{@code /fonts/} 는 막고 있었다. 막힌 요청은
+     * 변경 화면으로 튕겨 HTML 이 CSS 자리에 들어갔고, 설치 뒤 처음 보는 화면이
+     * <b>스타일 없이</b> 떴다. {@code .with(user(...))} 시험은 로그인 흐름을
+     * 지나가지 않아 이것을 보지 못했다.
+     */
+    @Test
+    @DisplayName("비밀번호를 바꿔야 하는 계정도 변경 화면이 부르는 CSS·글꼴을 받는다")
+    void theForcedPasswordPageGetsItsStyles() throws Exception {
+        AppUser user = users.findByUsername(username).orElseThrow();
+        user.setMustChange(true);
+        users.saveAndFlush(user);
+
+        MockHttpSession session = new MockHttpSession();
+        mvc.perform(login(session));
+
+        String html = mvc.perform(get("/password").session(session))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+
+        // 화면이 실제로 부르는 것을 그대로 따라간다. 목록을 여기 따로 적으면
+        // 화면에 새 파일이 붙을 때 이 시험만 모른다.
+        java.util.regex.Matcher links = java.util.regex.Pattern
+                .compile("<link[^>]+href=\"(/[^\"]+)\"").matcher(html);
+        java.util.List<String> hrefs = new java.util.ArrayList<>();
+        while (links.find()) {
+            hrefs.add(links.group(1));
+        }
+        assertThat(hrefs).as("변경 화면이 부르는 CSS 를 못 찾았다")
+                         .contains("/vendor/tabler/tabler.min.css");
+        hrefs.add(FONT);
+
+        for (String href : hrefs) {
+            mvc.perform(get(href).session(session))
+               .andExpect(status().isOk());
+        }
+    }
+
+    /**
      * <b>이 시험이 이번 버그를 잡는다.</b> 글꼴을 먼저 요청해 '돌아갈 자리'
      * 를 오염시켜 놓고 로그인한다. 글꼴로 보내면 실패다.
      */
