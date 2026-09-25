@@ -21,8 +21,6 @@ import java.security.Principal;
 @Controller
 public class AuthController {
 
-    /** 8자 미만은 받지 않는다. 그 이상은 사용자가 정한다. */
-
     private final AppUserRepository users;
     private final PasswordEncoder encoder;
     private final AuditService audit;

@@ -508,8 +508,6 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
 
     List<Finding> findByScanIdAndPackageNameOrderByCvssScoreDesc(Long scanId, String packageName);
 
-    void deleteByScanId(Long scanId);
-
     // --- 구역·기간 보고서: 여러 스캔을 한 번에 --------------------------------
     //
     // 자산마다 질의를 돌리면 서른 대에 백스무 번 왕복한다. 보고서 한 장에

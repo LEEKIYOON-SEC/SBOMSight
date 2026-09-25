@@ -233,7 +233,8 @@ public class ScanService {
             mapper.applyMetadata(scan, report, grype.dbBuilt());
             GrypeMapper.Result result = mapper.map(scan, report);
 
-            findings.deleteByScanId(scan.getId());   // 다시 돌린 경우
+            // 같은 검사를 두 번 돌리는 길은 없다 — `다시 검사` 는 새 검사를
+            // 만든다(rescan). 앞서 여기서 이 검사의 탐지를 먼저 지웠는데 늘 0건이었다.
             findings.saveAll(result.findings());
 
             scan.setMatchCount(result.matches());
