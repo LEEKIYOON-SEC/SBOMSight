@@ -116,10 +116,17 @@
       <div class="card-body">
         <form method="post" th:action="@{'/assets/' + ${asset.id} + '/sbom'}"
               enctype="multipart/form-data" class="d-flex align-items-end gap-2 flex-wrap">
+          <!--/*
+            **JSON 셋만 받는다.** 패키지 목록을 JSON 에서만 읽기 때문이다. 앞서
+            `.xml`·`.spdx` 까지 받았는데, CycloneDX XML 을 올리면 grype 검사는
+            되고 패키지 탭이 비었다(그 자산의 이전 목록까지 지워졌다). 가르는
+            것은 확장자가 아니라 내용이다(ScanService.submit) — accept 는 고르는
+            창의 힌트일 뿐이다.
+          */-->
           <div>
-            <label class="form-label" for="sbom-file">syft 로 만든 SBOM 파일</label>
+            <label class="form-label" for="sbom-file">syft 로 만든 SBOM 파일 (JSON)</label>
             <input type="file" class="form-control" id="sbom-file" name="file"
-                   accept=".json,.xml,.spdx,.cdx" required>
+                   accept=".json" required>
           </div>
           <button class="btn btn-dark" type="submit">검사 시작</button>
         </form>
@@ -138,6 +145,8 @@
               <div><code>syft dir:/ -o cyclonedx-json &gt; sbom.json</code></div></div>
             <div class="mt-2"><b>Windows</b>
               <div><code>syft dir:C:\ -o cyclonedx-json=sbom.json</code></div></div>
+            <div class="mt-2" th:text="'받는 형식 — ' + ${T(kr.sbomsight.service.SbomStorage).ACCEPTED_FORMATS}">
+              받는 형식 — CycloneDX JSON · SPDX JSON · syft JSON</div>
           </div>
         </details>
       </div>

@@ -132,6 +132,55 @@ public class SbomStorage {
         return inspect(plainJson, null);
     }
 
+    /** 받는 형식의 화면 이름. 거절할 때 이것을 그대로 말한다. */
+    public static final String ACCEPTED_FORMATS = "CycloneDX JSON · SPDX JSON · syft JSON";
+
+    /**
+     * 맨 윗단의 이름 하나로 형식을 가른다 — 모르면 빈 문자열.
+     *
+     * <p>{@link #inspect} 와 {@link #detectFormat} 이 같은 표를 쓴다. 따로 두면
+     * 올릴 때는 받았는데 읽을 때는 모르는 형식이 생긴다.
+     */
+    private static String formatOf(String topLevelField) {
+        return switch (topLevelField) {
+            case "bomFormat", "components" -> "cyclonedx-json";
+            case "spdxVersion", "packages" -> "spdx-json";
+            case "artifacts" -> "syft-json";
+            default -> "";
+        };
+    }
+
+    /**
+     * 올린 파일이 <b>읽을 수 있는 SBOM 인가</b> — 형식 이름, 아니면 빈 문자열.
+     *
+     * <p>앞에서부터 흘려 읽다가 형식을 가르는 이름이 나오면 멈춘다. 세 형식
+     * 모두 그 이름이 맨 앞에 온다(syft 가 그렇게 쓴다). 사이에 큰 객체가 있어도
+     * 건너뛸 뿐 메모리에 올리지 않는다.
+     *
+     * <p><b>왜 올리는 자리에서 가르는가.</b> 패키지 목록은 JSON 셋에서만 읽는다.
+     * XML 이나 tag-value 를 받으면 grype 은 검사하지만 패키지 탭이 비고, 받은
+     * 뒤에 알면 검사 이력에 반쪽짜리 검사가 남는다.
+     */
+    public String detectFormat(InputStream in) {
+        try (JsonParser parser = jsonFactory.createParser(new BufferedInputStream(in, BUFFER))) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) {
+                return "";
+            }
+            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+                String format = formatOf(parser.currentName());
+                if (!format.isEmpty()) {
+                    return format;
+                }
+                parser.nextToken();
+                parser.skipChildren();
+            }
+        } catch (IOException e) {
+            // JSON 이 아니다 — XML · tag-value · 깨진 파일.
+            return "";
+        }
+        return "";
+    }
+
     /**
      * SBOM 의 형식과 컴포넌트 수 — <b>세는 김에 담는다.</b>
      *
@@ -162,12 +211,9 @@ public class SbomStorage {
                 if (token == JsonToken.FIELD_NAME && depth == 1) {
                     String field = parser.currentName();
                     // 형식마다 컴포넌트가 담긴 이름이 다르다.
-                    format = switch (field) {
-                        case "bomFormat", "components" -> format.isBlank() ? "cyclonedx-json" : format;
-                        case "spdxVersion", "packages" -> format.isBlank() ? "spdx-json" : format;
-                        case "artifacts" -> format.isBlank() ? "syft-json" : format;
-                        default -> format;
-                    };
+                    if (format.isBlank()) {
+                        format = formatOf(field);
+                    }
                     if (field.equals("components") || field.equals("packages")
                             || field.equals("artifacts")) {
                         countingField = field;

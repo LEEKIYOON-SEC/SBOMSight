@@ -60,13 +60,29 @@ public class ScanService {
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
+    /** 읽을 수 없는 SBOM — 올리는 자리에서 돌려보낸다. 메시지는 화면에 그대로 나간다. */
+    public static class UnsupportedSbomException extends IllegalArgumentException {
+        public UnsupportedSbomException() {
+            super("JSON 형식의 SBOM 이 아닙니다. " + SbomStorage.ACCEPTED_FORMATS + " 만 받습니다.");
+        }
+    }
+
     /**
      * 업로드를 받아 스캔을 만들고 큐에 넣는다. 파일 저장까지만 하고 곧장 돌아온다.
      *
+     * <p><b>형식부터 본다.</b> 패키지 목록을 읽지 못하는 SBOM 은 스캔을 만들기
+     * 전에 돌려보낸다({@link SbomStorage#detectFormat}).
+     *
      * @return 만들어진 스캔. 상태는 QUEUED 다.
+     * @throws UnsupportedSbomException 받는 형식(JSON 셋)이 아닐 때
      */
     @Transactional
     public Scan submit(Asset asset, MultipartFile file, String actor) throws IOException {
+        try (InputStream head = file.getInputStream()) {
+            if (storage.detectFormat(head).isEmpty()) {
+                throw new UnsupportedSbomException();
+            }
+        }
         Scan scan = new Scan(asset, actor);
         scan.setSbomFilename(originalName(file));
         scan.setSbomBytes(file.getSize());

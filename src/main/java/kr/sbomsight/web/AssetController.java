@@ -681,6 +681,9 @@ public class AssetController {
             scanService.runAsync(scan.getId());
             flash.addFlashAttribute("message",
                     "SBOM 업로드 완료. grype 검사가 진행 중이며, 끝나면 검사 이력에 나타납니다.");
+        } catch (ScanService.UnsupportedSbomException e) {
+            // 고장이 아니라 고른 파일이 다른 것이다. 오류 로그에 스택을 남기지 않는다.
+            flash.addFlashAttribute("error", "업로드하지 못했습니다: " + e.getMessage());
         } catch (Exception e) {
             log.error("업로드 실패 asset={}", id, e);
             flash.addFlashAttribute("error", "업로드하지 못했습니다: " + e.getMessage());

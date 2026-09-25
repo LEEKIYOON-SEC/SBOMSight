@@ -135,7 +135,8 @@ syft dir:/ -o cyclonedx-json > web-01.sbom.json      # 서버 전체
 syft <이미지> -o cyclonedx-json > app.sbom.json       # 컨테이너
 ```
 
-CycloneDX · SPDX · syft 자체 형식 모두 받는다. grype 이 읽을 수 있으면 된다.
+**JSON 셋만 받는다** — CycloneDX JSON · SPDX JSON · syft JSON. 패키지 목록을
+JSON 에서만 읽으므로 XML·tag-value 는 올리는 자리에서 돌려보낸다.
 
 ### 웹에서
 
