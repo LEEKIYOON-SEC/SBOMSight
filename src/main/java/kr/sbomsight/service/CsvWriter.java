@@ -114,15 +114,33 @@ public final class CsvWriter {
     }
 
     /**
-     * 전사 조회 결과.
+     * 취약점 목록 — <b>나눠 받아 흘려 쓴다.</b>
      *
      * <p>자산과 구역이 앞에 온다. 이 파일로 답해야 하는 질문이 "어느 서버냐"
      * 이기 때문이다.
+     *
+     * <p>앞서는 목록 하나를 받아 썼고, 부르는 쪽이 그 목록을 10만 건에서 잘라
+     * 받았다 — 넘는 것은 말없이 빠졌다. 머리줄을 먼저 쓰고 쪽마다
+     * {@link Lookup#write} 로 이어 쓴다. 쓴 것은 바로 내보내므로 전부를 한꺼번에
+     * 쥐고 있지 않는다.
      */
-    public static void writeLookup(OutputStream out, List<Finding> findings) throws IOException {
-        try (Writer writer = start(out)) {
-            row(writer, "자산", "구역", "CVE", "별칭", "심각도", "CVSS",
-                        "패키지", "설치 버전", "수정 버전", "수정 상태", "검사 시각");
+    public static Lookup lookup(OutputStream out) throws IOException {
+        Writer writer = start(out);
+        row(writer, "자산", "구역", "CVE", "별칭", "심각도", "CVSS",
+                    "패키지", "설치 버전", "수정 버전", "수정 상태", "검사 시각");
+        return new Lookup(writer);
+    }
+
+    /** {@link #lookup} 이 여는 파일. 닫으면 남은 것을 내보낸다. */
+    public static final class Lookup implements AutoCloseable {
+
+        private final Writer writer;
+
+        private Lookup(Writer writer) {
+            this.writer = writer;
+        }
+
+        public void write(List<Finding> findings) throws IOException {
             for (Finding f : findings) {
                 var asset = f.getScan().getAsset();
                 row(writer,
@@ -138,6 +156,12 @@ public final class CsvWriter {
                     f.getFixState(),
                     WHEN.format(f.getScan().getCreatedAt()));
             }
+            writer.flush();
+        }
+
+        @Override
+        public void close() throws IOException {
+            writer.close();
         }
     }
 

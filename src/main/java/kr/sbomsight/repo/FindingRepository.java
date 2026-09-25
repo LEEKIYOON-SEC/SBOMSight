@@ -241,7 +241,43 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      * 오름차순에서 앞으로 올리면 "가장 안 위험한 것" 자리에 서게 되는데,
      * 그것은 아무도 내리지 않은 판정이다. CVSS 가 없는 건도 같다.
      */
-    @Query(value = """
+    @Query(value = BY_SEVERITY, countQuery = BY_SEVERITY_COUNT)
+    Page<Finding> findInBySeverity(@Param("scanIds") Collection<Long> scanIds,
+                                   @Param("q") String q,
+                                   @Param("severity") String severity,
+                                   @Param("fixable") Boolean fixable,
+                                   @Param("kev") Boolean kev,
+                                   @Param("includeReviewed") boolean includeReviewed,
+                                   @Param("asc") boolean asc,
+                                   Pageable pageable);
+
+    /**
+     * 같은 목록을 <b>세지 않고</b> 쪽만 — 내려받기가 나눠 읽는다.
+     *
+     * <p>{@link #findInBySeverity} 는 쪽마다 전체를 한 번 더 센다(COUNT). 내려받기는
+     * 끝까지 읽으므로 셀 필요가 없다 — 쪽 수만큼 세면 10만 건에 쉰 번 센다.
+     * 질의는 같은 글자({@link #BY_SEVERITY})다. 둘로 적으면 필터를 고칠 때
+     * 한쪽만 고치는 날이 온다.
+     */
+    @Query(BY_SEVERITY)
+    org.springframework.data.domain.Slice<Finding> sliceInBySeverity(
+            @Param("scanIds") Collection<Long> scanIds,
+            @Param("q") String q,
+            @Param("severity") String severity,
+            @Param("fixable") Boolean fixable,
+            @Param("kev") Boolean kev,
+            @Param("includeReviewed") boolean includeReviewed,
+            @Param("asc") boolean asc,
+            Pageable pageable);
+
+    /**
+     * 심각도 순 목록의 질의 — 화면(쪽 + 전체 수)과 내려받기(쪽만)가 함께 쓴다.
+     *
+     * <p><b>맨 끝에 {@code f.id} 를 둔다.</b> 앞의 축이 같은 줄(같은 CVE · 같은
+     * 패키지가 여러 자산에)은 DB 가 아무 순서로 내도 된다. 쪽을 나눠 읽는
+     * 내려받기는 순서가 끝까지 정해져 있어야 경계에서 빠지거나 겹치지 않는다.
+     */
+    String BY_SEVERITY = """
            SELECT f FROM Finding f
              JOIN FETCH f.scan s JOIN FETCH s.asset a JOIN FETCH a.zone
            WHERE s.id IN :scanIds
@@ -272,9 +308,10 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                                   WHEN 'medium'   THEN 2 WHEN 'low'      THEN 3 ELSE 9 END
                          END,
                     CASE WHEN :asc = TRUE THEN f.cvssScore ELSE -f.cvssScore END ASC NULLS LAST,
-                    f.packageName ASC, f.cve ASC
-           """,
-           countQuery = """
+                    f.packageName ASC, f.cve ASC, f.id ASC
+           """;
+
+    String BY_SEVERITY_COUNT = """
            SELECT COUNT(f) FROM Finding f JOIN f.scan s
            WHERE s.id IN :scanIds
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
@@ -295,15 +332,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                                                WHERE fd.asset.id = s.asset.id
                                                  AND fd.packageName = f.packageName
                                                  AND fd.cve = f.cve)))))
-           """)
-    Page<Finding> findInBySeverity(@Param("scanIds") Collection<Long> scanIds,
-                                   @Param("q") String q,
-                                   @Param("severity") String severity,
-                                   @Param("fixable") Boolean fixable,
-                                   @Param("kev") Boolean kev,
-                                   @Param("includeReviewed") boolean includeReviewed,
-                                   @Param("asc") boolean asc,
-                                   Pageable pageable);
+           """;
 
     /**
      * CVE 로 묶어 본다 — "이 취약점이 몇 대에 있나".

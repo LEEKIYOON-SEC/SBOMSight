@@ -8,6 +8,7 @@ import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -180,22 +181,37 @@ public class VulnController {
                        @RequestParam(defaultValue = "false") boolean includeDone,
                        HttpServletResponse response) throws IOException {
         VulnQuery.Scope scope = scan != null ? query.ofScan(scan) : query.ofZone(zone);
-        // 내려받기는 한 페이지가 아니라 걸린 것 전부다. 화면에 100건만 보이는데
-        // 파일도 100건이면 그 파일로 대조를 할 수 없다.
-        List<Finding> rows = scope.scanIds().isEmpty() ? List.of()
-                // 파일은 언제나 심각한 것부터다. 화면의 정렬 방향을 따라가지
-                // 않는다 — 내려받은 파일이 어떤 순서였는지 나중에 알 수 없으면
-                // 두 파일을 나란히 놓고 대조할 수 없다.
-                : findings.findInBySeverity(scope.scanIds(), blank(q), blank(severity),
-                                            fixable, kev, includeDone, false,
-                                            PageRequest.of(0, 100_000))
-                          .getContent();
 
         response.setContentType("text/csv; charset=UTF-8");
         response.setHeader("Content-Disposition",
                 "attachment; filename=\"vulns-" + LocalDate.now() + ".csv\"");
-        CsvWriter.writeLookup(response.getOutputStream(), rows);
+
+        // 내려받기는 한 페이지가 아니라 걸린 것 **전부**다. 화면에 100건만
+        // 보이는데 파일도 100건이면 그 파일로 대조를 할 수 없다.
+        //
+        // **나눠 읽는다.** 앞서는 10만 건을 한 번에 받았고 넘는 것은 말없이
+        // 빠졌다. 한 번에 다 올리면 탐지마다 붙은 설명 · 원문까지 메모리에 함께
+        // 오른다(실측 평균 1.1KB). 파일은 언제나 심각한 것부터다 — 화면의 정렬
+        // 방향을 따라가지 않는다. 어떤 순서였는지 나중에 알 수 없으면 두 파일을
+        // 나란히 놓고 대조할 수 없다.
+        try (CsvWriter.Lookup csv = CsvWriter.lookup(response.getOutputStream())) {
+            if (scope.scanIds().isEmpty()) {
+                return;
+            }
+            for (int page = 0; ; page++) {
+                Slice<Finding> chunk = findings.sliceInBySeverity(
+                        scope.scanIds(), blank(q), blank(severity), fixable, kev, includeDone,
+                        false, PageRequest.of(page, EXPORT_CHUNK));
+                csv.write(chunk.getContent());
+                if (!chunk.hasNext()) {
+                    break;
+                }
+            }
+        }
     }
+
+    /** 내려받기를 한 번에 읽는 줄 수. */
+    private static final int EXPORT_CHUNK = 2_000;
 
     private String blank(String value) {
         return value == null || value.isBlank() ? null : value.trim();
