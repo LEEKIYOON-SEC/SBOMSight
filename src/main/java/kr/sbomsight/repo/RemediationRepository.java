@@ -86,7 +86,18 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
            """)
     List<Remediation> findOverdue(@Param("today") LocalDate today);
 
-    long countByAssetIdAndStatusIn(Long assetId, List<RemediationStatus> statuses);
+    /**
+     * 자산 목록 — 자산마다 그 상태인 조치 수를 <b>한 번에</b>.
+     *
+     * <p>앞서 자산마다 따로 셌다(countByAssetIdAndStatusIn). 목록의 요약 줄이
+     * 거르기 전 전체를 세므로 쪽에 안 보이는 자산까지 — 자산 수만큼 왕복했다.
+     */
+    @Query("""
+           SELECT r.asset.id AS assetId, COUNT(r) AS total FROM Remediation r
+           WHERE r.status IN :statuses
+           GROUP BY r.asset.id
+           """)
+    List<FindingRepository.AssetCount> countPerAsset(@Param("statuses") List<RemediationStatus> statuses);
 
     /** 사이드바 숫자 — 아직 안 닫힌 조치. */
     long countByStatusIn(List<RemediationStatus> statuses);

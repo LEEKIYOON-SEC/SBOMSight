@@ -123,12 +123,26 @@ public class AssetController {
                           .collect(Collectors.toMap(FindingRepository.AssetCount::getAssetId,
                                                     FindingRepository.AssetCount::getTotal));
 
+        // 심각도 분포와 열린 조치 수도 한 번씩에 센다. 앞서 자산마다 둘을 따로
+        // 물었다 — 요약 줄이 거르기 전 전체를 세므로 쪽에 안 보이는 자산까지,
+        // 자산 스무 대를 더하면 질의가 서른아홉 번 늘었다(AssetListQueryTest).
+        Map<Long, Map<String, Long>> severities = new HashMap<>();
+        if (!latestIds.isEmpty()) {
+            findings.countBySeverityPerAsset(latestIds)
+                    .forEach(row -> severities.computeIfAbsent(row.getAssetId(), id -> new LinkedHashMap<>())
+                                              .put(row.getSeverity() == null ? "" : row.getSeverity(),
+                                                   row.getTotal()));
+        }
+        Map<Long, Long> open = remediations
+                .countPerAsset(List.of(RemediationStatus.OPEN, RemediationStatus.IN_PROGRESS)).stream()
+                .collect(Collectors.toMap(FindingRepository.AssetCount::getAssetId,
+                                          FindingRepository.AssetCount::getTotal));
+
         List<AssetRow> all = list.stream().map(asset -> {
             Scan scan = latest.get(asset.getId());
-            Map<String, Long> severity = scan == null ? Map.of() : severityMap(scan.getId());
-            long open = remediations.countByAssetIdAndStatusIn(
-                    asset.getId(), List.of(RemediationStatus.OPEN, RemediationStatus.IN_PROGRESS));
-            return new AssetRow(asset, scan, severity, open,
+            Map<String, Long> severity = scan == null ? Map.of()
+                    : severities.getOrDefault(asset.getId(), Map.of());
+            return new AssetRow(asset, scan, severity, open.getOrDefault(asset.getId(), 0L),
                                 kev.getOrDefault(asset.getId(), 0L));
         }).toList();
 
