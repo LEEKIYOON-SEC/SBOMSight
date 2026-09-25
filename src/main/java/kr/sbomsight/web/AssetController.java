@@ -402,6 +402,14 @@ public class AssetController {
         // 아직 도는 중인 검사. 있으면 화면이 진행 카드를 띄우고 물어본다.
         Scan running = history.stream().filter(Scan::isInFlight).findFirst().orElse(null);
 
+        // 가장 최근 검사가 실패했는가. 진행 표시는 실패를 잠깐 띄운 뒤 화면을
+        // 새로 그리며 사라진다 — 개요가 말하지 않으면 실패는 검사 이력 탭에만
+        // 남고, 머리의 `마지막 검사` 는 그 전 완료 검사를 가리킨 채다. 그 뒤에
+        // 검사가 완료되면(다시 검사 포함) 알릴 것이 없어진다.
+        Scan newest = history.isEmpty() ? null : history.get(0);
+        model.addAttribute("lastFailed",
+                newest != null && newest.getStatus() == ScanStatus.FAILED ? newest : null);
+
         model.addAttribute("asset", asset);
         model.addAttribute("zones", zoneService.all());
         model.addAttribute("history", history);
@@ -631,7 +639,10 @@ public class AssetController {
         return "redirect:/";
     }
 
-    /** 보관된 SBOM 을 갱신된 grype DB 로 다시 돌린다. */
+    /**
+     * 보관된 SBOM 을 갱신된 grype DB 로 다시 돌린다. 실패한 검사도 된다 — SBOM 은
+     * 올린 순간 보관된다(ScanService.rescan).
+     */
     @PostMapping("scans/{scanId}/rescan")
     @PreAuthorize("hasRole('ADMIN')")
     public String rescan(@PathVariable Long scanId, Principal principal,
@@ -644,8 +655,14 @@ public class AssetController {
             audit.record(AuditEvent.SCAN_RESCANNED, source.getAsset().getName(),
                          source.getSbomFilename() + " (원본 검사 " + scanId + ")");
             scanService.runAsync(copy.getId());
+            // 돌아가는 곳은 개요 탭이다(진행 표시가 거기 뜬다) — 이력은 그 아래가
+            // 아니라 옆 탭이다.
             flash.addFlashAttribute("message",
-                    "같은 SBOM 을 다시 검사합니다. 끝나면 아래 이력에 새 줄로 나타납니다.");
+                    "같은 SBOM 을 다시 검사합니다. 끝나면 검사 이력에 새 줄로 나타납니다.");
+        } catch (ScanService.UnsupportedSbomException e) {
+            // 고장이 아니라 보관된 파일이 받는 형식이 아니다(예전에 받은 XML).
+            // 업로드와 같이 오류 로그에 스택을 남기지 않는다.
+            flash.addFlashAttribute("error", "다시 검사하지 못했습니다: " + e.getMessage());
         } catch (Exception e) {
             log.error("재검사 실패 scan={}", scanId, e);
             flash.addFlashAttribute("error", "다시 검사하지 못했습니다: " + e.getMessage());

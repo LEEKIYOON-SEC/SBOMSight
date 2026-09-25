@@ -83,6 +83,29 @@
       <div class="steps" data-role="steps"></div>
     </div>
 
+    <!--/*
+      가장 최근 검사가 실패했으면 여기서 말한다. 진행 표시는 실패를 잠깐 띄운 뒤
+      화면을 새로 그리며 사라지고, 앞서는 그 뒤로 실패의 흔적이 검사 이력 탭에만
+      남았다 — 머리의 `마지막 검사` 는 그 전 완료 검사를 가리킨 채였다. 그래서
+      지금 보이는 숫자가 어느 검사 것인지도 함께 말한다.
+
+      SBOM 은 올린 순간 보관되므로 다시 올릴 것 없이 `다시 검사` 로 돌린다.
+      단추는 관리자에게만 — 실패 사실과 사유는 조회 계정에게도 보인다.
+    */-->
+    <div class="alert alert-danger d-flex align-items-start gap-3 flex-wrap" id="last-failed"
+         th:if="${lastFailed != null}">
+      <div style="flex:1; min-width:16rem">
+        <b th:text="'검사 실패 · ' + ${#temporals.format(lastFailed.createdAt, 'yyyy-MM-dd HH:mm')}">검사 실패 · 2026-09-25 11:52</b>
+        <div th:text="${lastFailed.errorMessage}">grype 을 실행하지 못했습니다.</div>
+        <div class="mt-1" th:if="${latest != null}"
+             th:text="'보이는 결과는 그 전 완료 검사(' + ${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')} + ')의 것입니다.'">보이는 결과는 그 전 완료 검사(2026-09-25 11:45)의 것입니다.</div>
+      </div>
+      <form method="post" th:action="@{'/scans/' + ${lastFailed.id} + '/rescan'}" class="inline"
+            th:if="${!#strings.isEmpty(lastFailed.sbomPath)}" sec:authorize="hasRole('ADMIN')">
+        <button type="submit" class="btn btn-sm" title="보관된 SBOM 을 다시 검사">다시 검사</button>
+      </form>
+    </div>
+
     <div class="card">
       <div class="card-header"><h2 class="card-title">기본 정보</h2></div>
       <div class="card-body">
@@ -435,8 +458,11 @@
           <td class="tight actions">
             <a class="btn btn-sm" th:if="${s.status.name() == 'DONE'}"
                th:href="@{/vulns(scan=${s.id})}">열기</a>
+            <!--/* 실패한 검사도 다시 검사한다 — SBOM 은 올린 순간 보관된다. 보관된
+                 것이 없는 실패(파일을 손으로 지운 경우 등)에는 단추를 두지 않는다. */-->
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
-                  th:if="${s.status.name() == 'DONE'}" sec:authorize="hasRole('ADMIN')">
+                  th:if="${s.status.name() == 'DONE' or (s.status.name() == 'FAILED' and !#strings.isEmpty(s.sbomPath))}"
+                  sec:authorize="hasRole('ADMIN')">
               <button type="submit" class="btn btn-sm"
                       title="보관된 SBOM 을 최신 취약점 DB 로 다시 검사">다시 검사</button>
             </form>

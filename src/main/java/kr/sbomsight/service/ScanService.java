@@ -60,7 +60,10 @@ public class ScanService {
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    /** 읽을 수 없는 SBOM — 올리는 자리에서 돌려보낸다. 메시지는 화면에 그대로 나간다. */
+    /**
+     * 읽을 수 없는 SBOM — 올리는 자리와 다시 검사하는 자리에서 돌려보낸다.
+     * 메시지는 화면에 그대로 나간다.
+     */
     public static class UnsupportedSbomException extends IllegalArgumentException {
         public UnsupportedSbomException() {
             super("JSON 형식의 SBOM 이 아닙니다. " + SbomStorage.ACCEPTED_FORMATS + " 만 받습니다.");
@@ -106,7 +109,17 @@ public class ScanService {
      * 올라갔을 수도 있다. 새 스캔으로 쌓으면 이력 비교가 그대로 돌아가
      * "같은 SBOM 인데 무엇이 늘었나" 를 바로 읽을 수 있다.
      *
+     * <p><b>실패한 검사도 된다.</b> SBOM 은 올린 순간 보관되므로, grype 이
+     * 없었거나 서버가 다시 시작되어 멈춘 검사도 같은 SBOM 으로 다시 돌릴 수 있다.
+     * 실패한 검사는 그대로 남는다 — 실패했다는 사실도 이력이다.
+     *
+     * <p><b>올릴 때와 같은 형식 검사를 거친다</b>({@link SbomStorage#detectFormat}).
+     * 올리는 자리가 JSON 만 받기 전에 들어온 XML 을 다시 돌리면, 패키지 목록을
+     * 읽지 못한 채 grype 만 돌아 완료되고 그 자산의 패키지 목록이 지워진다
+     * (완료할 때 이전 검사 것을 걷는다 — ComponentInventoryService.makeCurrent).
+     *
      * @return 새로 만들어진 스캔. 상태는 QUEUED 다.
+     * @throws UnsupportedSbomException 보관된 SBOM 이 받는 형식(JSON 셋)이 아닐 때
      */
     @Transactional
     public Scan rescan(Scan source, String actor) throws IOException {
@@ -116,6 +129,11 @@ public class ScanService {
         Path stored = Path.of(source.getSbomPath());
         if (!Files.exists(stored)) {
             throw new IllegalStateException("보관된 SBOM 파일을 찾을 수 없습니다: " + stored);
+        }
+        try (InputStream head = storage.openGzip(stored)) {
+            if (storage.detectFormat(head).isEmpty()) {
+                throw new UnsupportedSbomException();
+            }
         }
 
         Scan copy = new Scan(source.getAsset(), actor);
@@ -313,7 +331,8 @@ public class ScanService {
         List<Scan> stuck = scans.findByStatusIn(List.of(ScanStatus.QUEUED, ScanStatus.RUNNING));
         stuck.forEach(scan -> {
             scan.setStatus(ScanStatus.FAILED);
-            scan.setErrorMessage("서버가 다시 시작되어 중단되었습니다. SBOM 을 다시 업로드해 주세요.");
+            // SBOM 은 이미 보관되어 있다 — 다시 받아 올 것이 아니라 다시 돌리면 된다.
+            scan.setErrorMessage("서버가 다시 시작되어 중단되었습니다. 보관된 SBOM 으로 다시 검사할 수 있습니다.");
             scan.setFinishedAt(Instant.now());
             inventory.discard(scan.getId());
         });
