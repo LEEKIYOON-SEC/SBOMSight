@@ -106,7 +106,7 @@ public class PackageController {
 
         // 인벤토리 자체가 비어 있는가. "거르개에 걸리는 것이 없다" 와
         // "아직 아무 자산도 다시 검사하지 않았다" 는 다른 말이다.
-        model.addAttribute("inventoryEmpty", components.count() == 0);
+        model.addAttribute("inventoryEmpty", components.countCurrent() == 0);
         return "packages";
     }
 

@@ -292,6 +292,44 @@ class ComponentInventoryTest {
                 .isEqualTo(2);
     }
 
+    /**
+     * <b>도는 중인 검사의 패키지는 끝날 때까지 보이지 않는다.</b>
+     *
+     * <p>담기는 SBOM 을 읽을 때 하고, grype 은 그 뒤에 몇 분씩 돈다. 그동안
+     * 새 검사 것이 보이면 패키지 화면은 새 SBOM 을, 취약점 화면은 이전 검사를
+     * 말한다 — 두 화면이 서로 다른 검사를 본다. 끝난 뒤에 함께 바뀌어야 한다.
+     */
+    @Test
+    @DisplayName("도는 중인 검사의 패키지는 검사가 끝나기 전까지 목록에 보이지 않는다")
+    @Transactional
+    void aRunningScanStaysOutOfTheInventory() throws IOException {
+        Asset asset = asset("running");
+        Scan done = doneScan(asset);
+        ingest(asset, done, SYFT_JSON);
+
+        // 담기만 하고 아직 도는 중이다.
+        Scan running = new Scan(asset, "tester");
+        running.setStatus(ScanStatus.RUNNING);
+        scans.saveAndFlush(running);
+        try (ComponentInventoryService.Sink sink = inventory.open(asset.getId(), running.getId())) {
+            storage.inspect(write("""
+                    { "artifacts": [ { "name": "openssl-libs", "version": "3.0.7-99", "type": "rpm",
+                                       "purl": "pkg:rpm/rocky/openssl-libs@3.0.7-99" } ] }
+                    """), sink);
+        }
+
+        assertThat(ofAsset(asset.getId()))
+                .as("끝나지 않은 검사의 패키지가 목록에 섞였다")
+                .allMatch(c -> c.getScan().getId().equals(done.getId()));
+        assertThat(components.countCurrentByAssetId(asset.getId())).isEqualTo(2);
+        assertThat(rows(null, "openssl-libs", false, false).stream()
+                        .filter(r -> r.name().equals("openssl-libs"))
+                        .flatMap(r -> r.versions().stream())
+                        .map(PackageService.VersionSlice::version))
+                .as("버전 분포에 끝나지 않은 검사의 버전이 섞였다")
+                .doesNotContain("3.0.7-99");
+    }
+
     // --- 지우면 함께 사라진다 --------------------------------------------------
 
     @Test

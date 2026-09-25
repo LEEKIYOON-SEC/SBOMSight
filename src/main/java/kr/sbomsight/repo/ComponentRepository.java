@@ -13,17 +13,22 @@ import java.util.List;
 /**
  * 설치된 패키지.
  *
- * <p><b>자산마다 최신 검사 것만 들어 있다.</b> 그래서 "지금 깔려 있는 것" 을
+ * <p><b>자산마다 최신 완료 검사 것만 남는다.</b> 그래서 "지금 깔려 있는 것" 을
  * 물을 때 스캔을 고를 필요가 없다 — 자산으로 묶으면 그것이 곧 현재 상태다.
+ *
+ * <p><b>읽는 질의는 전부 완료된 검사의 행만 본다</b>({@code s.status = 'DONE'}).
+ * 검사는 SBOM 을 읽으며 담고 grype 은 그 뒤에 몇 분씩 돈다 — 그동안 담긴 행이
+ * 보이면 패키지 화면은 새 SBOM 을, 취약점 화면은 이전 검사를 말한다. 이전
+ * 검사의 행은 새 검사가 끝나는 순간에 지운다({@code ScanService.run}).
  */
 public interface ComponentRepository extends JpaRepository<Component, Long> {
 
     /**
-     * 새 검사가 읽혔다 — 그 자산의 <b>다른 검사에서 온 행을 지운다.</b>
+     * 새 검사가 끝났다 — 그 자산의 <b>다른 검사에서 온 행을 지운다.</b>
      *
-     * <p>넣기 전에 지우지 않고 넣은 뒤에 지운다. 읽다가 중간에 터지면 이전
-     * 인벤토리가 그대로 남아 있어야 한다 — 실패한 검사 때문에 "이 자산에는
-     * 패키지가 없다" 가 되면 안 된다.
+     * <p>넣기 전에 지우지 않고, 검사가 끝난 뒤에 지운다. 읽다가든 grype 에서든
+     * 중간에 터지면 이전 인벤토리가 그대로 남아 있어야 한다 — 실패한 검사
+     * 때문에 "이 자산에는 패키지가 없다" 가 되면 안 된다.
      */
     @Modifying
     @Query("DELETE FROM Component c WHERE c.asset.id = :assetId AND c.scan.id <> :scanId")
@@ -33,7 +38,19 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
     @Query("DELETE FROM Component c WHERE c.scan.id = :scanId")
     int deleteByScanId(@Param("scanId") Long scanId);
 
+    /** 담긴 행 전부 — 도는 중이거나 실패한 검사 것까지. 정리가 됐는지 잴 때 쓴다. */
     long countByAssetId(Long assetId);
+
+    /** 이 자산의 지금 인벤토리 — 자산 상세의 `패키지` 탭 숫자. */
+    @Query("""
+           SELECT COUNT(c) FROM Component c JOIN c.scan s
+           WHERE c.asset.id = :assetId AND s.status = 'DONE'
+           """)
+    long countCurrentByAssetId(@Param("assetId") Long assetId);
+
+    /** 지금 인벤토리가 하나라도 있나 — 패키지 화면이 "아직 안 담겼다" 를 말할지. */
+    @Query("SELECT COUNT(c) FROM Component c JOIN c.scan s WHERE s.status = 'DONE'")
+    long countCurrent();
 
     /**
      * 이 자산에 깔린 것. 자산 상세의 `패키지` 탭.
@@ -43,8 +60,8 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
      * 그 탭만 눈에 띄게 느렸다.
      */
     @Query("""
-           SELECT c FROM Component c
-           WHERE c.asset.id = :assetId
+           SELECT c FROM Component c JOIN c.scan s
+           WHERE c.asset.id = :assetId AND s.status = 'DONE'
              AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
            ORDER BY c.name ASC, c.version ASC
            """)
@@ -63,7 +80,8 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
                   COUNT(DISTINCT c.version) AS versionCount
            FROM Component c
            JOIN c.asset a
-           WHERE a.archivedAt IS NULL
+           JOIN c.scan s
+           WHERE a.archivedAt IS NULL AND s.status = 'DONE'
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
              AND (:type IS NULL OR c.type = :type)
              AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
@@ -95,7 +113,8 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
                   COUNT(DISTINCT c.asset.id) AS assetCount
            FROM Component c
            JOIN c.asset a
-           WHERE a.archivedAt IS NULL
+           JOIN c.scan s
+           WHERE a.archivedAt IS NULL AND s.status = 'DONE'
              AND c.name IN :names
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
            GROUP BY c.name, c.version
@@ -124,7 +143,8 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
                   COUNT(DISTINCT c.asset.id) AS assetCount
            FROM Component c
            JOIN c.asset a
-           WHERE a.archivedAt IS NULL
+           JOIN c.scan s
+           WHERE a.archivedAt IS NULL AND s.status = 'DONE'
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
              AND (:type IS NULL OR c.type = :type)
              AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
@@ -147,8 +167,9 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
 
     /** 유형 거르개에 채울 값. SBOM 이 실제로 담아 온 것만 보여 준다. */
     @Query("""
-           SELECT DISTINCT c.type FROM Component c JOIN c.asset a
-           WHERE a.archivedAt IS NULL AND c.type <> '' ORDER BY c.type ASC
+           SELECT DISTINCT c.type FROM Component c JOIN c.asset a JOIN c.scan s
+           WHERE a.archivedAt IS NULL AND s.status = 'DONE' AND c.type <> ''
+           ORDER BY c.type ASC
            """)
     List<String> types();
 
@@ -157,8 +178,8 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
            SELECT c FROM Component c
              JOIN FETCH c.asset a
              JOIN FETCH a.zone
-             JOIN FETCH c.scan
-           WHERE c.name = :name AND a.archivedAt IS NULL
+             JOIN FETCH c.scan s
+           WHERE c.name = :name AND a.archivedAt IS NULL AND s.status = 'DONE'
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
            ORDER BY c.version ASC, a.name ASC
            """)

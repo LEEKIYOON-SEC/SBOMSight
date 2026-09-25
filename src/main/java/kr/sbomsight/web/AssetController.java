@@ -423,7 +423,7 @@ public class AssetController {
         // 패키지 탭. 그 자산에 깔린 것 전부 — 취약점이 없는 것도 있다.
         // **빈 것과 안 본 것을 구분해서 말한다**: V13 은 이미 쌓인 SBOM 을
         // 되읽지 않으므로, 다시 검사하기 전에는 인벤토리가 비어 있다.
-        model.addAttribute("packageCount", components.countByAssetId(id));
+        model.addAttribute("packageCount", components.countCurrentByAssetId(id));
         if ("packages".equals(tab)) {
             // **한 쪽씩 읽는다.** 앞서는 그 자산에 깔린 것을 전부 한 번에
             // 읽어 한 화면에 그렸다 — 4천 줄짜리 서버에서 표가 끝나지 않았다.

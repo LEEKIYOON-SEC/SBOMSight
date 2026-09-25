@@ -58,16 +58,16 @@ public class ComponentInventoryService {
     /**
      * 이 검사가 기준이 된다 — 같은 자산의 <b>다른 검사에서 온 행을 지운다.</b>
      *
-     * <p>넣기 전에 지우지 않고 넣은 뒤에 지운다. 읽다가 터지면 이전 인벤토리가
-     * 그대로 남아 있어야 한다.
+     * <p>넣기 전에 지우지 않고 <b>검사가 끝난 뒤에</b> 지운다({@code ScanService.run}
+     * 이 완료 표시와 한 트랜잭션으로 부른다). 읽다가든 grype 에서든 터지면 이전
+     * 인벤토리가 그대로 남아 있어야 한다 — 앞서 담자마자 지웠더니 grype 이 실패한
+     * 자산의 패키지 목록이 통째로 사라졌다.
      *
-     * <p><b>트랜잭션을 제 것으로 연다.</b> 부르는 쪽({@code ScanService.run})에는
-     * {@code @Transactional} 이 붙어 있지만 {@code runAsync} 가 같은 빈의
-     * {@code run} 을 부르기 때문에 프록시를 지나지 않는다 — 그 자리에 트랜잭션이
-     * 없고, {@code @Modifying} 질의는 트랜잭션 없이 돌지 못한다. 이것이 없어서
-     * 실제 업로드가 {@code READING} 단계에서
-     * {@code Executing an update/delete query} 로 실패했다. 시험 11개가 전부
-     * 통과한 채로 — 시험이 트랜잭션을 대신 열어 주고 있었다.
+     * <p><b>트랜잭션을 제 것으로도 연다.</b> 부르는 쪽에 트랜잭션이 없으면
+     * {@code @Modifying} 질의가 {@code Executing an update/delete query} 로
+     * 터진다 — {@code runAsync} 가 같은 빈의 {@code run} 을 부르면 프록시를
+     * 지나지 않아 실제로 그랬다. 시험 11개가 전부 통과한 채로(시험이 트랜잭션을
+     * 대신 열어 주고 있었다).
      */
     @Transactional
     public void makeCurrent(long assetId, long scanId) {

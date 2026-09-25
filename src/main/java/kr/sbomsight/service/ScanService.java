@@ -11,7 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -41,10 +43,12 @@ public class ScanService {
     private final ObjectMapper json;
     private final SbomSightProperties properties;
     private final ComponentInventoryService inventory;
+    private final TransactionTemplate transactions;
 
     public ScanService(ScanRepository scans, FindingRepository findings, SbomStorage storage,
                        GrypeRunner grype, GrypeMapper mapper, ObjectMapper json,
-                       SbomSightProperties properties, ComponentInventoryService inventory) {
+                       SbomSightProperties properties, ComponentInventoryService inventory,
+                       PlatformTransactionManager transactionManager) {
         this.scans = scans;
         this.findings = findings;
         this.storage = storage;
@@ -53,6 +57,7 @@ public class ScanService {
         this.json = json;
         this.properties = properties;
         this.inventory = inventory;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
     /**
@@ -125,13 +130,12 @@ public class ScanService {
             log.error("스캔 {} 실패", scanId, e);
             markFailed(scanId, e.getMessage());
             // **담다가 실패한 인벤토리를 버린다.** 담기는 쓰는 대로 커밋되고
-            // `makeCurrent` 는 다 담은 뒤에 부르므로, 중간에 터지면 새 검사
-            // 것과 이전 검사 것이 그 자산에 함께 남는다 — 패키지 화면이 한
-            // 패키지를 두 버전으로 보여 주고, 그것이 "두 대에 다르게 깔렸다"
-            // 와 구분되지 않는다.
+            // `makeCurrent` 는 검사가 끝난 뒤에 부르므로, 중간에 터지면 새 검사
+            // 것이 이전 검사 것 옆에 남는다. 화면은 완료된 검사의 행만 읽어
+            // 보이지는 않지만, 쌓아 둘 까닭이 없다.
             //
-            // 실제로 그랬다. 판정 트랜잭션 문제로 검사가 READING 에서 실패한
-            // 뒤 79행이 남아 화면에 떠 있었고, 손으로 지웠다.
+            // 앞서 여기서 버리는 것이 없어 READING 에서 실패한 뒤 79행이 화면에
+            // 떠 있었고, 손으로 지웠다.
             inventory.discard(scanId);
         }
     }
@@ -181,14 +185,15 @@ public class ScanService {
             // 취약점이 붙은 패키지만 알 수 있었다 — log4j 가 어디 깔려 있는지는
             // CVE 가 터진 다음에야 찾게 됐다.
             //
-            // 넣은 뒤에 이전 것을 지운다. 읽다가 터지면 이전 인벤토리가 그대로
-            // 남아 있어야 한다.
+            // **이전 것은 검사가 끝난 뒤에 지운다**(아래). 앞서는 담자마자
+            // 지웠고, 그 뒤 grype 이 실패하면 담은 것도 버려져 그 자산의 패키지
+            // 목록이 통째로 사라졌다. 담은 행은 검사가 끝날 때까지 보이지 않는다
+            // (ComponentRepository 가 완료된 검사의 행만 읽는다).
             SbomStorage.SbomInfo info;
             try (ComponentInventoryService.Sink sink =
                          inventory.open(scan.getAsset().getId(), scan.getId())) {
                 info = storage.inspect(plainSbom, sink);
             }
-            inventory.makeCurrent(scan.getAsset().getId(), scan.getId());
 
             scan.setSbomFormat(info.format());
             scan.setComponentCount(info.componentCount());
@@ -231,7 +236,13 @@ public class ScanService {
             scan.setStatus(ScanStatus.DONE);
             scan.setStage(ScanStage.DONE);
             scan.setFinishedAt(Instant.now());
-            scans.save(scan);
+            // 끝났다고 적는 것과 인벤토리를 새 검사 것으로 바꾸는 것을 **한 번에**
+            // 한다. 따로 하면 그 사이에 두 검사의 패키지가 함께 보이거나(끝낸
+            // 뒤 지우기 전) 아무것도 안 보인다(지운 뒤 끝내기 전).
+            transactions.executeWithoutResult(tx -> {
+                scans.save(scan);
+                inventory.makeCurrent(scan.getAsset().getId(), scan.getId());
+            });
 
             log.info("스캔 {} 완료: {}건 (match {} · 병합 {} · 제외 {})",
                     scan.getId(), result.findings().size(), result.matches(),
