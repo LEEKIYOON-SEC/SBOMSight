@@ -186,28 +186,64 @@ SBOM 에는 그 서버에 설치된 패키지 목록과 파일 경로가 담긴�
 | 무엇 | 없으면 |
 |---|---|
 | `sbomsight` 데이터베이스 | 자산·이력·검토 결과·대응·감사 로그가 전부 사라진다 |
-| `$env:SBOMSIGHT_DATA_DIR` (기본 `.\data`) | 옛 SBOM 과 grype 원본이 사라져 **다시 검사** 를 못 한다 |
-| `config\keystore.p12` · `config\env.ps1` | 다시 만들면 된다 |
+| `SBOMSIGHT_DATA_DIR` (기본은 저장소 폴더의 `data`) | 옛 SBOM 과 grype 원본이 사라져 **다시 검사** 를 못 한다 |
+| `config` 의 `keystore.p12` · `env.ps1` (Linux 는 환경변수) | 다시 만들면 된다 |
+
+**파일은 `--result-file` 로 쓴다.** 덤프 도구가 파일을 직접 쓴다. PowerShell 의
+`>` 는 받은 글자를 다시 인코딩해 쓴다(Windows PowerShell 5.1 은 UTF-16) — 이
+저장소가 syft 출력에서 이미 겪은 일이다(SBOM 생성 가이드). MariaDB 는 `mysqldump` ·
+`mysql` 대신 `mariadb-dump` · `mariadb` 를 쓴다(옵션은 같다).
 
 ```powershell
+# Windows (PowerShell)
 $stamp = Get-Date -Format 'yyyyMMdd'
-mysqldump -u root -p --single-transaction --routines sbomsight > D:\backup\sbomsight-$stamp.sql
+mysqldump -u root -p --single-transaction --routines sbomsight --result-file=D:\backup\sbomsight-$stamp.sql
 Copy-Item C:\work\SBOMSight\data D:\backup\data-$stamp -Recurse
 ```
 
-- **서비스를 내리지 않아도 된다.** `--single-transaction` 이 일관된 시점을 뜬다.
-- `data\` 에는 서버에 설치된 패키지 목록이 통째로 들어 있다. **백업 매체도 같은
+```bash
+# Linux — 저장소 폴더에서
+stamp=$(date +%Y%m%d)
+mariadb-dump -u root -p --single-transaction --routines sbomsight --result-file=/backup/sbomsight-$stamp.sql
+cp -a ./data /backup/data-$stamp
+```
+
+- **서비스를 내리지 않아도 된다.** 표가 전부 InnoDB 라 `--single-transaction` 이
+  일관된 시점을 뜬다.
+- `data` 에는 서버에 설치된 패키지 목록이 통째로 들어 있다. **백업 매체도 같은
   등급으로 다룬다.**
-- 날마다 받으려면 위 두 줄을 `.ps1` 로 두고 작업 스케줄러에 등록한다.
+- 날마다 받으려면 위 명령을 `.ps1`(Windows 작업 스케줄러) · `.sh`(Linux cron)
+  로 두고 등록한다. **예약 작업에서는 `-p` 를 쓰지 않는다** — 비밀번호를 물어
+  거기서 멈춘다. 대신 옵션 파일을 두고 `-u root -p` 자리에
+  `--defaults-extra-file=<파일>` 을 **맨 앞 옵션으로** 준다(뒤에 두면 모르는
+  옵션이라며 멈춘다). 그 파일은 백업을 도는 계정만 읽게 둔다. 앱 계정
+  (`sbomsight`)으로도 받힌다.
+
+  ```ini
+  [client]
+  user=sbomsight
+  password=여기에-DB-비밀번호
+  ```
 
 **한 번은 되살려 봐야 한다.** 받아 둔 것이 실제로 열리는지는 복구해 보기 전까지
-알 수 없다.
+알 수 없다. 운영 DB 가 아니라 **다른 이름**(`sbomsight_restore`)으로 되살린다.
 
 ```powershell
+# Windows — PowerShell 에는 `<` 가 없다. 클라이언트의 source 로 읽는다(경로는 / 로 쓴다).
 mysql -u root -p -e "CREATE DATABASE sbomsight_restore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u root -p sbomsight_restore < D:\backup\sbomsight-20260901.sql
+mysql -u root -p sbomsight_restore -e "source D:/backup/sbomsight-20260901.sql"
 mysql -u root -p sbomsight_restore -e "SELECT COUNT(*) FROM assets; SELECT COUNT(*) FROM findings;"
 ```
+
+```bash
+# Linux
+mariadb -u root -p -e "CREATE DATABASE sbomsight_restore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mariadb -u root -p sbomsight_restore < /backup/sbomsight-20260901.sql
+mariadb -u root -p sbomsight_restore -e "SELECT COUNT(*) FROM assets; SELECT COUNT(*) FROM findings;"
+```
+
+수가 맞으면 `DROP DATABASE sbomsight_restore;` 로 지운다 — 되살린 것도 같은
+내용이다.
 
 ---
 
@@ -215,16 +251,31 @@ mysql -u root -p sbomsight_restore -e "SELECT COUNT(*) FROM assets; SELECT COUNT
 
 **도는 동안에는 jar 가 잠겨 있어 빌드가 실패한다.** 먼저 내린다.
 
+**DB 와 지금 jar 를 먼저 백업한다.** 마이그레이션이 표 구조를 바꾸고, 되돌리는
+길은 그 둘뿐이다.
+
 ```powershell
+# Windows
 cd C:\work\SBOMSight
 .\scripts\install-service.ps1 -Stop
 
-# DB 를 먼저 백업한다. 마이그레이션이 표 구조를 바꾸고, 되돌리는 길은 백업뿐이다.
-mysqldump -u root -p --single-transaction --routines sbomsight > D:\backup\before-upgrade.sql
+mysqldump -u root -p --single-transaction --routines sbomsight --result-file=D:\backup\before-upgrade.sql
+Copy-Item target\sbomsight-1.0.0.jar D:\backup\sbomsight-before-upgrade.jar
 
 git pull
 .\mvnw.cmd clean package -DskipTests
 .\scripts\install-service.ps1 -Start
+```
+
+```bash
+# Linux — run-server.sh 로 띄운 창에서 Ctrl+C 로 먼저 내린다
+cd /경로/SBOMSight
+mariadb-dump -u root -p --single-transaction --routines sbomsight --result-file=/backup/before-upgrade.sql
+cp target/sbomsight-1.0.0.jar /backup/sbomsight-before-upgrade.jar
+
+git pull
+./mvnw clean package -DskipTests
+./scripts/run-server.sh
 ```
 
 표 변경은 기동할 때 Flyway 가 적용한다. 올라온 뒤:
@@ -234,6 +285,44 @@ git pull
    목록은 검사할 때 SBOM 에서 담기고, 업그레이드가 이미 쌓인 SBOM 을 되읽지는
    않는다.
 3. `logs\service.log` 에 예외가 없는지 본다.
+
+### V15 — 조치의 목표 버전을 다시 모은다
+
+앞서 조치 하나에는 수정 버전을 **하나**(CVSS 가 가장 높은 건의 것) 적었다. V15 는
+그 칸을 넓히고(255 → 4000자), 조치를 등록한 검사에서 **수정 버전 전부**를 글자
+순으로 다시 모아 덮어쓴다 — 해당 없음 · 오탐으로 적은 건과 수정 버전이 없는 건은
+빼고. 등록한 검사가 지워진 조치는 적혀 있던 값을 그대로 둔다. 기록에
+`Migrating schema ... to version "15 - remediation fix versions"` 가 한 번 찍힌다.
+
+### 되돌리기
+
+서비스를 내리고, DB 를 비운 뒤 업그레이드 전 백업으로 되살리고, 백업해 둔 jar 로
+띄운다. DB 를 지웠다 다시 만들어도 계정의 권한은 남는다.
+
+```powershell
+# Windows
+cd C:\work\SBOMSight
+.\scripts\install-service.ps1 -Stop
+mysql -u root -p -e "DROP DATABASE sbomsight; CREATE DATABASE sbomsight CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root -p sbomsight -e "source D:/backup/before-upgrade.sql"
+Copy-Item D:\backup\sbomsight-before-upgrade.jar target\sbomsight-1.0.0.jar
+.\scripts\install-service.ps1 -Start
+```
+
+```bash
+# Linux — run-server.sh 로 띄운 창에서 Ctrl+C 로 먼저 내린다
+cd /경로/SBOMSight
+mariadb -u root -p -e "DROP DATABASE sbomsight; CREATE DATABASE sbomsight CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mariadb -u root -p sbomsight < /backup/before-upgrade.sql
+cp /backup/sbomsight-before-upgrade.jar target/sbomsight-1.0.0.jar
+./scripts/run-server.sh
+```
+
+V15 는 이 길을 MariaDB 10.11 에서 끝까지 밟아 보았다. V14 인 DB 를 백업하고, 새
+jar 로 V15 를 적용한 뒤 되살렸다. 되살린 DB 는 마이그레이션 14까지로 돌아갔고,
+목표 버전과 한글 값도 원래대로였다. 이전 jar 도 그 DB 로 떴다.
+백업 없이 jar 만 되돌려도 기동은 된다. Flyway 가 "DB 가 더 새 판" 이라고 경고하고
+넘어가며, 목표 버전 칸에는 여러 버전이 띄어 쓴 한 줄로 보인다.
 
 ---
 
@@ -268,3 +357,10 @@ Restart-Computer                                              # 재부팅 뒤 �
 세 번째가 핵심이다 — 재부팅해도 올라오는 것이 이 스크립트의 유일한 목적이다.
 안 되면 등록을 지우고(`-Remove`) `run-server.ps1` 로 돌리면서 이유를 찾으면
 된다. 그 사이에도 도구는 그대로 쓸 수 있다.
+
+**7 · 8절의 PowerShell 백업 · 되살리기 줄도 윈도우에서 돌려 보지 못했다.** 같은
+옵션을 리눅스의 MariaDB 10.11 클라이언트로 확인했다. `>` 로 받은 파일과
+`--result-file` 로 받은 파일이 같았고, `<` 와 `source` 로 되살린 DB 도 같았다.
+**V15 는 MySQL 8 에서 돌려 보지 못했다.** MySQL 8 을 쓴다면 업그레이드한 뒤
+기록의 V15 줄(`Successfully applied 1 migration`)과 대응 화면의 목표 버전을 먼저
+보고, 이상하면 8절의 되돌리기로 돌아간다.

@@ -624,15 +624,20 @@ cd C:\work\SBOMSight
 .\scripts\install-service.ps1 -Stop
 ```
 
-**DB 를 먼저 백업한다.** 마이그레이션이 표 구조를 바꾸고, 되돌리는 길은 백업
-뿐이다.
+**DB 와 지금 jar 를 먼저 백업한다.** 마이그레이션이 표 구조를 바꾸고, 되돌리는
+길은 그 둘뿐이다. 파일은 `--result-file` 로 쓴다 — PowerShell 의 `>` 는 글자를
+다시 인코딩해 쓴다. (MariaDB 는 `mysqldump` 대신 `mariadb-dump`.)
 
 ```powershell
-mysqldump -u root -p --single-transaction --routines sbomsight > C:\work\backup-sbomsight.sql
+mysqldump -u root -p --single-transaction --routines sbomsight --result-file=C:\work\backup-sbomsight.sql
+Copy-Item target\sbomsight-1.0.0.jar C:\work\sbomsight-before-upgrade.jar
 ```
 
 > **V5 마이그레이션은 `assets.group_name` 열을 지운다.** 구역(zone) 표로 옮긴
 > 뒤 원본을 없앤다. 이전 버전에서 업그레이드한다면 위 백업을 **반드시** 먼저 받으라.
+>
+> **V15 는 조치의 목표 버전을 다시 모은다** — 하나였던 것을 수정 버전 전부로.
+> 되돌리는 절차는 [`docs/operations.md` 8절](operations.md#8-업그레이드) 에 있다.
 
 ```powershell
 git pull
