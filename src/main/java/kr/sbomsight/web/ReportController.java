@@ -33,7 +33,7 @@ public class ReportController {
     @GetMapping("/reports/scan/{scanId}")
     public String report(@PathVariable Long scanId, Model model) {
         Scan scan = scans.findWithAsset(scanId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
         model.addAttribute("report", reports.build(scan));
         return "report";
     }

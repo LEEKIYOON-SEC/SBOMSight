@@ -80,7 +80,7 @@ public class ZoneService {
         Zone zone = require(id);
         if (zone.isUnassigned()) {
             throw new IllegalArgumentException(
-                    Zone.UNASSIGNED + " 는 이름을 바꿀 수 없습니다. 자산이 갈 곳을 잃습니다.");
+                    Zone.UNASSIGNED + " 구역은 이름을 바꿀 수 없습니다. 자산이 갈 곳을 잃습니다.");
         }
         String clean = name == null ? "" : name.trim();
         if (clean.isEmpty()) {
@@ -109,7 +109,7 @@ public class ZoneService {
     public void delete(Long id) {
         Zone zone = require(id);
         if (zone.isUnassigned()) {
-            throw new IllegalArgumentException(Zone.UNASSIGNED + " 는 지울 수 없습니다.");
+            throw new IllegalArgumentException(Zone.UNASSIGNED + " 구역은 지울 수 없습니다.");
         }
         long count = assets.countByZoneId(id);
         if (count > 0) {

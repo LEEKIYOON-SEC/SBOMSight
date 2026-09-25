@@ -67,7 +67,7 @@ public class FindingAnalysisService {
         if (response != null && response.needsReviewDate()) {
             if (reviewBy == null) {
                 throw new IllegalArgumentException(
-                        response.label() + " 으로 두려면 재검토일을 정해야 합니다.");
+                        "대응 방안이 " + response.label() + "일 때는 재검토일을 정해야 합니다.");
             }
             if (reviewBy.isBefore(LocalDate.now())) {
                 throw new IllegalArgumentException("재검토일은 오늘 이후여야 합니다.");

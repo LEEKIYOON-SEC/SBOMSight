@@ -111,7 +111,7 @@ public class ScanService {
     @Transactional
     public Scan rescan(Scan source, String actor) throws IOException {
         if (source.getSbomPath() == null || source.getSbomPath().isBlank()) {
-            throw new IllegalStateException("이 스캔에는 보관된 SBOM 이 없어 다시 돌릴 수 없습니다.");
+            throw new IllegalStateException("이 검사에는 보관된 SBOM 이 없어 다시 검사할 수 없습니다.");
         }
         Path stored = Path.of(source.getSbomPath());
         if (!Files.exists(stored)) {

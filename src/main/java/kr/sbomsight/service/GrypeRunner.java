@@ -89,7 +89,7 @@ public class GrypeRunner {
             // 있다. 우리는 --fail-on 을 주지 않으므로 0 이 정상이다.
             if (process.exitValue() != 0) {
                 throw new GrypeFailedException(
-                        "grype 이 " + process.exitValue() + " 로 끝났습니다. " + tail(errorLog));
+                        "grype 이 비정상 종료했습니다(종료 코드 " + process.exitValue() + "). " + tail(errorLog));
             }
             if (!Files.exists(output) || Files.size(output) == 0) {
                 throw new GrypeFailedException("grype 이 결과를 내지 않았습니다. " + tail(errorLog));

@@ -324,7 +324,7 @@ public class AssetController {
         assets.save(asset);
         audit.record(AuditEvent.ASSET_ZONE_CHANGED, asset.getName(),
                      before + " → " + target.getName());
-        flash.addFlashAttribute("message", asset.getName() + " 을 " + target.getName() + " 으로 옮겼습니다.");
+        flash.addFlashAttribute("message", asset.getName() + " 자산을 " + target.getName() + " 구역으로 옮겼습니다.");
         return "redirect:/assets/" + id;
     }
 
@@ -526,7 +526,7 @@ public class AssetController {
         assets.save(asset);
         audit.record(AuditEvent.ASSET_ARCHIVED, asset.getName(), "");
         flash.addFlashAttribute("message",
-                asset.getName() + " 을 운영 종료로 처리했습니다. 목록과 현황 숫자에서 빠집니다.");
+                asset.getName() + " 자산을 운영 종료로 처리했습니다. 목록과 현황 숫자에서 빠집니다.");
         return "redirect:/assets/" + id;
     }
 
@@ -537,7 +537,7 @@ public class AssetController {
         asset.setArchivedAt(null);
         assets.save(asset);
         audit.record(AuditEvent.ASSET_UNARCHIVED, asset.getName(), "");
-        flash.addFlashAttribute("message", asset.getName() + " 을 운영 재개로 되돌렸습니다.");
+        flash.addFlashAttribute("message", asset.getName() + " 자산을 운영 재개로 되돌렸습니다.");
         return "redirect:/assets/" + id;
     }
 
@@ -595,14 +595,14 @@ public class AssetController {
         // **검토 결과 건수를 빼지 않는다.** 누르기 전 확인 상자는 이것을
         // 세어 보여 주는데, 감사 로그와 완료 안내에는 빠져 있었다 — 지운
         // 기록이 실제보다 적게 남는다는 뜻이고, 점검에서 답이 어긋난다.
-        String counted = "스캔 " + impact.scanCount() + "건 · 탐지 " + impact.findingCount()
+        String counted = "검사 " + impact.scanCount() + "건 · 탐지 " + impact.findingCount()
                          + "건 · 조치 " + impact.remediationCount()
                          + "건 · 검토 결과 " + impact.analysisCount() + "건";
         audit.record(AuditEvent.ASSET_DELETED, name,
                      "구역 " + zoneName + " · " + counted + " 함께 삭제");
         flash.addFlashAttribute("message",
                 name + " 자산을 지웠습니다 — " + counted
-                + "과 보관된 SBOM·검사 결과가 함께 삭제되었습니다.");
+                + ", 보관된 SBOM · 검사 결과 파일까지 함께 삭제했습니다.");
         return "redirect:/";
     }
 
@@ -612,12 +612,12 @@ public class AssetController {
     public String rescan(@PathVariable Long scanId, Principal principal,
                          RedirectAttributes flash) {
         Scan source = scans.findWithAsset(scanId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
         Long assetId = source.getAsset().getId();
         try {
             Scan copy = scanService.rescan(source, principal.getName());
             audit.record(AuditEvent.SCAN_RESCANNED, source.getAsset().getName(),
-                         source.getSbomFilename() + " (원본 스캔 " + scanId + ")");
+                         source.getSbomFilename() + " (원본 검사 " + scanId + ")");
             scanService.runAsync(copy.getId());
             flash.addFlashAttribute("message",
                     "같은 SBOM 을 다시 검사합니다. 끝나면 아래 이력에 새 줄로 나타납니다.");
@@ -632,13 +632,13 @@ public class AssetController {
     @PreAuthorize("hasRole('ADMIN')")
     public String deleteScan(@PathVariable Long scanId, RedirectAttributes flash) {
         Scan scan = scans.findWithAsset(scanId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
         Long assetId = scan.getAsset().getId();
         String detail = scan.getSbomFilename() + " · 탐지 " + scan.getFindingCount() + "건";
         String assetName = scan.getAsset().getName();
         scanService.delete(scan);
         audit.record(AuditEvent.SCAN_DELETED, assetName, detail);
-        flash.addFlashAttribute("message", "스캔을 지웠습니다. 보관된 파일도 함께 삭제되었습니다.");
+        flash.addFlashAttribute("message", "검사를 지웠습니다. 보관된 파일도 함께 삭제되었습니다.");
         return "redirect:/assets/" + assetId;
     }
 
@@ -657,7 +657,7 @@ public class AssetController {
                                @RequestParam(defaultValue = "cvss") String sort,
                                HttpServletResponse response) throws java.io.IOException {
         Scan scan = scans.findWithAsset(scanId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
 
         // 내려받기는 화면과 달리 전부 담는다. 5만 건이면 파일이 크지만, 잘린
         // 파일로 결재를 올리는 것보다 낫다.

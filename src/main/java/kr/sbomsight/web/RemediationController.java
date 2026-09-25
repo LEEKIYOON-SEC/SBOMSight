@@ -92,7 +92,7 @@ public class RemediationController {
                 assetId, ScanStatus.DONE).orElse(null);
         if (latest == null) {
             flash.addFlashAttribute("error",
-                                    asset.getName() + " 은 완료된 검사가 없어 조치를 열 수 없습니다.");
+                                    asset.getName() + " 자산은 완료된 검사가 없어 조치를 열 수 없습니다.");
             return "redirect:/assets/" + assetId;
         }
         return opened(openOrRejoin(asset, latest, packageName, principal.getName()),

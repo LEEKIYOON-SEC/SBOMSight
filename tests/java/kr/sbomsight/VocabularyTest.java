@@ -199,6 +199,122 @@ class VocabularyTest {
     }
 
     /**
+     * <b>자바에서 만드는 글도 화면에 나간다.</b>
+     *
+     * <p>위 시험들은 템플릿만 읽는다. 그래서 자산 삭제 안내(`스캔 3건 · 탐지 …`),
+     * 검사를 지운 뒤의 안내, 404 사유(`스캔을 찾을 수 없습니다`)가 자바 문자열
+     * 이라 그대로 남아 있었다 — 여덟 곳. 로그({@code log.info} 등)는 화면에
+     * 나가지 않으므로 넘긴다. 주석도 넘긴다.
+     */
+    @Test
+    @DisplayName("자바에서 만드는 안내 · 오류 글도 쓰지 않기로 한 말을 쓰지 않는다")
+    void javaMessagesFollowTheVocabulary() throws IOException {
+        List<String> hits = new ArrayList<>();
+        for (JavaLiteral lit : javaLiterals()) {
+            for (var banned : BANNED.entrySet()) {
+                if (lit.text().contains(banned.getKey())) {
+                    hits.add("%s  '%s' → '%s'  (%s)".formatted(
+                            lit.where(), banned.getKey(), banned.getValue(), lit.text()));
+                }
+            }
+        }
+        assertThat(hits)
+                .as("docs/rework-plan.md §4.1 의 어휘표대로 고칩니다. 자바 문자열도 화면에 나갑니다.")
+                .isEmpty();
+    }
+
+    /**
+     * <b>이름 뒤에 조사를 박아 두지 않는다.</b>
+     *
+     * <p>`을/를` · `이/가` · `은/는` · `으로/로` · `과/와` 는 앞말의 받침에 따라
+     * 갈린다. 이름 뒤에 하나를 박아 두면 이름에 따라 틀린다 — 띄운 앱에서
+     * "was-01 을 내부업무 으로 옮겼습니다". 대신 고정된 말을 사이에 둔다:
+     * "was-01 자산을 내부업무 구역으로". `의` · `에` 는 받침과 상관없어 둔다.
+     */
+    @Test
+    @DisplayName("값 뒤에 받침 따라 갈리는 조사를 붙이지 않는다")
+    void noFixedParticleAfterAValue() throws IOException {
+        Pattern java = Pattern.compile("\\+\\s*\"\\s?(을|를|이|가|은|는|으로|로|과|와)(\\s|\\.|$)");
+        Pattern template = Pattern.compile("\\+\\s*'\\s?(을|를|이|가|은|는|으로|로|과|와)(\\s|\\.|')");
+        List<String> hits = new ArrayList<>();
+
+        for (Path file : javaFiles()) {
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (isCommentOrLog(line)) {
+                    continue;
+                }
+                if (java.matcher(line).find()) {
+                    hits.add("%s:%d  %s".formatted(file.getFileName(), i + 1, line.strip()));
+                }
+            }
+        }
+        Path templates = Path.of("src/main/resources/templates");
+        try (Stream<Path> files = Files.walk(templates)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".html")).sorted().toList()) {
+                List<String> lines = visibleLines(file);
+                for (int i = 0; i < lines.size(); i++) {
+                    if (template.matcher(lines.get(i)).find()) {
+                        hits.add("%s:%d  %s".formatted(templates.relativize(file), i + 1,
+                                                       lines.get(i).strip()));
+                    }
+                }
+            }
+        }
+
+        assertThat(hits)
+                .as("이름 뒤에는 고정된 말(자산 · 구역 · 종료 코드 …)을 두고 조사는 그 말에 붙입니다.")
+                .isEmpty();
+    }
+
+    private record JavaLiteral(String where, String text) {
+    }
+
+    private static List<Path> javaFiles() throws IOException {
+        try (Stream<Path> files = Files.walk(Path.of("src/main/java"))) {
+            return files.filter(p -> p.toString().endsWith(".java")).sorted().toList();
+        }
+    }
+
+    /** 주석 줄이거나 로그를 남기는 줄 — 화면에 나가지 않는다. */
+    private static boolean isCommentOrLog(String line) {
+        String s = line.stripLeading();
+        return s.startsWith("*") || s.startsWith("//") || s.startsWith("/*")
+                || Pattern.compile("\\blog\\.(info|warn|error|debug|trace)\\(").matcher(line).find();
+    }
+
+    /** 주석과 로그를 뺀 자바 문자열 조각. 여러 줄에 걸친 블록 주석은 통째로 넘긴다. */
+    private static List<JavaLiteral> javaLiterals() throws IOException {
+        Pattern literal = Pattern.compile("\"((?:[^\"\\\\]|\\\\.)*)\"");
+        List<JavaLiteral> out = new ArrayList<>();
+        for (Path file : javaFiles()) {
+            List<String> lines = Files.readAllLines(file);
+            boolean inBlock = false;
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                String s = line.strip();
+                if (inBlock) {
+                    inBlock = !s.contains("*/");
+                    continue;
+                }
+                if (s.startsWith("/*") && !s.contains("*/")) {
+                    inBlock = true;
+                    continue;
+                }
+                if (isCommentOrLog(line)) {
+                    continue;
+                }
+                Matcher m = literal.matcher(line);
+                while (m.find()) {
+                    out.add(new JavaLiteral(file.getFileName() + ":" + (i + 1), m.group(1)));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
      * 표의 열 이름.
      *
      * <p>한 가지를 두 이름으로 부르는 일은 거의 언제나 여기서 생긴다 — 새
