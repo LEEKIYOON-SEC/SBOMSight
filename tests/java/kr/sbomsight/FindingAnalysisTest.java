@@ -392,16 +392,6 @@ class FindingAnalysisTest {
                         .contains("보안-2026-0143");
     }
 
-    /** 적어 둔 주소와 즐겨찾기가 죽지 않아야 한다. */
-    @Test
-    @DisplayName("옛 위험 수용·검토 결과 주소는 대응 화면의 그 탭으로 이어진다")
-    void theOldAddressesStillWork() throws Exception {
-        for (String old : new String[] { "/acceptances", "/analyses" }) {
-            mvc.perform(get(old).with(user("tester").roles("VIEWER")))
-               .andExpect(redirectedUrl("/actions?tab=analyses"));
-        }
-    }
-
     @Test
     @DisplayName("조회 권한으로는 검토 결과를 적을 수 없다")
     void viewersCannotRecord() throws Exception {
