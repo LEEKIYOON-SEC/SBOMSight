@@ -5,7 +5,6 @@ import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.service.AssetService;
-import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.SbomStorage;
 import kr.sbomsight.service.PackageService;
 import kr.sbomsight.service.Paging;
@@ -17,8 +16,6 @@ import kr.sbomsight.service.FindingAnalysisService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -642,40 +639,6 @@ public class AssetController {
         return "redirect:/assets/" + assetId;
     }
 
-    /**
-     * 지금 화면의 필터가 그대로 적용된 결과를 CSV 로.
-     *
-     * <p>화면에서 걸러 놓고 내려받으면 전체가 나오는 것이 가장 흔한 불만이다.
-     * 같은 조건을 같은 질의에 넘긴다.
-     */
-    @GetMapping("scans/{scanId}/export.csv")
-    public void exportFindings(@PathVariable Long scanId,
-                               @RequestParam(required = false) String severity,
-                               @RequestParam(required = false) Boolean fixable,
-                               @RequestParam(required = false) Boolean kev,
-                               @RequestParam(required = false) String q,
-                               @RequestParam(defaultValue = "cvss") String sort,
-                               HttpServletResponse response) throws java.io.IOException {
-        Scan scan = scans.findWithAsset(scanId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
-
-        // 내려받기는 화면과 달리 전부 담는다. 5만 건이면 파일이 크지만, 잘린
-        // 파일로 결재를 올리는 것보다 낫다.
-        List<Finding> all = findings.search(scanId, blankToNull(severity), fixable, kev,
-                                            blankToNull(q),
-                                            PageRequest.of(0, 200_000, order(sort))).getContent();
-
-        String name = scan.getAsset().getName() + "-"
-                + scan.getCreatedAt().atZone(java.time.ZoneId.systemDefault())
-                      .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
-                + ".csv";
-        response.setContentType("text/csv; charset=UTF-8");
-        response.setHeader("Content-Disposition",
-                "attachment; filename*=UTF-8''" + java.net.URLEncoder.encode(
-                        name, java.nio.charset.StandardCharsets.UTF_8));
-        CsvWriter.writeFindings(response.getOutputStream(), all);
-    }
-
     /** SBOM 업로드. 저장까지만 하고 grype 은 뒤에서 돌린다. */
     @PostMapping("assets/{id}/sbom")
     @PreAuthorize("hasRole('ADMIN')")
@@ -703,7 +666,6 @@ public class AssetController {
         return "redirect:/assets/" + id;
     }
 
-    /** 취약점 목록. 정렬·필터·페이징은 전부 SQL 에서 끝난다. */
     /**
      * 검사 하나의 취약점 — 이제 통합 화면이 그린다.
      *
@@ -712,23 +674,6 @@ public class AssetController {
     @GetMapping("scans/{scanId}")
     public String scan(@PathVariable Long scanId) {
         return "redirect:/vulns?scan=" + scanId;
-    }
-
-    /**
-     * 정렬 기준.
-     *
-     * <p>어느 축으로 정렬하든 <b>값이 없는 건은 항상 뒤로</b> 보낸다. CVSS 가
-     * 없는 건을 0 점으로 줄 세우면 "안전하다"는, 아무도 내리지 않은 판정이 된다.
-     */
-    private Sort order(String sort) {
-        return switch (sort) {
-            case "epss" -> Sort.by(Sort.Order.desc("epss").nullsLast(),
-                                   Sort.Order.desc("cvssScore").nullsLast());
-            case "package" -> Sort.by(Sort.Order.asc("packageName"), Sort.Order.asc("cve"));
-            case "cve" -> Sort.by(Sort.Order.asc("cve"));
-            default -> Sort.by(Sort.Order.desc("cvssScore").nullsLast(),
-                               Sort.Order.asc("packageName"));
-        };
     }
 
     private Map<String, Long> severityMap(Long scanId) {
@@ -744,10 +689,6 @@ public class AssetController {
         // 을 읽는 순간 세션이 없으면 LazyInitializationException 이 난다.
         return assets.findWithZone(id)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "자산을 찾을 수 없습니다."));
-    }
-
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**

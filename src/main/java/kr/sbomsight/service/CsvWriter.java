@@ -34,34 +34,6 @@ public final class CsvWriter {
     private CsvWriter() {
     }
 
-    public static void writeFindings(OutputStream out, List<Finding> findings) throws IOException {
-        try (Writer writer = start(out)) {
-            row(writer, "CVE", "grype 식별자", "심각도", "CVSS", "CVSS 벡터", "악용 확률",
-                        "실제 악용", "패키지", "설치 버전", "유형", "설치 경로",
-                        "수정 상태", "수정 버전", "영향 범위", "매칭 방식", "출처");
-            for (Finding f : findings) {
-                row(writer,
-                    f.getDisplayId(),
-                    f.getSecondaryId(),
-                    f.getSeverity(),
-                    f.getCvssScore() == null ? "" : f.getCvssScore().toPlainString(),
-                    f.getCvssVector(),
-                    // 값이 없으면 빈 칸이다. 0 으로 채우면 "악용 확률 0%" 가 된다.
-                    f.getEpss() == null ? "" : f.getEpss().toPlainString(),
-                    f.getKev() == null ? "" : (f.getKev() ? "확인됨" : "확인 안 됨"),
-                    f.getPackageName(),
-                    f.getPackageVersion(),
-                    f.getPackageType(),
-                    f.getInstallPath(),
-                    f.getFixState(),
-                    f.getFixedVersion(),
-                    f.getVersionConstraint(),
-                    f.getMatchType(),
-                    f.getDataSource());
-            }
-        }
-    }
-
     public static void writeRemediations(OutputStream out, List<Remediation> list)
             throws IOException {
         try (Writer writer = start(out)) {

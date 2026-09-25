@@ -640,7 +640,9 @@ class PageRenderTest {
     @Test
     @DisplayName("CSV 내려받기는 화면이 아니라 파일로 나온다")
     void downloads() throws Exception {
-        mvc.perform(get("/scans/" + scan.getId() + "/export.csv").with(user("tester").roles("ADMIN")))
+        // 검사 하나의 탐지 — 화면(취약점 · 자산 상세의 취약점 탭)이 거는 주소다.
+        // 앞서 따로 있던 /scans/{id}/export.csv 는 어느 화면도 걸지 않아 지웠다.
+        mvc.perform(get("/vulns/export.csv?scan=" + scan.getId()).with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
         mvc.perform(get("/actions/export.csv").with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
