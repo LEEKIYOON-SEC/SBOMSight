@@ -244,6 +244,7 @@ git pull
 | 재부팅한 다음부터 안 뜬다 · 로그에 `RSA public key ...` | 접속 주소에 `allowPublicKeyRetrieval=true` 를 더한다 — [windows-setup.md 문제 해결](windows-setup.md#어제까지-잘-되다가-재부팅한-다음부터-기동이-안-된다-rsa-public-key-) |
 | 재부팅 뒤 안 올라온다 | **부팅 1분 뒤에 뜬다.** 그래도 안 되면 MySQL/MariaDB 서비스가 `자동` 인지 확인한다 — DB 가 없으면 기동이 죽고, 1분 간격으로 세 번까지만 다시 시도한다 |
 | 검사만 실패한다 | 설정 → 도구 상태에서 grype 을 불러 본다. SYSTEM 이 grype·DB 를 못 찾는 경우가 대부분이다 (1절) |
+| 화면에 `처리하지 못했습니다` 와 시각이 뜬다 | 그 시각 앞뒤의 `logs\service.log`. 오류 화면은 안의 사정(예외 문구)을 적지 않는다 — 기록에만 남는다 |
 | 악용 확률·실제 악용이 전부 `—` | 그 grype 버전이 주지 않은 것이다. 0 으로 채우지 않는다 |
 | 그 밖에 | [`docs/windows-setup.md` 문제 해결](windows-setup.md#문제-해결) |
 

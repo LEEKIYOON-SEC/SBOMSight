@@ -9,6 +9,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.WebAttributes;
+import org.springframework.security.web.access.AccessDeniedHandlerImpl;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
@@ -121,6 +123,16 @@ public class SecurityConfig {
                 .invalidateHttpSession(true)
                 .deleteCookies("SBOMSIGHT_SESSION")
                 .permitAll())
+
+            // 403 의 까닭을 요청에 얹어 두고 기본 처리기에 넘긴다. 기본 처리기는
+            // 오류 화면 주소를 따로 정했을 때만 얹는다 — 안 얹으면 오류 화면이
+            // 폼의 보안 확인 값(CSRF)이 낡아 막힌 것과 권한이 없어 막힌 것을 가르지
+            // 못하고, 관리자에게 "관리자 계정만 할 수 있습니다" 라고 말한다
+            // (ErrorPages · ErrorPageTest). 막는 규칙은 그대로다.
+            .exceptionHandling(denied -> denied.accessDeniedHandler((request, response, e) -> {
+                request.setAttribute(WebAttributes.ACCESS_DENIED_403, e);
+                new AccessDeniedHandlerImpl().handle(request, response, e);
+            }))
 
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)

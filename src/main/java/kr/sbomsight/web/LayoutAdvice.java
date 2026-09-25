@@ -24,8 +24,13 @@ import java.util.List;
  *
  * <p>화면마다 같은 질의를 다시 짜지 않도록 여기 한 곳에서 담는다. 전부
  * 집계 질의라 한 화면에 다섯 번 왕복한다 — 목록을 끌어와 세는 것이 아니다.
+ *
+ * <p><b>이 패키지의 컨트롤러에만 붙는다.</b> 가리지 않으면 스프링의 오류
+ * 처리(BasicErrorController)에도 붙어, 기둥이 없는 오류 화면 한 장에 SQL 이
+ * 다섯 번 나갔다 — DB 가 멈춰 난 500 이면 오류 화면을 그리다 또 멈춘다
+ * (ErrorPageTest).
  */
-@ControllerAdvice
+@ControllerAdvice(basePackageClasses = LayoutAdvice.class)
 public class LayoutAdvice {
 
     private static final List<RemediationStatus> OPEN =

@@ -1,0 +1,49 @@
+<!doctype html>
+<!--/*
+  오류 화면. 껍데기(layout)를 쓰지 않고 홀로 선다 — 로그인 화면과 같은 꼴이다.
+
+  **왜 홀로 서는가.** 껍데기의 기둥(왼쪽 메뉴)은 숫자를 채우려고 DB 를 묻는다.
+  DB 가 멈춰 난 500 에서 그것을 그리면 오류 화면을 그리다 또 멈추고, 그러면
+  톰캣의 영문 화면이 뜬다. 또 껍데기는 `${error}` 를 붉은 알림으로 찍는데,
+  스프링의 오류 처리가 그 이름으로 영문 사유(`Not Found`)를 넘긴다.
+
+  무엇을 적는가는 ErrorPages 가 정한다 — 상태마다 제목 한 줄 · 설명 한 줄,
+  서버 쪽 오류면 기록(로그)을 찾을 시각. 안의 사정(예외 문구 · 스택)은 적지
+  않는다.
+*/-->
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title th:text="${title} + ' — SBOMSight'">찾을 수 없습니다 — SBOMSight</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/tabler/tabler.min.css">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="d-flex flex-column bg-surface-secondary">
+
+<div class="page page-center">
+  <div class="container container-tight py-4">
+    <div class="text-center mb-4">
+      <span class="navbar-brand fs-2 fw-bold">SBOMSight</span>
+    </div>
+
+    <div class="card card-md">
+      <div class="card-body">
+        <div class="text-secondary num mb-2" th:text="'오류 ' + ${status}">오류 404</div>
+        <h2 class="h2 mb-3" th:text="${title}">찾을 수 없습니다</h2>
+        <p class="mb-0" th:if="${!#strings.isEmpty(detail)}" th:text="${detail}">
+          주소가 바뀌었거나, 가리키던 자산 · 검사 · 조치가 지워졌을 수 있습니다.</p>
+        <p class="text-secondary num mt-3 mb-0" th:if="${time != null}"
+           th:text="'시각 ' + ${time}">시각 2026-09-25 15:00:04</p>
+      </div>
+      <!--/* 돌아갈 곳은 하나다. 로그인 전이면 로그인 화면을 거쳐 같은 곳으로 간다. */-->
+      <div class="card-footer">
+        <a class="btn btn-dark" href="/">자산 목록으로</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
