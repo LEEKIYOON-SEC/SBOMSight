@@ -16,8 +16,8 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
  *
  * <p>주소가 {@code /reports/} 아래로 들어왔다 (N7). 앞서
  * {@code /report/{scanId}} 와 {@code /report/zone} 과 {@code /reports} 가
- * 따로 있었는데, 한 영역의 주소가 두 갈래면 기억하지 못한다. 옛 주소는
- * {@link LegacyRedirectController} 가 영구히 받는다.
+ * 따로 있었는데, 한 영역의 주소가 두 갈래면 기억하지 못한다. 옛 주소를 잇던
+ * 다리는 운영 전에 걷었다 — 옛 주소를 적어 둔 설치가 없다.
  */
 @Controller
 public class ReportController {

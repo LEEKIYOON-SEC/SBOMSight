@@ -17,8 +17,7 @@ import java.time.LocalDate;
  * <p>기간을 안 주면 <b>이번 달</b>이다. 월 단위가 이 도구가 실제로 쓰이는
  * 주기이고, 매달 같은 화면을 열어 같은 두 칸을 채우게 하지 않는다.
  *
- * <p>주소가 {@code /reports/} 아래로 들어왔다 (N7). 옛 {@code /report/zone}
- * 은 {@link LegacyRedirectController} 가 영구히 받는다.
+ * <p>주소가 {@code /reports/} 아래로 들어왔다 (N7).
  */
 @Controller
 public class ZoneReportController {

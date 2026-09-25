@@ -249,14 +249,14 @@ class LoginFlowTest {
     void returnsToThePageYouWanted() throws Exception {
         MockHttpSession session = new MockHttpSession();
 
-        mvc.perform(get("/lookup").session(session).header("Accept", "text/html"))
+        mvc.perform(get("/vulns").session(session).header("Accept", "text/html"))
            .andExpect(status().is3xxRedirection())
            .andExpect(redirectedUrl("http://localhost/login"));
 
         // 스프링이 절대 주소와 ?continue 표시를 붙인다. 그것까지 못 박지
         // 않는다 — 확인할 것은 "그 화면으로 갔는가" 다.
         mvc.perform(login(session))
-           .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("/lookup")));
+           .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("/vulns")));
     }
 
     // --- 로그인 · 로그아웃 -----------------------------------------------

@@ -97,7 +97,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC).permitAll()
                 // 조회 권한은 읽기 전용이다. 쓰기는 전부 관리자.
-                .requestMatchers("/settings/**", "/audit/**", "/assets/*/delete").hasRole("ADMIN")
+                .requestMatchers("/settings/**", "/assets/*/delete").hasRole("ADMIN")
                 .anyRequest().authenticated())
 
             // 로그인 뒤 돌아갈 자리는 '사람이 볼 화면' 만 기억한다. 경로를

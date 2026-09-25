@@ -242,9 +242,10 @@ class AuditLogTest {
         // 그것이 곧 접속 현황 공개가 된다.
         mvc.perform(get("/settings/audit").with(user("viewer").roles("VIEWER")))
            .andExpect(status().isForbidden());
-        // 옛 주소로 우회해도 막혀야 한다. 넘겨주는 자리에 구멍이 나기 쉽다.
+        // 옛 주소(/audit)로 넘겨주던 다리는 걷었다 — 넘겨주는 자리가 없으니
+        // 우회할 길도 없다. 그 주소는 아무것도 내지 않는다.
         mvc.perform(get("/audit").with(user("viewer").roles("VIEWER")))
-           .andExpect(status().isForbidden());
+           .andExpect(status().isNotFound());
     }
 
     /**

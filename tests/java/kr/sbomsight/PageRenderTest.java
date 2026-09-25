@@ -467,39 +467,16 @@ class PageRenderTest {
     }
 
     /**
-     * 옛 주소와, 아직 안 만든 화면의 새 주소.
+     * 한 자산짜리 취약점 범위는 자산 상세로, 보고서 주소는 제 화면으로.
      *
-     * <p>기둥에는 최종 주소를 먼저 걸어 두고 그 화면은 뒤 단계에서 만든다.
-     * 그동안 <b>새 주소가 어디로도 가지 않으면 기둥이 고장 난 것</b>이므로,
-     * 지금은 옛 화면으로 이어 둔다. 진짜 화면이 생기면 방향이 뒤집힌다.
+     * <p>옛 주소(/lookup · /remediations · /report/… · /audit · /scans/{id})를 새
+     * 화면으로 잇던 다리는 운영 전에 걷었다 — 옛 주소를 적어 둔 설치가 없다.
+     * 템플릿이 거는 주소가 전부 열리는지는 {@code everyLiteralLinkInTheTemplatesOpens}
+     * 가 본다.
      */
     @Test
-    @DisplayName("기둥의 주소가 전부 어딘가로 이어진다")
+    @DisplayName("한 자산짜리 범위는 자산 상세로, /reports 는 제 화면으로 간다")
     void navLinksAllGoSomewhere() throws Exception {
-        // 영구 — 화면이 자리를 옮겼다. 적어 둔 주소가 죽지 않아야 한다.
-        for (String[] pair : new String[][] {
-                { "/audit", "/settings/audit" },
-                { "/lookup", "/vulns" },
-                { "/lookup?q=xz", "/vulns?q=xz" },
-                { "/lookup/export.csv?q=xz", "/vulns/export.csv?q=xz" },
-                { "/scans/" + scan.getId(), "/vulns?scan=" + scan.getId() },
-                // N5 — 조치와 검토 결과가 대응 화면의 두 탭이 됐다.
-                { "/remediations", "/actions" },
-                { "/remediations/" + remediation.getId(), "/actions/" + remediation.getId() },
-                { "/remediations/export.csv", "/actions/export.csv" },
-                { "/analyses", "/actions?tab=analyses" },
-                { "/acceptances", "/actions?tab=analyses" },
-                // N7 — 보고서 주소가 /reports/ 아래로 모였다. 한 글자 차이로
-                // 갈라진 두 접두사(/report 와 /reports)를 아무도 기억 못 한다.
-                { "/report/" + scan.getId(), "/reports/scan/" + scan.getId() },
-                { "/report/zone", "/reports/zone" },
-                { "/report/zone?zone=" + asset.getZone().getId(),
-                  "/reports/zone?zone=" + asset.getZone().getId() } }) {
-            mvc.perform(get(pair[0]).with(user("tester").roles("ADMIN")))
-               .andExpect(status().is3xxRedirection())
-               .andExpect(redirectedUrl(pair[1]));
-        }
-
         // 한 자산짜리 범위는 통합 화면에 없다 — 그 자산 안에서 끝난다.
         mvc.perform(get("/vulns?asset=" + asset.getId()).with(user("tester").roles("ADMIN")))
            .andExpect(redirectedUrl("/assets/" + asset.getId() + "?tab=vulns"));

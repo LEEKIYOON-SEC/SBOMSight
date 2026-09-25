@@ -666,16 +666,6 @@ public class AssetController {
         return "redirect:/assets/" + id;
     }
 
-    /**
-     * 검사 하나의 취약점 — 이제 통합 화면이 그린다.
-     *
-     * <p>적어 둔 주소와 즐겨찾기가 죽지 않게 넘겨 준다.
-     */
-    @GetMapping("scans/{scanId}")
-    public String scan(@PathVariable Long scanId) {
-        return "redirect:/vulns?scan=" + scanId;
-    }
-
     private Map<String, Long> severityMap(Long scanId) {
         Map<String, Long> counts = new LinkedHashMap<>();
         findings.countBySeverity(scanId)
