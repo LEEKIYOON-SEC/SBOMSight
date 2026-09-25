@@ -218,7 +218,7 @@ class FindingAnalysisTest {
     @DisplayName("조치 안 함(위험 수용)은 기본 목록에 계속 보인다")
     void riskAcceptedItemsStayVisible() {
         acceptRisk("CVE-1", "openssl");
-        assertThat(service.list(false, null))
+        assertThat(service.list(false, null, false))
                 .extracting(FindingAnalysis::getCve)
                 .contains("CVE-1");
     }
@@ -230,9 +230,9 @@ class FindingAnalysisTest {
                        AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_PRESENT, null,
                        "", "", "", null, "tester");
 
-        assertThat(service.list(false, null)).extracting(FindingAnalysis::getCve)
+        assertThat(service.list(false, null, false)).extracting(FindingAnalysis::getCve)
                                              .doesNotContain("CVE-2");
-        assertThat(service.list(true, null)).extracting(FindingAnalysis::getCve)
+        assertThat(service.list(true, null, false)).extracting(FindingAnalysis::getCve)
                                             .contains("CVE-2");
     }
 
@@ -284,7 +284,7 @@ class FindingAnalysisTest {
         repo.saveAndFlush(analysis);
 
         assertThat(analysis.isReviewOverdue()).isTrue();
-        assertThat(service.reviewOverdue()).extracting(FindingAnalysis::getId)
+        assertThat(service.reviewOverdue(false)).extracting(FindingAnalysis::getId)
                                            .contains(analysis.getId());
     }
 

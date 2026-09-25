@@ -41,9 +41,10 @@
   <div class="page-header d-print-none pt-0">
     <div class="container-xl">
       <ul class="nav nav-tabs">
-        <li th:replace="~{fragments/ui :: tab('/actions', '조치',
+        <!--/* 탭 주소는 `운영 종료 자산 포함` 을 이어 간다 — 탭 숫자가 그 범위로 센다. */-->
+        <li th:replace="~{fragments/ui :: tab(${remediationTab}, '조치',
                          ${remediationCount}, ${tab} != 'analyses')}"></li>
-        <li th:replace="~{fragments/ui :: tab('/actions?tab=analyses', '검토 결과',
+        <li th:replace="~{fragments/ui :: tab(${analysisTab}, '검토 결과',
                          ${analysisCount}, ${tab} == 'analyses')}"></li>
       </ul>
     </div>
@@ -88,6 +89,19 @@
     <th:block th:if="${tab} == 'analyses'">
       <div th:replace="~{fragments/ui :: reviewedout(${includeDone}, ${reviewedOut})}"></div>
     </th:block>
+
+    <!--/*
+      운영 종료한 자산의 조치 · 검토 결과도 보기. **자산 목록과 같은 이름 ·
+      같은 주소 값**(`archived=true`)이다. 끈 상태가 기둥의 `대응` 배지와 같은
+      범위다 — 앞서 이 화면은 운영 종료한 자산의 것까지 늘 보여 주어, 자산
+      목록에서 사라진 자산의 기한 지난 조치가 여기와 배지에 남았다.
+    */-->
+    <label class="form-check form-check-inline mb-0"
+           title="운영에서 내린 자산의 조치 · 검토 결과도 함께 보기">
+      <input class="form-check-input" type="checkbox" name="archived" value="true"
+             th:checked="${archived}" data-autosubmit>
+      <span class="form-check-label">운영 종료 자산 포함</span>
+    </label>
 
     <button class="btn btn-sm btn-dark" type="submit">적용</button>
   </form>

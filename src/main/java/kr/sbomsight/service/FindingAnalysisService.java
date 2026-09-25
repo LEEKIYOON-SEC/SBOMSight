@@ -159,9 +159,17 @@ public class FindingAnalysisService {
         return rows.stream().collect(Collectors.toMap(key, Function.identity(), (a, b) -> a));
     }
 
+    /**
+     * 대응 화면의 검토 결과 탭 — 보고서도 이것으로 모은다.
+     *
+     * @param includeArchived 운영 종료한 자산의 것도 넣는가. 대응 화면은
+     *                        {@code 운영 종료 자산 포함} 을 켰을 때만 넣는다.
+     *                        보고서는 <b>넣고</b> 제 범위로 거른다 — 운영 종료한
+     *                        자산의 제 보고서가 제 검토 결과를 잃으면 안 된다
+     */
     @Transactional(readOnly = true)
-    public List<FindingAnalysis> list(boolean includeDone, Long zoneId) {
-        return analyses.findForList(includeDone, OPEN_STATES, zoneId, LocalDate.now());
+    public List<FindingAnalysis> list(boolean includeDone, Long zoneId, boolean includeArchived) {
+        return analyses.findForList(includeDone, OPEN_STATES, zoneId, LocalDate.now(), includeArchived);
     }
 
     /**
@@ -180,9 +188,10 @@ public class FindingAnalysisService {
                        .toList();
     }
 
+    /** 재검토일이 지난 것. 운영 종료한 자산의 것은 {@code includeArchived} 일 때만. */
     @Transactional(readOnly = true)
-    public List<FindingAnalysis> reviewOverdue() {
-        return analyses.findReviewOverdue(LocalDate.now());
+    public List<FindingAnalysis> reviewOverdue(boolean includeArchived) {
+        return analyses.findReviewOverdue(LocalDate.now(), includeArchived);
     }
 
     /**

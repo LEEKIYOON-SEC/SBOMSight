@@ -151,17 +151,22 @@ public class RemediationService {
                 (a, b) -> a));
     }
 
+    /** 대응 화면의 탭 숫자 — 거르기 전 전체. 운영 종료한 자산의 것은 켰을 때만. */
     @Transactional(readOnly = true)
-    public List<Remediation> all() {
-        return remediations.findAllWithAsset(List.of(RemediationStatus.values()));
+    public List<Remediation> all(boolean includeArchived) {
+        return remediations.findAllWithAsset(List.of(RemediationStatus.values()), includeArchived);
     }
 
-    /** 대응 화면의 조치 탭 — 구역으로 좁힐 수 있고 기한 지난 것이 위로 온다. */
+    /**
+     * 대응 화면의 조치 탭 — 구역으로 좁힐 수 있고 기한 지난 것이 위로 온다.
+     *
+     * @param includeArchived 운영 종료한 자산의 조치도 넣는가 ({@code 운영 종료 자산 포함})
+     */
     @Transactional(readOnly = true)
-    public List<Remediation> list(Long zoneId, RemediationStatus status) {
+    public List<Remediation> list(Long zoneId, RemediationStatus status, boolean includeArchived) {
         List<RemediationStatus> statuses =
                 status == null ? List.of(RemediationStatus.values()) : List.of(status);
-        return remediations.findForList(zoneId, statuses, LocalDate.now());
+        return remediations.findForList(zoneId, statuses, LocalDate.now(), includeArchived);
     }
 
     /**

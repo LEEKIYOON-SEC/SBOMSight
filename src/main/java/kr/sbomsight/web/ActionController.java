@@ -63,11 +63,18 @@ public class ActionController {
         this.audit = audit;
     }
 
+    /**
+     * @param archived 운영 종료한 자산의 것도 보는가 — 자산 목록의
+     *                 {@code 운영 종료 자산 포함} 과 같은 이름 · 같은 주소 값이다.
+     *                 끄면 목록 · 탭 숫자 · 기한 지난 알림 · CSV 가 모두 뺀다
+     *                 (기둥의 배지와 같은 범위)
+     */
     @GetMapping
     public String index(@RequestParam(defaultValue = "remediations") String tab,
                         @RequestParam(required = false) Long zone,
                         @RequestParam(required = false) RemediationStatus status,
                         @RequestParam(defaultValue = "false") boolean includeDone,
+                        @RequestParam(defaultValue = "false") boolean archived,
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(required = false) Integer size,
                         @RequestParam(required = false) Integer jump,
@@ -79,6 +86,7 @@ public class ActionController {
                 .with("zone", zone)
                 .with("status", "analyses".equals(tab) ? null : status)
                 .with("includeDone", includeDone ? "true" : null)
+                .with("archived", archived ? "true" : null)
                 .size(size);
         String jumped = Paging.jump(links, jump);
         if (jumped != null) {
@@ -87,8 +95,15 @@ public class ActionController {
         model.addAttribute("links", links);
         // 탭 숫자는 **거르기 전** 전체를 센다. 거른 뒤 세면 구역을 고르는
         // 순간 탭의 수가 함께 줄어, 다른 탭에 무엇이 있는지 알 수 없게 된다.
-        model.addAttribute("remediationCount", service.all().size());
-        model.addAttribute("analysisCount", analyses.list(false, null).size());
+        // 운영 종료 포함만은 따른다 — 무엇을 전체로 볼지를 정하는 값이고,
+        // 탭 링크가 그 값을 이어 간다. 안 이어 가면 켠 채로 다른 탭을 눌렀을
+        // 때 탭 숫자와 뜬 목록의 범위가 달라진다.
+        model.addAttribute("remediationCount", service.all(archived).size());
+        model.addAttribute("analysisCount", analyses.list(false, null, archived).size());
+        model.addAttribute("remediationTab", new VulnQuery.Links("/actions", null)
+                .with("archived", archived ? "true" : null).here());
+        model.addAttribute("analysisTab", new VulnQuery.Links("/actions", "tab=analyses")
+                .with("archived", archived ? "true" : null).here());
 
         model.addAttribute("tab", tab);
         model.addAttribute("zones", zones.all());
@@ -96,6 +111,7 @@ public class ActionController {
         model.addAttribute("status", status);
         model.addAttribute("statuses", RemediationStatus.values());
         model.addAttribute("includeDone", includeDone);
+        model.addAttribute("archived", archived);
 
         // CSV 링크를 자바에서 만든다. `@{/actions/export.csv(zone=${zone}, …)}`
         // 는 값이 없어도 이름을 적어서 `?zone=&status=&includeDone=false` 가
@@ -105,16 +121,17 @@ public class ActionController {
                 .with("tab", "analyses".equals(tab) ? "analyses" : null)
                 .with("zone", zone)
                 .with("status", status)
-                .with("includeDone", includeDone ? "true" : null));
+                .with("includeDone", includeDone ? "true" : null)
+                .with("archived", archived ? "true" : null));
 
         if ("analyses".equals(tab)) {
-            List<FindingAnalysis> rows = analyses.list(includeDone, zone);
+            List<FindingAnalysis> rows = analyses.list(includeDone, zone, archived);
             model.addAttribute("analyses", Paging.slice(rows, page, size));
             // 해당 없음 · 오탐으로 닫혀 빠진 줄 수 — 체크박스가 `(n건)` 으로 말한다.
             model.addAttribute("reviewedOut", includeDone
                     ? rows.stream().filter(a -> !a.isOpen()).count()
-                    : analyses.list(true, zone).size() - rows.size());
-            model.addAttribute("overdue", analyses.reviewOverdue());
+                    : analyses.list(true, zone, archived).size() - rows.size());
+            model.addAttribute("overdue", analyses.reviewOverdue(archived));
             // 검토 결과 줄에서 조치로 넘어가는 길. 조치는 `(자산, 패키지)`
             // 하나에 하나라 검토 여러 건이 조치 하나를 가리킨다 — 이미
             // 열려 있으면 `조치 등록` 이 아니라 `조치 보기` 다.
@@ -122,8 +139,8 @@ public class ActionController {
                     rows.stream().map(a -> a.getAsset().getId()).distinct().toList()));
         } else {
             model.addAttribute("remediations",
-                               Paging.slice(service.list(zone, status), page, size));
-            model.addAttribute("overdue", remediations.findOverdue(LocalDate.now()));
+                               Paging.slice(service.list(zone, status, archived), page, size));
+            model.addAttribute("overdue", remediations.findOverdue(LocalDate.now(), archived));
         }
         return "actions";
     }
@@ -230,12 +247,16 @@ public class ActionController {
         return "redirect:/actions";
     }
 
-    /** 내려받기는 보고 있는 탭의 것이다. 다른 탭의 것이 섞여 나오면 대조를 못 한다. */
+    /**
+     * 내려받기는 보고 있는 탭의 것이다. 다른 탭의 것이 섞여 나오면 대조를 못 한다.
+     * 운영 종료 포함도 화면과 같다.
+     */
     @GetMapping("/export.csv")
     public void export(@RequestParam(defaultValue = "remediations") String tab,
                        @RequestParam(required = false) Long zone,
                        @RequestParam(required = false) RemediationStatus status,
                        @RequestParam(defaultValue = "false") boolean includeDone,
+                       @RequestParam(defaultValue = "false") boolean archived,
                        HttpServletResponse response) throws java.io.IOException {
         boolean isAnalyses = "analyses".equals(tab);
         response.setContentType("text/csv; charset=UTF-8");
@@ -244,9 +265,11 @@ public class ActionController {
                 + "-" + LocalDate.now() + ".csv\"");
 
         if (isAnalyses) {
-            CsvWriter.writeAnalyses(response.getOutputStream(), analyses.list(includeDone, zone));
+            CsvWriter.writeAnalyses(response.getOutputStream(),
+                                    analyses.list(includeDone, zone, archived));
         } else {
-            CsvWriter.writeRemediations(response.getOutputStream(), service.list(zone, status));
+            CsvWriter.writeRemediations(response.getOutputStream(),
+                                        service.list(zone, status, archived));
         }
     }
 

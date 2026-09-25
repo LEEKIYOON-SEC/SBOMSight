@@ -249,8 +249,8 @@ class PageRenderTest {
         accepted.setReviewBy(LocalDate.now().minusDays(1));
         analysisRepository.saveAndFlush(accepted);
 
-        long overdueActions = remediations.countOverdue(LocalDate.now());
-        long overdueReviews = analyses.reviewOverdue().size();
+        long overdueActions = remediations.countOverdue(LocalDate.now(), false);
+        long overdueReviews = analyses.reviewOverdue(false).size();
         assertThat(overdueActions).isPositive();
         assertThat(overdueReviews).isPositive();
 

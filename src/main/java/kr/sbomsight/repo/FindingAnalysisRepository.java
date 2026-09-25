@@ -50,12 +50,16 @@ public interface FindingAnalysisRepository extends JpaRepository<FindingAnalysis
      *
      * <p><b>재검토일이 지난 것이 맨 위로 온다.</b> 표 어딘가에 섞여 있으면
      * 지났다는 사실 자체를 못 보고 지나간다.
+     *
+     * <p>운영 종료한 자산의 것은 {@code includeArchived} 일 때만 — 조치와 같은
+     * 규칙이다(RemediationRepository 머리 주석).
      */
     @Query("""
            SELECT f FROM FindingAnalysis f JOIN FETCH f.asset a JOIN FETCH a.zone z
            WHERE NOT (f.state = kr.sbomsight.domain.AnalysisState.NOT_SET AND f.response IS NULL)
              AND (:includeDone = TRUE OR f.state IN :openStates)
              AND (:zoneId IS NULL OR z.id = :zoneId)
+             AND (:includeArchived = TRUE OR a.archivedAt IS NULL)
            ORDER BY CASE WHEN f.reviewBy IS NOT NULL AND f.reviewBy < :today THEN 0
                          WHEN f.state IN :openStates THEN 1
                          ELSE 2 END,
@@ -64,21 +68,26 @@ public interface FindingAnalysisRepository extends JpaRepository<FindingAnalysis
     List<FindingAnalysis> findForList(@Param("includeDone") boolean includeDone,
                                       @Param("openStates") Collection<AnalysisState> openStates,
                                       @Param("zoneId") Long zoneId,
-                                      @Param("today") LocalDate today);
+                                      @Param("today") LocalDate today,
+                                      @Param("includeArchived") boolean includeArchived);
 
     /** 재검토일이 지난 것. 자산 목록 머리와 기둥의 숫자에 조치 기한과 나란히 선다. */
     @Query("""
            SELECT f FROM FindingAnalysis f JOIN FETCH f.asset a JOIN FETCH a.zone
            WHERE f.reviewBy IS NOT NULL AND f.reviewBy < :today
+             AND (:includeArchived = TRUE OR a.archivedAt IS NULL)
            ORDER BY f.reviewBy ASC
            """)
-    List<FindingAnalysis> findReviewOverdue(@Param("today") LocalDate today);
+    List<FindingAnalysis> findReviewOverdue(@Param("today") LocalDate today,
+                                            @Param("includeArchived") boolean includeArchived);
 
     @Query("""
            SELECT COUNT(f) FROM FindingAnalysis f
            WHERE f.reviewBy IS NOT NULL AND f.reviewBy < :today
+             AND (:includeArchived = TRUE OR f.asset.archivedAt IS NULL)
            """)
-    long countReviewOverdue(@Param("today") LocalDate today);
+    long countReviewOverdue(@Param("today") LocalDate today,
+                            @Param("includeArchived") boolean includeArchived);
 
     /** 이 자산에 검토 결과가 몇 건 달려 있나. 자산을 지울 때 무엇이 함께 사라지는지 알린다. */
     @Query("""

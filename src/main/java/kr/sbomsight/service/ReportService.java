@@ -399,8 +399,9 @@ public class ReportService {
         //
         // 검토가 끝난 것(해당 없음·오탐)도 가져온다 — 목록에서는 빠지지만
         // "왜 그대로 두는가" 에는 그것도 답이다.
+        // 운영 종료한 자산의 것도 넣는다 — 그 자산의 제 보고서다.
         List<FindingAnalysis> explained =
-                analyses.list(true, null).stream()
+                analyses.list(true, null, true).stream()
                         .filter(a -> a.getAsset().getId().equals(scan.getAsset().getId()))
                         .toList();
 

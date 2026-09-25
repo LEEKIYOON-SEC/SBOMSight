@@ -410,7 +410,8 @@ public class ZoneReportService {
 
         // 검토가 끝난 것(해당 없음·오탐)도 가져온다 — 목록에서는 빠지지만
         // "왜 그대로 두는가" 에는 그것도 답이다.
-        List<FindingAnalysis> explained = analyses.list(true, zoneId).stream()
+        // 운영 종료 거르기는 `scope`(범위 안 자산)가 한다 — 여기서 두 번 거르지 않는다.
+        List<FindingAnalysis> explained = analyses.list(true, zoneId, true).stream()
                 .filter(a -> scope.contains(a.getAsset().getId()))
                 .toList();
 
