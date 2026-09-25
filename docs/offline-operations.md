@@ -252,7 +252,7 @@ DB 기준일은 찍히므로 보고서를 받는 사람이 읽을 수 있다. �
 | `GRYPE_DB_MAX_ALLOWED_BUILT_AGE` | `120h` | DB 허용 경과 시간 |
 | `GRYPE_DB_VALIDATE_AGE` | `true` | `false` 면 경과 시간을 보지 않는다 |
 | `SBOMSIGHT_GRYPE` | `grype` | PATH 에 없을 때 grype 전체 경로 |
-| `SBOMSIGHT_SYFT` | `syft` | 같은 것 — 설정의 `도구 상태` 와 `NOTICE.md` 만들 때 쓴다 |
+| `SBOMSIGHT_SYFT` | `syft` | 앱은 읽지 않는다 — `scripts/make-notice.sh` 가 `NOTICE.md` 를 만들 때만 쓴다 |
 | `SBOMSIGHT_GRYPE_TIMEOUT` | `60` | grype 제한 시간(분) |
 | `SBOMSIGHT_DATA_DIR` | `./data` | SBOM 원본과 grype 결과 보관 위치 |
 
