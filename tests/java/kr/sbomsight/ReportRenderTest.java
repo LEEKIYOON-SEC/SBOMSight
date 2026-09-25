@@ -102,7 +102,7 @@ class ReportRenderTest {
      * {@code white-space: nowrap} 을 걸고, 값마다 {@code <div>} 로 쌓는다.
      *
      * <p>여기서 잴 수 있는 것은 <b>markup</b> 까지다. 실제 픽셀은
-     * {@code tests/check-rows.py} 와 화면에서 본다.
+     * 띄운 화면에서 눈으로 본다.
      */
     @Test
     @DisplayName("조치 대상의 비고는 줄로 쌓는다")

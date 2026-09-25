@@ -40,7 +40,7 @@
 
   /* ── 심각도 ────────────────────────────────────────────────────────────
      grype 이 주는 단계를 그대로 쓴다. 다시 나누지 않는다.
-     `scripts/check-contrast.py` 로 그려진 색을 재어 WCAG 2.1 AA(4.5:1)에
+     그려진 색을 브라우저에서 재어 WCAG 2.1 AA(4.5:1)에
      맞춰 둔 값이다 — 색상은 그대로 두고 필요한 만큼만 진하게 했다. */
   --critical: #a71922; --critical-bg: #fdecea; --critical-line: #f6c9c3;
   --high:     #b45018; --high-bg:     #fdefe3; --high-line:     #f6d0b0;
@@ -332,14 +332,14 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 
 /* 실제 악용과 심각은 붉게, 높음은 주황으로. 숫자만이 아니라 글자까지 —
    `3 심각` 에서 숫자만 붉으면 무엇이 3 인지 한 번 더 읽어야 한다.
-   색은 `check-contrast.py` 로 재어 4.5:1 을 넘긴 값(--critical · --high)이다. */
+   색은 재어서 4.5:1 을 넘긴 값(--critical · --high)이다. */
 .summaryline a.sev-critical, .summaryline a.sev-critical b { color: var(--critical); }
 .summaryline a.sev-high,     .summaryline a.sev-high b     { color: var(--high); }
 
 /* Tabler 의 경고 알림은 글자가 주황(#f59f00)이라 옅은 바탕 위에서 2.0:1 이다.
    장식이 아니라 **읽어야 하는 문장**이 들어가는 자리라(기한 지난 조치 · grype
    실행 불가) 글자만 진하게 한다. 색상은 그대로 두고 명도만 낮췄다 —
-   `scripts/check-contrast.py` 로 재어 4.5:1 을 넘긴 값이다. */
+   재어서 4.5:1 을 넘긴 값이다. */
 .alert-warning { --tblr-alert-color: #8a5a00; color: #8a5a00; }
 .alert-warning b, .alert-warning strong { color: inherit; }
 

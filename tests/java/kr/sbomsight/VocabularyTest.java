@@ -24,8 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 새는 것을 아무도 모른다. 새 화면을 만들 때 옛 화면에서 표를 복사해 오면
  * 그 말도 함께 따라온다 — 실제로 {@code vulns.html} 이 그렇게 만들어졌다.
  *
- * <p>지어낸 말과 흐려진 줄임말이다. 근거는 {@code docs/rework-plan.md} §4.1.
- * 여기에 걸리면 그 표를 보고 고친다. 새 말을 만들지 않는다.
+ * <p>지어낸 말과 흐려진 줄임말이다. <b>이 파일이 어휘표다</b> — 낱말마다 왜
+ * 바꿨는지를 옆에 적어 둔다. 여기에 걸리면 오른쪽 말로 고친다. 새 말을 만들지
+ * 않는다. (앞서 근거가 개편 계획서 §4.1 에 있었고, 운영 전에 그 문서를 지웠다.)
  */
 class VocabularyTest {
 
@@ -174,7 +175,7 @@ class VocabularyTest {
         }
 
         assertThat(hits)
-                .as("docs/rework-plan.md §4.1 의 어휘표대로 고칩니다. 새 말을 짓지 않습니다.")
+                .as("VocabularyTest 의 어휘표대로 고칩니다. 새 말을 짓지 않습니다.")
                 .isEmpty();
     }
 
@@ -234,7 +235,7 @@ class VocabularyTest {
             }
         }
         assertThat(hits)
-                .as("docs/rework-plan.md §4.1 의 어휘표대로 고칩니다. 자바 문자열도 화면에 나갑니다.")
+                .as("VocabularyTest 의 어휘표대로 고칩니다. 자바 문자열도 화면에 나갑니다.")
                 .isEmpty();
     }
 
@@ -365,7 +366,7 @@ class VocabularyTest {
         }
 
         assertThat(hits)
-                .as("docs/rework-plan.md §4.1. 같은 것을 두 이름으로 부르지 않습니다.")
+                .as("VocabularyTest 의 어휘표. 같은 것을 두 이름으로 부르지 않습니다.")
                 .isEmpty();
     }
 

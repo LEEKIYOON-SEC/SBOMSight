@@ -137,7 +137,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
     // 여기는 그 목록 안에서만 센다. 질의가 한 벌로 줄었다.
     //
     // **해당 없음 · 오탐은 기본 목록에서 뺀다**(`includeReviewed = false`).
-    // 검토 결과가 그 둘인 건은 볼 일이 끝났다 — 문서(rework-plan §4.5 ·
+    // 검토 결과가 그 둘인 건은 볼 일이 끝났다 — 문서(개편 계획서 ·
     // operations.md)가 그렇게 약속했는데 어느 목록도 빼지 않고 있었고,
     // 보고서 1장만 "목록에서 제외" 라고 적고 있었다. 탐지 건수(보고서 2장 ·
     // 자산 목록의 `탐지`)는 그대로 둔다 — 검토는 grype 의 판정을 바꾸지 않는다.

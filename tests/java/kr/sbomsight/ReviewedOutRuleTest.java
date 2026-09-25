@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * <b>해당 없음 · 오탐은 탐지 목록의 기본에서 빠진다</b> — 그리고 그 규칙은 하나다.
  *
- * <p>문서(rework-plan §4.5 · operations.md · README)와 보고서 1장이 "검토를
+ * <p>문서(개편 계획서 · operations.md · README)와 보고서 1장이 "검토를
  * 마쳐 목록에서 제외" 라고 적어 두었는데 어느 목록도 빼지 않았다(띄운 앱에서
  * 취약점 화면 1,425건 = 전체). 사용자 결정: 문서대로 뺀다.
  *
