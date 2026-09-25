@@ -655,10 +655,6 @@ public class ZoneReportService {
             return actions.stream().mapToLong(ZonePackageAction::reachableCount).sum();
         }
 
-        public long reachablePackages() {
-            return actions.stream().filter(a -> a.reachableCount() > 0).count();
-        }
-
         /** 두 대 이상에 공통으로 걸린 패키지 — 한 번 판단해 여러 대에 적용할 수 있는 것. */
         public List<ZonePackageAction> shared() {
             return actions.stream().filter(a -> a.assetCount() > 1).toList();
