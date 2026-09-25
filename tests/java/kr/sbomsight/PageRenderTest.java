@@ -58,6 +58,7 @@ class PageRenderTest {
     @Autowired FindingAnalysisService analyses;
     @Autowired ZoneService zoneService;
     @Autowired kr.sbomsight.repo.AppUserRepository appUsers;
+    @Autowired kr.sbomsight.repo.FindingAnalysisRepository analysisRepository;
 
     private Asset asset;
     private Scan scan;
@@ -229,6 +230,38 @@ class PageRenderTest {
         open("/?filter=stale");
         open("/vulns");
         open("/actions");
+    }
+
+    /**
+     * <b>기한 지난 조치와 재검토일 지난 검토 결과를 따로 센다.</b>
+     *
+     * <p>요약 줄의 `기한 지난 조치` 가 두 가지를 합친 수였다 — 조치 기한이 지난
+     * 것과 검토 결과의 재검토일이 지난 것. 누르면 조치 탭으로 가는데 그 탭에는
+     * 재검토일 지난 것이 없다. 띄운 앱에서 `1 기한 지난 조치` 를 눌렀더니 기한
+     * 지난 조치는 0건이었다.
+     */
+    @Test
+    @DisplayName("요약 줄은 기한 지난 조치와 재검토일 지난 검토 결과를 따로 세고 각자의 탭으로 보낸다")
+    void overdueActionsAndOverdueReviewsAreSeparate() throws Exception {
+        // 씨앗의 위험 수용(재검토일 30일 뒤)을 지난 것으로 만든다. 화면으로는
+        // 지난 날짜를 적을 수 없다 — 날이 지나서 그렇게 되는 것이다.
+        var accepted = analyses.byKey(asset.getId()).get("CVE-2024-2961|glibc");
+        accepted.setReviewBy(LocalDate.now().minusDays(1));
+        analysisRepository.saveAndFlush(accepted);
+
+        long overdueActions = remediations.countOverdue(LocalDate.now());
+        long overdueReviews = analyses.reviewOverdue().size();
+        assertThat(overdueActions).isPositive();
+        assertThat(overdueReviews).isPositive();
+
+        String html = open("/").replaceAll("\\s+", " ");
+        assertThat(html)
+                .as("조치 기한이 지난 것만 `기한 지난 조치` 로 세야 한다")
+                .contains("href=\"/actions\"> <b>" + overdueActions + "</b> 기한 지난 조치");
+        assertThat(html)
+                .as("재검토일 지난 검토 결과가 따로 없거나 검토 결과 탭으로 가지 않는다")
+                .contains("href=\"/actions?tab=analyses\"> <b>" + overdueReviews
+                          + "</b> 재검토일 지난 검토 결과");
     }
 
     /**

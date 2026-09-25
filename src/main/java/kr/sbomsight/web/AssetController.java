@@ -224,7 +224,7 @@ public class AssetController {
      * 다른 축이다. {@code critical}·{@code high} 는 grype 이 준 단계를 그대로
      * 센다(다시 나누지 않는다).
      */
-    public record Summary(long noScan, long stale, long actionOverdue,
+    public record Summary(long noScan, long stale, long actionOverdue, long reviewOverdue,
                           long kev, long critical, long high, long noFix) {
     }
 
@@ -246,11 +246,13 @@ public class AssetController {
                 .filter(c -> "wont-fix".equals(c.getFixState()) || "not-fixed".equals(c.getFixState()))
                 .mapToLong(FindingRepository.FixStateCount::getTotal).sum();
 
-        // 기한이 지난 것 = 조치 기한 + 검토 결과의 재검토일. 기둥의 배지와
-        // 같은 수를 쓴다 — 두 곳이 다른 수를 보이면 어느 쪽을 믿을지 모른다.
-        long overdue = remediations.countOverdue(java.time.LocalDate.now())
-                + analyses.reviewOverdue().size();
-        return new Summary(noScan, stale, overdue, kev, critical, high, noFix);
+        // **조치 기한과 재검토일을 따로 센다.** 앞서 둘을 합쳐 `기한 지난 조치`
+        // 로 찍었는데, 누르면 가는 조치 탭에는 재검토일 지난 것이 없다 — 띄운
+        // 앱에서 `1 기한 지난 조치` 를 눌렀더니 기한 지난 조치가 0건이었다.
+        // 둘의 합은 기둥의 `대응` 배지와 같다(그 배지는 두 탭을 함께 센다).
+        long actionOverdue = remediations.countOverdue(java.time.LocalDate.now());
+        long reviewOverdue = analyses.reviewOverdue().size();
+        return new Summary(noScan, stale, actionOverdue, reviewOverdue, kev, critical, high, noFix);
     }
 
     private boolean matches(AssetRow row, String filter) {

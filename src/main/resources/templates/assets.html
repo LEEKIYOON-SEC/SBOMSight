@@ -44,7 +44,8 @@
       */-->
       <div class="card mb-3" th:if="${summary.kev() + summary.critical() + summary.high()
                                      + summary.noScan() + summary.stale()
-                                     + summary.actionOverdue() + summary.noFix() > 0}">
+                                     + summary.actionOverdue() + summary.reviewOverdue()
+                                     + summary.noFix() > 0}">
         <div class="card-body py-2 summaryline">
           <a th:if="${summary.kev() > 0}" class="sev-critical" th:href="@{/vulns(kev='true')}">
             <b th:text="${#numbers.formatInteger(summary.kev(), 0, 'COMMA')}">0</b> 실제 악용</a>
@@ -60,6 +61,8 @@
             <b th:text="${summary.stale()}">0</b> 30일 넘은 자산</a>
           <a th:if="${summary.actionOverdue() > 0}" class="overdue" th:href="@{/actions}">
             <b th:text="${summary.actionOverdue()}">0</b> 기한 지난 조치</a>
+          <a th:if="${summary.reviewOverdue() > 0}" class="overdue" th:href="@{/actions(tab='analyses')}">
+            <b th:text="${summary.reviewOverdue()}">0</b> 재검토일 지난 검토 결과</a>
         </div>
       </div>
 
