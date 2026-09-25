@@ -30,11 +30,12 @@
 
     <div class="card card-md">
       <div class="card-body">
-        <div class="text-secondary num mb-2" th:text="'오류 ' + ${status}">오류 404</div>
+        <!--/* `num` 을 붙이지 않는다 — 그 클래스는 오른쪽으로 민다(표의 숫자 칸용). */-->
+        <div class="text-secondary mb-2" th:text="'오류 ' + ${status}">오류 404</div>
         <h2 class="h2 mb-3" th:text="${title}">찾을 수 없습니다</h2>
         <p class="mb-0" th:if="${!#strings.isEmpty(detail)}" th:text="${detail}">
           주소가 바뀌었거나, 가리키던 자산 · 검사 · 조치가 지워졌을 수 있습니다.</p>
-        <p class="text-secondary num mt-3 mb-0" th:if="${time != null}"
+        <p class="text-secondary mt-3 mb-0" th:if="${time != null}"
            th:text="'시각 ' + ${time}">시각 2026-09-25 15:00:04</p>
       </div>
       <!--/* 돌아갈 곳은 하나다. 로그인 전이면 로그인 화면을 거쳐 같은 곳으로 간다. */-->
