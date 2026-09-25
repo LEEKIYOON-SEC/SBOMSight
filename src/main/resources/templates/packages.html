@@ -143,7 +143,7 @@
               */-->
               <div th:if="${p.mixed()}">
                 <span class="tag nofix"
-                      title="걸린 것이 있는 버전과 없는 버전이 함께 깔려 있음 — 안 올린 자산이 남았다는 뜻">일부만 업그레이드</span>
+                      title="걸린 것이 있는 버전과 없는 버전이 함께 깔려 있음 — 업그레이드하지 않은 자산이 남았다는 뜻">일부만 업그레이드</span>
               </div>
             </td>
             <td class="tight faint" th:text="${#strings.isEmpty(p.type())} ? '—' : ${p.type()}">rpm</td>
