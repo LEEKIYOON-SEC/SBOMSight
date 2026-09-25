@@ -267,11 +267,7 @@ public class VulnQuery {
      */
     @Transactional(readOnly = true)
     public Scope ofZone(Long zoneId) {
-        List<Scan> latest = scans.findLatestDonePerAsset().stream()
-                .filter(s -> s.getStatus() == ScanStatus.DONE)
-                .filter(s -> s.getAsset().getArchivedAt() == null)
-                .filter(s -> zoneId == null || s.getAsset().getZone().getId().equals(zoneId))
-                .toList();
+        List<Scan> latest = latestIn(zoneId);
 
         // **`전체 5대` 라고만 쓰면 자산이 다섯 대인 줄 읽힌다.** 여섯 대 중
         // 검사된 것이 다섯일 뿐이다 — 검사 안 한 자산이 빠졌다는 사실이
@@ -281,6 +277,26 @@ public class VulnQuery {
         return new Scope(label, latest.stream().map(Scan::getId).toList(),
                          latest.size() == 1 ? latest.get(0).getAsset().getId() : null,
                          latest.stream().map(s -> s.getAsset().getId()).toList());
+    }
+
+    /**
+     * {@link #ofZone} 과 같은 검사들 — 이름표 없이 번호만.
+     *
+     * <p>패키지 화면이 버전마다 붙는 취약점 수를 여기서 센다. 앞서 그 화면은
+     * 모든 자산의 최신 검사를 따로 불러 세서, 구역을 골라도 다른 구역과 운영
+     * 종료한 자산의 탐지가 합쳐졌다. <b>범위를 정하는 자리는 여기 하나다.</b>
+     */
+    @Transactional(readOnly = true)
+    public List<Long> latestScanIds(Long zoneId) {
+        return latestIn(zoneId).stream().map(Scan::getId).toList();
+    }
+
+    private List<Scan> latestIn(Long zoneId) {
+        return scans.findLatestDonePerAsset().stream()
+                .filter(s -> s.getStatus() == ScanStatus.DONE)
+                .filter(s -> s.getAsset().getArchivedAt() == null)
+                .filter(s -> zoneId == null || s.getAsset().getZone().getId().equals(zoneId))
+                .toList();
     }
 
     /** 목록을 모델에 담는다. 묶는 방식에 따라 담기는 값이 다르다. */

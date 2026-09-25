@@ -432,6 +432,70 @@ class ComponentInventoryTest {
                 .contains("log4j-core");
     }
 
+    /**
+     * <b>구역을 고르면 그 구역 자산의 탐지만 센다.</b> 운영 종료한 자산도 뺀다.
+     *
+     * <p>버전마다 붙는 취약점 수를 {@code (이름, 버전)} 으로 <b>모든 자산</b>의
+     * 최신 검사에서 세고 있었다. 같은 버전이 두 구역에 깔려 있으면 DMZ 를 골라도
+     * 내부업무 자산의 탐지까지 합쳐졌고(띄운 앱에서 libc6 — 패키지 화면 58건,
+     * 취약점 화면 29건), 운영 종료한 자산의 탐지도 그대로 남았다. 취약점 화면과
+     * 같은 범위여야 두 화면의 숫자가 맞는다.
+     */
+    @Test
+    @DisplayName("구역을 고르면 그 구역 자산의 탐지만 센다 — 운영 종료 자산도 뺀다")
+    @Transactional
+    void countsOnlyTheChosenZoneAndLiveAssets() throws IOException {
+        long nano = System.nanoTime();
+        Zone dmz = zoneService.create("pz-dmz-" + nano, "#a71922", "");
+        Zone inner = zoneService.create("pz-inner-" + nano, "#c3571a", "");
+
+        Asset web = inZone("pz-web", dmz);
+        Asset was = inZone("pz-was", inner);
+        Asset retired = inZone("pz-retired", dmz);
+        affected(web, 1);
+        affected(was, 2);
+        affected(retired, 4);
+        retired.setArchivedAt(java.time.Instant.now());
+        assets.saveAndFlush(retired);
+
+        assertThat(findingsFor("pz-glibc", dmz.getId()))
+                .as("DMZ 를 골랐는데 다른 구역이나 운영 종료 자산의 탐지가 섞였다")
+                .isEqualTo(1);
+        assertThat(findingsFor("pz-glibc", inner.getId())).isEqualTo(2);
+        assertThat(findingsFor("pz-glibc", null))
+                .as("운영 종료한 자산의 탐지가 전체 수에 남았다")
+                .isEqualTo(3);
+    }
+
+    private Asset inZone(String name, Zone zone) {
+        Asset a = new Asset();
+        a.setName(name + "-" + System.nanoTime());
+        a.setZone(zone);
+        return assets.saveAndFlush(a);
+    }
+
+    /** 같은 {@code (이름, 버전)} 을 깔고 그 버전에 탐지 {@code count} 건을 단다. */
+    private void affected(Asset asset, int count) throws IOException {
+        Scan scan = doneScan(asset);
+        ingest(asset, scan, """
+                { "artifacts": [ { "name": "pz-glibc", "version": "2.28-10",
+                                   "purl": "pkg:deb/debian/pz-glibc@2.28-10" } ] }
+                """);
+        for (int i = 0; i < count; i++) {
+            Finding f = new Finding(scan, "CVE-2099-" + i + "|pz-glibc", "CVE-2099-" + i, "pz-glibc");
+            f.setPackageVersion("2.28-10");
+            f.setSeverity("High");
+            findings.saveAndFlush(f);
+        }
+    }
+
+    private long findingsFor(String name, Long zoneId) {
+        return packages.list(zoneId, null, name, false, false, 0, null).rows().getContent().stream()
+                       .filter(r -> r.name().equals(name))
+                       .mapToLong(PackageService.PackageRow::findingCount)
+                       .sum();
+    }
+
     @Test
     @DisplayName("버전이 하나뿐이면 일부만 업그레이드한 것이 아니다")
     @Transactional

@@ -1,11 +1,9 @@
 package kr.sbomsight.service;
 
 import kr.sbomsight.domain.Component;
-import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.Severity;
 import kr.sbomsight.repo.ComponentRepository;
 import kr.sbomsight.repo.FindingRepository;
-import kr.sbomsight.repo.ScanRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.stereotype.Service;
@@ -37,13 +35,13 @@ public class PackageService {
 
     private final ComponentRepository components;
     private final FindingRepository findings;
-    private final ScanRepository scans;
+    private final VulnQuery vulns;
 
     public PackageService(ComponentRepository components, FindingRepository findings,
-                          ScanRepository scans) {
+                          VulnQuery vulns) {
         this.components = components;
         this.findings = findings;
-        this.scans = scans;
+        this.vulns = vulns;
     }
 
     /**
@@ -92,7 +90,7 @@ public class PackageService {
      */
     private Set<String> namesMatching(Long zoneId, String type, String q,
                                       boolean vulnerableOnly, boolean mixedOnly) {
-        Map<String, Map<String, Long>> severities = severities(null);
+        Map<String, Map<String, Long>> severities = severities(null, zoneId);
         // 이름 → [걸린 버전이 있다, 안 걸린 버전이 있다]
         Map<String, boolean[]> flags = new LinkedHashMap<>();
         for (ComponentRepository.TypedVersionRow row
@@ -139,7 +137,7 @@ public class PackageService {
             return List.of();
         }
 
-        Map<String, Map<String, Long>> severities = severities(null);
+        Map<String, Map<String, Long>> severities = severities(null, zoneId);
 
         // 거르개 둘은 패키지 단위 성질이라 이름으로 모아 봐야 판단이 선다.
         Map<String, List<ExportRow>> byName = new LinkedHashMap<>();
@@ -183,7 +181,7 @@ public class PackageService {
             spread.computeIfAbsent(row.getName(), k -> new ArrayList<>()).add(row);
         }
 
-        Map<String, Map<String, Long>> severities = severities(names);
+        Map<String, Map<String, Long>> severities = severities(names, zoneId);
 
         List<PackageRow> rows = new ArrayList<>();
         for (ComponentRepository.PackageRow row : page) {
@@ -203,13 +201,16 @@ public class PackageService {
     /**
      * {@code (이름, 버전)} → 등급별 건수.
      *
-     * <p>취약점은 자산마다 <b>최신 완료 검사 것만</b> 본다 — 취약점 화면과 같은
-     * 범위여야 두 화면의 숫자가 맞는다.
+     * <p><b>취약점 화면과 같은 범위로 센다</b> — 운영 중인 자산의 최신 완료
+     * 검사, 구역을 골랐으면 그 구역만({@link VulnQuery#latestScanIds}). 앞서는
+     * 모든 자산의 최신 검사를 따로 불러 셌다. 같은 버전이 두 구역에 깔려 있으면
+     * DMZ 를 골라도 내부업무 자산의 탐지가 합쳐졌고(libc6 — 패키지 화면 58건,
+     * 취약점 화면 29건), 운영 종료한 자산의 탐지도 남았다.
      *
      * @param names 물어 볼 이름. {@code null} 이면 전부 (CSV 내보내기)
      */
-    private Map<String, Map<String, Long>> severities(List<String> names) {
-        List<Long> scanIds = scans.findLatestDonePerAsset().stream().map(Scan::getId).toList();
+    private Map<String, Map<String, Long>> severities(List<String> names, Long zoneId) {
+        List<Long> scanIds = vulns.latestScanIds(zoneId);
         Map<String, Map<String, Long>> out = new LinkedHashMap<>();
         if (scanIds.isEmpty()) {
             return out;
