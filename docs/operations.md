@@ -350,7 +350,7 @@ jar 로 V15 를 적용한 뒤 되살렸다. 되살린 DB 는 마이그레이션 
 
 ```powershell
 (Get-ScheduledTaskInfo -TaskName SBOMSight).LastTaskResult   # 0
-Get-Content .\logs\service.log -Tail 30                      # Started SBOMSightApplication
+Get-Content .\logs\service.log -Tail 30                      # Started SbomSightApplication
 Restart-Computer                                              # 재부팅 뒤 저절로 열리는가
 ```
 
