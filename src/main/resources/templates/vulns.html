@@ -205,7 +205,7 @@
               <th class="tight">패키지</th><th class="tight">유형</th>
               <th class="num tight">영향 자산</th><th class="num tight">탐지</th>
               <th class="num tight">해소 가능</th><th class="tight">최고 심각도</th>
-              <th class="tight">목표 버전</th>
+              <th class="tight">현재 버전</th>
               <!--/* CVE별과 같은 이유로 세기만 한다 — 위 주석. */-->
               <th class="tight">검토</th>
             </tr></thead>
@@ -226,13 +226,15 @@
                 <span th:if="${g.kevCount > 0}" class="tag kev">실제 악용</span>
               </td>
               <!--/*
-                설치된 판이 자산마다 다르면 목표 버전을 단정하지 않는다.
-                하나로 적으면 그 버전으로 올려도 안 되는 자산이 생긴다.
+                **설치된 버전이다.** 열 이름이 `목표 버전` 이었는데 찍는 것은 설치된
+                버전이었다(띄운 앱에서 curl 줄에 7.64.0-4+deb10u1). 자산마다
+                다르면 하나를 골라 적지 않는다. 수정 버전은 항목별 목록과 보고서가
+                말한다.
               */-->
               <td class="tight mono">
                 <span th:if="${g.versionCount == 1}" th:text="${g.anyVersion}">3.0.7</span>
                 <span class="faint" th:if="${g.versionCount != 1}"
-                      th:text="'설치 판 ' + ${g.versionCount} + '가지'">설치 판 2가지</span>
+                      th:text="${g.versionCount} + '가지'">2가지</span>
               </td>
               <td class="tight" th:with="r=${reviewed.get(g.packageName)}">
                 <div th:replace="~{fragments/ui :: reviewmark(${r})}"></div>

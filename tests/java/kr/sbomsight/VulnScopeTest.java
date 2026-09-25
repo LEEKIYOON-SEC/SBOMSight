@@ -519,6 +519,29 @@ class VulnScopeTest {
                 .contains("spring-beans").doesNotContain("log4j-core");
     }
 
+    /**
+     * <b>패키지별의 버전 열은 설치된 버전이고, 그렇게 부른다.</b>
+     *
+     * <p>열 이름이 `목표 버전` 이었는데 찍는 것은 설치된 버전이었다 — 띄운
+     * 앱에서 curl 줄에 `7.64.0-4+deb10u1`(설치된 것)이 목표로 떠 있었다.
+     * 그 열을 보고 올리면 이미 깔린 버전으로 "올리게" 된다.
+     */
+    @Test
+    @DisplayName("패키지별의 버전 열은 `현재 버전` 이다 — 설치된 버전을 목표라고 부르지 않는다")
+    void thePackageTabCallsTheInstalledVersionCurrent() throws Exception {
+        Asset web = asset("web", dmz);
+        finding(scan(web, Instant.now()), "CVE-2021-44228", "log4j-core", "Critical", "fixed");
+
+        String html = mvc.perform(get("/vulns?group=package").with(user("tester").roles("VIEWER")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+
+        assertThat(html).contains("<th class=\"tight\">현재 버전</th>")
+                        .doesNotContain("목표 버전");
+        assertThat(html.substring(html.indexOf("<tbody>")))
+                .contains("2.14.1");     // 설치된 버전 — 이 칸이 찍는 것
+    }
+
     /** `패키지별` 화면을 열어 표에 뜬 패키지 이름만 돌려준다. */
     private String packagesOn(String query) throws Exception {
         String html = mvc.perform(get("/vulns?group=package" + query)
