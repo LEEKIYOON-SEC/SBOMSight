@@ -138,7 +138,8 @@ public class RemediationService {
         if (latest == null) {
             return list.stream().collect(Collectors.toMap(Remediation::getId, r -> -1L));
         }
-        Map<String, Long> byPackage = findings.groupByPackage(latest.getId()).stream()
+        // 탐지 수다 — 해당 없음 · 오탐도 센다(검토는 탐지를 없애지 않는다).
+        Map<String, Long> byPackage = findings.groupByPackage(latest.getId(), true).stream()
                 .collect(Collectors.toMap(FindingRepository.PackageGroup::getPackageName,
                                           FindingRepository.PackageGroup::getTotal,
                                           Long::sum));

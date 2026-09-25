@@ -95,12 +95,18 @@
       <tr><td>영향 패키지</td>
           <td class="num tight" th:text="${report.overview.affectedPackages} + '개'">0개</td></tr>
       <!--/*
-        검토를 마쳐 목록에서 빠진 건수는 **반드시 찍는다.** 빠진 사실을 안
-        적으면 숫자가 조용히 줄어든 보고서가 된다 — 점검에서 문제가 되는
-        것이 정확히 그것이다. 탐지 건수 자체는 줄지 않는다.
+        목록에서 빠진 건수는 **반드시 찍는다.** 빠진 사실을 안 적으면 숫자가
+        조용히 줄어든 보고서가 된다 — 점검에서 문제가 되는 것이 정확히
+        그것이다. 탐지 건수 자체는 줄지 않는다.
+
+        **어디서 빠지는지 적는다.** 앞서 `검토를 마쳐 목록에서 제외` 라고만
+        적었는데 어느 목록인지 말하지 않았고, 실제로는 어느 장도 빼지 않고
+        있었다. 이제 3·4장이 뺀다(ReportService.build). 무엇이 빠지는지도
+        상태 이름 그대로 적는다 — `검토를 마쳐` 는 위험 수용도 포함하는
+        것처럼 읽힌다.
       */-->
       <tr th:if="${report.overview.excludedByAnalysis > 0}">
-          <td>검토를 마쳐 목록에서 제외</td>
+          <td>해당 없음 · 오탐</td>
           <td class="num tight"
               th:text="${#numbers.formatInteger(report.overview.excludedByAnalysis, 0, 'COMMA')} + '건'">0건</td></tr>
       </tbody>
@@ -111,7 +117,7 @@
       `ReportProseTest` 가 기계로 막는다.
     */-->
     <p class="footnote" th:if="${report.overview.excludedByAnalysis > 0}">
-      ※ 제외된 건도 탐지 건수에 포함. 검토 결과가 <b>해당 없음 · 오탐</b>인 건만 목록에서 제외.
+      ※ 해당 없음 · 오탐 — 탐지 건수 · 2장에는 포함, <b>3 · 4장 목록에서 제외</b>.
     </p>
     <p class="footnote" th:if="${report.overview.hasAccountingNote()}">
       ※ 검사 결과 그대로

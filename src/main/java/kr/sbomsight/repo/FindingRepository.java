@@ -81,14 +81,25 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                   MAX(f.cvssScore)     AS maxCvss,
                   MAX(f.epss)          AS maxEpss,
                   MAX(f.fixedVersion)  AS targetVersion
-           FROM Finding f
-           WHERE f.scan.id = :scanId
+           FROM Finding f JOIN f.scan s
+           WHERE s.id = :scanId
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            GROUP BY f.packageName, f.packageVersion, f.packageType
            ORDER BY SUM(CASE WHEN f.kev = TRUE THEN 1 ELSE 0 END) DESC,
                     MAX(f.cvssScore) DESC,
                     COUNT(f) DESC
            """)
-    List<PackageGroup> groupByPackage(@Param("scanId") Long scanId);
+    List<PackageGroup> groupByPackage(@Param("scanId") Long scanId,
+                                      @Param("includeReviewed") boolean includeReviewed);
 
     /**
      * 노출면 집계용 원재료.
@@ -103,9 +114,20 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                   f.fixState        AS fixState,
                   LOWER(f.severity) AS severity,
                   f.packageName     AS packageName
-           FROM Finding f WHERE f.scan.id = :scanId
+           FROM Finding f JOIN f.scan s WHERE s.id = :scanId
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            """)
-    List<ExposureRow> exposureRows(@Param("scanId") Long scanId);
+    List<ExposureRow> exposureRows(@Param("scanId") Long scanId,
+                                   @Param("includeReviewed") boolean includeReviewed);
 
     // --- 통합 취약점 화면 (/vulns) -----------------------------------------
     //
@@ -516,8 +538,19 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                   f.packageName     AS packageName,
                   s.asset.id        AS assetId
            FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            """)
-    List<ZoneExposureRow> exposureRowsIn(@Param("scanIds") Collection<Long> scanIds);
+    List<ZoneExposureRow> exposureRowsIn(@Param("scanIds") Collection<Long> scanIds,
+                                         @Param("includeReviewed") boolean includeReviewed);
 
     /**
      * 자산별 <b>실제 악용</b>(KEV) 건수.
@@ -568,9 +601,20 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                   SUM(CASE WHEN f.fixState = 'fixed' THEN 1 ELSE 0 END) AS fixable
            FROM Finding f JOIN f.scan s
            WHERE s.id IN :scanIds
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
            GROUP BY s.asset.id, f.packageName
            """)
-    List<AssetPackageCount> countPerAssetPackage(@Param("scanIds") Collection<Long> scanIds);
+    List<AssetPackageCount> countPerAssetPackage(@Param("scanIds") Collection<Long> scanIds,
+                                                 @Param("includeReviewed") boolean includeReviewed);
 
     interface AssetPackageCount {
         Long getAssetId();

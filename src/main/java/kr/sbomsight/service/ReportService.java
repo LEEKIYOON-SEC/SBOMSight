@@ -58,10 +58,15 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public Report build(Scan scan) {
-        Exposure exposure = exposure(scan);
-        Overview overview = overview(scan);
-        Summary summary = summary(scan, exposure);
-        Targets targets = targets(scan, exposure);
+        // **1·2장은 탐지 전부, 3·4장(과 그것을 잇는 5장)은 목록이다.** 목록은
+        // 검토 결과가 해당 없음 · 오탐인 건을 뺀다 — 취약점 화면과 같은 규칙
+        // (FindingRepository 의 includeReviewed). 뺀 건수는 1장이 말한다.
+        // 앞서 1장은 "목록에서 제외" 라고 적으면서 어느 장도 빼지 않았다.
+        Map<AnalysisState, Long> review = reviewCounts(scan);
+        Exposure exposure = exposure(scan, true);
+        Overview overview = overview(scan, review);
+        Summary summary = summary(scan, exposure, review);
+        Targets targets = targets(scan, exposure(scan, false));
         Progress progress = progress(scan, targets);
         return new Report(scan, overview, summary, targets, progress,
                           java.time.Instant.now());
@@ -80,11 +85,12 @@ public class ReportService {
      * <p>벡터를 읽을 수 없는 건은 <b>세지 않고 따로 센다.</b> 아니오로 밀어
      * 넣으면 "원격에서 닿지 않습니다" 라는, 아무도 확인하지 않은 판정이 된다.
      */
-    private Exposure exposure(Scan scan) {
+    private Exposure exposure(Scan scan, boolean includeReviewed) {
         long reachable = 0, reachableFixable = 0, scopeChanged = 0, unreadable = 0;
         Map<String, Long> reachableByPackage = new HashMap<>();
 
-        for (FindingRepository.ExposureRow row : findings.exposureRows(scan.getId())) {
+        for (FindingRepository.ExposureRow row
+                : findings.exposureRows(scan.getId(), includeReviewed)) {
             Optional<CvssVector> parsed = CvssVector.parse(row.getVector());
             if (parsed.isEmpty()) {
                 unreadable++;
@@ -108,7 +114,7 @@ public class ReportService {
 
     // --- 1장: 점검 개요 ------------------------------------------------------
 
-    private Overview overview(Scan scan) {
+    private Overview overview(Scan scan, Map<AnalysisState, Long> review) {
         return new Overview(
                 scan.getAsset(),
                 scan.getSbomFilename(),
@@ -123,8 +129,8 @@ public class ReportService {
                 scan.getDroppedCount(),
                 scan.accountsBalance(),
                 distinctVulnerabilities(scan),
-                findings.groupByPackage(scan.getId()).size(),
-                excludedByAnalysis(scan));
+                findings.groupByPackage(scan.getId(), true).size(),
+                review.get(AnalysisState.NOT_AFFECTED) + review.get(AnalysisState.FALSE_POSITIVE));
     }
 
     /** 고유 취약점 수 — 같은 CVE 가 여러 패키지에 걸리면 한 가지로 센다. 1장은 탐지 전부를 센다. */
@@ -132,34 +138,9 @@ public class ReportService {
         return findings.groupByCveIn(List.of(scan.getId()), null, null, null, null, true).size();
     }
 
-    /**
-     * <b>검토를 마쳐 목록에서 빠지는 건수.</b>
-     *
-     * <p>보고서는 이 수를 반드시 찍는다. 검토 결과로 목록에서 빠진 건이 있는데
-     * 그 사실을 안 적으면, 숫자가 조용히 줄어든 보고서가 된다 — 점검에서
-     * 문제가 되는 것이 정확히 그것이다. <b>탐지 건수 자체는 줄지 않는다.</b>
-     *
-     * <p>적어 둔 번호가 grype 의 주 식별자일 수도, 함께 온 CVE 번호일 수도
-     * 있다. 둘 다 본다 — 한쪽만 보면 적어 둔 것이 보고서에서 사라진다.
-     */
-    private long excludedByAnalysis(Scan scan) {
-        Set<String> done = analyses.forAsset(scan.getAsset().getId()).stream()
-                .filter(a -> !a.isOpen())
-                .map(FindingAnalysis::key)
-                .collect(Collectors.toSet());
-        if (done.isEmpty()) {
-            return 0;
-        }
-        return findings.findKeyRows(scan.getId()).stream()
-                .filter(row -> done.contains(row.getCve() + "|" + row.getPackageName())
-                            || (row.getRelatedCve() != null && !row.getRelatedCve().isBlank()
-                                && done.contains(row.getRelatedCve() + "|" + row.getPackageName())))
-                .count();
-    }
-
     // --- 2장: 점검 결과 요약 -------------------------------------------------
 
-    private Summary summary(Scan scan, Exposure exposure) {
+    private Summary summary(Scan scan, Exposure exposure, Map<AnalysisState, Long> review) {
         Map<String, Long> severity = new LinkedHashMap<>();
         // 순서는 Severity 한곳에 있다. 여기 다시 적으면 곧 갈라진다.
         for (String key : Severity.KEYS) {
@@ -176,7 +157,7 @@ public class ReportService {
         long noFix = fixState.getOrDefault("wont-fix", 0L) + fixState.getOrDefault("not-fixed", 0L);
         long unknownFix = scan.getFindingCount() - fixable - noFix;
 
-        List<PackageGroup> groups = findings.groupByPackage(scan.getId());
+        List<PackageGroup> groups = findings.groupByPackage(scan.getId(), true);
         long kev = groups.stream().mapToLong(PackageGroup::getKevCount).sum();
         // grype 이 KEV 를 확인했는지 자체를 모를 수 있다(옛 판은 주지 않는다).
         boolean kevKnown = groups.stream().anyMatch(g -> g.getKevCount() > 0)
@@ -184,7 +165,7 @@ public class ReportService {
 
         return new Summary(severity, fixState, fixable, noFix, unknownFix,
                            groups.size(), kev, kevKnown, exposure, scan.getFindingCount(),
-                           reviewCounts(scan));
+                           review);
     }
 
     /**
@@ -224,7 +205,10 @@ public class ReportService {
     // --- 3·4장: 조치 대상과 수정 버전 없는 항목 -------------------------------
 
     private Targets targets(Scan scan, Exposure exposure) {
-        List<PackageGroup> groups = findings.groupByPackage(scan.getId());
+        // 목록이다 — 해당 없음 · 오탐은 뺀다. `원격 접근` 도 같은 규칙으로 센
+        // 노출면(exposure)을 받는다. 한 줄 안에서 `해소 건수` 는 뺐는데
+        // `원격 접근` 은 넣으면 두 칸이 서로 다른 건을 센다.
+        List<PackageGroup> groups = findings.groupByPackage(scan.getId(), false);
 
         // 조치 하나로 몇 건이 사라지는가. 이것이 보고서의 핵심 표다.
         //
@@ -276,10 +260,17 @@ public class ReportService {
         Map<String, FindingAnalysis> byKey = analyses.byKey(scan.getAsset().getId());
         Map<String, long[]> counts = new LinkedHashMap<>();
         for (FindingRepository.FindingKey row : findings.findKeyRows(scan.getId())) {
+            AnalysisState state = FindingAnalysisService.stateOf(
+                    byKey, row.getCve(), row.getRelatedCve(), row.getPackageName());
+            // 4장은 목록이다 — 해당 없음 · 오탐으로 빠진 건은 그 줄의 `건수` 에도
+            // `답 있는 건` 에도 넣지 않는다. 넣으면 `1 / 4건` 의 4 가 표의 건수(1)와
+            // 다르다.
+            if (!state.isOpen()) {
+                continue;
+            }
             long[] cell = counts.computeIfAbsent(row.getPackageName(), name -> new long[2]);
             cell[1]++;
-            if (FindingAnalysisService.stateOf(byKey, row.getCve(), row.getRelatedCve(),
-                                               row.getPackageName()) != AnalysisState.NOT_SET) {
+            if (state != AnalysisState.NOT_SET) {
                 cell[0]++;
             }
         }

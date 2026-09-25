@@ -1,6 +1,7 @@
 package kr.sbomsight;
 
 import kr.sbomsight.domain.AnalysisJustification;
+import kr.sbomsight.domain.AnalysisResponse;
 import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
@@ -318,10 +319,14 @@ class ZoneReportTest {
             Scan s = scan(a, LocalDate.of(2026, 9, 10));
             finding(s, "CVE-1", "glibc", "2.34", "High", "wont-fix", "", 7.8, NEEDS_LOGIN);
         }
+        // 목록에 남는 상태로 적는다(해당됨 · 조치 불가). 해당 없음 · 오탐은 5장
+        // 목록에서 빠지므로 `몇 대를 검토했나` 를 재는 데 쓸 수 없다 — 그쪽은
+        // 아래 시험이 본다.
         for (Asset a : new Asset[] { first, second }) {
             analyses.record(a, "CVE-1", "glibc",
-                            AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE,
-                            null, "이 경로를 쓰지 않습니다", "", "", null, "tester");
+                            AnalysisState.EXPLOITABLE, null, AnalysisResponse.CAN_NOT_FIX,
+                            "업스트림에 수정 버전 없음", "", "",
+                            LocalDate.now().plusDays(30), "tester");
         }
 
         ZoneReportService.Action action = report().action();
@@ -331,6 +336,47 @@ class ZoneReportTest {
                 .containsExactly(3L);
         assertThat(action.explainedAssets("glibc")).isEqualTo(2);
         assertThat(action.explainedAssets("openssl")).isZero();
+    }
+
+    /**
+     * <b>해당 없음 · 오탐은 4 · 5장 목록에서 빠지고 1장이 그 수를 적는다.</b>
+     * 검토한 자산 수도 그 줄에 실린 탐지에서만 센다.
+     */
+    @Test
+    @DisplayName("해당 없음 · 오탐은 4 · 5장에서 빠진다 — 1장이 그 수를, 5장의 `n대` 는 남은 줄에서")
+    void reviewedOutLeavesTheLists() {
+        Asset first = asset("web");
+        Asset second = asset("api");
+        Asset untouched = asset("db");
+        for (Asset a : new Asset[] { first, second, untouched }) {
+            Scan s = scan(a, LocalDate.of(2026, 9, 10));
+            finding(s, "CVE-1", "glibc", "2.34", "High", "wont-fix", "", 7.8, NEEDS_LOGIN);
+            finding(s, "CVE-2", "openssl", "3.0.0", "High", "fixed", "3.0.7", 7.5, REACHABLE);
+        }
+        for (Asset a : new Asset[] { first, second }) {
+            analyses.record(a, "CVE-1", "glibc",
+                            AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE,
+                            null, "이 경로를 쓰지 않습니다", "", "", null, "tester");
+        }
+        analyses.record(first, "CVE-2", "openssl", AnalysisState.FALSE_POSITIVE,
+                        null, null, "패키지 오인", "", "", null, "tester");
+
+        ZoneReport r = report();
+
+        assertThat(r.aggregate().excludedFromLists()).isEqualTo(3);
+        assertThat(r.aggregate().total()).as("탐지 건수는 그대로다").isEqualTo(6);
+        assertThat(r.action().residual()).extracting(ZonePackageAction::assetCount)
+                .as("해당 없음으로 적은 두 대가 5장에 남았다")
+                .containsExactly(1L);
+        assertThat(r.action().explainedAssets("glibc"))
+                .as("5장에 남은 한 대는 아무도 검토하지 않았다")
+                .isZero();
+        assertThat(r.judgement().resolvableFindings())
+                .as("오탐으로 적은 한 건이 4장의 해소 건수에 남았다")
+                .isEqualTo(2);
+        assertThat(r.action().untrackedFindings())
+                .as("6장의 건수는 4장의 해소 건수와 같은 축이다")
+                .isEqualTo(2);
     }
 
     @Test

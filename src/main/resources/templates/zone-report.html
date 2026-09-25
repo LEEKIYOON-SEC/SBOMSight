@@ -119,6 +119,15 @@
       <tr class="total"><td>탐지 건수</td>
           <td class="num tight">
             <b th:text="${#numbers.formatInteger(report.scope.totalFindings, 0, 'COMMA')}">0</b>건</td></tr>
+      <!--/* 자산 보고서 1장과 같은 줄 — 목록(4·5장)에서 뺀 건수. 빠진 사실을 안
+           적으면 숫자가 조용히 줄어든 보고서가 된다. 어디서 빠지는지는 줄
+           이름에 적는다 — 이 장은 각주가 이미 차 있다(문단 둘 · 90자,
+           ReportProseTest). 탐지 건수 바로 아래라 거기에 들어 있다는 것이
+           읽힌다. */-->
+      <tr th:if="${report.aggregate.excludedFromLists() > 0}">
+          <td>해당 없음 · 오탐 (4 · 5장에서 제외)</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.aggregate.excludedFromLists(), 0, 'COMMA')} + '건'">0건</td></tr>
       </tbody>
     </table>
 

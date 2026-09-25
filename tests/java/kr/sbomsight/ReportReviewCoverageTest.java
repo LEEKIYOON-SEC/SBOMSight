@@ -86,11 +86,21 @@ class ReportReviewCoverageTest {
         findings.saveAndFlush(f);
     }
 
-    /** 한 건만 적어 둔다 — 가장 낮은 CVSS 짜리. */
+    /**
+     * 한 건만 적어 둔다 — 가장 낮은 CVSS 짜리.
+     *
+     * <p><b>목록에 남는 상태로 적는다</b>(해당됨 · 조치 불가). 해당 없음 · 오탐은
+     * 이제 4장 목록에서 빠지므로({@link #reviewedOutLeavesTheTable}) 그 줄의
+     * `n / N` 을 재는 데 쓸 수 없다.
+     */
     private void reviewOne() {
-        analyses.record(asset, "CVE-2099-0002", pkg, AnalysisState.NOT_AFFECTED,
-                        AnalysisJustification.CODE_NOT_REACHABLE, null,
-                        "우리 환경에서는 실행 경로에 없음", "", "", null, "admin");
+        answer("CVE-2099-0002");
+    }
+
+    private void answer(String cve) {
+        analyses.record(asset, cve, pkg, AnalysisState.EXPLOITABLE, null,
+                        AnalysisResponse.CAN_NOT_FIX, "업스트림에 수정 버전 없음", "", "",
+                        java.time.LocalDate.now().plusDays(30), "admin");
     }
 
     @Test
@@ -119,11 +129,10 @@ class ReportReviewCoverageTest {
     @Test
     @DisplayName("4장 — 세 건 다 적었으면 `전부 3건` 이다")
     void allThreeCountsAsReviewed() {
-        analyses.record(asset, "CVE-2099-0001", pkg, AnalysisState.NOT_AFFECTED,
-                        AnalysisJustification.CODE_NOT_REACHABLE, null, "", "", "", null, "admin");
+        answer("CVE-2099-0001");
         reviewOne();
-        analyses.record(asset, "CVE-2099-0003", pkg, AnalysisState.FALSE_POSITIVE,
-                        null, null, "패키지 오인", "", "", null, "admin");
+        analyses.record(asset, "CVE-2099-0003", pkg, AnalysisState.IN_TRIAGE,
+                        null, null, "확인 중", "", "", null, "admin");
 
         ReportService.NoFixRow row = reports.build(scan).targets().noFixRows().stream()
                 .filter(r -> r.action().packageName().equals(pkg))
@@ -131,6 +140,47 @@ class ReportReviewCoverageTest {
 
         assertThat(row.reviewed().all()).isTrue();
         assertThat(row.reviewed().done()).isEqualTo(3);
+    }
+
+    /**
+     * <b>해당 없음 · 오탐은 4장 목록에서 빠지고, 1장이 그 수를 말한다.</b>
+     *
+     * <p>앞서 1장은 "검토를 마쳐 목록에서 제외" 라고 적으면서 어느 장도 빼지
+     * 않았다 — 해당 없음으로 적은 건이 4장의 `건수` 와 3장의 `해소 건수` 에
+     * 그대로 들어 있었다. 탐지 건수(1 · 2장)는 그대로다.
+     */
+    @Test
+    @DisplayName("해당 없음 · 오탐은 4장에서 빠지고 1장이 그 수를 적는다 — 탐지 건수는 그대로")
+    void reviewedOutLeavesTheTable() {
+        analyses.record(asset, "CVE-2099-0001", pkg, AnalysisState.NOT_AFFECTED,
+                        AnalysisJustification.CODE_NOT_REACHABLE, null, "", "", "", null, "admin");
+        analyses.record(asset, "CVE-2099-0003", pkg, AnalysisState.FALSE_POSITIVE,
+                        null, null, "패키지 오인", "", "", null, "admin");
+
+        ReportService.Report report = reports.build(scan);
+        ReportService.NoFixRow row = report.targets().noFixRows().stream()
+                .filter(r -> r.action().packageName().equals(pkg))
+                .findFirst().orElseThrow(() -> new AssertionError("4장에 그 패키지가 없습니다"));
+
+        assertThat(row.action().total())
+                .as("해당 없음 · 오탐으로 적은 두 건이 4장에 남았다")
+                .isEqualTo(1);
+        assertThat(row.reviewed().total()).isEqualTo(1);
+        assertThat(report.overview().excludedByAnalysis()).isEqualTo(2);
+        // 탐지 건수와 2장은 줄지 않는다.
+        assertThat(report.overview().findingCount()).isEqualTo(3);
+        assertThat(report.summary().severityOf("high")).isEqualTo(3);
+
+        // 셋 다 빠지면 그 패키지는 4장에 없다.
+        answerAs(AnalysisState.NOT_AFFECTED, "CVE-2099-0002");
+        assertThat(reports.build(scan).targets().noFixRows())
+                .extracting(r -> r.action().packageName())
+                .doesNotContain(pkg);
+    }
+
+    private void answerAs(AnalysisState state, String cve) {
+        analyses.record(asset, cve, pkg, state, AnalysisJustification.CODE_NOT_PRESENT, null,
+                        "", "", "", null, "admin");
     }
 
     /**

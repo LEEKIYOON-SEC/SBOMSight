@@ -104,9 +104,12 @@ public class ZoneReportService {
                 .toList();
 
         Scope scope = scope(zone, from, to, inScope, current, notScanned, scanRuns);
-        Exposure exposure = exposure(current);
+        // **2·3장은 탐지 전부, 4·5장(과 그것을 잇는 6장의 건수)은 목록이다.**
+        // 목록은 검토 결과가 해당 없음 · 오탐인 건을 뺀다 — 취약점 화면 · 자산
+        // 보고서와 같은 규칙. 뺀 건수는 1장이 말한다.
+        Exposure exposure = exposure(current, true);
         Aggregate aggregate = aggregate(current, exposure, inScope, notScanned);
-        Judgement judgement = judgement(current, baseline, exposure);
+        Judgement judgement = judgement(current, baseline, exposure(current, false));
         Action action = action(zoneId, inScope, judgement, start, end, scanIds(current));
 
         return new ZoneReport(scope, aggregate, judgement, action);
@@ -149,7 +152,7 @@ public class ZoneReportService {
      * <p>읽지 못한 벡터는 세지 않고 따로 센다. "아니오" 로 밀어 넣으면
      * 아무도 확인하지 않은 판정이 보고서에 실린다.
      */
-    private Exposure exposure(List<Scan> current) {
+    private Exposure exposure(List<Scan> current, boolean includeReviewed) {
         if (current.isEmpty()) {
             return new Exposure(0, 0, 0, 0, Map.of(), Map.of());
         }
@@ -157,7 +160,8 @@ public class ZoneReportService {
         Map<String, Long> byPackage = new HashMap<>();
         Map<Long, Long> byAsset = new HashMap<>();
 
-        for (FindingRepository.ZoneExposureRow row : findings.exposureRowsIn(scanIds(current))) {
+        for (FindingRepository.ZoneExposureRow row
+                : findings.exposureRowsIn(scanIds(current), includeReviewed)) {
             Optional<CvssVector> parsed = CvssVector.parse(row.getVector());
             if (parsed.isEmpty()) {
                 unreadable++;
@@ -276,9 +280,10 @@ public class ZoneReportService {
         List<ZonePackageAction> blocked = List.of();
 
         if (!current.isEmpty()) {
-            // 보고서는 거르지 않는다 — 기간 안의 것을 전부 센다. 넷 다 null.
+            // 필터는 걸지 않는다 — 기간 안의 것을 전부 센다(넷 다 null). 다만
+            // 목록이므로 해당 없음 · 오탐은 뺀다.
             List<ZonePackageGroup> groups =
-                    findings.groupByPackageIn(scanIds(current), null, null, null, null, true);
+                    findings.groupByPackageIn(scanIds(current), null, null, null, null, false);
             actions = groups.stream()
                     .filter(g -> g.getFixable() > 0)
                     .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName())))
@@ -406,7 +411,9 @@ public class ZoneReportService {
                 .map(r -> r.getAsset().getId() + "|" + r.getPackageName())
                 .collect(java.util.stream.Collectors.toSet());
         long trackedFindings = 0, untrackedFindings = 0;
-        for (FindingRepository.AssetPackageCount row : findings.countPerAssetPackage(scanIds)) {
+        // 4장의 `해소 건수` 와 같은 축이다 — 해당 없음 · 오탐은 넣지 않는다.
+        for (FindingRepository.AssetPackageCount row
+                : findings.countPerAssetPackage(scanIds, false)) {
             if (row.getFixable() == 0) {
                 continue;   // 올려서 해소되는 것이 없는 패키지는 조치 대상이 아니다
             }
@@ -417,10 +424,11 @@ public class ZoneReportService {
             }
         }
 
+        Map<String, Set<Long>> answeredAssets = new HashMap<>();
+        Map<String, Reviewed> reviewed = reviewByPackage(inScope, scanIds, answeredAssets);
         return new Action(all.size(), open, overdue, openedInPeriod, closedInPeriod,
                           overdueRows, explained, judgement.blocked(),
-                          trackedFindings, untrackedFindings,
-                          reviewByPackage(inScope, scanIds));
+                          trackedFindings, untrackedFindings, reviewed, answeredAssets);
     }
 
     /**
@@ -430,7 +438,8 @@ public class ZoneReportService {
      * 갈라 맞춘다 — 구역은 자산이 섞여 있어서 {@code (CVE, 패키지명)} 으로만
      * 맞추면 web-01 의 검토 결과가 api-01 의 탐지에 붙는다.
      */
-    private Map<String, Reviewed> reviewByPackage(List<Asset> inScope, List<Long> scanIds) {
+    private Map<String, Reviewed> reviewByPackage(List<Asset> inScope, List<Long> scanIds,
+                                                 Map<String, Set<Long>> answeredAssets) {
         Map<Long, Map<String, FindingAnalysis>> byAsset = new HashMap<>();
         analyses.byAssetKey(inScope.stream().map(Asset::getId).toList())
                 .forEach((key, value) -> byAsset
@@ -439,12 +448,19 @@ public class ZoneReportService {
 
         Map<String, long[]> counts = new LinkedHashMap<>();
         for (FindingRepository.AssetFindingKey row : findings.findKeysIn(scanIds)) {
+            AnalysisState state = FindingAnalysisService.stateOf(
+                    byAsset.getOrDefault(row.getAssetId(), Map.of()),
+                    row.getCve(), row.getRelatedCve(), row.getPackageName());
+            // 5장은 목록이다 — 해당 없음 · 오탐으로 빠진 건은 세지 않는다.
+            if (!state.isOpen()) {
+                continue;
+            }
             long[] cell = counts.computeIfAbsent(row.getPackageName(), name -> new long[2]);
             cell[1]++;
-            if (FindingAnalysisService.stateOf(byAsset.getOrDefault(row.getAssetId(), Map.of()),
-                                               row.getCve(), row.getRelatedCve(),
-                                               row.getPackageName()) != AnalysisState.NOT_SET) {
+            if (state != AnalysisState.NOT_SET) {
                 cell[0]++;
+                answeredAssets.computeIfAbsent(row.getPackageName(), name -> new HashSet<>())
+                              .add(row.getAssetId());
             }
         }
         Map<String, Reviewed> out = new LinkedHashMap<>();
@@ -550,6 +566,11 @@ public class ZoneReportService {
         /** 아직 아무도 보지 않은 건. */
         public long notReviewed() {
             return reviewOf(AnalysisState.NOT_SET);
+        }
+
+        /** 해당 없음 · 오탐 — 4·5장 목록에서 뺀 건수. 1장이 말한다. */
+        public long excludedFromLists() {
+            return reviewOf(AnalysisState.NOT_AFFECTED) + reviewOf(AnalysisState.FALSE_POSITIVE);
         }
 
         /**
@@ -695,7 +716,7 @@ public class ZoneReportService {
                          List<Remediation> overdueRows, List<FindingAnalysis> explained,
                          List<ZonePackageAction> residual,
                          long trackedFindings, long untrackedFindings,
-                         Map<String, Reviewed> reviewed) {
+                         Map<String, Reviewed> reviewed, Map<String, Set<Long>> answeredAssets) {
 
         /**
          * 이 패키지의 <b>모든 건</b>에 답이 있는가.
@@ -723,11 +744,11 @@ public class ZoneReportService {
          * 것처럼 읽힌다. 걸린 자산 수와 나란히 놓아야 그 차이가 보인다.
          */
         public long explainedAssets(String packageName) {
-            return explained.stream()
-                    .filter(a -> a.getPackageName().equals(packageName))
-                    .map(a -> a.getAsset().getId())
-                    .distinct()
-                    .count();
+            // 그 줄에 실린 탐지(해당 없음 · 오탐을 뺀 것) 가운데 답이 있는 자산만
+            // 센다. 앞서는 그 구역의 검토 결과 전부에서 셌다 — 목록에서 빠진
+            // 해당 없음과 이미 사라진 탐지의 검토까지 들어가, `1대` 짜리 줄에
+            // `2대 검토` 가 붙을 수 있었다.
+            return answeredAssets.getOrDefault(packageName, Set.of()).size();
         }
 
         public long reviewOverdue() {
