@@ -3,6 +3,7 @@ package kr.sbomsight;
 import kr.sbomsight.domain.AnalysisResponse;
 import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
+import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.FindingAnalysis;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.RemediationStatus;
@@ -11,6 +12,7 @@ import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.domain.Zone;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.FindingAnalysisRepository;
+import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.repo.RemediationRepository;
 import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.FindingAnalysisService;
@@ -30,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
@@ -63,6 +66,7 @@ class RetiredAssetActionsTest {
     @Autowired MockMvc mvc;
     @Autowired AssetRepository assets;
     @Autowired ScanRepository scans;
+    @Autowired FindingRepository findings;
     @Autowired RemediationRepository remediations;
     @Autowired FindingAnalysisService analyses;
     @Autowired FindingAnalysisRepository analysisRepository;
@@ -80,8 +84,15 @@ class RetiredAssetActionsTest {
         zone = zoneService.create("운영종료-" + System.nanoTime(), "#6f7e8d", "");
         live = asset("live-");
         retired = asset("retired-");
-        scanOf(live);
-        retiredScan = scanOf(retired);
+        scanOf(live, Instant.now());
+        // 운영 종료한 자산은 SBOM 이 더 올라오지 않는다 — 마지막 검사가 오래됐고
+        // 그 검사의 심각 한 건이 남아 있다. 요약 줄이 이것을 세면 안 된다.
+        retiredScan = scanOf(retired, Instant.now().minus(40, ChronoUnit.DAYS));
+        Finding critical = new Finding(retiredScan, "CVE-2099-0002|zlib", "CVE-2099-0002", "zlib");
+        critical.setSeverity("Critical");
+        findings.saveAndFlush(critical);
+        retiredScan.setFindingCount(1);
+        retiredScan = scans.saveAndFlush(retiredScan);
         overdueRemediation(live);
         overdueRemediation(retired);
         overdueReview(live);
@@ -104,34 +115,46 @@ class RetiredAssetActionsTest {
                 .isEqualTo(1);
     }
 
+    /**
+     * <b>요약 줄은 현황이다 — 운영 종료 자산 포함을 켜도 운영 중인 자산만 센다.</b>
+     *
+     * <p>앞서(d8ede4e) 켜면 요약 줄도 운영 종료 자산까지 세게 만들었다. 그런데
+     * 숫자를 누르면 가는 취약점 화면과 거른 자산 목록은 운영 종료 자산을 빼서,
+     * 누른 숫자와 뜬 건수가 달랐다. 운영 종료 단추가 말하는 대로("현황 숫자에서
+     * 빠집니다") 요약 줄은 언제나 운영 중인 자산만 세고, 체크는 목록에 줄을
+     * 보여 줄 뿐이다. 켰을 때는 그 사실을 요약 줄이 말한다.
+     */
     @Test
-    @DisplayName("자산 목록 요약 줄은 목록과 같은 자산만 세고, 포함을 켜면 함께 센다")
-    void theAssetSummaryFollowsTheList() throws Exception {
+    @DisplayName("자산 목록 요약 줄은 운영 종료 자산 포함을 켜도 운영 중인 자산만 센다")
+    void theAssetSummaryCountsOnlyAssetsInOperation() throws Exception {
         AssetController.Summary hidden = summary("/");
-        AssetController.Summary included = summary("/?archived=true");
+        AssetController.Summary toggled = summary("/?archived=true");
         retire(false);
         AssetController.Summary back = summary("/");
 
-        assertThat(back.actionOverdue() - hidden.actionOverdue())
-                .as("목록에 없는 자산의 기한 지난 조치를 요약 줄이 셌다")
-                .isEqualTo(1);
-        assertThat(back.reviewOverdue() - hidden.reviewOverdue())
-                .as("목록에 없는 자산의 재검토일 지난 검토 결과를 요약 줄이 셌다")
-                .isEqualTo(1);
-        assertThat(included.actionOverdue()).isEqualTo(back.actionOverdue());
-        assertThat(included.reviewOverdue()).isEqualTo(back.reviewOverdue());
+        // 되살리면 그 자산 몫이 늘어난다 — 운영 종료 중에는 빠져 있었다는 뜻이다.
+        assertThat(back.actionOverdue() - hidden.actionOverdue()).isEqualTo(1);
+        assertThat(back.reviewOverdue() - hidden.reviewOverdue()).isEqualTo(1);
+        assertThat(back.critical() - hidden.critical()).isEqualTo(1);
+        assertThat(back.stale() - hidden.stale()).isEqualTo(1);
+
+        // 켜도 같다.
+        assertThat(toggled)
+                .as("운영 종료 자산 포함을 켜자 요약 줄이 운영 종료 자산까지 셌다 — 누르면 가는 화면은 빼고 센다")
+                .isEqualTo(hidden);
     }
 
     @Test
-    @DisplayName("요약 줄의 링크는 포함을 켠 채로 대응 화면에 간다 — 누른 숫자와 뜬 목록이 같다")
-    void theSummaryLinksCarryTheToggle() throws Exception {
-        String html = html("/?archived=true");
-        assertThat(html).contains("href=\"/actions?archived=true\"");
-        assertThat(html).contains("href=\"/actions?tab=analyses&amp;archived=true\"");
-
-        assertThat(html("/"))
+    @DisplayName("요약 줄의 링크는 늘 기본 화면으로 가고, 켰을 때는 운영 중인 자산만 센 숫자라고 말한다")
+    void theSummaryLinksGoToTheDefaultScreens() throws Exception {
+        String on = html("/?archived=true");
+        assertThat(on)
                 .contains("href=\"/actions\"")
-                .doesNotContain("archived=true\"");
+                .contains("href=\"/actions?tab=analyses\"")
+                .doesNotContain("/actions?archived=true")
+                .contains("운영 중인 자산만 센 숫자");
+
+        assertThat(html("/")).doesNotContain("운영 중인 자산만 센 숫자");
     }
 
     @Test
@@ -213,10 +236,10 @@ class RetiredAssetActionsTest {
         return assets.saveAndFlush(asset);
     }
 
-    private Scan scanOf(Asset asset) {
+    private Scan scanOf(Asset asset, Instant at) {
         Scan scan = new Scan(asset, "tester");
         scan.setStatus(ScanStatus.DONE);
-        scan.setCreatedAt(Instant.now());
+        scan.setCreatedAt(at);
         return scans.saveAndFlush(scan);
     }
 

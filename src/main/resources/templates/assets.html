@@ -63,12 +63,16 @@
             <b th:text="${summary.noScan()}">0</b> 검사 안 한 자산</a>
           <a th:if="${summary.stale() > 0}" th:href="@{/(filter='stale')}">
             <b th:text="${summary.stale()}">0</b> 30일 넘은 자산</a>
-          <!--/* 운영 종료 자산 포함을 이어 간다 — 켠 채로 센 숫자를 끈 목록으로
-               보내면 누른 숫자와 뜬 건수가 다르다(주소는 AssetController). */-->
-          <a th:if="${summary.actionOverdue() > 0}" class="overdue" th:href="${overdueActionsHref}">
+          <a th:if="${summary.actionOverdue() > 0}" class="overdue" th:href="@{/actions}">
             <b th:text="${summary.actionOverdue()}">0</b> 기한 지난 조치</a>
-          <a th:if="${summary.reviewOverdue() > 0}" class="overdue" th:href="${overdueReviewsHref}">
+          <a th:if="${summary.reviewOverdue() > 0}" class="overdue" th:href="@{/actions(tab='analyses')}">
             <b th:text="${summary.reviewOverdue()}">0</b> 재검토일 지난 검토 결과</a>
+          <!--/*
+            요약 줄은 운영 종료 자산 포함을 켜도 운영 중인 자산만 센다 — 누르면
+            가는 화면이 그렇게 센다(AssetController). 켠 사람은 목록에 늘어난
+            줄이 이 숫자에도 들었다고 읽기 쉬우니 그 자리에서 말한다.
+          */-->
+          <span class="ms-auto faint small" th:if="${archived}">운영 중인 자산만 센 숫자</span>
         </div>
       </div>
 

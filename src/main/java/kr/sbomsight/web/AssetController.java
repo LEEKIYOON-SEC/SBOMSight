@@ -148,14 +148,14 @@ public class AssetController {
 
         // 요약 줄은 **거르기 전** 전체를 센다. 거른 뒤 세면 "검사 안 한 자산 3"
         // 을 눌렀을 때 숫자가 3 에서 다른 값으로 바뀐다.
-        model.addAttribute("summary", summarize(all, archived));
-        // 기한 지난 조치 · 재검토일 지난 검토 결과를 누르면 가는 곳. 운영 종료
-        // 포함을 이어 간다 — 켠 채로 센 숫자를 끈 목록으로 보내면 누른 숫자와
-        // 뜬 건수가 다르다.
-        model.addAttribute("overdueActionsHref", new VulnQuery.Links("/actions", null)
-                .with("archived", archived ? "true" : null).here());
-        model.addAttribute("overdueReviewsHref", new VulnQuery.Links("/actions", "tab=analyses")
-                .with("archived", archived ? "true" : null).here());
+        //
+        // **운영 중인 자산만 센다 — 운영 종료 자산 포함을 켜도.** 요약 줄은
+        // 현황이고, 숫자를 누르면 가는 화면(취약점 · 거른 목록 · 대응)은 운영
+        // 종료 자산을 뺀다. 앞서 켜면 요약 줄도 함께 세게 했더니 누른 숫자와
+        // 뜬 건수가 달랐다(RetiredAssetActionsTest). 체크는 목록에 줄을 보여
+        // 줄 뿐이다 — 켰을 때는 그렇다고 요약 줄이 말한다.
+        model.addAttribute("summary", summarize(all.stream()
+                .filter(r -> r.asset().getArchivedAt() == null).toList()));
 
         // **구역 칩도 거르개다.** 앞서 이 줄 목록은 구역을 보지 않았고, 구역을
         // 좁히는 일은 화면을 그리는 `groups` 에서만 했다. 세는 자리가 없을
@@ -246,11 +246,8 @@ public class AssetController {
                           long kev, long critical, long high, long noFix) {
     }
 
-    /**
-     * @param rows     목록에 오를 자산 전부(거르기 전)
-     * @param archived 운영 종료 자산 포함 — 조치 기한 · 재검토일도 같은 범위로 센다
-     */
-    private Summary summarize(List<AssetRow> rows, boolean archived) {
+    /** @param rows 운영 중인 자산 전부(거르기 전) */
+    private Summary summarize(List<AssetRow> rows) {
         java.time.Instant cut = java.time.Instant.now()
                 .minus(STALE_DAYS, java.time.temporal.ChronoUnit.DAYS);
         long noScan = rows.stream().filter(r -> !r.hasScan()).count();
@@ -273,10 +270,10 @@ public class AssetController {
         // 앱에서 `1 기한 지난 조치` 를 눌렀더니 기한 지난 조치가 0건이었다.
         // 둘의 합은 기둥의 `대응` 배지와 같다(그 배지는 두 탭을 함께 센다).
         //
-        // **목록과 같은 자산만 센다.** 앞서 운영 종료한 자산의 것까지 세어,
+        // **운영 중인 자산 것만 센다.** 앞서 운영 종료한 자산의 것까지 세어,
         // 목록에서 사라진 자산의 건이 이 줄에 남았다(RetiredAssetActionsTest).
-        long actionOverdue = remediations.countOverdue(java.time.LocalDate.now(), archived);
-        long reviewOverdue = analyses.reviewOverdue(archived).size();
+        long actionOverdue = remediations.countOverdue(java.time.LocalDate.now(), false);
+        long reviewOverdue = analyses.reviewOverdue(false).size();
         return new Summary(noScan, stale, actionOverdue, reviewOverdue, kev, critical, high, noFix);
     }
 
