@@ -117,16 +117,7 @@
       </td>
 
       <td class="tight">
-        <span class="sev" th:classappend="${#strings.toLowerCase(f.severity)}">
-          <i></i>
-          <span th:switch="${#strings.toLowerCase(f.severity)}">
-            <th:block th:case="'critical'">심각</th:block>
-            <th:block th:case="'high'">높음</th:block>
-            <th:block th:case="'medium'">보통</th:block>
-            <th:block th:case="'low'">낮음</th:block>
-            <th:block th:case="*" th:text="${#strings.isEmpty(f.severity)} ? '미확인' : ${f.severity}">미확인</th:block>
-          </span>
-        </span>
+        <span th:replace="~{fragments/ui :: sev(${f.severity})}"></span>
       </td>
 
       <!--/* 값이 없으면 0 이 아니라 — 로 둔다. 없는 것을 낮은 것으로 보이게

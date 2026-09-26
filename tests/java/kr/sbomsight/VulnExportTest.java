@@ -88,4 +88,110 @@ class VulnExportTest {
                 .as("같은 줄이 두 번 나왔다 — 나눠 읽는 경계에서 겹쳤다")
                 .isEqualTo(ROWS);
     }
+
+    /**
+     * <b>심각도 · 수정 상태는 화면 말로 적고, 원문은 맨 뒤 칸에 따로 둔다.</b>
+     *
+     * <p>앞서 두 칸에 검사 결과의 글자({@code Critical} · {@code wont-fix})가
+     * 그대로 나갔다. 화면은 같은 건을 {@code 심각} · {@code 수정 버전 없음} 이라
+     * 부르므로, 파일을 결재에 붙이면 한 건을 두 말로 부른다. 원문은 버리지
+     * 않는다 — {@code wont-fix} 와 {@code not-fixed} 는 화면에서 둘 다
+     * {@code 수정 버전 없음} 인데 그 차이가 필요한 사람이 있다.
+     */
+    @Test
+    @DisplayName("심각도 · 수정 상태는 화면 말로, 원문은 맨 뒤 두 칸에")
+    void severityAndFixStateUseScreenWordsAndKeepTheRaw() throws Exception {
+        Scan scan = scanOfNewAsset();
+        insert(scan, "CVE-2099-0001", "Critical", "fixed", "1.1");
+        insert(scan, "CVE-2099-0002", "Negligible", "wont-fix", "");
+        insert(scan, "CVE-2099-0003", "High", "not-fixed", "");
+        insert(scan, "CVE-2099-0004", "", "unknown", "");
+        // 수정됐다고는 하는데 버전이 비었다 — 화면은 `확인 필요` 로 적는다.
+        insert(scan, "CVE-2099-0005", "Unknown", "fixed", "");
+
+        List<String> lines = new String(mvc.perform(get("/vulns/export.csv?scan=" + scan.getId())
+                                                            .with(user("tester").roles("VIEWER")))
+                                           .andReturn().getResponse().getContentAsByteArray(),
+                                       StandardCharsets.UTF_8).lines().toList();
+        List<String> header = cells(lines.get(0).replace("﻿", ""));
+        assertThat(header).containsExactly("자산", "구역", "CVE", "별칭", "심각도", "CVSS", "패키지",
+                "설치 버전", "수정 버전", "수정 상태", "검사 시각", "심각도 원문", "수정 상태 원문");
+
+        assertThat(row(lines, header, "CVE-2099-0001"))
+                .containsExactly("심각", "수정 버전 있음", "Critical", "fixed");
+        assertThat(row(lines, header, "CVE-2099-0002"))
+                .containsExactly("무시 가능", "수정 버전 없음", "Negligible", "wont-fix");
+        assertThat(row(lines, header, "CVE-2099-0003"))
+                .containsExactly("높음", "수정 버전 없음", "High", "not-fixed");
+        assertThat(row(lines, header, "CVE-2099-0004"))
+                .containsExactly("미확인", "확인 필요", "", "unknown");
+        assertThat(row(lines, header, "CVE-2099-0005"))
+                .containsExactly("미확인", "확인 필요", "Unknown", "fixed");
+    }
+
+    /**
+     * 화면도 같은 말이다. 앞서 목록 · CVE별 · CVE 상세는 네 단계만 우리말로
+     * 적고 {@code Negligible} · {@code Unknown} 은 원문 그대로 찍었다 — 보고서와
+     * 패키지 화면은 같은 값을 {@code 무시 가능} · {@code 미확인} 이라 불렀다.
+     */
+    @Test
+    @DisplayName("목록 · CVE별 · CVE 상세의 심각도도 무시 가능 · 미확인으로 적는다")
+    void theScreensUseTheSameSeverityWords() throws Exception {
+        Scan scan = scanOfNewAsset();
+        insert(scan, "CVE-2099-0006", "Negligible", "fixed", "1.1");
+        insert(scan, "CVE-2099-0007", "Unknown", "fixed", "1.1");
+
+        for (String path : List.of("/vulns?scan=" + scan.getId(),
+                                   "/vulns?scan=" + scan.getId() + "&group=cve",
+                                   "/vulns/CVE-2099-0006", "/vulns/CVE-2099-0007")) {
+            String html = mvc.perform(get(path).with(user("tester").roles("VIEWER")))
+                             .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+            assertThat(html).as(path)
+                    .doesNotContainPattern(">\\s*Negligible\\s*<")
+                    .doesNotContainPattern(">\\s*Unknown\\s*<");
+            if (!path.endsWith("0007")) {
+                assertThat(html).as(path).contains("무시 가능");
+            }
+            if (!path.endsWith("0006")) {
+                assertThat(html).as(path).contains("미확인");
+            }
+        }
+    }
+
+    // --- 씨앗 · 읽기 ------------------------------------------------------------
+
+    private Scan scanOfNewAsset() {
+        Asset asset = new Asset();
+        asset.setName("words-" + System.nanoTime());
+        asset.setZone(zoneService.unassigned());
+        assets.saveAndFlush(asset);
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scan.setCreatedAt(Instant.now());
+        return scans.saveAndFlush(scan);
+    }
+
+    private void insert(Scan scan, String cve, String severity, String fixState, String fixedVersion) {
+        jdbc.update("INSERT INTO findings (scan_id, finding_key, cve, package_name, severity, "
+                    + "related_cve, cvss_vector, cvss_version, package_version, package_type, "
+                    + "package_purl, package_language, install_path, fix_state, fixed_version, "
+                    + "version_constraint, match_type, matcher, namespace, data_source) "
+                    + "VALUES (?, ?, ?, 'zlib', ?, '', '', '', '1.0', '', '', '', '', ?, ?, "
+                    + "'', '', '', '', '')",
+                    scan.getId(), cve + "|zlib", cve, severity, fixState, fixedVersion);
+    }
+
+    /** 이 시험의 값에는 쉼표 · 따옴표가 없다 — 칸 사이 {@code ","} 로 자른다. */
+    private static List<String> cells(String line) {
+        return List.of(line.substring(1, line.length() - 1).split("\",\"", -1));
+    }
+
+    /** 그 CVE 줄의 심각도 · 수정 상태 · 심각도 원문 · 수정 상태 원문. */
+    private static List<String> row(List<String> lines, List<String> header, String cve) {
+        List<String> cells = lines.stream().skip(1).map(VulnExportTest::cells)
+                .filter(c -> c.get(header.indexOf("CVE")).equals(cve))
+                .findFirst().orElseThrow();
+        return List.of(cells.get(header.indexOf("심각도")), cells.get(header.indexOf("수정 상태")),
+                       cells.get(header.indexOf("심각도 원문")), cells.get(header.indexOf("수정 상태 원문")));
+    }
 }

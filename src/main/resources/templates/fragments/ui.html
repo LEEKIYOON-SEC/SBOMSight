@@ -226,6 +226,20 @@
 
 
 <!--/*
+  ─── 심각도 딱지 ──────────────────────────────────────────────────────
+  검사 결과의 글자를 칸에 놓고 우리말 이름을 적는다(Severity — 값을 다시
+  매기지 않는다). 앞서 화면마다 th:switch 를 따로 적어, 목록 · CVE별 · CVE
+  상세는 네 단계만 우리말로 적고 `Negligible` · `Unknown` 은 원문 그대로
+  찍었다 — 보고서 · 패키지 화면은 같은 값을 `무시 가능` · `미확인` 이라 불렀다.
+
+    <span th:replace="~{fragments/ui :: sev(${f.severity})}"></span>
+*/-->
+<span th:fragment="sev(raw)" class="sev"
+      th:with="s=${T(kr.sbomsight.domain.Severity).of(raw)}"
+      th:classappend="${s.key()}"><i></i><span th:text="${s.label()}">심각</span></span>
+
+
+<!--/*
   ─── 심각도 막대 ──────────────────────────────────────────────────────
   목록 한 줄에 `심각 3 · 높음 12 · 보통 61 · 낮음 111` 네 덩이를 쓰면
   자산 스무 대를 세로로 훑을 수 없다. 누적 막대 하나로 줄인다.

@@ -144,14 +144,7 @@
             <tr th:each="g : ${cvePage.content}">
               <td class="tight mono"><a th:href="@{'/vulns/' + ${g.cve}}" th:text="${g.cve}">CVE-0000-0000</a></td>
               <td class="tight">
-                <span class="sev" th:classappend="${#strings.toLowerCase(g.severity)}"><i></i>
-                  <span th:switch="${#strings.toLowerCase(g.severity)}">
-                    <th:block th:case="'critical'">심각</th:block>
-                    <th:block th:case="'high'">높음</th:block>
-                    <th:block th:case="'medium'">보통</th:block>
-                    <th:block th:case="'low'">낮음</th:block>
-                    <th:block th:case="*" th:text="${#strings.isEmpty(g.severity)} ? '미확인' : ${g.severity}">미확인</th:block>
-                  </span></span>
+                <span th:replace="~{fragments/ui :: sev(${g.severity})}"></span>
                 <span th:if="${g.kevCount > 0}" class="tag kev">실제 악용</span>
               </td>
               <td class="num tight" th:text="${g.maxCvss != null} ? ${g.maxCvss} : '—'">—</td>

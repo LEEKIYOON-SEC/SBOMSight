@@ -5,6 +5,7 @@ import kr.sbomsight.domain.FindingAnalysis;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.FixVersions;
 import kr.sbomsight.domain.Remediation;
+import kr.sbomsight.domain.Severity;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -123,12 +124,27 @@ public final class CsvWriter {
      * 받았다 — 넘는 것은 말없이 빠졌다. 머리줄을 먼저 쓰고 쪽마다
      * {@link Lookup#write} 로 이어 쓴다. 쓴 것은 바로 내보내므로 전부를 한꺼번에
      * 쥐고 있지 않는다.
+     *
+     * <p><b>심각도 · 수정 상태는 화면 말로 적고, 검사 결과의 글자는 맨 뒤 두
+     * 칸에 그대로 둔다.</b> 앞서 두 칸에 {@code Critical} · {@code wont-fix} 가
+     * 나가, 결재에 붙이면 화면과 다른 말로 같은 건을 불렀다. 원문을 버리지 않는
+     * 까닭 — {@code wont-fix} 와 {@code not-fixed} 는 화면에서 둘 다
+     * {@code 수정 버전 없음} 이다. 값을 다시 매기지 않고 이름만 붙인다.
      */
     public static Lookup lookup(OutputStream out) throws IOException {
         Writer writer = start(out);
         row(writer, "자산", "구역", "CVE", "별칭", "심각도", "CVSS",
-                    "패키지", "설치 버전", "수정 버전", "수정 상태", "검사 시각");
+                    "패키지", "설치 버전", "수정 버전", "수정 상태", "검사 시각",
+                    "심각도 원문", "수정 상태 원문");
         return new Lookup(writer);
+    }
+
+    /** 목록 화면의 수정 버전 칸(finding-table)과 같은 가름. */
+    private static String fixWord(Finding f) {
+        if (f.isFixAvailable()) {
+            return "수정 버전 있음";
+        }
+        return f.isNoFix() ? "수정 버전 없음" : "확인 필요";
     }
 
     /** {@link #lookup} 이 여는 파일. 닫으면 남은 것을 내보낸다. */
@@ -148,13 +164,15 @@ public final class CsvWriter {
                     asset.getZone().getName(),
                     f.getDisplayId(),
                     f.getSecondaryId(),
-                    f.getSeverity(),
+                    Severity.of(f.getSeverity()).label(),
                     f.getCvssScore() == null ? "" : f.getCvssScore().toPlainString(),
                     f.getPackageName(),
                     f.getPackageVersion(),
                     f.getFixedVersion(),
-                    f.getFixState(),
-                    WHEN.format(f.getScan().getCreatedAt()));
+                    fixWord(f),
+                    WHEN.format(f.getScan().getCreatedAt()),
+                    f.getSeverity(),
+                    f.getFixState());
             }
             writer.flush();
         }

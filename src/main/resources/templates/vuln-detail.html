@@ -16,14 +16,7 @@
     <div class="page-pretitle"><a th:href="@{/vulns(group='cve')}">취약점</a></div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <h2 class="page-title mono" th:text="${cve}">CVE-0000-0000</h2>
-      <span class="sev" th:classappend="${#strings.toLowerCase(first.severity)}"><i></i>
-        <span th:switch="${#strings.toLowerCase(first.severity)}">
-          <th:block th:case="'critical'">심각</th:block>
-          <th:block th:case="'high'">높음</th:block>
-          <th:block th:case="'medium'">보통</th:block>
-          <th:block th:case="'low'">낮음</th:block>
-          <th:block th:case="*" th:text="${#strings.isEmpty(first.severity)} ? '미확인' : ${first.severity}">미확인</th:block>
-        </span></span>
+      <span th:replace="~{fragments/ui :: sev(${first.severity})}"></span>
       <span th:if="${first.kev != null and first.kev}" class="tag kev">실제 악용 확인</span>
     </div>
     <div class="text-secondary mt-1">
