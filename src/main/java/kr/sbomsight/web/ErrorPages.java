@@ -3,10 +3,12 @@ package kr.sbomsight.web;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.web.servlet.error.ErrorViewResolver;
 import org.springframework.boot.web.servlet.error.ErrorAttributes;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.web.WebAttributes;
 import org.springframework.security.web.csrf.CsrfException;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.ModelAndView;
@@ -94,12 +96,21 @@ public class ErrorPages implements ErrorViewResolver {
         return request.getAttribute(WebAttributes.ACCESS_DENIED_403) instanceof CsrfException;
     }
 
-    /** 우리가 적은 사유. 다른 예외의 문구는 내보내지 않는다. */
+    /**
+     * 우리가 적은 사유 — {@link ResponseStatusException} 의 사유, 또는 예외 종류에
+     * {@link ResponseStatus} 로 박아 둔 사유({@code ZoneService.NoSuchZoneException}).
+     * 다른 예외의 문구는 내보내지 않는다.
+     */
     private Optional<String> reason(HttpServletRequest request) {
         Throwable error = errors.getError(new ServletWebRequest(request));
         if (error instanceof ResponseStatusException rse
                 && rse.getReason() != null && !rse.getReason().isBlank()) {
             return Optional.of(rse.getReason());
+        }
+        ResponseStatus declared = error == null ? null
+                : AnnotatedElementUtils.findMergedAnnotation(error.getClass(), ResponseStatus.class);
+        if (declared != null && !declared.reason().isBlank()) {
+            return Optional.of(declared.reason());
         }
         return Optional.empty();
     }

@@ -329,7 +329,13 @@ public class AssetController {
             return "redirect:/";
         }
         // 구역을 고르지 않았으면 미분류로. 어디에도 속하지 않는 자산은 만들지 않는다.
-        asset.setZone(zoneId == null ? zoneService.unassigned() : zoneService.require(zoneId));
+        // 고른 구역이 그 사이 지워졌으면 등록하지 않고 알린다 — 앞서 500 이었다.
+        try {
+            asset.setZone(zoneId == null ? zoneService.unassigned() : zoneService.require(zoneId));
+        } catch (ZoneService.NoSuchZoneException e) {
+            flash.addFlashAttribute("error", e.getMessage() + " 목록을 새로 고친 뒤 다시 골라 주세요.");
+            return "redirect:/";
+        }
         assets.save(asset);
         audit.record(AuditEvent.ASSET_CREATED, asset.getName(),
                      "구역 " + asset.getZone().getName());
@@ -343,7 +349,14 @@ public class AssetController {
     public String moveZone(@PathVariable Long id, @RequestParam Long zoneId,
                            RedirectAttributes flash) {
         Asset asset = asset(id);
-        Zone target = zoneService.require(zoneId);
+        Zone target;
+        try {
+            target = zoneService.require(zoneId);
+        } catch (ZoneService.NoSuchZoneException e) {
+            // 다른 창에서 지운 구역을 골랐다. 자산은 그대로 두고 알린다 — 앞서 500 이었다.
+            flash.addFlashAttribute("error", e.getMessage() + " 화면을 새로 고친 뒤 다시 골라 주세요.");
+            return "redirect:/assets/" + id;
+        }
         String before = asset.getZone().getName();
         asset.setZone(target);
         assets.save(asset);

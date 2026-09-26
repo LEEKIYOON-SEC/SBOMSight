@@ -89,7 +89,10 @@ public class ZoneReportService {
         // 그 1초 사이에 끝난 검사가 사라진다.
         Instant end = to.plusDays(1).atStartOfDay(WALL_CLOCK).toInstant();
 
-        Zone zone = zoneId == null ? null : zones.findById(zoneId).orElse(null);
+        // 없는 구역을 전체로 읽지 않는다. 앞서 `orElse(null)` 이라 지운 구역의
+        // 주소가 자산 0대짜리 "전체" 보고서를 200 으로 냈다 — 깨끗한 전체로 읽힌다.
+        Zone zone = zoneId == null ? null
+                : zones.findById(zoneId).orElseThrow(ZoneService.NoSuchZoneException::new);
         List<Asset> inScope = assets.findLiveWithZone().stream()
                 .filter(a -> zoneId == null || a.getZone().getId().equals(zoneId))
                 .toList();

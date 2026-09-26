@@ -92,6 +92,15 @@ class ErrorPageTest {
         assertThat(r.body()).contains("자산을 찾을 수 없습니다");
     }
 
+    /** 예외 종류에 박아 둔 사유(ZoneService.NoSuchZoneException)도 우리가 적은 말이다. */
+    @Test
+    @DisplayName("지운 구역의 주소 — 404 화면이 '구역을 찾을 수 없습니다' 라고 말한다")
+    void aMissingZoneSaysSo() throws Exception {
+        HttpResponse<String> r = page(signedIn(admin), "/vulns?zone=987654321");
+        assertThat(r.statusCode()).isEqualTo(404);
+        assertThat(r.body()).contains("구역을 찾을 수 없습니다");
+    }
+
     @Test
     @DisplayName("주소의 값이 틀리면 400 — 무엇이 틀렸는지 말한다")
     void badRequestIsKorean() throws Exception {

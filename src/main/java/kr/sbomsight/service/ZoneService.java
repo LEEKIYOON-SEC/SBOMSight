@@ -3,8 +3,10 @@ package kr.sbomsight.service;
 import kr.sbomsight.domain.Zone;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.ZoneRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 import java.util.List;
 
@@ -31,10 +33,26 @@ public class ZoneService {
         return zones.findAllByOrderBySortOrderAscNameAsc();
     }
 
+    /**
+     * 없는 구역 — 지운 구역의 주소를 열었거나, 다른 창에서 지운 구역을 골랐다.
+     *
+     * <p>{@link IllegalArgumentException} 이라 폼 처리({@code ZoneController.act} ·
+     * 자산 등록 · 구역 옮기기)는 안내로 띄운다. 잡지 않은 조회 화면(취약점 ·
+     * 구역 보고서)은 404 로 답한다 — 앞서 500 이었고, 구역 보고서는 자산 0대짜리
+     * "전체" 보고서를 200 으로 냈다(ZoneNotFoundTest).
+     */
+    @ResponseStatus(value = HttpStatus.NOT_FOUND, reason = NoSuchZoneException.MESSAGE)
+    public static class NoSuchZoneException extends IllegalArgumentException {
+        static final String MESSAGE = "구역을 찾을 수 없습니다.";
+
+        public NoSuchZoneException() {
+            super(MESSAGE);
+        }
+    }
+
     @Transactional(readOnly = true)
     public Zone require(Long id) {
-        return zones.findById(id)
-                    .orElseThrow(() -> new IllegalArgumentException("없는 구역입니다."));
+        return zones.findById(id).orElseThrow(NoSuchZoneException::new);
     }
 
     /**
