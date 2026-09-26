@@ -226,6 +226,20 @@
 
 
 <!--/*
+  ─── 수정 버전 — 가짓수만 ────────────────────────────────────────────
+  요약처럼 **한 줄에 서야 하는 자리**. 목록을 다 늘어놓으면(openjdk 25가지)
+  그 줄 하나가 열 줄이 되어 보고서 첫 쪽의 요약이 둘째 쪽으로 넘어갔다 —
+  인쇄해 보고 찾았다. 하나면 그 버전, 여럿이면 `수정 버전 N가지` 까지만.
+  목록은 본문(보고서 3장)에 있다. 규칙은 fixversions 와 같다(FixVersions).
+*/-->
+<span th:fragment="fixcount(versions, empty)" th:remove="tag">
+  <b class="ver" th:if="${versions.size() == 1}" th:text="${versions[0]}">3.0.7</b>
+  <b class="ver" th:if="${versions.size() > 1}" th:text="'수정 버전 ' + ${versions.size()} + '가지'">수정 버전 3가지</b>
+  <span class="faint" th:if="${versions.isEmpty()}" th:text="${empty}">—</span>
+</span>
+
+
+<!--/*
   ─── 현재 버전 (조치) ─────────────────────────────────────────────────
   수정 버전과 같은 규칙 — **하나로 고르지 않는다**(V16). 한 자산에 같은
   패키지가 두 벌 깔려 있으면 앞서는 CVSS 가 가장 높은 건의 한 벌만 적었다.

@@ -585,6 +585,9 @@ dialog textarea { min-height: 4rem; }
   .report section { break-before: page; margin-bottom: 0; }
   .report section:first-of-type,
   .report section.summary + section { break-before: auto; }
+  /* 그 1장은 쪼개지 않는다 — 첫 쪽에 다 들어가면 거기, 아니면 통째로 다음 쪽.
+     제목과 첫 줄만 첫 쪽 끝에 남고 나머지가 넘어가던 것을 인쇄해 보고 찾았다. */
+  .report section.summary + section { break-inside: avoid; }
   .report h2, .report h3 { break-after: avoid; }
   /* 각주는 자기가 다는 표와 같은 쪽에 있어야 뜻이 있다. */
   .footnote { break-before: avoid; }

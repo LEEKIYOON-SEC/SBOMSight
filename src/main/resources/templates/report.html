@@ -155,9 +155,10 @@
       <tr th:each="row, i : ${report.progress.rows}" th:if="${i.index < 5}" th:with="a=${row.action()}">
         <td class="num tight" th:text="${i.count}">1</td>
         <td><b th:text="${a.packageName}">openssl</b></td>
+        <!--/* 가짓수만 — 목록을 늘어놓으면 이 표가 첫 쪽을 넘는다(fixcount). 목록은 3장. */-->
         <td class="mono">
           <span th:text="${a.currentVersion}">1.0.0</span> →
-          <th:block th:replace="~{fragments/ui :: fixversions(${a.fixVersions}, '확인 필요')}"></th:block>
+          <th:block th:replace="~{fragments/ui :: fixcount(${a.fixVersions}, '확인 필요')}"></th:block>
         </td>
         <td class="num tight" th:text="${a.fixableCount}">0</td>
         <td class="num tight" th:classappend="${a.hasReachable()} ? 'danger-text' : ''"
@@ -172,7 +173,7 @@
       </tbody>
     </table>
     <p class="footnote">
-      ※ 수는 뒤 장에서 센 값 그대로 · 단위 — 건(탐지) · 패키지(조치)
+      ※ 수는 뒤 장에서 센 값 그대로 · 단위 — 건(탐지) · 패키지(조치) · 수정 버전 목록은 3장
     </p>
   </section>
 
