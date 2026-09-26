@@ -2,26 +2,31 @@ package kr.sbomsight.web;
 
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.AssetRepository;
+import kr.sbomsight.repo.FindingRepository;
+import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.FindingAnalysisService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.security.Principal;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
- * 검토 결과를 <b>적는</b> 자리.
+ * 검토 결과를 <b>적는</b> 자리와 <b>한 건을 보는</b> 자리.
  *
- * <p>목록은 {@link ActionController}(`/actions?tab=analyses`)로 옮겼다. 여기
- * 남은 것은 취약점 화면에서 건을 보면서 적는 길 하나다 — <b>목록이 아니라
- * 건을 보면서 적는다.</b> 무엇이 해당 없는지는 그 탐지를 봐야 알 수 있다.
+ * <p>목록은 {@link ActionController}(`/actions?tab=analyses`)로 옮겼다. 적는
+ * 것은 취약점 화면에서 건을 보면서 한다 — <b>목록이 아니라 건을 보면서
+ * 적는다.</b> 무엇이 해당 없는지는 그 탐지를 봐야 알 수 있다.
  *
- * <p>적는 것은 관리자만 한다. 조회 권한으로 남의 결정을 적을 수는 없다.
+ * <p>적는 것은 관리자만 한다. 조회 권한으로 남의 결정을 적을 수는 없다. 보는
+ * 것은 누구나 — 조치 상세와 같다.
  */
 @Controller
 @RequestMapping("/analyses")
@@ -32,10 +37,42 @@ public class FindingAnalysisController {
 
     private final FindingAnalysisService analyses;
     private final AssetRepository assets;
+    private final ScanRepository scans;
+    private final FindingRepository findings;
 
-    public FindingAnalysisController(FindingAnalysisService analyses, AssetRepository assets) {
+    public FindingAnalysisController(FindingAnalysisService analyses, AssetRepository assets,
+                                     ScanRepository scans, FindingRepository findings) {
         this.analyses = analyses;
         this.assets = assets;
+        this.scans = scans;
+        this.findings = findings;
+    }
+
+    /**
+     * 검토 결과 한 건 — 지금의 결정과 <b>거기까지 온 길</b>.
+     *
+     * <p>앞서 변경 이력은 쌓이기만 하고 볼 자리가 없었다(FindingAnalysisEvent).
+     * "언제부터 해당 없음이었나" · "결재 문서 번호는 누가 바꿨나" 를 물으면 DB 를
+     * 열어야 했다. 조치 상세(`/actions/{id}`)와 같은 꼴이다.
+     */
+    @GetMapping("/{id}")
+    public String detail(@PathVariable Long id, Model model) {
+        FindingAnalysis analysis = analyses.detail(id)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검토 결과를 찾을 수 없습니다."));
+        model.addAttribute("analysis", analysis);
+
+        // 최신 검사에서 이 탐지가 아직 있는가 — 조치 상세와 같다. 검토 결과를
+        // 저절로 바꾸지는 않는다. 사라진 까닭(올렸는지 · 검사 대상이
+        // 바뀌었는지)은 도구가 알 수 없다. 번호는 둘 다 본다 — 적어 둔 번호가
+        // 함께 온 CVE 쪽일 수 있다(findByCveIn 이 두 칸을 다 본다).
+        Scan latest = scans.findFirstByAssetIdAndStatusOrderByCreatedAtDesc(
+                analysis.getAsset().getId(), ScanStatus.DONE).orElse(null);
+        model.addAttribute("latest", latest);
+        model.addAttribute("present", latest == null ? List.<Finding>of()
+                : findings.findByCveIn(List.of(latest.getId()), analysis.getCve(), true).stream()
+                          .filter(f -> f.getPackageName().equals(analysis.getPackageName()))
+                          .toList());
+        return "analysis-detail";
     }
 
     /**

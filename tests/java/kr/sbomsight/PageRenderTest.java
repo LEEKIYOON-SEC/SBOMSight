@@ -63,6 +63,7 @@ class PageRenderTest {
     private Asset asset;
     private Scan scan;
     private Remediation remediation;
+    private kr.sbomsight.domain.FindingAnalysis analysis;
 
     @BeforeEach
     void seed() {
@@ -117,7 +118,7 @@ class PageRenderTest {
         remediations.saveAndFlush(remediation);
 
         // 앞서의 '위험 수용' 에 해당하는 조합 — 해당됨 · 조치 안 함.
-        analyses.record(asset, "CVE-2024-2961", "glibc",
+        analysis = analyses.record(asset, "CVE-2024-2961", "glibc",
                         kr.sbomsight.domain.AnalysisState.EXPLOITABLE, null,
                         kr.sbomsight.domain.AnalysisResponse.WILL_NOT_FIX,
                         "업스트림에 수정 버전이 없고 해당 기능은 외부에 노출되지 않습니다",
@@ -713,6 +714,7 @@ class PageRenderTest {
                 "/actions",
                 "/actions/" + remediation.getId(),
                 "/actions?tab=analyses",
+                "/analyses/" + analysis.getId(),
                 "/reports",
                 "/reports/scan/" + scan.getId(),
                 "/reports/zone",

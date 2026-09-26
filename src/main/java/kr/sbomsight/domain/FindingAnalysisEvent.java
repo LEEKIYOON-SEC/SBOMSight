@@ -81,6 +81,20 @@ public class FindingAnalysisEvent {
         return field;
     }
 
+    /**
+     * 화면에 찍는 칸 이름. 이력은 {@code 상태} · {@code 대응} 으로 적어 왔는데
+     * (V11 이 옮겨 온 줄도 그렇다) 화면은 같은 칸을 {@code 검토 상태} ·
+     * {@code 대응 방안} 이라 부른다 — 한 가지를 두 말로 부르지 않는다. 쌓인
+     * 줄을 고치지 않고 읽을 때 옮긴다.
+     */
+    public String getFieldLabel() {
+        return switch (field) {
+            case "상태" -> "검토 상태";
+            case "대응" -> "대응 방안";
+            default -> field;
+        };
+    }
+
     public String getBefore() {
         return before;
     }

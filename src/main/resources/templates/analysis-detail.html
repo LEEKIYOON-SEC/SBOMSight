@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      th:replace="~{layout :: page(~{::main}, 'actions', ${analysis.cve})}">
+<body>
+<main>
+
+  <!--/*
+    검토 결과 한 건 — 지금의 결정과 거기까지 온 길.
+
+    앞서 변경 이력은 쌓이기만 하고 볼 자리가 없었다. "언제부터 해당 없음이었나"
+    · "결재 문서 번호는 누가 바꿨나" 를 물으면 DB 를 열어야 했다.
+
+    조치 상세와 같은 꼴이다 — 제목은 무엇에 대한 것인가(취약점 번호), 부제는
+    어느 패키지인가, 상위 라벨은 어디의 것인가(대응 · 자산).
+  */-->
+  <div th:replace="~{fragments/ui :: pagehead(${analysis.cve}, ${analysis.packageName}, ~{::actions}, ~{::where})}"></div>
+  <th:block th:remove="all">
+    <div th:fragment="where">
+      <a th:href="@{/actions(tab='analyses')}">대응</a>
+      <span class="faint"> · </span>
+      <a th:href="@{'/assets/' + ${analysis.asset.id}}" th:text="${analysis.asset.name}">web-01</a>
+    </div>
+    <!--/*
+      고치는 것은 목록과 같은 팝업이다(fragments/analysis-dialog). 적은 뒤에는
+      이 화면으로 돌아온다 — 방금 바꾼 것이 이력 맨 아래에 붙는다.
+    */-->
+    <!--/* CVE 상세는 운영 중인 자산의 최신 검사만 센다 — 이 자산이 운영 종료면
+         거기에 없을 수 있어 단추를 두지 않는다(없는 곳으로 보내지 않는다). */-->
+    <div th:fragment="actions" class="btn-list">
+      <a class="btn" th:if="${!present.isEmpty() and analysis.asset.archivedAt == null}"
+         th:href="@{'/vulns/' + ${analysis.cve}}">CVE 상세</a>
+      <a sec:authorize="hasRole('ADMIN')" class="btn btn-dark analysis-link" href="#"
+         th:attr="data-asset=${analysis.asset.id}, data-cve=${analysis.cve},
+                  data-pkg=${analysis.packageName}, data-label=${analysis.cve},
+                  data-state=${analysis.state.name()},
+                  data-justification=${analysis.justification != null} ? ${analysis.justification.name()} : '',
+                  data-response=${analysis.response != null} ? ${analysis.response.name()} : '',
+                  data-review=${analysis.reviewBy != null} ? ${analysis.reviewBy} : '',
+                  data-note=${analysis.note}, data-control=${analysis.otherControl},
+                  data-doc=${analysis.approvalDoc}, data-exists=true">수정</a>
+    </div>
+  </th:block>
+
+  <div class="page-body">
+    <div class="container-xl">
+
+  <!--/* 최신 검사에서 이 탐지가 아직 있는가. **검토 결과를 저절로 바꾸지 않는다**
+       — 사라진 까닭(올렸는지 · 검사 대상이 바뀌었는지)은 도구가 알 수 없다. */-->
+  <div class="card" th:if="${latest != null}">
+    <div class="card-body">
+      <span th:if="${present.isEmpty()}">
+        최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
+        이 탐지 <b>0건</b> — 검토 결과는 그대로 남음.
+      </span>
+      <span th:unless="${present.isEmpty()}">
+        최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
+        이 탐지 <b th:text="${present.size()} + '건'">1건</b> · 설치 버전
+        <span class="mono" th:each="f, i : ${present}"><th:block th:text="${f.packageVersion}">1.0</th:block><th:block
+              th:unless="${i.last}"> · </th:block></span>
+      </span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2 class="card-title">검토 결과</h2></div>
+    <div class="card-body">
+      <table class="table kv">
+        <tr><th>검토 상태</th>
+            <td><span class="sev" th:classappend="${analysis.state.name() == 'EXPLOITABLE'} ? 'high'
+                                  : (${analysis.open} ? 'medium' : 'low')"><i></i>
+                  <span th:text="${analysis.state.label()}">해당 없음</span></span></td></tr>
+        <tr><th>근거</th>
+            <td th:text="${analysis.justification != null} ? ${analysis.justification.label()} : '—'">—</td></tr>
+        <tr><th>대응 방안</th>
+            <td th:text="${analysis.response != null} ? ${analysis.response.label()} : '—'">—</td></tr>
+        <tr><th>재검토일</th>
+            <td th:classappend="${analysis.reviewOverdue} ? 'overdue' : ''"
+                th:text="${analysis.reviewBy != null}
+                         ? ${#temporals.format(analysis.reviewBy, 'yyyy-MM-dd')} + (${analysis.reviewOverdue} ? ' · 지남' : '')
+                         : '—'">—</td></tr>
+        <tr><th>설명</th>
+            <td th:text="${#strings.isEmpty(analysis.note)} ? '—' : ${analysis.note}">—</td></tr>
+        <tr><th>추가 보안 통제</th>
+            <td th:text="${#strings.isEmpty(analysis.otherControl)} ? '—' : ${analysis.otherControl}">—</td></tr>
+        <tr><th>결재 문서 번호</th>
+            <td th:text="${#strings.isEmpty(analysis.approvalDoc)} ? '—' : ${analysis.approvalDoc}">—</td></tr>
+        <!--/* 시스템이 아는 값만 — 로그인 계정과 시각. 사람이 적는 칸이 아니다. */-->
+        <tr><th>마지막 기록</th>
+            <td th:text="${#temporals.format(analysis.updatedAt, 'yyyy-MM-dd HH:mm')} + ' · ' + ${analysis.updatedBy}">—</td></tr>
+        <tr><th>처음 기록</th>
+            <td th:text="${#temporals.format(analysis.createdAt, 'yyyy-MM-dd HH:mm')}">—</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>변경 이력</h2>
+  <div class="card">
+    <!--/*
+      한 번 적을 때 바뀐 칸마다 한 줄이다. 손대지 않은 칸은 남기지 않는다.
+      칸 이름은 화면의 말로 찍는다(`상태` → `검토 상태` — FindingAnalysisEvent).
+    */-->
+    <th:block th:if="${analysis.events.isEmpty()}">
+      <div th:replace="~{fragments/ui :: empty('바뀐 기록이 없습니다', null, null, null)}"></div>
+    </th:block>
+    <div class="table-responsive" th:unless="${analysis.events.isEmpty()}">
+      <table class="table table-vcenter card-table">
+        <thead><tr><th class="tight">시각</th><th class="tight">바꾼 칸</th>
+                   <th>변경 내용</th><th class="tight">계정</th></tr></thead>
+        <tbody>
+        <tr th:each="e : ${analysis.events}">
+          <td class="tight mono" th:text="${#temporals.format(e.at, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td class="tight" th:text="${e.fieldLabel}">검토 상태</td>
+          <td th:text="(${#strings.isEmpty(e.before)} ? '—' : ${e.before}) + ' → '
+                       + (${#strings.isEmpty(e.after)} ? '—' : ${e.after})">미검토 → 해당 없음</td>
+          <td class="tight" th:text="${e.actor}">admin</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+    <!--/*
+      **이력이 무엇을 남기는지 밝힌다.** 이력은 고르는 칸만 남긴다(FindingAnalysisTest
+      — 적는 칸만 고친 것은 이력을 늘리지 않는다). 그것을 말하지 않으면 결재 문서
+      번호를 바꾼 일도 여기 있으리라 읽힌다 — 없는 기록을 있는 것처럼 보이게 두지
+      않는다.
+    */-->
+    <div class="card-footer">
+      <p class="footnote" style="margin-top:0;padding-top:0;border-top:0">
+        ※ 이력에 남는 칸 — 검토 상태 · 근거 · 대응 방안 · 재검토일.
+        설명 · 추가 보안 통제 · 결재 문서 번호는 지금 값만(위 표).
+      </p>
+    </div>
+  </div>
+    </div>
+  </div>
+
+  <div th:replace="~{fragments/analysis-dialog :: dialog('/analyses/' + ${analysis.id})}"></div>
+
+</main>
+</body>
+</html>

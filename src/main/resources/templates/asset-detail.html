@@ -550,9 +550,7 @@
                                       th:text="${a.cve}">CVE-0000-0000</a></td>
             <td class="tight" th:text="${a.packageName}">openssl</td>
             <td class="tight">
-              <span class="sev" th:classappend="${a.state.name() == 'EXPLOITABLE'} ? 'high'
-                                : (${a.open} ? 'medium' : 'low')"><i></i>
-                <span th:text="${a.state.label()}">해당됨</span></span>
+              <a th:replace="~{fragments/ui :: reviewstate(${a})}"></a>
             </td>
             <td class="tight">
               <span th:if="${a.response != null}" th:text="${a.response.label()}">조치 안 함</span>

@@ -227,9 +227,7 @@
             <td class="tight" th:text="${a.packageName}">openssl</td>
 
             <td class="tight">
-              <span class="sev" th:classappend="${a.state.name() == 'EXPLOITABLE'} ? 'high'
-                                : (${a.open} ? 'medium' : 'low')"><i></i>
-                <span th:text="${a.state.label()}">해당됨</span></span>
+              <a th:replace="~{fragments/ui :: reviewstate(${a})}"></a>
             </td>
             <!--/* 대응 이름 중 긴 것("우회 조치 (패치 미적용)")이 줄바꿈 없이
                  들어가면 표가 칸을 넘는다. 여기도 `tight` 를 주지 않는다. */-->

@@ -130,6 +130,12 @@ public class FindingAnalysisService {
         };
     }
 
+    /** 한 건 — 상세 화면. 자산 · 구역 · 이력까지 한 번에 읽는다. */
+    @Transactional(readOnly = true)
+    public java.util.Optional<FindingAnalysis> detail(Long id) {
+        return analyses.findDetail(id);
+    }
+
     /**
      * 한 자산치를 {@code (CVE, 패키지명)} 키로 준다.
      *

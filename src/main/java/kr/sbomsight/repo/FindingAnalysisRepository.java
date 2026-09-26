@@ -27,6 +27,18 @@ public interface FindingAnalysisRepository extends JpaRepository<FindingAnalysis
                                       @Param("cve") String cve,
                                       @Param("packageName") String packageName);
 
+    /**
+     * 상세 화면 — 자산 · 구역과 이력까지 한 번에. {@code open-in-view} 가 꺼져
+     * 있어 화면이 읽는 것은 여기서 다 끌어와야 한다(조치 상세와 같다).
+     */
+    @Query("""
+           SELECT DISTINCT f FROM FindingAnalysis f
+           JOIN FETCH f.asset a JOIN FETCH a.zone
+           LEFT JOIN FETCH f.events
+           WHERE f.id = :id
+           """)
+    Optional<FindingAnalysis> findDetail(@Param("id") Long id);
+
     /** 한 자산치 전부. 취약점 목록이 행마다 표시를 붙이는 데 쓴다. */
     @Query("SELECT f FROM FindingAnalysis f WHERE f.asset.id = :assetId")
     List<FindingAnalysis> findByAsset(@Param("assetId") Long assetId);

@@ -176,9 +176,7 @@
                    alt=${f.scan.asset.id + '|' + f.cve + '|' + f.packageName},
                    a=${analyses.containsKey(key)} ? ${analyses.get(key)} : ${analyses.get(alt)}">
         <th:block th:if="${a != null and !a.untouched}">
-          <span class="sev" th:classappend="${a.state.name() == 'EXPLOITABLE'} ? 'high'
-                            : (${a.open} ? 'medium' : 'low')"><i></i>
-            <span th:text="${a.state.label()}">해당 없음</span></span>
+          <a th:replace="~{fragments/ui :: reviewstate(${a})}"></a>
           <span th:if="${a.response != null}" class="tag"
                 th:text="${a.response.label()}">위험 수용</span>
           <div class="faint" th:if="${a.justification != null}"
