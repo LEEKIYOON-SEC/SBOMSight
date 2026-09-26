@@ -30,15 +30,8 @@
     <div th:fragment="actions" class="btn-list">
       <a class="btn" th:if="${!present.isEmpty() and analysis.asset.archivedAt == null}"
          th:href="@{'/vulns/' + ${analysis.cve}}">CVE 상세</a>
-      <a sec:authorize="hasRole('ADMIN')" class="btn btn-dark analysis-link" href="#"
-         th:attr="data-asset=${analysis.asset.id}, data-cve=${analysis.cve},
-                  data-pkg=${analysis.packageName}, data-label=${analysis.cve},
-                  data-state=${analysis.state.name()},
-                  data-justification=${analysis.justification != null} ? ${analysis.justification.name()} : '',
-                  data-response=${analysis.response != null} ? ${analysis.response.name()} : '',
-                  data-review=${analysis.reviewBy != null} ? ${analysis.reviewBy} : '',
-                  data-note=${analysis.note}, data-control=${analysis.otherControl},
-                  data-doc=${analysis.approvalDoc}, data-exists=true">수정</a>
+      <a th:replace="~{fragments/analysis-dialog :: link(${analysis}, ${analysis.asset.id}, ${analysis.cve},
+                       ${analysis.packageName}, 'btn btn-dark')}"></a>
     </div>
   </th:block>
 

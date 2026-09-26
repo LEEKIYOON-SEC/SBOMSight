@@ -89,6 +89,35 @@ public record CvssVector(String attackVector,
     }
 
     /**
+     * 사람이 읽는 접근 경로 — CVE 상세의 {@code 접근 경로} 줄(시안).
+     *
+     * <p>벡터에 적힌 셋(AV · PR · UI)을 옮길 뿐이다. 영향 범위(S)는 화면이
+     * 보고서 2.3 과 같은 말({@code 영향 범위 변경})로 따로 붙인다. 모르는 글자는
+     * 옮기지 않고 원문({@code AV:X})으로 둔다.
+     */
+    public String accessPath() {
+        String av = switch (attackVector) {
+            case "N" -> "네트워크";
+            case "A" -> "인접 네트워크";
+            case "L" -> "로컬";
+            case "P" -> "물리 접근";
+            default -> "AV:" + attackVector;
+        };
+        String pr = switch (privilegesRequired) {
+            case "N" -> "인증 불필요";
+            case "L" -> "낮은 권한 필요";
+            case "H" -> "높은 권한 필요";
+            default -> "PR:" + privilegesRequired;
+        };
+        String ui = switch (userInteraction) {
+            case "N" -> "사용자 개입 불필요";
+            case "R" -> "사용자 개입 필요";
+            default -> "UI:" + userInteraction;
+        };
+        return av + " · " + pr + " · " + ui;
+    }
+
+    /**
      * 셋이 동시에 성립하는 것 — <b>밖에서, 인증 없이, 아무 도움 없이.</b>
      *
      * <p>서버 취약점 대응에서 먼저 손대야 하는 것이 이것이다. 사용자 개입이

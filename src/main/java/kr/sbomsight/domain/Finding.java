@@ -357,6 +357,33 @@ public class Finding {
         return matchType;
     }
 
+    /**
+     * 대조 방식의 화면 이름 — <b>무엇으로 맞췄는지</b>만 옮긴다.
+     *
+     * <p>grype 이 쓰는 셋이다(grype/match/type.go). {@code exact-indirect-match}
+     * 는 설치된 패키지가 아니라 그 <b>소스 패키지</b>(예: {@code libssl3} 의
+     * {@code openssl})로 맞춘 것이다 — grype 이 소스 쪽으로 찾은 결과를 설치된
+     * 패키지에 옮겨 붙일 때 이 이름으로 바꾼다. 원문은 화면에 함께 찍는다.
+     * 모르는 글자는 옮기지 않는다 — 빈 글자를 돌려주고 화면은 원문만 찍는다.
+     */
+    public String getMatchTypeLabel() {
+        return matchTypeLabel(matchType);
+    }
+
+    /** grype 의 순서(type.go 의 typeOrder) — 확실한 것부터. */
+    public static final java.util.List<String> MATCH_TYPES =
+            java.util.List.of("exact-direct-match", "exact-indirect-match", "cpe-match");
+
+    /** {@link #getMatchTypeLabel()} 와 같은 규칙 — 건 없이 글자만 있을 때. */
+    public static String matchTypeLabel(String raw) {
+        return switch (raw == null ? "" : raw) {
+            case "exact-direct-match" -> "패키지 이름으로 대조";
+            case "exact-indirect-match" -> "소스 패키지 이름으로 대조";
+            case "cpe-match" -> "CPE로 대조";
+            default -> "";
+        };
+    }
+
     public void setMatchType(String matchType) {
         this.matchType = clip(matchType, 64);
     }

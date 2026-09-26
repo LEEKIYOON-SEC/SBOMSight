@@ -111,5 +111,28 @@
 <script src="/js/analysis-dialog.js" defer></script>
 </div>
 
+<!--/*
+  팝업을 여는 링크 — 적어 둔 값을 실어 둔다(analysis-dialog.js 가 읽어 칸을
+  채운다). 취약점 목록 · CVE 상세 · 검토 결과 상세가 같은 조각을 쓴다. 앞서 이
+  `data-…` 열두 줄을 화면마다 적으려던 참이었다 — 칸이 하나 늘면 여기 한 곳만.
+
+  `cve` 는 화면에 찍는 번호(finding.displayId)다 — 결재도 보고도 그 번호로 돈다.
+  `cls` 는 모양(목록은 글자 링크, 상세는 단추). 조회 계정에는 그리지 않는다.
+
+    <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${assetId}, ${cve}, ${pkg}, 'btn btn-sm')}"></a>
+*/-->
+<a th:fragment="link(a, assetId, cve, pkg, cls)" sec:authorize="hasRole('ADMIN')" href="#"
+   class="analysis-link" th:classappend="${cls}"
+   th:text="${a != null and !a.untouched} ? '수정' : '작성'"
+   th:attr="data-asset=${assetId}, data-cve=${cve}, data-pkg=${pkg}, data-label=${cve},
+            data-state=${a != null} ? ${a.state.name()} : 'NOT_SET',
+            data-justification=${a != null and a.justification != null} ? ${a.justification.name()} : '',
+            data-response=${a != null and a.response != null} ? ${a.response.name()} : '',
+            data-review=${a != null and a.reviewBy != null} ? ${a.reviewBy} : '',
+            data-note=${a != null} ? ${a.note} : '',
+            data-control=${a != null} ? ${a.otherControl} : '',
+            data-doc=${a != null} ? ${a.approvalDoc} : '',
+            data-exists=${a != null and !a.untouched}">작성</a>
+
 </body>
 </html>

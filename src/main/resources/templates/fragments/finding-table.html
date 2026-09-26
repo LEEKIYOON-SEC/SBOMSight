@@ -185,20 +185,8 @@
                th:text="'재검토일 ' + ${a.reviewBy} + ' 지남'">재검토일 지남</div>
         </th:block>
 
-        <a sec:authorize="hasRole('ADMIN')" class="analysis-link" href="#"
-           th:text="${a != null and !a.untouched} ? '수정' : '작성'"
-           th:attr="data-asset=${f.scan.asset.id}, data-cve=${f.displayId},
-                    data-pkg=${f.packageName}, data-label=${f.displayId},
-                    data-state=${a != null} ? ${a.state.name()} : 'NOT_SET',
-                    data-justification=${a != null and a.justification != null}
-                                       ? ${a.justification.name()} : '',
-                    data-response=${a != null and a.response != null}
-                                  ? ${a.response.name()} : '',
-                    data-review=${a != null and a.reviewBy != null} ? ${a.reviewBy} : '',
-                    data-note=${a != null} ? ${a.note} : '',
-                    data-control=${a != null} ? ${a.otherControl} : '',
-                    data-doc=${a != null} ? ${a.approvalDoc} : '',
-                    data-exists=${a != null and !a.untouched}">작성</a>
+        <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${f.scan.asset.id}, ${f.displayId},
+                         ${f.packageName}, '')}"></a>
       </td>
 
       <td class="tight" th:with="r=${actions.get(f.scan.asset.id + '|' + f.packageName)}">

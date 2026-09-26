@@ -1,9 +1,11 @@
 package kr.sbomsight.web;
 
 import jakarta.servlet.http.HttpServletResponse;
+import kr.sbomsight.domain.CvssVector;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.service.CsvWriter;
+import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
@@ -19,7 +21,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
@@ -55,8 +60,11 @@ public class VulnController {
     private final FindingRepository findings;
     private final ZoneService zones;
     private final VulnQuery query;
+    private final FindingAnalysisService analyses;
 
-    public VulnController(FindingRepository findings, ZoneService zones, VulnQuery query) {
+    public VulnController(FindingRepository findings, ZoneService zones, VulnQuery query,
+                          FindingAnalysisService analyses) {
+        this.analyses = analyses;
         this.findings = findings;
         this.zones = zones;
         this.query = query;
@@ -163,12 +171,38 @@ public class VulnController {
         model.addAttribute("rows", Paging.slice(rows, page, size));
         // 대표로 한 건을 쓴다 — CVSS·벡터·심각도는 취약점의 속성이라 같다.
         model.addAttribute("first", rows.get(0));
+        // 벡터에 적힌 접근 경로(시안의 `접근 경로` 줄). 읽을 수 없으면(3.x 가
+        // 아니면) 비워 두고 화면이 `판단 불가` 라고 말한다 — 보고서 2.3 과 같다.
+        model.addAttribute("vector", CvssVector.parse(rows.get(0).getCvssVector()).orElse(null));
+        // 자산마다 적어 둔 검토 결과 — 목록(finding-table)과 같은 키로 찾는다.
+        model.addAttribute("analyses", analyses.byAssetKey(
+                rows.stream().map(f -> f.getScan().getAsset().getId()).distinct().toList()));
+        // **대조 방식은 탐지마다 다르다** — 한 CVE 가 어느 자산에서는 패키지
+        // 이름으로, 다른 자산에서는 소스 패키지로 걸린다. 앞서 대표 한 건의 것을
+        // CVE 의 것처럼 찍었다. 전부에서(자른 쪽이 아니라) 방식마다 센다.
+        Map<String, Long> byMatchType = rows.stream()
+                .map(Finding::getMatchType).filter(t -> !t.isBlank())
+                .collect(Collectors.groupingBy(t -> t, Collectors.counting()));
+        model.addAttribute("matchTypes", byMatchType.keySet().stream()
+                .sorted(Comparator.comparingInt(VulnController::rank).thenComparing(t -> t))
+                .map(t -> new MatchTypeCount(t, Finding.matchTypeLabel(t), byMatchType.get(t)))
+                .toList());
         model.addAttribute("spread", findings.zoneSpread(scope.scanIds(), cve, includeDone));
         // **자른 쪽이 아니라 전부에서 센다.** 한 쪽에 보이는 자산 수를
         // 찍으면 `3대` 인데 쪽이 다섯인 화면이 된다.
         model.addAttribute("assetCount",
                 rows.stream().map(f -> f.getScan().getAsset().getId()).distinct().count());
         return "vuln-detail";
+    }
+
+    /** 대조 방식 하나 — 원문 · 화면 이름(모르는 글자면 빈 글자) · 건수. */
+    public record MatchTypeCount(String raw, String label, long count) {
+    }
+
+    /** grype 의 순서, 모르는 것은 뒤로. */
+    private static int rank(String matchType) {
+        int i = Finding.MATCH_TYPES.indexOf(matchType);
+        return i < 0 ? Finding.MATCH_TYPES.size() : i;
     }
 
     @GetMapping("/export.csv")
