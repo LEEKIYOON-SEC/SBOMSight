@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.CookieManager;
+import java.net.Socket;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -205,7 +206,56 @@ class ErrorPageTest {
                 .isZero();
     }
 
+    /**
+     * 주소에 쓸 수 없는 글자가 든 요청은 톰캣이 스프링 앞에서 끊는다. 앞서 이
+     * 요청에는 톰캣의 영문 화면({@code HTTP Status 400 – Bad Request})이 떴다 —
+     * 브라우저가 한국어를 청해도 그랬다(톰캣에 한국어 판이 없다).
+     */
+    @Test
+    @DisplayName("톰캣이 스프링 앞에서 끊은 주소도 한국어 400 화면이다")
+    void aUrlTomcatRejectsIsKoreanToo() throws Exception {
+        for (String path : new String[] {"/%", "/a%00b"}) {
+            String r = raw("GET " + path + " HTTP/1.1");
+            assertThat(r).as(path)
+                    .startsWith("HTTP/1.1 400")
+                    .contains("Content-Type: text/html;charset=UTF-8")
+                    .contains("<html lang=\"ko\"")
+                    .contains("오류 400")
+                    .contains("주소에 쓸 수 없는 글자")
+                    .contains("href=\"/\"")
+                    .doesNotContain("HTTP Status")
+                    .doesNotContain("Bad Request");
+        }
+    }
+
+    /** 400 밖의 것은 상태를 모르고 그린 판이다 — 틀린 번호를 적지 않는다. */
+    @Test
+    @DisplayName("톰캣 앞단의 다른 오류도 한국어 — 모르는 상태 번호는 적지 않는다")
+    void otherErrorsBeforeSpringAreKoreanWithoutANumber() throws Exception {
+        String r = raw("GET / HTTP/1.2");
+        assertThat(r)
+                .startsWith("HTTP/1.1 505")
+                .contains("<html lang=\"ko\"")
+                .contains("요청을 처리할 수 없습니다")
+                .contains("관리자에게 알려 주세요")
+                .doesNotContain("오류 ")
+                .doesNotContain("HTTP Status");
+    }
+
     // --- 씨앗 · 요청 ------------------------------------------------------------
+
+    /**
+     * 요청 줄을 그대로 보낸다. HttpClient 는 {@code /%} 같은 주소를 만들기도 전에
+     * 거절하므로 소켓으로 보낸다. 브라우저처럼 한국어를 청한다.
+     */
+    private String raw(String requestLine) throws Exception {
+        try (Socket socket = new Socket("localhost", port)) {
+            socket.getOutputStream().write((requestLine + "\r\nHost: localhost\r\nAccept: text/html"
+                    + "\r\nAccept-Language: ko-KR,ko;q=0.9\r\nConnection: close\r\n\r\n")
+                    .getBytes(StandardCharsets.ISO_8859_1));
+            return new String(socket.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
 
     private String account(Role role) {
         String name = role.name().toLowerCase() + System.nanoTime();

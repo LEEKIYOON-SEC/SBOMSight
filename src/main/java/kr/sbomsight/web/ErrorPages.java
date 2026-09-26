@@ -53,15 +53,35 @@ public class ErrorPages implements ErrorViewResolver {
     @Override
     public ModelAndView resolveErrorView(HttpServletRequest request, HttpStatus status,
                                          Map<String, Object> model) {
-        Page page = page(request, status);
-        Map<String, Object> out = new HashMap<>();
-        out.put("status", status.value());
-        out.put("title", page.title());
-        out.put("detail", page.detail());
         // 서버 쪽 오류에만 시각을 찍는다 — 기록(로그)에서 그 줄을 찾는 열쇠다.
         // 서버 기록과 같은 시계(이 PC 의 시간대)로 찍는다.
-        out.put("time", status.is5xxServerError() ? LocalDateTime.now().format(TIME) : null);
-        return new ModelAndView("error", out, status);
+        return new ModelAndView("error", model(status.value(), page(request, status),
+                status.is5xxServerError() ? LocalDateTime.now().format(TIME) : null), status);
+    }
+
+    /**
+     * 톰캣이 스프링 앞에서 끊은 요청에 내는 화면(TomcatErrorPages). 기동할 때
+     * 미리 그려 둔 파일이라 요청도 시각도 모른다 — 그래서 말이 따로다.
+     *
+     * @param status 400 이면 400 의 말. 그 밖은 null — 상태를 모르고 그린다.
+     */
+    static Map<String, Object> beforeSpring(Integer status) {
+        Page page = status != null && status == 400
+                ? new Page("요청을 처리할 수 없습니다",
+                        "주소에 쓸 수 없는 글자가 들어 있거나 요청의 형식이 올바르지 않습니다. "
+                        + "화면의 링크로 다시 열어 주세요.")
+                : new Page("요청을 처리할 수 없습니다",
+                        "화면의 링크로 다시 열어 주세요. 되풀이되면 이 화면을 본 시각을 관리자에게 알려 주세요.");
+        return model(status, page, null);
+    }
+
+    private static Map<String, Object> model(Integer status, Page page, String time) {
+        Map<String, Object> out = new HashMap<>();
+        out.put("status", status);
+        out.put("title", page.title());
+        out.put("detail", page.detail());
+        out.put("time", time);
+        return out;
     }
 
     private Page page(HttpServletRequest request, HttpStatus status) {
