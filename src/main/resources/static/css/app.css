@@ -579,9 +579,12 @@ dialog textarea { min-height: 4rem; }
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
   .table-responsive { overflow-x: visible; }
-  /* 장은 새 쪽에서 시작한다. 첫 장은 문서 정보에 붙여 둔다. */
+  /* 장은 새 쪽에서 시작한다. 첫 장은 문서 정보에 붙여 둔다.
+     요약(첫 쪽) 바로 뒤의 1장도 붙여 둔다 — 1장은 표 하나라, 새 쪽을 열면
+     그 쪽이 거의 빈다. 넘치면 저절로 다음 쪽으로 흐른다. */
   .report section { break-before: page; margin-bottom: 0; }
-  .report section:first-of-type { break-before: auto; }
+  .report section:first-of-type,
+  .report section.summary + section { break-before: auto; }
   .report h2, .report h3 { break-after: avoid; }
   /* 각주는 자기가 다는 표와 같은 쪽에 있어야 뜻이 있다. */
   .footnote { break-before: avoid; }

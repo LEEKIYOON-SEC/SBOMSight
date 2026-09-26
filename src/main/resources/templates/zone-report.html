@@ -96,6 +96,94 @@
     </tbody>
   </table>
 
+  <!--/*
+    ══ 요약 — 첫 쪽 ══════════════════════════════════════════════════
+    자산 보고서의 요약과 같다 — **뒤 장들이 센 수를 그대로** 모으고, 줄마다
+    그 수가 나온 장을 적는다. 새로 세지 않는다. 첫 줄은 이 보고서가 몇 대를
+    본 것인가다(1장과 같은 이유 — 놓치면 나머지 숫자를 잘못 읽는다).
+
+    기간 안에 검사한 자산이 없으면 싣지 않는다 — 전부 0 인 요약은 "깨끗하다"
+    로 읽힌다. 그때는 1장의 상자가 먼저 말한다.
+  */-->
+  <section class="summary" th:if="${report.scope.assetsScanned > 0}">
+    <h2>요약</h2>
+    <table class="table">
+      <thead><tr><th>항목</th><th class="num tight">값</th><th class="tight">장</th></tr></thead>
+      <tbody>
+      <tr><td>이 기간에 검사한 자산</td>
+          <td class="num tight">
+            <b th:text="${report.scope.assetsScanned} + '대'">0대</b>
+            <span th:text="'/ ' + ${report.scope.assetsInScope} + '대 (' + ${report.scope.coveragePercent()} + '%)'">/ 0대 (0%)</span>
+            <span class="danger-text" th:if="${!report.scope.notScanned.isEmpty()}"
+                  th:text="'· 검사 기록 없음 ' + ${report.scope.notScanned.size()} + '대'">· 검사 기록 없음 0대</span></td>
+          <td class="tight faint">1장</td></tr>
+      <tr><td>탐지 건수</td>
+          <td class="num tight"><b th:text="${#numbers.formatInteger(report.scope.totalFindings, 0, 'COMMA')} + '건'">0건</b></td>
+          <td class="tight faint">1장</td></tr>
+      <tr><td>심각 · 높음</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.aggregate.severityOf('critical'), 0, 'COMMA')} + '건 · '
+                       + ${#numbers.formatInteger(report.aggregate.severityOf('high'), 0, 'COMMA')} + '건 · 보유 자산 '
+                       + ${report.aggregate.assetsWithUrgent()} + '대'">0건 · 0건 · 보유 자산 0대</td>
+          <td class="tight faint">2.1 · 3장</td></tr>
+      <tr><td>원격 접근</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.aggregate.exposure.reachable, 0, 'COMMA')} + '건'
+                       + (${report.aggregate.exposure.reachableWithoutFix() > 0}
+                          ? ' · 그중 수정 버전 없음 ' + ${#numbers.formatInteger(report.aggregate.exposure.reachableWithoutFix(), 0, 'COMMA')} + '건' : '')">0건</td>
+          <td class="tight faint">2.3</td></tr>
+      <tr><td>미검토</td>
+          <td class="num tight" th:classappend="${report.aggregate.notReviewed() > 0} ? 'danger-text' : ''"
+              th:text="${#numbers.formatInteger(report.aggregate.notReviewed(), 0, 'COMMA')} + '건 / '
+                       + ${#numbers.formatInteger(report.aggregate.total, 0, 'COMMA')} + '건'">0건 / 0건</td>
+          <td class="tight faint">2.4</td></tr>
+      <tr><td>조치 대상</td>
+          <td class="num tight"
+              th:text="${report.judgement.actions.size()} + '개 패키지 · 해소 '
+                       + ${#numbers.formatInteger(report.judgement.resolvableFindings(), 0, 'COMMA')} + '건'">0개 패키지 · 해소 0건</td>
+          <td class="tight faint">4장</td></tr>
+      <tr><td>수정 버전 없는 항목</td>
+          <td class="num tight"
+              th:text="${report.action.residual.size()} + '개 패키지 · '
+                       + ${#numbers.formatInteger(report.action.residualFindings(), 0, 'COMMA')} + '건'">0개 패키지 · 0건</td>
+          <td class="tight faint">5장</td></tr>
+      <tr><td>조치 진행</td>
+          <td class="num tight"
+              th:text="'대기 · 진행 ' + ${report.action.open} + '개 · 완료 · 탐지 남음 '
+                       + ${report.action.doneRemaining} + '개 · 미등록 '
+                       + ${#numbers.formatInteger(report.action.untrackedFindings, 0, 'COMMA')} + '건'">—</td>
+          <td class="tight faint">6장</td></tr>
+      <tr><td>기간 시작 대비</td>
+          <td class="num tight" th:if="${report.judgement.movement.comparable()}"
+              th:classappend="${report.judgement.movement.net() > 0} ? 'danger-text' : ''"
+              th:text="'순증감 ' + (${report.judgement.movement.net() > 0} ? '+' : '') + ${report.judgement.movement.net()}
+                       + ' (신규 ' + ${report.judgement.movement.added} + ' · 해소 ' + ${report.judgement.movement.resolved} + ')'">—</td>
+          <td class="num tight faint" th:unless="${report.judgement.movement.comparable()}">대조 불가 — 기간 이전 검사 없음</td>
+          <td class="tight faint">7장</td></tr>
+      </tbody>
+    </table>
+
+    <!--/* 4장 순위 그대로의 앞 다섯 줄. */-->
+    <h3 th:if="${!report.judgement.actions.isEmpty()}">조치 대상 상위 5개 (4장 순위)</h3>
+    <table class="table" th:if="${!report.judgement.actions.isEmpty()}">
+      <thead><tr><th class="num tight">순위</th><th>패키지</th><th class="num tight">자산</th>
+                 <th class="num tight">해소 건수</th><th class="num tight">원격 접근</th></tr></thead>
+      <tbody>
+      <tr th:each="a, i : ${report.judgement.actions}" th:if="${i.index < 5}">
+        <td class="num tight" th:text="${i.count}">1</td>
+        <td><b th:text="${a.packageName}">openssl</b></td>
+        <td class="num tight" th:text="${a.assetCount} + '대'">1대</td>
+        <td class="num tight" th:text="${a.fixableCount}">0</td>
+        <td class="num tight" th:classappend="${a.hasReachable()} ? 'danger-text' : ''"
+            th:text="${a.hasReachable()} ? ${a.reachableCount} : '—'">—</td>
+      </tr>
+      </tbody>
+    </table>
+    <p class="footnote">
+      ※ 수는 뒤 장에서 센 값 그대로 · 단위 — 건(탐지) · 패키지(조치) · 대(자산)
+    </p>
+  </section>
+
   <!--/* ══ 1. 점검 범위 ═══════════════════════════════════════════════ */-->
   <section>
     <h2>1. 점검 범위</h2>

@@ -78,6 +78,104 @@
     </tbody>
   </table>
 
+  <!--/*
+    ══ 요약 — 첫 쪽 ══════════════════════════════════════════════════
+    앞서 첫 쪽이 거의 비어 있었다 — 문서 정보와 1장 다섯 줄뿐이고, 심각도 ·
+    조치 대상은 둘째 쪽부터였다. 결재하는 사람이 첫 쪽에서 판단할 수 있게
+    **뒤 장들이 센 수를 그대로** 모아 둔다. 여기서 새로 세지 않는다 — 두 곳이
+    따로 세면 한 문서 안에서 수가 갈라지는 날이 온다. 줄마다 그 수가 나온
+    장을 적는다.
+
+    서술하지 않는다(ReportProseTest). 번호를 붙이지 않는다 — 1~6장의 번호는
+    그대로다. 인쇄할 때 1장이 이 뒤에 이어 붙는다(app.css `.summary + section`).
+  */-->
+  <section class="summary">
+    <h2>요약</h2>
+    <table class="table">
+      <thead><tr><th>항목</th><th class="num tight">값</th><th class="tight">장</th></tr></thead>
+      <tbody>
+      <tr><td>탐지 건수</td>
+          <td class="num tight">
+            <b th:text="${#numbers.formatInteger(report.overview.findingCount, 0, 'COMMA')} + '건'">0건</b>
+            · 고유 취약점 <span th:text="${#numbers.formatInteger(report.overview.distinctVulnerabilities, 0, 'COMMA')} + '가지'">0가지</span></td>
+          <td class="tight faint">1장</td></tr>
+      <tr><td>심각 · 높음</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.summary.severityOf('critical'), 0, 'COMMA')} + '건 · '
+                       + ${#numbers.formatInteger(report.summary.severityOf('high'), 0, 'COMMA')} + '건'">0건 · 0건</td>
+          <td class="tight faint">2.1</td></tr>
+      <tr><td>실제 악용 확인</td>
+          <td class="num tight" th:if="${report.summary.kevKnown}"
+              th:classappend="${report.summary.kevCount > 0} ? 'danger-text' : ''"
+              th:text="${#numbers.formatInteger(report.summary.kevCount, 0, 'COMMA')} + '건'">0건</td>
+          <td class="num tight faint" th:unless="${report.summary.kevKnown}">확인되지 않음</td>
+          <td class="tight faint">2.2</td></tr>
+      <tr th:if="${report.summary.exposure.measured()}"><td>원격 접근</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.summary.exposure.reachable, 0, 'COMMA')} + '건'
+                       + (${report.summary.exposure.reachableWithoutFix() > 0}
+                          ? ' · 그중 수정 버전 없음 ' + ${#numbers.formatInteger(report.summary.exposure.reachableWithoutFix(), 0, 'COMMA')} + '건' : '')">0건</td>
+          <td class="tight faint">2.3</td></tr>
+      <tr><td>미검토</td>
+          <td class="num tight" th:classappend="${report.summary.notReviewed() > 0} ? 'danger-text' : ''"
+              th:text="${#numbers.formatInteger(report.summary.notReviewed(), 0, 'COMMA')} + '건 / '
+                       + ${#numbers.formatInteger(report.summary.total, 0, 'COMMA')} + '건'">0건 / 0건</td>
+          <td class="tight faint">2.4</td></tr>
+      <tr><td>조치 대상</td>
+          <td class="num tight"
+              th:text="${report.targets.fixTargets.size()} + '개 패키지 · 해소 '
+                       + ${#numbers.formatInteger(report.targets.resolvableFindings(), 0, 'COMMA')} + '건'">0개 패키지 · 해소 0건</td>
+          <td class="tight faint">3장</td></tr>
+      <tr><td>수정 버전 없는 항목</td>
+          <td class="num tight"
+              th:text="${report.targets.noFixRows.size()} + '개 패키지 · '
+                       + ${#numbers.formatInteger(report.targets.blockedFindings(), 0, 'COMMA')} + '건'">0개 패키지 · 0건</td>
+          <td class="tight faint">4장</td></tr>
+      <tr><td>조치 진행 (패키지)</td>
+          <td class="num tight"
+              th:text="'대기 · 진행 ' + ${report.progress.openPackages()} + '개 · 완료 · 탐지 남음 '
+                       + ${report.progress.doneRemainingPackages()} + '개 · 미등록 ' + ${report.progress.untracked()} + '개'">—</td>
+          <td class="tight faint">5장</td></tr>
+      <tr><td>지난 검사 대비</td>
+          <td class="num tight" th:if="${report.targets.diff.hasPrevious()}"
+              th:text="'신규 ' + ${#numbers.formatInteger(report.targets.diff.added, 0, 'COMMA')}
+                       + ' · 해소 ' + ${#numbers.formatInteger(report.targets.diff.resolved, 0, 'COMMA')}">—</td>
+          <td class="num tight faint" th:unless="${report.targets.diff.hasPrevious()}">첫 검사 — 대조 없음</td>
+          <td class="tight faint">6장</td></tr>
+      </tbody>
+    </table>
+
+    <!--/* 3장 순위 그대로의 앞 다섯 줄 — `progress.rows` 가 3장과 같은 줄 · 같은 순서다. */-->
+    <h3 th:if="${!report.progress.rows.isEmpty()}">조치 대상 상위 5개 (3장 순위)</h3>
+    <table class="table" th:if="${!report.progress.rows.isEmpty()}">
+      <thead><tr><th class="num tight">순위</th><th>패키지</th><th>현재 → 목표</th>
+                 <th class="num tight">해소 건수</th><th class="num tight">원격 접근</th>
+                 <th class="tight">조치 상태</th></tr></thead>
+      <tbody>
+      <tr th:each="row, i : ${report.progress.rows}" th:if="${i.index < 5}" th:with="a=${row.action()}">
+        <td class="num tight" th:text="${i.count}">1</td>
+        <td><b th:text="${a.packageName}">openssl</b></td>
+        <td class="mono">
+          <span th:text="${a.currentVersion}">1.0.0</span> →
+          <th:block th:replace="~{fragments/ui :: fixversions(${a.fixVersions}, '확인 필요')}"></th:block>
+        </td>
+        <td class="num tight" th:text="${a.fixableCount}">0</td>
+        <td class="num tight" th:classappend="${a.hasReachable()} ? 'danger-text' : ''"
+            th:text="${a.hasReachable()} ? ${a.reachableCount} : '—'">—</td>
+        <td class="tight">
+          <span th:if="${row.isDoneRemaining()}">완료 · 탐지 남음</span>
+          <span th:if="${row.isTracked() and !row.isDoneRemaining()}"
+                th:text="${row.remediation.status.label()}">대기</span>
+          <span class="faint" th:unless="${row.isTracked()}">미등록</span>
+        </td>
+      </tr>
+      </tbody>
+    </table>
+    <p class="footnote">
+      ※ 수는 뒤 장에서 센 값 그대로 · 단위 — 건(탐지) · 패키지(조치)
+    </p>
+  </section>
+
   <!--/* ══ 1. 점검 개요 ═══════════════════════════════════════════════ */-->
   <section>
     <h2>1. 점검 개요</h2>
