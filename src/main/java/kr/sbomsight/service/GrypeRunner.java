@@ -82,23 +82,23 @@ public class GrypeRunner {
             if (!finished) {
                 process.destroyForcibly();
                 throw new GrypeFailedException(
-                        "grype 이 " + properties.grypeTimeoutMinutes() + "분 안에 끝나지 않았습니다.");
+                        "grype가 " + properties.grypeTimeoutMinutes() + "분 안에 끝나지 않았습니다.");
             }
 
             // grype 은 취약점을 찾으면 --fail-on 설정에 따라 0 이 아닌 값을 낼 수
             // 있다. 우리는 --fail-on 을 주지 않으므로 0 이 정상이다.
             if (process.exitValue() != 0) {
                 throw new GrypeFailedException(
-                        "grype 이 비정상 종료했습니다(종료 코드 " + process.exitValue() + "). " + tail(errorLog));
+                        "grype가 비정상 종료했습니다(종료 코드 " + process.exitValue() + "). " + tail(errorLog));
             }
             if (!Files.exists(output) || Files.size(output) == 0) {
-                throw new GrypeFailedException("grype 이 결과를 내지 않았습니다. " + tail(errorLog));
+                throw new GrypeFailedException("grype가 결과를 내지 않았습니다. " + tail(errorLog));
             }
 
         } catch (IOException e) {
             throw new GrypeFailedException(
-                    "grype 을 실행하지 못했습니다(" + properties.grypePath() + "). "
-                    + "설치되어 있고 PATH 에 있는지 확인하세요. " + e.getMessage());
+                    "grype를 실행하지 못했습니다(" + properties.grypePath() + "). "
+                    + "설치되어 있고 PATH에 있는지 확인하세요. " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new GrypeFailedException("grype 실행이 중단되었습니다.");
@@ -141,15 +141,15 @@ public class GrypeRunner {
             boolean finished = process.waitFor(30, TimeUnit.SECONDS);
             if (!finished || process.exitValue() != 0) {
                 process.destroyForcibly();
-                return new Status(false, "", "", "grype 을 실행했지만 정상 종료하지 않았습니다.");
+                return new Status(false, "", "", "grype를 실행했지만 정상 종료하지 않았습니다.");
             }
             // JSON 전체를 화면에 쏟지 않는다 — 필요한 것은 판 하나다.
             Matcher m = VERSION.matcher(out);
             return new Status(true, m.find() ? m.group(1) : "", dbBuilt(), "");
         } catch (IOException e) {
             return new Status(false, "", "",
-                    "grype 을 찾을 수 없습니다 (" + properties.grypePath() + "). "
-                    + "설치되어 있고 PATH 에 있는지 확인하세요.");
+                    "grype를 찾을 수 없습니다 (" + properties.grypePath() + "). "
+                    + "설치되어 있고 PATH에 있는지 확인하세요.");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return new Status(false, "", "", "확인이 중단되었습니다.");

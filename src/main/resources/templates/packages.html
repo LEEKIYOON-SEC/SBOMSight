@@ -108,7 +108,7 @@
     */-->
     <th:block th:if="${inventoryEmpty}">
       <div th:replace="~{fragments/ui :: empty('아직 담긴 패키지가 없습니다',
-                        '검사할 때 SBOM 에서 담김 · 자산을 다시 검사하면 채워짐',
+                        '검사할 때 SBOM에서 담김 · 자산을 다시 검사하면 채워짐',
                         '/', '자산 보기')}"></div>
     </th:block>
 
@@ -210,7 +210,7 @@
                     <!--/* 비어 있는 것은 "경로가 없는 패키지" 가 아니라 SBOM 이
                          안 담은 것이다. 그렇게 말한다. */-->
                     <td class="mono faint"
-                        th:text="${#strings.isEmpty(c.location)} ? 'SBOM 에 없음' : ${c.location}">/usr/…</td>
+                        th:text="${#strings.isEmpty(c.location)} ? 'SBOM에 없음' : ${c.location}">/usr/…</td>
                     <td class="tight faint"
                         th:text="${#temporals.format(c.scan.createdAt, 'yyyy-MM-dd')}">—</td>
                   </tr>

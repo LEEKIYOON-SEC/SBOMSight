@@ -54,7 +54,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class FailedScanRescanTest {
 
-    private static final String ERROR = "grype 이 비정상 종료했습니다(종료 코드 1).";
+    private static final String ERROR = "grype가 비정상 종료했습니다(종료 코드 1).";
 
     @Autowired MockMvc mvc;
     @Autowired ScanService scanService;

@@ -66,7 +66,7 @@ public class ScanService {
      */
     public static class UnsupportedSbomException extends IllegalArgumentException {
         public UnsupportedSbomException() {
-            super("JSON 형식의 SBOM 이 아닙니다. " + SbomStorage.ACCEPTED_FORMATS + " 만 받습니다.");
+            super("JSON 형식의 SBOM이 아닙니다. " + SbomStorage.ACCEPTED_FORMATS + "만 받습니다.");
         }
     }
 
@@ -124,7 +124,7 @@ public class ScanService {
     @Transactional
     public Scan rescan(Scan source, String actor) throws IOException {
         if (source.getSbomPath() == null || source.getSbomPath().isBlank()) {
-            throw new IllegalStateException("이 검사에는 보관된 SBOM 이 없어 다시 검사할 수 없습니다.");
+            throw new IllegalStateException("이 검사에는 보관된 SBOM이 없어 다시 검사할 수 없습니다.");
         }
         Path stored = Path.of(source.getSbomPath());
         if (!Files.exists(stored)) {
@@ -332,7 +332,7 @@ public class ScanService {
         stuck.forEach(scan -> {
             scan.setStatus(ScanStatus.FAILED);
             // SBOM 은 이미 보관되어 있다 — 다시 받아 올 것이 아니라 다시 돌리면 된다.
-            scan.setErrorMessage("서버가 다시 시작되어 중단되었습니다. 보관된 SBOM 으로 다시 검사할 수 있습니다.");
+            scan.setErrorMessage("서버가 다시 시작되어 중단되었습니다. 보관된 SBOM으로 다시 검사할 수 있습니다.");
             scan.setFinishedAt(Instant.now());
             inventory.discard(scan.getId());
         });

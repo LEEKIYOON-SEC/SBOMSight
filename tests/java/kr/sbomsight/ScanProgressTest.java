@@ -88,14 +88,14 @@ class ScanProgressTest {
     @DisplayName("실패하면 그 자리에서 멈추고 남은 눈금은 흐려진다")
     void stopsWhereItFailed() throws Exception {
         Scan scan = scanAt(ScanStatus.FAILED, ScanStage.SCANNING);
-        scan.setErrorMessage("grype 이 60분 안에 끝나지 않았습니다.");
+        scan.setErrorMessage("grype가 60분 안에 끝나지 않았습니다.");
         scans.saveAndFlush(scan);
 
         mvc.perform(get("/scans/" + scan.getId() + "/status").with(user("t").roles("ADMIN")))
            .andExpect(status().isOk())
            .andExpect(jsonPath("$.failed").value(true))
            .andExpect(jsonPath("$.running").value(false))
-           .andExpect(jsonPath("$.error").value("grype 이 60분 안에 끝나지 않았습니다."))
+           .andExpect(jsonPath("$.error").value("grype가 60분 안에 끝나지 않았습니다."))
            .andExpect(jsonPath("$.steps[2].state").value("failed"))
            .andExpect(jsonPath("$.steps[3].state").value("skipped"));
     }

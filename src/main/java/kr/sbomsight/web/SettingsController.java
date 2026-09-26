@@ -132,9 +132,14 @@ public class SettingsController {
             audit.record(AuditEvent.USER_PASSWORD_RESET, username, "");
             // 이 화면을 떠나면 다시 볼 길이 없다. 그래서 그 사실을 함께 적는다 —
             // 적어 두지 않으면 새로고침 한 번으로 계정이 잠긴 것과 같아진다.
+            //
+            // **비밀번호 바로 뒤에 글자를 붙이지 않는다.** 조사를 붙여 쓰기로 하면서
+            // `… 비밀번호는 …7!입니다` 가 될 뻔했다. 임시 비밀번호는 `!` 로 끝나서
+            // (PasswordStrength), 뒤에 글자가 붙으면 어디까지가 비밀번호인지 흐려진다.
+            // 앞은 쌍점, 뒤는 빈칸으로 뗀다.
             flash.addFlashAttribute("message",
-                    username + " 의 임시 비밀번호는 " + temporary
-                    + " 입니다. 이 화면을 떠나면 다시 볼 수 없으니 지금 본인에게 "
+                    username + "의 임시 비밀번호: " + temporary
+                    + " — 이 화면을 떠나면 다시 볼 수 없으니 지금 본인에게 "
                     + "전달하세요. 본인이 로그인해 새 비밀번호를 정합니다.");
         } catch (AccountService.AccountException e) {
             flash.addFlashAttribute("error", e.getMessage());
@@ -158,7 +163,7 @@ public class SettingsController {
     @PostMapping("/users/{username}/unlock")
     public String unlockUser(@PathVariable String username, RedirectAttributes flash) {
         attempts.unlock(username);
-        flash.addFlashAttribute("message", username + " 의 잠금을 풀었습니다.");
+        flash.addFlashAttribute("message", username + "의 잠금을 풀었습니다.");
         return "redirect:/settings";
     }
 
@@ -174,7 +179,7 @@ public class SettingsController {
                         () -> {
                             audit.record(AuditEvent.IP_ALLOWLIST_CHANGED, "",
                                          settings.allowedIpsText());
-                            flash.addFlashAttribute("message", "접근 허용 IP 를 저장했습니다.");
+                            flash.addFlashAttribute("message", "접근 허용 IP를 저장했습니다.");
                         });
         return "redirect:/settings";
     }

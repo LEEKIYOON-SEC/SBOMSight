@@ -144,7 +144,7 @@
         */-->
         <th:block th:if="${assetCount == 0 and filter == null}">
           <div th:replace="~{fragments/ui :: empty('등록된 자산이 없습니다',
-                            '자산을 등록하고 그 자산에서 추출한 SBOM 을 업로드', null, null)}"></div>
+                            '자산을 등록하고 그 자산에서 추출한 SBOM을 업로드', null, null)}"></div>
         </th:block>
 
         <th:block th:if="${assetCount == 0 and filter != null}">

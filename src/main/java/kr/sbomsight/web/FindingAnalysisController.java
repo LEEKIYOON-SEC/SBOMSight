@@ -90,7 +90,7 @@ public class FindingAnalysisController {
                                 note, otherControl, approvalDoc, newReviewBy,
                                 principal.getName());
             }
-            flash.addFlashAttribute("message", cve + " 의 검토 결과를 적었습니다.");
+            flash.addFlashAttribute("message", cve + "의 검토 결과를 적었습니다.");
         } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
             flash.addFlashAttribute("error", message(e));
         }

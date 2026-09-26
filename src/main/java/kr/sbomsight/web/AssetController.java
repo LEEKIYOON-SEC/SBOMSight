@@ -597,7 +597,7 @@ public class AssetController {
         Scan scan = scans.findById(scanId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
         if (scan.getSbomPath() == null || scan.getSbomPath().isBlank()) {
-            throw new ResponseStatusException(NOT_FOUND, "보관된 SBOM 이 없습니다.");
+            throw new ResponseStatusException(NOT_FOUND, "보관된 SBOM이 없습니다.");
         }
         java.nio.file.Path stored = java.nio.file.Path.of(scan.getSbomPath());
         if (!java.nio.file.Files.exists(stored)) {
@@ -668,7 +668,7 @@ public class AssetController {
             // 돌아가는 곳은 개요 탭이다(진행 표시가 거기 뜬다) — 이력은 그 아래가
             // 아니라 옆 탭이다.
             flash.addFlashAttribute("message",
-                    "같은 SBOM 을 다시 검사합니다. 끝나면 검사 이력에 새 줄로 나타납니다.");
+                    "같은 SBOM을 다시 검사합니다. 끝나면 검사 이력에 새 줄로 나타납니다.");
         } catch (ScanService.UnsupportedSbomException e) {
             // 고장이 아니라 보관된 파일이 받는 형식이 아니다(예전에 받은 XML).
             // 업로드와 같이 오류 로그에 스택을 남기지 않는다.

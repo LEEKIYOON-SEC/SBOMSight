@@ -150,7 +150,7 @@ public class VulnController {
         // 걸린 것이 전부 해당 없음 · 오탐이면 없는 CVE 가 아니다 — 그 사실과
         // 함께 보는 길을 보여 준다. 검토 결과의 CVE 번호를 누르면 여기로 온다.
         if (rows.isEmpty() && reviewedOut == 0) {
-            throw new ResponseStatusException(NOT_FOUND, cve + " 에 걸린 탐지가 없습니다.");
+            throw new ResponseStatusException(NOT_FOUND, cve + "에 걸린 탐지가 없습니다.");
         }
         if (rows.isEmpty()) {
             return "redirect:" + links.copy().with("includeDone", "true").here();

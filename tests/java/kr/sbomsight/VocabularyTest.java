@@ -284,6 +284,63 @@ class VocabularyTest {
                 .isEmpty();
     }
 
+    /**
+     * <b>조사는 앞말에 붙여 쓴다 — 영문 · 숫자 뒤에서도.</b>
+     *
+     * <p>화면 글자가 {@code SBOM 을} · {@code grype 이} · {@code 2.2 의} 처럼 영문 ·
+     * 숫자 뒤의 조사만 띄어 썼다. 같은 화면의 한글 낱말 뒤에서는 붙여 써서, 한
+     * 화면 안에서 두 가지로 적혔다. 조사는 읽는 소리의 받침으로 고른다 —
+     * {@code SBOM을}(에스봄) · {@code grype가}(그라이프) · {@code DB로}(디비).
+     *
+     * <p>화면에 나가는 글자만 본다. 주석 · 문서 · 기록(로그)은 고치지 않기로
+     * 했다. 이름 같은 <b>값</b> 뒤에서 받침을 타는 조사(을 · 이 …)는 위 시험이
+     * 막는다 — 받침을 모르니 고정된 말을 사이에 둔다. 받침과 상관없는 것(의 · 에 ·
+     * 도 · 만)은 여기서 붙였는지 본다: {@code cve + "의 검토 결과"}.
+     */
+    @Test
+    @DisplayName("영문 · 숫자 뒤의 조사를 띄어 쓰지 않는다")
+    void particlesAttachToLatinWordsToo() throws IOException {
+        Pattern spaced = Pattern.compile("[A-Za-z0-9)\\]>'}]\\s"
+                + "(을|를|이|가|은|는|으로|로|과|와|의|에|에서|에는|에도|으로는|로는|도)"
+                + "(?=[\\s.,·)'\"<]|$)");
+        List<String> hits = new ArrayList<>();
+
+        Path templates = Path.of("src/main/resources/templates");
+        try (Stream<Path> files = Files.walk(templates)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".html")).sorted().toList()) {
+                List<String> lines = visibleLines(file);
+                for (int i = 0; i < lines.size(); i++) {
+                    Matcher m = spaced.matcher(lines.get(i));
+                    while (m.find()) {
+                        hits.add("%s:%d  …%s…".formatted(templates.relativize(file), i + 1,
+                                lines.get(i).substring(Math.max(0, m.start() - 20),
+                                                       Math.min(lines.get(i).length(), m.end() + 10))));
+                    }
+                }
+            }
+        }
+        for (JavaLiteral lit : javaLiterals()) {
+            if (spaced.matcher(lit.text()).find()) {
+                hits.add("%s  \"%s\"".formatted(lit.where(), lit.text()));
+            }
+        }
+        // 값 뒤 — `cve + " 의 검토 결과"`. 받침을 타는 조사는 위 시험이 막으므로
+        // 여기서는 받침과 상관없는 것(의 · 에 · 도 · 만)이 떨어져 있는지만 본다.
+        Pattern afterValue = Pattern.compile("\\+\\s*\"\\s(의|에|에서|에는|에도|도|만)(?=[\\s.,·)\"]|$)");
+        for (Path file : javaFiles()) {
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                if (!isCommentOrLog(lines.get(i)) && afterValue.matcher(lines.get(i)).find()) {
+                    hits.add("%s:%d  %s".formatted(file.getFileName(), i + 1, lines.get(i).strip()));
+                }
+            }
+        }
+
+        assertThat(hits)
+                .as("조사는 앞말에 붙입니다 — SBOM을 · grype가 · DB로 (소리의 받침으로 고릅니다).")
+                .isEmpty();
+    }
+
     private record JavaLiteral(String where, String text) {
     }
 

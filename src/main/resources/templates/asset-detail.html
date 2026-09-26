@@ -96,13 +96,13 @@
          th:if="${lastFailed != null}">
       <div style="flex:1; min-width:16rem">
         <b th:text="'검사 실패 · ' + ${#temporals.format(lastFailed.createdAt, 'yyyy-MM-dd HH:mm')}">검사 실패 · 2026-09-25 11:52</b>
-        <div th:text="${lastFailed.errorMessage}">grype 을 실행하지 못했습니다.</div>
+        <div th:text="${lastFailed.errorMessage}">grype를 실행하지 못했습니다.</div>
         <div class="mt-1" th:if="${latest != null}"
              th:text="'보이는 결과는 그 전 완료 검사(' + ${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')} + ')의 것입니다.'">보이는 결과는 그 전 완료 검사(2026-09-25 11:45)의 것입니다.</div>
       </div>
       <form method="post" th:action="@{'/scans/' + ${lastFailed.id} + '/rescan'}" class="inline"
             th:if="${!#strings.isEmpty(lastFailed.sbomPath)}" sec:authorize="hasRole('ADMIN')">
-        <button type="submit" class="btn btn-sm" title="보관된 SBOM 을 다시 검사">다시 검사</button>
+        <button type="submit" class="btn btn-sm" title="보관된 SBOM을 다시 검사">다시 검사</button>
       </form>
     </div>
 
@@ -147,7 +147,7 @@
             창의 힌트일 뿐이다.
           */-->
           <div>
-            <label class="form-label" for="sbom-file">syft 로 만든 SBOM 파일 (JSON)</label>
+            <label class="form-label" for="sbom-file">syft로 만든 SBOM 파일 (JSON)</label>
             <input type="file" class="form-control" id="sbom-file" name="file"
                    accept=".json" required>
           </div>
@@ -326,7 +326,7 @@
     <div class="container-xl">
     <th:block th:if="${assetPackages == null or assetPackages.totalElements == 0}">
       <div th:replace="~{fragments/ui :: empty('아직 담긴 패키지가 없습니다',
-                        '검사할 때 SBOM 에서 담김 · 이 자산을 다시 검사하면 채워짐',
+                        '검사할 때 SBOM에서 담김 · 이 자산을 다시 검사하면 채워짐',
                         '/assets/' + ${asset.id} + '?tab=history', '검사 이력')}"></div>
     </th:block>
 
@@ -359,7 +359,7 @@
             <!--/* 비어 있는 것은 "경로가 없는 패키지" 가 아니라 SBOM 이 안
                  담은 것이다. 그렇게 말한다. */-->
             <td class="mono faint"
-                th:text="${#strings.isEmpty(c.location)} ? 'SBOM 에 없음' : ${c.location}">/usr/…</td>
+                th:text="${#strings.isEmpty(c.location)} ? 'SBOM에 없음' : ${c.location}">/usr/…</td>
           </tr>
           </tbody>
         </table>
@@ -385,7 +385,7 @@
     <div class="card">
     <th:block th:if="${history.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('아직 검사가 없습니다',
-                        'SBOM 을 업로드하면 검사가 돌고 결과가 여기에 쌓임',
+                        'SBOM을 업로드하면 검사가 돌고 결과가 여기에 쌓임',
                         '/assets/' + ${asset.id}, 'SBOM 업로드')}"></div>
     </th:block>
 
@@ -404,7 +404,7 @@
             공개된 취약점은 이 검사에 없다 — 그것이 이 칸을 보는 이유다.
           */-->
           <th class="tight">grype</th>
-          <th class="tight" title="이 검사에 쓴 취약점 DB 가 만들어진 날 · 그 뒤에 공개된 취약점은 이 검사에 없음">취약점 DB</th>
+          <th class="tight" title="이 검사에 쓴 취약점 DB가 만들어진 날 · 그 뒤에 공개된 취약점은 이 검사에 없음">취약점 DB</th>
           <th>SBOM</th><th class="tight"></th>
         </tr>
         </thead>
@@ -464,7 +464,7 @@
                   th:if="${s.status.name() == 'DONE' or (s.status.name() == 'FAILED' and !#strings.isEmpty(s.sbomPath))}"
                   sec:authorize="hasRole('ADMIN')">
               <button type="submit" class="btn btn-sm"
-                      title="보관된 SBOM 을 최신 취약점 DB 로 다시 검사">다시 검사</button>
+                      title="보관된 SBOM을 최신 취약점 DB로 다시 검사">다시 검사</button>
             </form>
             <a class="btn btn-sm" th:if="${!#strings.isEmpty(s.sbomPath)}"
                th:href="@{'/scans/' + ${s.id} + '/sbom'}"
