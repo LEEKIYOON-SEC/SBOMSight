@@ -190,9 +190,11 @@
       </td>
 
       <td class="tight" th:with="r=${actions.get(f.scan.asset.id + '|' + f.packageName)}">
+        <!--/* 완료인데 최신 검사에 해소 건수가 남았으면 보고서 5장과 같은 말로. */-->
         <a th:if="${r != null}" th:href="@{'/actions/' + ${r.id}}"
-           th:title="${r.packageName} + ' 조치 · ' + ${r.status.label()}"
-           th:text="${r.status.label()}">대기</a>
+           th:with="label=${doneRemaining.containsKey(r.id)} ? '완료 · 탐지 남음' : ${r.status.label()}"
+           th:title="${r.packageName} + ' 조치 · ' + ${label}"
+           th:text="${label}">대기</a>
         <!--/*
           **옆 칸의 `작성` 과 같은 모양이다.** 단추로 두면 칸이 96px 를 먹고,
           그만큼 표가 1280px 를 넘어 이 칸이 통째로 화면 밖으로 밀린다 —

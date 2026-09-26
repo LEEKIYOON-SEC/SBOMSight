@@ -8,6 +8,7 @@ import kr.sbomsight.service.AssetService;
 import kr.sbomsight.service.SbomStorage;
 import kr.sbomsight.service.PackageService;
 import kr.sbomsight.service.Paging;
+import kr.sbomsight.service.RemediationService;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ScanService;
 import kr.sbomsight.service.ZoneService;
@@ -51,13 +52,14 @@ public class AssetController {
     private final VulnQuery vulns;
     private final ComponentRepository components;
     private final PackageService packages;
+    private final RemediationService remediationService;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
                            AssetService assetService, ZoneService zoneService, AuditService audit,
                            FindingAnalysisService analyses, SbomStorage storage,
                            VulnQuery vulns, ComponentRepository components,
-                           PackageService packages) {
+                           PackageService packages, RemediationService remediationService) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
@@ -71,6 +73,7 @@ public class AssetController {
         this.vulns = vulns;
         this.components = components;
         this.packages = packages;
+        this.remediationService = remediationService;
     }
 
     /** 마지막 검사가 이보다 오래되면 "오래됐다" 고 센다. */
@@ -440,8 +443,10 @@ public class AssetController {
         model.addAttribute("vulnTabCount", latest == null ? 0
                 : findings.countByScanId(latest.getId()) - findings.countReviewedOut(
                         List.of(latest.getId()), null, null, null, null, null));
-        model.addAttribute("remediations",
-                remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id));
+        List<Remediation> assetRemediations = remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id);
+        model.addAttribute("remediations", assetRemediations);
+        // 완료인데 최신 검사에 해소 건수가 남은 조치 — 조치 화면 · 보고서 5장과 같은 말.
+        model.addAttribute("doneRemaining", remediationService.doneRemaining(assetRemediations));
         // 이 자산에 대해 내린 결정 둘을 한 탭에서 본다. 검토 결과를 대응
         // 화면에서만 볼 수 있으면 "이 서버 것만" 을 물을 자리가 없다.
         model.addAttribute("assetAnalyses", analyses.forAsset(id));

@@ -3,13 +3,16 @@ package kr.sbomsight.service;
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.repo.RemediationRepository;
+import kr.sbomsight.repo.ScanRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -25,10 +28,13 @@ public class RemediationService {
 
     private final RemediationRepository remediations;
     private final FindingRepository findings;
+    private final ScanRepository scans;
 
-    public RemediationService(RemediationRepository remediations, FindingRepository findings) {
+    public RemediationService(RemediationRepository remediations, FindingRepository findings,
+                              ScanRepository scans) {
         this.remediations = remediations;
         this.findings = findings;
+        this.scans = scans;
     }
 
     /**
@@ -151,6 +157,47 @@ public class RemediationService {
                 Remediation::getId,
                 r -> byPackage.getOrDefault(r.getPackageName(), 0L),
                 (a, b) -> a));
+    }
+
+    /**
+     * <b>완료 · 탐지 남음</b> — 완료로 닫았는데 자산의 최신 완료 검사에 그
+     * 패키지의 해소 건수가 남은 조치. 조치 id → 남은 해소 건수. 없으면 빠진다.
+     *
+     * <p>보고서 5장 · 구역 보고서 6장과 <b>같은 규칙</b>이다(같은 질의): 해소
+     * 건수는 수정 버전이 있는 탐지를 세고, 검토 결과가 해당 없음 · 오탐인 건은
+     * 뺀다. 앞서 보고서는 이 갈래를 따로 셌는데 조치 화면은 그냥 `완료` 로
+     * 적고 줄을 흐리게 그렸다 — 보고서가 "탐지 남음" 이라고 한 조치가 조치
+     * 화면에서는 끝난 일로 보였다.
+     *
+     * <p>상태를 바꾸지 않는다 — 보여 줄 뿐이다({@link #remainingCounts} 와 같은 이유).
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, Long> doneRemaining(Collection<Remediation> list) {
+        List<Remediation> closed = list.stream().filter(r -> r.getStatus().isClosed()).toList();
+        if (closed.isEmpty()) {
+            return Map.of();
+        }
+        Set<Long> assetIds = closed.stream().map(r -> r.getAsset().getId())
+                                   .collect(Collectors.toSet());
+        List<Long> latest = scans.findLatestDonePerAsset().stream()
+                .filter(s -> assetIds.contains(s.getAsset().getId()))
+                .map(Scan::getId)
+                .toList();
+        if (latest.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Long> fixable = findings.countPerAssetPackage(latest, false).stream()
+                .collect(Collectors.toMap(c -> c.getAssetId() + "|" + c.getPackageName(),
+                                          FindingRepository.AssetPackageCount::getFixable,
+                                          Long::sum));
+        Map<Long, Long> out = new HashMap<>();
+        for (Remediation r : closed) {
+            long left = fixable.getOrDefault(r.getAsset().getId() + "|" + r.getPackageName(), 0L);
+            if (left > 0) {
+                out.put(r.getId(), left);
+            }
+        }
+        return out;
     }
 
     /** 대응 화면의 탭 숫자 — 거르기 전 전체. 운영 종료한 자산의 것은 켰을 때만. */

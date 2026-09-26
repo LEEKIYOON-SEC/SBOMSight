@@ -2,6 +2,7 @@ package kr.sbomsight.service;
 
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.FindingAnalysis;
+import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.repo.FindingRepository;
@@ -319,6 +320,7 @@ public class VulnQuery {
         if (scope.scanIds().isEmpty()) {
             model.addAttribute("analyses", Map.of());
             model.addAttribute("actions", Map.of());
+            model.addAttribute("doneRemaining", Map.of());
             model.addAttribute("reviewed", Map.of());
             model.addAttribute("reviewedOut", 0L);
             return;
@@ -372,7 +374,11 @@ public class VulnQuery {
         // 올리려면 앞서는 보고서를 새로 만들어 3장까지 내려가야 했다.
         // 조치는 `(자산, 패키지)` 하나에 하나라, 같은 패키지의 여러 건이
         // 같은 조치를 가리킨다 — 화면은 그것을 숨기지 않는다.
-        model.addAttribute("actions", remediations.byAssetPackage(scope.assetIds()));
+        Map<String, Remediation> actions = remediations.byAssetPackage(scope.assetIds());
+        model.addAttribute("actions", actions);
+        // 완료로 닫았는데 최신 검사에 해소 건수가 남은 조치. `완료` 라고만 적으면
+        // 끝난 일로 읽힌다 — 보고서 5장과 같은 규칙 · 같은 말(RemediationService).
+        model.addAttribute("doneRemaining", remediations.doneRemaining(actions.values()));
 
         // 묶어 보는 두 화면에서 **그 줄이 얼마나 검토됐는지.**
         boolean byCve = "cve".equals(group);

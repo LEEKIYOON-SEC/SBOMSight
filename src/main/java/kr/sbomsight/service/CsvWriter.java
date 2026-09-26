@@ -35,7 +35,12 @@ public final class CsvWriter {
     private CsvWriter() {
     }
 
-    public static void writeRemediations(OutputStream out, List<Remediation> list)
+    /**
+     * @param doneRemaining 완료인데 최신 검사에 해소 건수가 남은 조치(id → 건수) —
+     *                      `조치 상태` 를 화면 · 보고서와 같은 `완료 · 탐지 남음` 으로 적는다
+     */
+    public static void writeRemediations(OutputStream out, List<Remediation> list,
+                                         java.util.Map<Long, Long> doneRemaining)
             throws IOException {
         try (Writer writer = start(out)) {
             row(writer, "자산", "패키지", "현재 버전", "목표 버전", "조치 상태", "담당", "기한",
@@ -48,7 +53,7 @@ public final class CsvWriter {
                     FixVersions.describe("현재 버전", r.getFromVersions()),
                     // 하나로 고르지 않는다 — 여럿이면 `수정 버전 N가지: a · b` (화면과 같은 규칙)
                     FixVersions.describe(r.getToVersions()),
-                    r.getStatus().label(),
+                    doneRemaining.containsKey(r.getId()) ? "완료 · 탐지 남음" : r.getStatus().label(),
                     r.getOwner(),
                     r.getDueDate() == null ? "" : r.getDueDate().format(DAY),
                     String.valueOf(r.getOpenedCount()),

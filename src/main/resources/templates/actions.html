@@ -138,8 +138,14 @@
           </tr>
           </thead>
           <tbody>
+          <!--/*
+            **완료 · 탐지 남음은 흐리게 그리지 않는다.** 완료로 닫았는데 최신 검사에
+            해소 건수가 남은 조치다(보고서 5장과 같은 규칙 · 같은 말). 앞서 `완료` 로
+            적고 흐리게 그려, 보고서가 "탐지 남음" 이라고 한 조치가 여기서는 끝난
+            일로 보였다.
+          */-->
           <tr th:each="r : ${remediations.content}"
-              th:style="${r.status.isClosed()} ? 'opacity:.6' : ''">
+              th:style="${r.status.isClosed() and !doneRemaining.containsKey(r.id)} ? 'opacity:.6' : ''">
             <td class="tight"><a th:href="@{'/assets/' + ${r.asset.id}}"
                                  th:text="${r.asset.name}">web-01</a></td>
             <td class="tight faint">
@@ -155,7 +161,8 @@
               <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
               <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
             </td>
-            <td class="tight" th:text="${r.status.label()}">대기</td>
+            <td class="tight" th:classappend="${doneRemaining.containsKey(r.id)} ? 'danger-text' : ''"
+                th:text="${doneRemaining.containsKey(r.id)} ? '완료 · 탐지 남음' : ${r.status.label()}">대기</td>
             <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
             <td class="tight num" th:classappend="${r.overdue} ? 'overdue' : ''"
                 th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
@@ -265,7 +272,7 @@
 
             <td class="tight" th:with="r=${actions.get(a.asset.id + '|' + a.packageName)}">
               <a th:if="${r != null}" th:href="@{'/actions/' + ${r.id}}"
-                 th:text="${r.status.label()}">대기</a>
+                 th:text="${doneRemaining.containsKey(r.id)} ? '완료 · 탐지 남음' : ${r.status.label()}">대기</a>
               <form th:if="${r == null}" method="post" sec:authorize="hasRole('ADMIN')"
                     th:action="@{'/assets/' + ${a.asset.id} + '/remediations'}">
                 <input type="hidden" name="packageName" th:value="${a.packageName}">

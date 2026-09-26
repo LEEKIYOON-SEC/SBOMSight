@@ -135,11 +135,16 @@ public class ActionController {
             // 검토 결과 줄에서 조치로 넘어가는 길. 조치는 `(자산, 패키지)`
             // 하나에 하나라 검토 여러 건이 조치 하나를 가리킨다 — 이미
             // 열려 있으면 `조치 등록` 이 아니라 `조치 보기` 다.
-            model.addAttribute("actions", service.byAssetPackage(
-                    rows.stream().map(a -> a.getAsset().getId()).distinct().toList()));
+            java.util.Map<String, Remediation> actions = service.byAssetPackage(
+                    rows.stream().map(a -> a.getAsset().getId()).distinct().toList());
+            model.addAttribute("actions", actions);
+            model.addAttribute("doneRemaining", service.doneRemaining(actions.values()));
         } else {
-            model.addAttribute("remediations",
-                               Paging.slice(service.list(zone, status, archived), page, size));
+            org.springframework.data.domain.Page<Remediation> shown =
+                    Paging.slice(service.list(zone, status, archived), page, size);
+            model.addAttribute("remediations", shown);
+            // 완료인데 최신 검사에 해소 건수가 남은 조치 — 보고서 5장과 같은 말로 적는다.
+            model.addAttribute("doneRemaining", service.doneRemaining(shown.getContent()));
             model.addAttribute("overdue", remediations.findOverdue(LocalDate.now(), archived));
         }
         return "actions";
@@ -162,6 +167,9 @@ public class ActionController {
                 latest == null ? -1L
                         : service.remainingCounts(remediation.getAsset().getId(), latest)
                                  .getOrDefault(remediation.getId(), 0L));
+        // 완료로 닫았는데 해소 건수가 남았는가 — 보고서 5장의 `완료 · 탐지 남음`.
+        // 위의 `탐지` 는 해당 없음 · 오탐까지 센 수라 축이 다르다(둘 다 보여 준다).
+        model.addAttribute("doneRemaining", service.doneRemaining(List.of(remediation)));
         return "action-detail";
     }
 
@@ -268,8 +276,9 @@ public class ActionController {
             CsvWriter.writeAnalyses(response.getOutputStream(),
                                     analyses.list(includeDone, zone, archived));
         } else {
-            CsvWriter.writeRemediations(response.getOutputStream(),
-                                        service.list(zone, status, archived));
+            List<Remediation> rows = service.list(zone, status, archived);
+            CsvWriter.writeRemediations(response.getOutputStream(), rows,
+                                        service.doneRemaining(rows));
         }
     }
 

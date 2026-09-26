@@ -519,7 +519,9 @@
               <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
               <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
             </td>
-            <td class="tight" th:text="${r.status.label()}">대기</td>
+            <!--/* 완료인데 최신 검사에 해소 건수가 남았으면 보고서 5장과 같은 말로. */-->
+            <td class="tight" th:classappend="${doneRemaining.containsKey(r.id)} ? 'danger-text' : ''"
+                th:text="${doneRemaining.containsKey(r.id)} ? '완료 · 탐지 남음' : ${r.status.label()}">대기</td>
             <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
             <td class="tight" th:classappend="${r.overdue} ? 'overdue' : ''"
                 th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>

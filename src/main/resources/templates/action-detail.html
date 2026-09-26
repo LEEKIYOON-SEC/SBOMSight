@@ -39,6 +39,13 @@
       최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
       이 패키지 탐지 <b th:text="${remaining} + '건'">0건</b>.
     </span>
+    <!--/*
+      **완료로 닫았는데 해소 건수가 남았으면 보고서와 같은 말로 적는다.** 위의
+      `탐지` 는 해당 없음 · 오탐까지 센 수이고, 이 줄의 `해소 건수` 는 보고서
+      3 · 5장의 축(수정 버전 있음 · 해당 없음 · 오탐 제외)이다 — 둘을 섞지 않는다.
+    */-->
+    <div class="danger-text" th:if="${doneRemaining.containsKey(remediation.id)}"
+         th:text="'완료 · 탐지 남음 — 해소 건수 ' + ${doneRemaining.get(remediation.id)} + '건'">완료 · 탐지 남음</div>
     </div>
   </div>
 
@@ -94,7 +101,8 @@
       근거 · 재검토일 · 결재 문서 번호가 함께 남음.
     </p>
     <table class="table kv" sec:authorize="!hasRole('ADMIN')">
-      <tr><th>조치 상태</th><td th:text="${remediation.status.label()}">대기</td></tr>
+      <tr><th>조치 상태</th><td th:text="${doneRemaining.containsKey(remediation.id)} ? '완료 · 탐지 남음'
+                                        : ${remediation.status.label()}">대기</td></tr>
       <tr><th>담당</th><td th:text="${#strings.isEmpty(remediation.owner)} ? '—' : ${remediation.owner}">—</td></tr>
       <tr><th>기한</th><td th:text="${remediation.dueDate != null} ? ${#temporals.format(remediation.dueDate, 'yyyy-MM-dd')} : '—'">—</td></tr>
       <tr><th>설명</th><td th:text="${#strings.isEmpty(remediation.note)} ? '—' : ${remediation.note}">—</td></tr>
