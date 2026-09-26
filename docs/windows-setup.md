@@ -652,6 +652,7 @@ Copy-Item target\sbomsight-1.0.0.jar C:\work\sbomsight-before-upgrade.jar
 > 뒤 원본을 없앤다. 이전 버전에서 업그레이드한다면 위 백업을 **반드시** 먼저 받으라.
 >
 > **V15 는 조치의 목표 버전을 다시 모은다** — 하나였던 것을 수정 버전 전부로.
+> **V16 은 현재 버전을 같은 식으로** — 하나였던 것을 그 검사의 설치 버전 전부로.
 > 되돌리는 절차는 [`docs/operations.md` 8절](operations.md#8-업그레이드) 에 있다.
 
 ```powershell

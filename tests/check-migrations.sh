@@ -141,6 +141,39 @@ for f in $MIGRATIONS; do
         echo "  └ 조치 2행과 등록한 검사(탐지 6건 · 해당 없음 1건)를 넣었다 — 하나는 등록한 검사가 지워진 것" ;;
     esac
 
+    # V16 이 조치의 현재 버전을 등록한 검사에서 다시 모은다. 경계 사례:
+    # 글자 순과 버전 순이 다른 것(2.14.1 · 2.9.1), 같은 버전이 둘, 대소문자만
+    # 다른 것(RC1 · rc1), 버전이 빈 건, 그리고 모은 것이 칸(4,000자)을 넘는 조치.
+    # V15 에서 넣은 조치들 — 탐지에 버전이 없는 검사 · 지워진 검사 · 검사를
+    # 모르는 옛 조치 — 은 그대로여야 한다.
+    case "$(basename "$f")" in V15__*)
+        WIDE=$(for i in $(seq -w 1 400); do
+                   printf "(@s,'CVE-2099-%s|widepkg','CVE-2099-%s','widepkg','1.0.0-build.%s.abcdef','fixed','2.0'),\n" "$i" "$i" "$i"
+               done | sed '$ s/,$/;/')
+        run "$DB" -e "
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename)
+        VALUES (4, 'DONE', NOW(6), 'v16check', 'sbom.json');
+        SET @s = LAST_INSERT_ID();
+        INSERT INTO findings (scan_id, finding_key, cve, package_name, package_version, fix_state, fixed_version) VALUES
+         (@s, 'CVE-2021-44228|log4j-core|a', 'CVE-2021-44228', 'log4j-core', '2.14.1', 'fixed', '2.15.0'),
+         (@s, 'CVE-2021-45046|log4j-core|a', 'CVE-2021-45046', 'log4j-core', '2.14.1', 'fixed', '2.16.0'),
+         (@s, 'CVE-2019-17571|log4j-core|b', 'CVE-2019-17571', 'log4j-core', '2.9.1', 'fixed', '2.17.1'),
+         (@s, 'CVE-2022-0001|log4j-core|c', 'CVE-2022-0001', 'log4j-core', '2.17.0-RC1', 'fixed', '2.17.1'),
+         (@s, 'CVE-2022-0002|log4j-core|d', 'CVE-2022-0002', 'log4j-core', '2.17.0-rc1', 'fixed', '2.17.1'),
+         (@s, 'CVE-2022-0003|log4j-core|e', 'CVE-2022-0003', 'log4j-core', '', 'not-fixed', '');
+        INSERT INTO findings (scan_id, finding_key, cve, package_name, package_version, fix_state, fixed_version) VALUES
+        $WIDE
+        INSERT INTO remediations
+          (asset_id, package_name, from_version, to_version, status, owner, opened_scan_id,
+           opened_count, note, created_at, created_by, updated_at, updated_by)
+        VALUES
+         (4, 'log4j-core', '2.14.1', '2.15.0', 'OPEN', '', @s,
+          6, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (5, 'widepkg', '1.0.0-build.001.abcdef', '2.0', 'OPEN', '', @s,
+          400, '', NOW(6), 'admin', NOW(6), 'admin');"
+        echo "  └ 조치 2행과 등록한 검사(설치 버전 넷 · 빈 것 하나 / 버전 400가지)를 넣었다" ;;
+    esac
+
     case "$(basename "$f")" in V9__*)
         run "$DB" -e "
         INSERT INTO risk_acceptances
@@ -351,6 +384,35 @@ WIDTH=$(run "$DB" -N -e "
     WHERE TABLE_SCHEMA='$DB' AND TABLE_NAME='remediations' AND COLUMN_NAME='to_version';")
 [ "$WIDTH" = "4000" ] || { echo "  to_version 이 $WIDTH 자입니다 (4000 이어야 함)"; exit 1; }
 echo "  to_version 4000자"
+
+# --- V16: 조치의 현재 버전 — 하나로 고르지 않는다 --------------------------
+#
+# 앞서 조치는 CVSS 가 가장 높은 건의 설치 버전 하나였다(여기서는 2.14.1).
+# 같은 검사에 깔린 다른 벌(2.9.1 …)을 다시 모아야 하고, 모을 데가 없거나
+# 칸을 넘는 조치는 적혀 있던 것을 지우지 않아야 한다.
+
+FV=$(run "$DB" -N -e "SELECT from_version FROM remediations WHERE package_name='log4j-core';")
+[ "$FV" = "2.14.1 2.17.0-RC1 2.17.0-rc1 2.9.1" ] || {
+    echo "  현재 버전이 '$FV' 입니다 (기대 '2.14.1 2.17.0-RC1 2.17.0-rc1 2.9.1')"; exit 1; }
+echo "  등록한 검사에서 설치 버전 전부를 모음 (글자 순 · 대소문자는 가름 · 빈 버전은 뺌)"
+
+WIDE_KEPT=$(run "$DB" -N -e "SELECT from_version FROM remediations WHERE package_name='widepkg';")
+[ "$WIDE_KEPT" = "1.0.0-build.001.abcdef" ] || {
+    echo "  칸을 넘는 조치의 현재 버전이 '$(echo "$WIDE_KEPT" | cut -c1-60)…' 로 바뀌었습니다"; exit 1; }
+echo "  모은 것이 4,000자를 넘는 조치는 그대로 (마이그레이션은 실패하지 않음)"
+
+for pkg in "tomcat-coyote|9.0.50" "libxml2|2.9.4" "zlib|1.2.11" "openssl|3.0.1"; do
+    name=${pkg%%|*}; want=${pkg#*|}
+    got=$(run "$DB" -N -e "SELECT from_version FROM remediations WHERE package_name='$name';")
+    [ "$got" = "$want" ] || { echo "  $name 의 현재 버전이 '$got' 로 바뀌었습니다 (기대 '$want')"; exit 1; }
+done
+echo "  버전이 적힌 탐지가 없는 검사 · 지워진 검사 · 검사를 모르는 조치는 그대로"
+
+WIDTH=$(run "$DB" -N -e "
+    SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA='$DB' AND TABLE_NAME='remediations' AND COLUMN_NAME='from_version';")
+[ "$WIDTH" = "4000" ] || { echo "  from_version 이 $WIDTH 자입니다 (4000 이어야 함)"; exit 1; }
+echo "  from_version 4000자"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

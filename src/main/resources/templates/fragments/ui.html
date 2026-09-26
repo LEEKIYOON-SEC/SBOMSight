@@ -226,6 +226,26 @@
 
 
 <!--/*
+  ─── 현재 버전 (조치) ─────────────────────────────────────────────────
+  수정 버전과 같은 규칙 — **하나로 고르지 않는다**(V16). 한 자산에 같은
+  패키지가 두 벌 깔려 있으면 앞서는 CVSS 가 가장 높은 건의 한 벌만 적었다.
+  하나면 그 버전, 여럿이면 `현재 버전 N가지` 와 그 목록(글자 순). 목표와
+  달리 굵게 하지 않는다 — 이 칸에서 읽을 것은 목표다.
+
+    <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
+    <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
+*/-->
+<span th:fragment="curversions(versions, empty)" th:remove="tag">
+  <span class="ver" th:if="${versions.size() == 1}" th:text="${versions[0]}">3.0.1</span>
+  <span class="ver" th:if="${versions.size() > 1}" th:text="'현재 버전 ' + ${versions.size()} + '가지'">현재 버전 2가지</span>
+  <div class="fixlist" th:if="${versions.size() > 1}"><th:block
+       th:each="v, st : ${versions}"><span th:text="${v}">3.0.1</span><th:block
+       th:unless="${st.last}"> · </th:block></th:block></div>
+  <span class="faint" th:if="${versions.isEmpty()}" th:text="${empty}">—</span>
+</span>
+
+
+<!--/*
   ─── 심각도 딱지 ──────────────────────────────────────────────────────
   검사 결과의 글자를 칸에 놓고 우리말 이름을 적는다(Severity — 값을 다시
   매기지 않는다). 앞서 화면마다 th:switch 를 따로 적어, 목록 · CVE별 · CVE

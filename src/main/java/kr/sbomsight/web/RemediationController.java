@@ -131,7 +131,7 @@ public class RemediationController {
      * 아무것도 안 생기면 다음에 또 누른다. <b>앞서 이 주석만 있고 코드는
      * 양쪽에 같은 말을 하고 있었다.</b>
      *
-     * <p>새로 만든 것만 감사 로그에 남긴다. 등록 당시 건수와 목표 버전을
+     * <p>새로 만든 것만 감사 로그에 남긴다. 등록 당시 건수와 현재 · 목표 버전을
      * 함께 적는다 — 조치를 지우면 그 스냅샷이 함께 사라지고, 남는 것은
      * 감사 로그의 이 줄뿐이다.
      */
@@ -142,8 +142,9 @@ public class RemediationController {
             audit.record(AuditEvent.REMEDIATION_CREATED,
                          remediation.getAsset().getName() + " · " + packageName,
                          "등록 당시 " + remediation.getOpenedCount() + "건"
-                         + (remediation.getFromVersion().isBlank() ? ""
-                            : " · 현재 " + remediation.getFromVersion())
+                         + (remediation.getFromVersions().isEmpty() ? ""
+                            : (remediation.getFromVersions().size() == 1 ? " · 현재 " : " · ")
+                              + FixVersions.describe("현재 버전", remediation.getFromVersions()))
                          + (remediation.getToVersions().isEmpty() ? ""
                             : (remediation.getToVersions().size() == 1 ? " · 목표 " : " · ")
                               + FixVersions.describe(remediation.getToVersions())));

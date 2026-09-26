@@ -149,9 +149,10 @@
             <td class="tight"><a th:href="@{'/actions/' + ${r.id}}"
                                  th:text="${r.packageName}">openssl</a></td>
             <!--/* 목표를 하나로 고르지 않는다 — 보고서 3장과 같은 규칙(fixversions).
+                 현재 버전도 같다(curversions, V16).
                  줄바꿈을 막지 않는다: 스물다섯 가지를 한 줄로 두면 표가 화면을 넘는다. */-->
             <td class="faint mono">
-              <span class="ver" th:text="${r.fromVersion}">3.0.1</span> →
+              <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
               <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
             </td>
             <td class="tight" th:text="${r.status.label()}">대기</td>

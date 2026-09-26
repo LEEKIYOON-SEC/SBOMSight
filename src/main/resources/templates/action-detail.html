@@ -108,7 +108,7 @@
     <table class="table kv">
       <tr><th>패키지</th><td th:text="${remediation.packageName}">openssl</td></tr>
       <tr><th>현재 → 목표</th>
-          <td class="mono"><span class="ver" th:text="${#strings.isEmpty(remediation.fromVersion)} ? '—' : ${remediation.fromVersion}">—</span> →
+          <td class="mono"><th:block th:replace="~{fragments/ui :: curversions(${remediation.fromVersions}, '—')}"></th:block> →
               <th:block th:replace="~{fragments/ui :: fixversions(${remediation.toVersions}, '확인 필요')}"></th:block></td></tr>
       <tr><th>등록 당시 건수</th><td th:text="${remediation.openedCount} + '건'">0건</td></tr>
       <tr><th>등록</th>

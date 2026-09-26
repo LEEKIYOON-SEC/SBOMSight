@@ -61,10 +61,20 @@ public final class FixVersions {
      * @return 없으면 빈 문자열, 하나면 그 버전, 여럿이면 `수정 버전 3가지: a · b · c`
      */
     public static String describe(List<String> versions) {
+        return describe("수정 버전", versions);
+    }
+
+    /**
+     * 같은 꼴로 다른 목록을 — 조치의 현재 버전(`현재 버전 2가지: a · b`).
+     *
+     * <p>현재 버전도 하나로 고르지 않는다(V16). 한 자산에 같은 패키지가 두 벌
+     * 깔려 있으면 둘 다 적는다 — 저장 · 정렬 규칙도 수정 버전과 같다.
+     */
+    public static String describe(String noun, List<String> versions) {
         return switch (versions.size()) {
             case 0 -> "";
             case 1 -> versions.get(0);
-            default -> "수정 버전 " + versions.size() + "가지: " + String.join(" · ", versions);
+            default -> noun + " " + versions.size() + "가지: " + String.join(" · ", versions);
         };
     }
 }

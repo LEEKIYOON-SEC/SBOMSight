@@ -516,7 +516,7 @@
           <tr th:each="r : ${remediations}">
             <td class="tight"><a th:href="@{'/actions/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td>
             <td class="faint mono">
-              <span class="ver" th:text="${r.fromVersion}">3.0.1</span> →
+              <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
               <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
             </td>
             <td class="tight" th:text="${r.status.label()}">대기</td>

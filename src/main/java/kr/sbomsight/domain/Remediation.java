@@ -35,7 +35,12 @@ public class Remediation {
     @Column(name = "package_name", nullable = false, length = 255)
     private String packageName;
 
-    @Column(name = "from_version", nullable = false, length = 128)
+    /**
+     * 등록 당시의 설치 버전 <b>전부</b> — 수정 버전과 같은 꼴로 잇는다
+     * ({@link FixVersions}). 앞서는 CVSS 가 가장 높은 건의 것 하나였다 — 같은
+     * 패키지가 두 벌 깔린 자산에서 한 벌이 조치 어디에도 없었다. 넓힌 것은 {@code V16}.
+     */
+    @Column(name = "from_version", nullable = false, length = 4000)
     private String fromVersion = "";
 
     /**
@@ -128,6 +133,16 @@ public class Remediation {
         this.fromVersion = fromVersion == null ? "" : fromVersion;
     }
 
+    /** 등록 당시의 설치 버전 — 하나로 고르지 않은 목록. 화면 · CSV 는 이것을 쓴다. */
+    public List<String> getFromVersions() {
+        return FixVersions.split(fromVersion);
+    }
+
+    /** 설치 버전을 모아 적는다. 칸을 넘는 것은 목표 버전과 같이 뒤에서부터 뺀다. */
+    public void setFromVersions(List<String> versions) {
+        this.fromVersion = fit(versions);
+    }
+
     public String getToVersion() {
         return toVersion;
     }
@@ -148,11 +163,16 @@ public class Remediation {
      * 등록이 500 으로 끝난다. 버전 스물다섯 가지(openjdk)가 237자였다.
      */
     public void setToVersions(List<String> versions) {
+        this.toVersion = fit(versions);
+    }
+
+    /** 모아서(FixVersions) 칸(4,000자)에 들어가는 만큼 잇는다. */
+    private static String fit(List<String> versions) {
         List<String> kept = new ArrayList<>(FixVersions.collect(versions));
         while (!kept.isEmpty() && FixVersions.join(kept).length() > 4000) {
             kept.remove(kept.size() - 1);
         }
-        this.toVersion = FixVersions.join(kept);
+        return FixVersions.join(kept);
     }
 
     public RemediationStatus getStatus() {

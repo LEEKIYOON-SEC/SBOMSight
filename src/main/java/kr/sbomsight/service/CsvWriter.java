@@ -44,7 +44,8 @@ public final class CsvWriter {
                 row(writer,
                     r.getAsset().getName(),
                     r.getPackageName(),
-                    r.getFromVersion(),
+                    // 하나로 고르지 않는다 — 여럿이면 `현재 버전 N가지: a · b` (V16)
+                    FixVersions.describe("현재 버전", r.getFromVersions()),
                     // 하나로 고르지 않는다 — 여럿이면 `수정 버전 N가지: a · b` (화면과 같은 규칙)
                     FixVersions.describe(r.getToVersions()),
                     r.getStatus().label(),

@@ -79,11 +79,13 @@ public class RemediationService {
 
         // 만들 당시의 현재 버전과 목표 버전을 스냅샷으로 남긴다. 나중에
         // "그때 무엇을 근거로 정했나" 를 되짚기 위한 것이고, 판정에는 쓰지 않는다.
+        //
+        // 현재 버전도 하나로 고르지 않는다 — 등록 당시 건수(openedCount)와 같은
+        // 건의 설치 버전 전부. 앞서는 CVSS 가 가장 높은 건의 것 하나라, 같은
+        // 패키지가 두 벌 깔린 자산에서 한 벌이 조치 어디에도 없었다(V16).
         List<Finding> current = findings
                 .findByScanIdAndPackageNameOrderByCvssScoreDesc(scan.getId(), packageName);
-        if (!current.isEmpty()) {
-            remediation.setFromVersion(current.get(0).getPackageVersion());
-        }
+        remediation.setFromVersions(current.stream().map(Finding::getPackageVersion).toList());
         // 목표는 하나로 고르지 않는다 — 수정 버전 전부(FixVersions). 앞서는
         // CVSS 가 가장 높은 건의 것 하나를 적었다(curl deb10u4 — 그리로 올려도
         // 10건이 남는다). 보고서 3장과 같은 건(해당 없음 · 오탐 제외)에서 모은다.
