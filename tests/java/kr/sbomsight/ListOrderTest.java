@@ -2,6 +2,7 @@ package kr.sbomsight;
 
 import kr.sbomsight.repo.ComponentRepository;
 import kr.sbomsight.repo.FindingAnalysisRepository;
+import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.service.VulnQuery;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,6 +56,9 @@ class ListOrderTest {
                 .endsWith("c.name ASC, c.version ASC, c.id ASC");
         assertThat(orderBy(FindingAnalysisRepository.class, "findForList"))
                 .endsWith("a.name ASC, f.cve ASC, f.packageName ASC");
+        // CVE 상세도 요청마다 전부 읽어 쪽을 자른다.
+        assertThat(orderBy(FindingRepository.class, "findByCveIn"))
+                .endsWith("ax.name ASC, f.packageName ASC, f.id ASC");
     }
 
     private static String orderBy(Class<?> repository, String name) {

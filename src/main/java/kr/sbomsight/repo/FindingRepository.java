@@ -402,6 +402,10 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      *
      * <p>목록과 같은 규칙으로 해당 없음 · 오탐을 기본에서 뺀다. 빼지 않으면
      * CVE별 목록의 `영향 자산 3대` 를 눌렀는데 상세가 `4대` 라고 말한다.
+     *
+     * <p><b>끝에 {@code f.id} 를 둔다.</b> 화면이 요청마다 이 목록을 읽어 쪽을
+     * 자르는데, 한 자산의 같은 패키지가 두 경로에 깔리면 자산 · 패키지로는
+     * 순서가 정해지지 않는다(ListOrderTest).
      */
     @Query("""
            SELECT f FROM Finding f
@@ -417,7 +421,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                                                WHERE fd.asset.id = s.asset.id
                                                  AND fd.packageName = f.packageName
                                                  AND fd.cve = f.cve)))))
-           ORDER BY ax.name ASC, f.packageName ASC
+           ORDER BY ax.name ASC, f.packageName ASC, f.id ASC
            """)
     List<Finding> findByCveIn(@Param("scanIds") Collection<Long> scanIds,
                               @Param("cve") String cve,
