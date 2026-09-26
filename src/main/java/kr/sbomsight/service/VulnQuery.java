@@ -450,10 +450,15 @@ public class VulnQuery {
      *
      * <p>그래서 정렬 축 앞에 <b>"값이 없는가" 한 칸을 직접 붙인다.</b>
      * 이것만이 두 방향·두 DB 에서 같게 돈다.
+     *
+     * <p><b>끝은 언제나 {@code id} 다.</b> 앞의 축이 같은 줄(같은 CVE 가 여러
+     * 자산에)은 DB 가 아무 순서로 내도 되고, 쪽마다 따로 묻는 목록은 그 순서가
+     * 요청마다 달라질 수 있다 — 그러면 쪽 경계에서 줄이 빠지거나 두 번 나온다.
+     * 심각도 순 질의(FindingRepository 의 BY_SEVERITY)와 같은 규칙이다(ListOrderTest).
      */
     public static Sort order(String sort, String dir) {
         Sort.Direction d = "asc".equals(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return switch (sort == null ? "" : sort) {
+        Sort axes = switch (sort == null ? "" : sort) {
             case "epss" -> nullsLast("f.epss")
                     .and(Sort.by(Sort.Order.by("epss").with(d)))
                     .and(nullsLast("f.cvssScore"))
@@ -466,6 +471,7 @@ public class VulnQuery {
                     .and(Sort.by(Sort.Order.by("cvssScore").with(d),
                                  Sort.Order.asc("packageName")));
         };
+        return axes.and(Sort.by(Sort.Order.asc("id")));
     }
 
     /**

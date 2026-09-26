@@ -58,12 +58,16 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
      * <p><b>한 쪽씩 읽는다.</b> 앞서는 전부 한 번에 읽어 한 화면에 그렸다 —
      * 4천 줄짜리 서버에서 표가 끝나지 않았고, 4천 개 엔티티를 되살리느라
      * 그 탭만 눈에 띄게 느렸다.
+     *
+     * <p><b>끝에 {@code c.id} 를 둔다.</b> 같은 패키지 · 같은 버전이 두 경로에
+     * 깔리면 이름과 버전으로는 순서가 정해지지 않는다(유일 키가 없다). 쪽을
+     * 나눠 읽으므로 경계에서 줄이 빠지거나 겹친다(ListOrderTest).
      */
     @Query("""
            SELECT c FROM Component c JOIN c.scan s
            WHERE c.asset.id = :assetId AND s.status = 'DONE'
              AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
-           ORDER BY c.name ASC, c.version ASC
+           ORDER BY c.name ASC, c.version ASC, c.id ASC
            """)
     Page<Component> findByAsset(@Param("assetId") Long assetId, @Param("q") String q,
                                 Pageable pageable);

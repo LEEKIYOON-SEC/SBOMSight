@@ -53,6 +53,11 @@ public interface FindingAnalysisRepository extends JpaRepository<FindingAnalysis
      *
      * <p>운영 종료한 자산의 것은 {@code includeArchived} 일 때만 — 조치와 같은
      * 규칙이다(RemediationRepository 머리 주석).
+     *
+     * <p><b>끝이 줄 하나를 가리킨다</b> — 자산 이름은 유일하고, 검토 결과는
+     * (자산, CVE, 패키지) 에 하나다. 앞서 CVE 에서 멈춰, 같은 자산의 같은 CVE
+     * 가 패키지 둘에 걸리면 요청마다 순서가 달라질 수 있었다. 화면은 요청마다
+     * 이 목록을 읽어 쪽을 자르므로 쪽 경계에서 줄이 빠지거나 겹친다(ListOrderTest).
      */
     @Query("""
            SELECT f FROM FindingAnalysis f JOIN FETCH f.asset a JOIN FETCH a.zone z
@@ -63,7 +68,7 @@ public interface FindingAnalysisRepository extends JpaRepository<FindingAnalysis
            ORDER BY CASE WHEN f.reviewBy IS NOT NULL AND f.reviewBy < :today THEN 0
                          WHEN f.state IN :openStates THEN 1
                          ELSE 2 END,
-                    f.reviewBy ASC NULLS LAST, a.name ASC, f.cve ASC
+                    f.reviewBy ASC NULLS LAST, a.name ASC, f.cve ASC, f.packageName ASC
            """)
     List<FindingAnalysis> findForList(@Param("includeDone") boolean includeDone,
                                       @Param("openStates") Collection<AnalysisState> openStates,
