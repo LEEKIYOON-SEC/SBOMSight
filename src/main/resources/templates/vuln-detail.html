@@ -45,6 +45,16 @@
       <div class="card-header"><h2 class="card-title">취약점 정보</h2></div>
       <div class="card-body">
         <table class="table kv">
+          <!--/*
+            **취약점 설명 — 검사 결과의 원문 그대로**(대개 영문). 앞서 이 화면에
+            무엇이 위험한지가 없었다 — 번호와 점수뿐이라 번호를 들고 밖에서
+            찾아봐야 했다. 옮기거나 요약하지 않는다. 사람이 적는 `설명`(검토
+            결과 · 조치)과 섞이지 않게 `취약점 설명` 이라 부른다. 보고서 부록은
+            이것의 첫 문장을 싣는다(Appendix).
+          */-->
+          <tr><th>취약점 설명</th>
+              <td lang="en" style="white-space:pre-line"
+                  th:text="${#strings.isEmpty(first.description)} ? '—' : ${first.description}">—</td></tr>
           <tr><th>CVSS</th>
               <td>
                 <b th:if="${first.cvssScore != null}" th:text="${first.cvssScore}">10.0</b>

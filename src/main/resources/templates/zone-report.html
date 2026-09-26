@@ -125,7 +125,7 @@
            ReportProseTest). 탐지 건수 바로 아래라 거기에 들어 있다는 것이
            읽힌다. */-->
       <tr th:if="${report.aggregate.excludedFromLists() > 0}">
-          <td>해당 없음 · 오탐 (4 · 5장에서 제외)</td>
+          <td>해당 없음 · 오탐 (4 · 5장 · 부록에서 제외)</td>
           <td class="num tight"
               th:text="${#numbers.formatInteger(report.aggregate.excludedFromLists(), 0, 'COMMA')} + '건'">0건</td></tr>
       </tbody>
@@ -598,6 +598,42 @@
       <b th:if="${report.judgement.movement.assetsWithoutBase > 0}"
          th:text="'기간 중 첫 검사 ' + ${report.judgement.movement.assetsWithoutBase}
                   + '대는 대조 제외 — 신규로 계상하면 증감이 부풀려짐.'">—</b>
+    </p>
+  </section>
+
+  <!--/*
+    ══ 부록 — 실제 악용 · 심각 취약점 ══════════════════════════════════
+    자산 보고서의 부록과 같다(Appendix) — 검사 결과에 든 설명의 원문 첫 문장.
+    한 줄이 취약점 하나라 여러 자산에 걸린 것은 한 줄로 모으고 자산 수를 적는다.
+    목록이라 해당 없음 · 오탐은 4 · 5장처럼 뺀다.
+  */-->
+  <section>
+    <h2>부록 — 실제 악용 · 심각 취약점</h2>
+    <table class="table" th:if="${!report.appendix.isEmpty()}">
+      <thead>
+      <tr><th class="tight">취약점</th><th class="tight">구분</th><th class="tight">패키지</th>
+          <th class="num tight">자산</th><th class="num tight">최고 CVSS</th>
+          <th>취약점 설명 (원문 첫 문장)</th></tr>
+      </thead>
+      <tbody>
+      <tr th:each="v : ${report.appendix}">
+        <td class="tight mono" th:text="${v.cve}">CVE-2024-3094</td>
+        <td class="tight">
+          <div th:if="${v.kev}"><span class="tag kev">실제 악용</span></div>
+          <div th:if="${v.critical}"><span class="sev critical"><i></i>심각</span></div>
+        </td>
+        <td class="tight"><div th:each="p : ${v.packages}" th:text="${p}">xz</div></td>
+        <td class="num tight" th:text="${v.assetCount} + '대'">1대</td>
+        <td class="num tight" th:text="${v.maxCvss != null} ? ${v.maxCvss} : '—'">—</td>
+        <td lang="en" th:text="${#strings.isEmpty(v.summary)} ? '—' : ${v.summary}">—</td>
+      </tr>
+      </tbody>
+    </table>
+    <p class="footnote" th:if="${report.appendix.isEmpty()}">
+      ※ 해당 없음 — 실제 악용 · 심각 취약점 없음.
+    </p>
+    <p class="footnote" th:unless="${report.appendix.isEmpty()}">
+      ※ 한 줄 = 취약점 하나 · 순서 = 실제 악용 → 최고 CVSS · 전문은 화면의 CVE 상세.
     </p>
   </section>
 

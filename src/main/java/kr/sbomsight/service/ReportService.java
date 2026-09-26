@@ -68,7 +68,10 @@ public class ReportService {
         Summary summary = summary(scan, exposure, review);
         Targets targets = targets(scan, exposure(scan, false));
         Progress progress = progress(scan, targets);
-        return new Report(scan, overview, summary, targets, progress,
+        // 부록 — 실제 악용 · 심각과 그 설명 첫 문장(Appendix). 목록이다: 해당
+        // 없음 · 오탐은 3 · 4장처럼 뺀다.
+        List<Appendix.Row> appendix = Appendix.of(findings.findUrgentIn(List.of(scan.getId()), false));
+        return new Report(scan, overview, summary, targets, progress, appendix,
                           java.time.Instant.now());
     }
 
@@ -416,8 +419,10 @@ public class ReportService {
     // 화면에 넘기는 모양
     // -----------------------------------------------------------------------
 
+    /** @param appendix 부록 — 실제 악용 · 심각 취약점(한 줄 = 취약점 하나) */
     public record Report(Scan scan, Overview overview, Summary summary,
-                         Targets targets, Progress progress, java.time.Instant printedAt) {
+                         Targets targets, Progress progress, List<Appendix.Row> appendix,
+                         java.time.Instant printedAt) {
     }
 
     /** 1장 — 점검 개요. */

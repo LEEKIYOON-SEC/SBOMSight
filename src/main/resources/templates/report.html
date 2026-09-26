@@ -117,7 +117,7 @@
       `ReportProseTest` 가 기계로 막는다.
     */-->
     <p class="footnote" th:if="${report.overview.excludedByAnalysis > 0}">
-      ※ 해당 없음 · 오탐 — 탐지 건수 · 2장에는 포함, <b>3 · 4장 목록에서 제외</b>.
+      ※ 해당 없음 · 오탐 — 탐지 건수 · 2장에는 포함, <b>3 · 4장 · 부록 목록에서 제외</b>.
     </p>
     <p class="footnote" th:if="${report.overview.hasAccountingNote()}">
       ※ 검사 결과 그대로
@@ -578,6 +578,45 @@
     <p class="footnote" th:if="${report.targets.diff.hasPrevious()}">
       ※ 대조 축 = (취약점 번호, 패키지명). 버전 제외 — 넣으면 패치한 건이
       해소 1건 + 신규 1건으로 이중 계상.
+    </p>
+  </section>
+
+  <!--/*
+    ══ 부록 — 실제 악용 · 심각 취약점 ══════════════════════════════════
+    앞서 보고서 어디에도 "무엇이 위험한가" 가 없었다 — 번호와 건수뿐이라,
+    받는 사람이 번호를 하나씩 밖에서 찾아봐야 했다. 검사 결과에 든 설명의
+    **원문 첫 문장**을 싣는다(Appendix). 옮기거나 요약하지 않는다 — 우리가
+    다시 쓰면 아무도 확인하지 않은 설명이 된다. 전문은 화면의 CVE 상세에.
+
+    사람이 적는 `설명`(검토 결과 · 조치)과 섞이지 않게 `취약점 설명` 이라
+    부른다. 번호를 붙이지 않는다 — 1~6장의 번호는 그대로다. 목록이라 해당
+    없음 · 오탐은 3 · 4장처럼 뺀다(1장이 그 수를 적는다).
+  */-->
+  <section>
+    <h2>부록 — 실제 악용 · 심각 취약점</h2>
+    <table class="table" th:if="${!report.appendix.isEmpty()}">
+      <thead>
+      <tr><th class="tight">취약점</th><th class="tight">구분</th><th class="tight">패키지</th>
+          <th class="num tight">최고 CVSS</th><th>취약점 설명 (원문 첫 문장)</th></tr>
+      </thead>
+      <tbody>
+      <tr th:each="v : ${report.appendix}">
+        <td class="tight mono" th:text="${v.cve}">CVE-2024-3094</td>
+        <td class="tight">
+          <div th:if="${v.kev}"><span class="tag kev">실제 악용</span></div>
+          <div th:if="${v.critical}"><span class="sev critical"><i></i>심각</span></div>
+        </td>
+        <td class="tight"><div th:each="p : ${v.packages}" th:text="${p}">xz</div></td>
+        <td class="num tight" th:text="${v.maxCvss != null} ? ${v.maxCvss} : '—'">—</td>
+        <td lang="en" th:text="${#strings.isEmpty(v.summary)} ? '—' : ${v.summary}">—</td>
+      </tr>
+      </tbody>
+    </table>
+    <p class="footnote" th:if="${report.appendix.isEmpty()}">
+      ※ 해당 없음 — 실제 악용 · 심각 취약점 없음.
+    </p>
+    <p class="footnote" th:unless="${report.appendix.isEmpty()}">
+      ※ 한 줄 = 취약점 하나 · 순서 = 실제 악용 → 최고 CVSS · 전문은 화면의 CVE 상세.
     </p>
   </section>
 

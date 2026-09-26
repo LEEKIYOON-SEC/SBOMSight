@@ -115,8 +115,12 @@ public class ZoneReportService {
         Aggregate aggregate = aggregate(current, exposure, inScope, notScanned);
         Judgement judgement = judgement(current, baseline, exposure(current, false));
         Action action = action(zoneId, inScope, judgement, start, end, scanIds(current));
+        // 부록 — 실제 악용 · 심각과 그 설명 첫 문장(Appendix). 목록이다: 해당
+        // 없음 · 오탐은 4 · 5장처럼 뺀다. 한 줄이 여러 자산에 걸리면 자산 수를 센다.
+        List<Appendix.Row> appendix = current.isEmpty() ? List.of()
+                : Appendix.of(findings.findUrgentIn(scanIds(current), false));
 
-        return new ZoneReport(scope, aggregate, judgement, action);
+        return new ZoneReport(scope, aggregate, judgement, action, appendix);
     }
 
     // --- 1장: 점검 범위 -----------------------------------------------------
@@ -511,7 +515,9 @@ public class ZoneReportService {
     // 화면에 넘기는 모양
     // -----------------------------------------------------------------------
 
-    public record ZoneReport(Scope scope, Aggregate aggregate, Judgement judgement, Action action) {
+    /** @param appendix 부록 — 실제 악용 · 심각 취약점(한 줄 = 취약점 하나, 자산 수와 함께) */
+    public record ZoneReport(Scope scope, Aggregate aggregate, Judgement judgement, Action action,
+                             List<Appendix.Row> appendix) {
     }
 
     /**

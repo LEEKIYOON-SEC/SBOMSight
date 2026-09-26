@@ -427,6 +427,32 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
                               @Param("cve") String cve,
                               @Param("includeReviewed") boolean includeReviewed);
 
+    /**
+     * 보고서 부록 — <b>실제 악용 · 심각</b>인 탐지와 그 설명.
+     *
+     * <p>목록 장(자산 보고서 3 · 4장, 구역 보고서 4 · 5장)과 같은 규칙으로
+     * 해당 없음 · 오탐을 뺀다. 구역 보고서가 자산을 세므로 검사를 함께
+     * 끌어온다. {@code kev} 는 {@code = TRUE} 로만 본다 — NULL 은 "아니다" 가
+     * 아니라 "모른다" 다.
+     */
+    @Query("""
+           SELECT f FROM Finding f JOIN FETCH f.scan s
+           WHERE s.id IN :scanIds
+             AND (f.kev = TRUE OR LOWER(f.severity) = 'critical')
+             AND (:includeReviewed = TRUE OR NOT EXISTS (
+                    SELECT fa.id FROM FindingAnalysis fa
+                    WHERE fa.asset.id = s.asset.id AND fa.packageName = f.packageName
+                      AND fa.state IN ('NOT_AFFECTED', 'FALSE_POSITIVE')
+                      AND (fa.cve = f.cve
+                           OR (fa.cve = f.relatedCve
+                               AND NOT EXISTS (SELECT fd.id FROM FindingAnalysis fd
+                                               WHERE fd.asset.id = s.asset.id
+                                                 AND fd.packageName = f.packageName
+                                                 AND fd.cve = f.cve)))))
+           """)
+    List<Finding> findUrgentIn(@Param("scanIds") Collection<Long> scanIds,
+                               @Param("includeReviewed") boolean includeReviewed);
+
     /** 구역 분포 — "어디까지 번졌나". 자산 수를 구역 이름별로 센다. 상세와 같은 규칙. */
     @Query("""
            SELECT z.name AS zoneName, COUNT(DISTINCT ax.id) AS assetCount
