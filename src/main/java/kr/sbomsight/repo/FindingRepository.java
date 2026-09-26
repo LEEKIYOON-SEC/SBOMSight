@@ -632,6 +632,22 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         long getTotal();
     }
 
+    /** 검사마다 심각도 분포 — 자산 보고서 6장의 최근 검사 추이. */
+    @Query("""
+           SELECT f.scan.id AS scanId, LOWER(f.severity) AS severity, COUNT(f) AS total
+           FROM Finding f WHERE f.scan.id IN :scanIds
+           GROUP BY f.scan.id, LOWER(f.severity)
+           """)
+    List<ScanSeverityCount> countBySeverityPerScan(@Param("scanIds") Collection<Long> scanIds);
+
+    interface ScanSeverityCount {
+        Long getScanId();
+
+        String getSeverity();
+
+        long getTotal();
+    }
+
     /** 자산별 심각도 분포 — 구역 보고서의 자산 표. */
     @Query("""
            SELECT s.asset.id AS assetId, LOWER(f.severity) AS severity, COUNT(f) AS total

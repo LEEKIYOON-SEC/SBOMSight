@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
  *   3. 조치 대상        패키지를 올리면 해소되는 것
  *   4. 수정 버전 없는 항목
  *   5. 조치 진행 현황
- *   6. 이전 검사 대비
+ *   6. 이전 검사 대비   + 최근 검사 추이(완료 검사 여섯 번까지)
  * </pre>
  *
  * <p>AI 는 쓰지 않는다. <b>grype 이 준 데이터만으로</b> 만든다.
@@ -71,8 +71,50 @@ public class ReportService {
         // 부록 — 실제 악용 · 심각과 그 설명 첫 문장(Appendix). 목록이다: 해당
         // 없음 · 오탐은 3 · 4장처럼 뺀다.
         List<Appendix.Row> appendix = Appendix.of(findings.findUrgentIn(List.of(scan.getId()), false));
-        return new Report(scan, overview, summary, targets, progress, appendix,
+        return new Report(scan, overview, summary, targets, progress, trend(scan), appendix,
                           java.time.Instant.now());
+    }
+
+    /** 6장 아래 표에 싣는 완료 검사 수 — 이 검사까지. */
+    private static final int TREND = 6;
+
+    /**
+     * <b>최근 검사 추이</b> — 이 검사까지 완료 검사 여섯 번, 오래된 것부터.
+     *
+     * <p>6장은 바로 앞 검사 하나와만 댄다. 그것만으로는 줄고 있는지 늘고 있는지
+     * 알 수 없다 — 한 번 줄었다가 다시 느는 것이 보이지 않는다. 검사 결과가 낸
+     * 수를 그대로 늘어놓는다(다시 세지 않는다). 같은 SBOM 을 새 DB 로 다시 검사한
+     * 것은 화면이 표시한다 — 자산이 아니라 취약점 DB 가 움직인 것이다.
+     *
+     * <p>앞 검사는 6장 위 표({@link #diff})와 <b>같은 규칙</b>으로 고른다 — 이
+     * 검사보다 먼저 끝난 완료 검사. 그래야 이 표의 끝에서 둘째 줄이 위 표의
+     * `이전 검사` 와 같은 검사다. 실패한 검사는 넣지 않는다 — 0건이 아니라 모르는 것이다.
+     *
+     * <p>앞 검사가 없으면 비운다 — 한 줄짜리 추이는 없다.
+     */
+    private List<TrendRow> trend(Scan scan) {
+        List<Scan> recent = new ArrayList<>(scans.findByAssetIdOrderByCreatedAtDesc(scan.getAsset().getId())
+                .stream()
+                .filter(s -> s.getStatus() == ScanStatus.DONE)
+                .filter(s -> s.getCreatedAt().isBefore(scan.getCreatedAt()))
+                .limit(TREND - 1)
+                .toList());
+        if (recent.isEmpty()) {
+            return List.of();
+        }
+        Collections.reverse(recent);    // 오래된 것부터
+        recent.add(scan);
+        Map<Long, Map<String, Long>> bySeverity = new HashMap<>();
+        findings.countBySeverityPerScan(recent.stream().map(Scan::getId).toList())
+                .forEach(r -> bySeverity.computeIfAbsent(r.getScanId(), id -> new HashMap<>())
+                                        .merge(key(r.getSeverity()), r.getTotal(), Long::sum));
+        List<TrendRow> rows = new ArrayList<>();
+        for (Scan s : recent) {
+            Map<String, Long> sev = bySeverity.getOrDefault(s.getId(), Map.of());
+            rows.add(new TrendRow(s, sev.getOrDefault("critical", 0L), sev.getOrDefault("high", 0L),
+                                  s.getId().equals(scan.getId())));
+        }
+        return rows;
     }
 
     // --- 노출면 --------------------------------------------------------------
@@ -419,10 +461,21 @@ public class ReportService {
     // 화면에 넘기는 모양
     // -----------------------------------------------------------------------
 
-    /** @param appendix 부록 — 실제 악용 · 심각 취약점(한 줄 = 취약점 하나) */
+    /**
+     * @param trend    6장 아래 표 — 최근 완료 검사(오래된 것부터). 하나뿐이면 비어 있다
+     * @param appendix 부록 — 실제 악용 · 심각 취약점(한 줄 = 취약점 하나)
+     */
     public record Report(Scan scan, Overview overview, Summary summary,
-                         Targets targets, Progress progress, List<Appendix.Row> appendix,
-                         java.time.Instant printedAt) {
+                         Targets targets, Progress progress, List<TrendRow> trend,
+                         List<Appendix.Row> appendix, java.time.Instant printedAt) {
+    }
+
+    /**
+     * 추이 한 줄 — 검사 하나와 그 검사의 심각 · 높음 건수.
+     *
+     * @param current 이 보고서의 검사인가
+     */
+    public record TrendRow(Scan scan, long critical, long high, boolean current) {
     }
 
     /** 1장 — 점검 개요. */

@@ -114,8 +114,10 @@
           <td class="num tight">
             <b th:text="${report.scope.assetsScanned} + '대'">0대</b>
             <span th:text="'/ ' + ${report.scope.assetsInScope} + '대 (' + ${report.scope.coveragePercent()} + '%)'">/ 0대 (0%)</span>
-            <span class="danger-text" th:if="${!report.scope.notScanned.isEmpty()}"
-                  th:text="'· 검사 기록 없음 ' + ${report.scope.notScanned.size()} + '대'">· 검사 기록 없음 0대</span></td>
+            <span class="danger-text" th:if="${!report.scope.neverScanned().isEmpty()}"
+                  th:text="'· 검사 기록 없음 ' + ${report.scope.neverScanned().size()} + '대'">· 검사 기록 없음 0대</span>
+            <span class="danger-text" th:if="${!report.scope.failedOnly().isEmpty()}"
+                  th:text="'· 검사 모두 실패 ' + ${report.scope.failedOnly().size()} + '대'">· 검사 모두 실패 0대</span></td>
           <td class="tight faint">1장</td></tr>
       <tr><td>탐지 건수</td>
           <td class="num tight"><b th:text="${#numbers.formatInteger(report.scope.totalFindings, 0, 'COMMA')} + '건'">0건</b></td>
@@ -198,12 +200,23 @@
             <span class="faint" th:if="${report.scope.assetsInScope > 0}"
                   th:text="'(' + ${report.scope.coveragePercent()} + '%)'">(0%)</span>
           </td></tr>
-      <tr th:if="${!report.scope.notScanned.isEmpty()}">
+      <!--/*
+        **안 돌린 것과 돌렸는데 실패한 것을 가른다.** 앞서 둘 다 `검사 기록이
+        없는 자산` 이었다. 실패한 자산은 기록이 있다 — 고칠 곳이 SBOM 을 올리는
+        쪽이 아니라 검사 쪽(grype · 취약점 DB)이다.
+      */-->
+      <tr th:if="${!report.scope.neverScanned().isEmpty()}">
           <td>검사 기록이 없는 자산</td>
           <td class="num tight danger-text"
-              th:text="${report.scope.notScanned.size()} + '대'">0대</td></tr>
+              th:text="${report.scope.neverScanned().size()} + '대'">0대</td></tr>
+      <tr th:if="${!report.scope.failedOnly().isEmpty()}">
+          <td>검사가 모두 실패한 자산</td>
+          <td class="num tight danger-text"
+              th:text="${report.scope.failedOnly().size()} + '대'">0대</td></tr>
       <tr><td>완료된 검사</td>
           <td class="num tight" th:text="${report.scope.scanRuns} + '회'">0회</td></tr>
+      <tr th:if="${report.scope.failedRuns() > 0}"><td>실패한 검사</td>
+          <td class="num tight" th:text="${report.scope.failedRuns()} + '회'">0회</td></tr>
       <tr class="total"><td>탐지 건수</td>
           <td class="num tight">
             <b th:text="${#numbers.formatInteger(report.scope.totalFindings, 0, 'COMMA')}">0</b>건</td></tr>
@@ -231,14 +244,18 @@
         이 구역에 등록된 자산이 없습니다.
       </th:block>
       <th:block th:if="${report.scope.assetsInScope > 0}">
-        <b th:text="${report.scope.notScanned.size()} + '대는 이 기간에 검사 기록이 없습니다.'">—</b>
+        <b th:if="${!report.scope.neverScanned().isEmpty()}"
+           th:text="${report.scope.neverScanned().size()} + '대는 이 기간에 검사 기록이 없습니다.'">—</b>
+        <b th:if="${!report.scope.failedOnly().isEmpty()}"
+           th:text="${report.scope.failedOnly().size()} + '대는 이 기간의 검사가 모두 실패했습니다.'">—</b>
         아래 숫자는 검사한
         <span th:text="${report.scope.assetsScanned}">0</span>대
         (<span th:text="${report.scope.coveragePercent()}">0</span>%) 기준입니다.
         <br>
-        <span th:each="a, i : ${report.scope.notScanned}">
+        <span th:each="a, i : ${report.scope.notScanned}" th:with="f=${report.scope.failuresOf(a.id)}">
           <a class="no-print" th:href="@{'/assets/' + ${a.id}}" th:text="${a.name}">web-01</a>
-          <span class="print-only" th:text="${a.name}">web-01</span><th:block
+          <span class="print-only" th:text="${a.name}">web-01</span><span
+            th:if="${f != null}" th:text="' (실패 ' + ${f.count} + '회)'"> (실패 1회)</span><th:block
             th:if="${!i.last}"> · </th:block>
         </span>
       </th:block>
@@ -405,9 +422,19 @@
           </td>
           <td class="tight faint" th:if="${report.scope.wholeSite()}"
               th:text="${r.asset.zone.name}">DMZ</td>
-          <td class="tight" th:if="${r.scanned()}"
-              th:text="${#temporals.format(r.scan.createdAt, 'yyyy-MM-dd HH:mm')}">—</td>
-          <td class="tight faint" th:unless="${r.scanned()}" colspan="5">이 기간에 검사 없음</td>
+          <!--/*
+            **기준이 된 검사 뒤에 실패했으면 적는다.** 이 줄의 수는 실패 전
+            상태다 — 적지 않으면 가장 최근 상태로 읽힌다. 완료 없이 실패만
+            했으면 `검사 없음` 이 아니다 — 돌렸는데 실패했다.
+          */-->
+          <td class="tight" th:if="${r.scanned()}">
+            <span th:text="${#temporals.format(r.scan.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
+            <div class="danger-text" th:if="${report.scope.failedAfter(r.scan)}"
+                 th:text="'이후 검사 실패 ' + ${#temporals.format(report.scope.failuresOf(r.asset.id).last, 'yyyy-MM-dd HH:mm')}">이후 검사 실패</div>
+          </td>
+          <td class="tight faint" th:unless="${r.scanned()}" colspan="5"
+              th:with="f=${report.scope.failuresOf(r.asset.id)}"
+              th:text="${f == null} ? '이 기간에 검사 없음' : '이 기간의 검사 ' + ${f.count} + '회 모두 실패'">이 기간에 검사 없음</td>
           <th:block th:if="${r.scanned()}">
             <td class="num tight" th:text="${#numbers.formatInteger(r.findingCount(), 0, 'COMMA')}">0</td>
             <td class="num tight" th:text="${r.critical > 0} ? ${r.critical} : '—'">—</td>

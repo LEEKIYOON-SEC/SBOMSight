@@ -107,7 +107,12 @@ public class ZoneReportService {
                 .filter(a -> !scannedIds.contains(a.getId()))
                 .toList();
 
-        Scope scope = scope(zone, from, to, inScope, current, notScanned, scanRuns);
+        // 기간 중 실패한 검사 — 완료 검사 뒤에 실패했는지, 실패만 했는지를 말하려고.
+        Map<Long, Failures> failures = new HashMap<>();
+        scans.countFailedPerAssetBetween(zoneId, start, end)
+             .forEach(f -> failures.put(f.getAssetId(), new Failures(f.getFailures(), f.getLastFailedAt())));
+
+        Scope scope = scope(zone, from, to, inScope, current, notScanned, scanRuns, failures);
         // **2·3장은 탐지 전부, 4·5장(과 그것을 잇는 6장의 건수)은 목록이다.**
         // 목록은 검토 결과가 해당 없음 · 오탐인 건을 뺀다 — 취약점 화면 · 자산
         // 보고서와 같은 규칙. 뺀 건수는 1장이 말한다.
@@ -126,7 +131,8 @@ public class ZoneReportService {
     // --- 1장: 점검 범위 -----------------------------------------------------
 
     private Scope scope(Zone zone, LocalDate from, LocalDate to, List<Asset> inScope,
-                        List<Scan> current, List<Asset> notScanned, long scanRuns) {
+                        List<Scan> current, List<Asset> notScanned, long scanRuns,
+                        Map<Long, Failures> failures) {
         long totalFindings = current.stream().mapToLong(Scan::getFindingCount).sum();
 
         // 기간 동안 grype 이 바뀌었으면 증감의 일부는 서버가 아니라 도구가
@@ -149,7 +155,7 @@ public class ZoneReportService {
 
         return new Scope(zone, from, to, inScope.size(), current.size(), notScanned,
                          scanRuns, totalFindings, List.copyOf(grypeVersions),
-                         List.copyOf(dbDates), oldest, newest);
+                         List.copyOf(dbDates), oldest, newest, Map.copyOf(failures));
     }
 
     // --- 노출면 --------------------------------------------------------------
@@ -520,16 +526,56 @@ public class ZoneReportService {
                              List<Appendix.Row> appendix) {
     }
 
+    /** 기간 중 실패한 검사 — 한 자산의 횟수와 마지막 시각. */
+    public record Failures(long count, Instant last) {
+    }
+
     /**
      * 1장 — 점검 범위.
      *
-     * @param notScanned 기간 안에 검사되지 않은 자산. <b>이 목록이 이 장의 핵심이다.</b>
+     * @param notScanned 기간 안에 완료된 검사가 없는 자산. <b>이 목록이 이 장의 핵심이다.</b>
+     * @param failures   기간 중 실패한 검사가 있는 자산 → 횟수 · 마지막 시각
      */
     public record Scope(Zone zone, LocalDate from, LocalDate to,
                         int assetsInScope, int assetsScanned, List<Asset> notScanned,
                         long scanRuns, long totalFindings,
                         List<String> grypeVersions, List<LocalDate> dbDates,
-                        Instant oldestScan, Instant newestScan) {
+                        Instant oldestScan, Instant newestScan,
+                        Map<Long, Failures> failures) {
+
+        /** 완료된 검사도, 실패한 검사도 없는 자산 — 기간 안에 돌리지 않았다. */
+        public List<Asset> neverScanned() {
+            return notScanned.stream().filter(a -> !failures.containsKey(a.getId())).toList();
+        }
+
+        /**
+         * 완료된 검사는 없고 실패한 검사만 있는 자산 — 돌렸는데 실패했다.
+         *
+         * <p>앞서 이 자산도 "검사 기록이 없는" 자산으로 적었다. 기록은 있다 — 고칠
+         * 것이 SBOM 이 아니라 검사 쪽(grype · DB)이라는 신호라 따로 말한다.
+         */
+        public List<Asset> failedOnly() {
+            return notScanned.stream().filter(a -> failures.containsKey(a.getId())).toList();
+        }
+
+        public Failures failuresOf(Long assetId) {
+            return failures.get(assetId);
+        }
+
+        /** 기간 중 실패한 검사 횟수 — `완료된 검사` 와 나란히 적는다. */
+        public long failedRuns() {
+            return failures.values().stream().mapToLong(Failures::count).sum();
+        }
+
+        /**
+         * 기준이 된 완료 검사 <b>뒤에</b> 실패한 검사가 있는가.
+         *
+         * <p>있으면 이 자산의 수는 실패 전 상태다 — 말하지 않으면 최신으로 읽힌다.
+         */
+        public boolean failedAfter(Scan base) {
+            Failures f = base == null ? null : failures.get(base.getAsset().getId());
+            return f != null && f.last().isAfter(base.getCreatedAt());
+        }
 
         public String zoneName() {
             return zone == null ? "전체" : zone.getName();

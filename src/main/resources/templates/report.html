@@ -677,6 +677,42 @@
       ※ 대조 축 = (취약점 번호, 패키지명). 버전 제외 — 넣으면 패치한 건이
       해소 1건 + 신규 1건으로 이중 계상.
     </p>
+
+    <!--/*
+      위 표는 바로 앞 검사 하나와만 댄다 — 줄다가 다시 느는 것이 보이지 않는다.
+      이 검사까지 완료 검사 여섯 번을 오래된 것부터 늘어놓는다(ReportService.trend).
+      끝에서 둘째 줄이 위 표의 `이전 검사` 다. 실패한 검사는 없다 — 0건이 아니라
+      모르는 것이다.
+
+      **grype · 취약점 DB 를 줄마다 적는다.** 같은 자산이라도 DB 가 새로우면
+      탐지가 는다. `다시 검사` 는 같은 SBOM 을 새 DB 로 돌린 것 — 자산이 아니라
+      DB 가 움직인 줄이다(자산 상세의 검사 이력과 같은 말).
+
+      0 은 0 으로 적는다. 검사가 세어 낸 값이고, 추이에서는 `없어졌다` 가 곧 읽을 거리다.
+      문단을 더하지 않는다 — 이 장은 각주가 이미 둘이다(ReportProseTest).
+    */-->
+    <h3 th:if="${!report.trend.isEmpty()}">최근 검사 추이</h3>
+    <table class="table" th:if="${!report.trend.isEmpty()}">
+      <thead>
+      <tr><th class="tight">검사 시각</th><th class="tight">grype</th><th class="tight">취약점 DB</th>
+          <th class="num tight">탐지</th><th class="num tight">심각</th><th class="num tight">높음</th></tr>
+      </thead>
+      <tbody>
+      <tr th:each="t : ${report.trend}">
+        <td class="tight">
+          <span class="mono" th:text="${#temporals.format(t.scan.createdAt, 'yyyy-MM-dd HH:mm')}">—</span>
+          <span class="faint" th:if="${t.scan.isRescan()}">· 다시 검사</span>
+          <b th:if="${t.current}">· 이번 검사</b>
+        </td>
+        <td class="tight faint" th:text="${#strings.isEmpty(t.scan.grypeVersion)} ? '—' : ${t.scan.grypeVersion}">—</td>
+        <td class="tight faint"
+            th:text="${t.scan.grypeDbBuilt != null} ? ${#temporals.format(t.scan.grypeDbBuilt, 'yyyy-MM-dd')} : '—'">—</td>
+        <td class="num tight" th:text="${#numbers.formatInteger(t.scan.findingCount, 0, 'COMMA')}">0</td>
+        <td class="num tight" th:text="${#numbers.formatInteger(t.critical, 0, 'COMMA')}">0</td>
+        <td class="num tight" th:text="${#numbers.formatInteger(t.high, 0, 'COMMA')}">0</td>
+      </tr>
+      </tbody>
+    </table>
   </section>
 
   <!--/*

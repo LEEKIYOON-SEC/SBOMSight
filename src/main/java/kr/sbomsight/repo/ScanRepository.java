@@ -154,6 +154,34 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
     List<Scan> findLatestDonePerAssetBefore(@Param("zoneId") Long zoneId,
                                             @Param("before") java.time.Instant before);
 
+    /**
+     * 기간 중 <b>실패한</b> 검사 — 자산마다 횟수와 마지막 시각.
+     *
+     * <p>구역 보고서는 자산마다 기간 안의 마지막 <b>완료</b> 검사로 센다. 그 뒤에
+     * 검사가 실패했으면 보고서의 수는 실패 전 상태다 — 말하지 않으면 최신으로
+     * 읽힌다. 그리고 완료 검사 없이 실패만 있는 자산은 "검사 기록이 없는" 자산이
+     * 아니다 — 돌렸는데 실패했다. 둘 다 보고서가 말하려면 이 수가 있어야 한다.
+     */
+    @Query("""
+           SELECT a.id AS assetId, COUNT(s) AS failures, MAX(s.createdAt) AS lastFailedAt
+           FROM Scan s JOIN s.asset a JOIN a.zone z
+           WHERE s.status = 'FAILED' AND a.archivedAt IS NULL
+             AND s.createdAt >= :from AND s.createdAt < :to
+             AND (:zoneId IS NULL OR z.id = :zoneId)
+           GROUP BY a.id
+           """)
+    List<FailedCount> countFailedPerAssetBetween(@Param("zoneId") Long zoneId,
+                                                 @Param("from") java.time.Instant from,
+                                                 @Param("to") java.time.Instant to);
+
+    interface FailedCount {
+        Long getAssetId();
+
+        long getFailures();
+
+        java.time.Instant getLastFailedAt();
+    }
+
     /** 기간 중 실제로 돌린 검사 횟수. 자산 수와 다르다 — 한 자산을 여러 번 돌린다. */
     @Query("""
            SELECT COUNT(s) FROM Scan s JOIN s.asset a JOIN a.zone z
