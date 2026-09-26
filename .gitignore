@@ -6,6 +6,7 @@ target/
 data/
 config/keystore.p12
 config/env.ps1
+config/env
 config/*.p12
 config/*.pfx
 config/*.jks

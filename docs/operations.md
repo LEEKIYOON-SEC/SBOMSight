@@ -1,7 +1,8 @@
 # 운영 가이드
 
 설치가 끝난 PC 에서 **서비스로 띄우고, 날마다 무엇을 하는지**를 적는다.
-설치 절차 자체는 [`docs/windows-setup.md`](windows-setup.md) 에 있다.
+설치 절차 자체는 [`docs/windows-setup.md`](windows-setup.md)(Linux 는
+[`docs/linux-setup.md`](linux-setup.md)) 에 있다.
 
 ---
 
@@ -193,7 +194,7 @@ SBOM 에는 그 서버에 설치된 패키지 목록과 파일 경로가 담긴�
 |---|---|
 | `sbomsight` 데이터베이스 | 자산·이력·검토 결과·대응·감사 로그가 전부 사라진다 |
 | `SBOMSIGHT_DATA_DIR` (기본은 저장소 폴더의 `data`) | 옛 SBOM 과 grype 원본이 사라져 **다시 검사** 를 못 한다 |
-| `config` 의 `keystore.p12` · `env.ps1` (Linux 는 환경변수) | 다시 만들면 된다 |
+| `config` 의 `keystore.p12` · `env.ps1` (Linux 는 `config/env`) | 다시 만들면 된다 |
 
 **파일은 `--result-file` 로 쓴다.** 덤프 도구가 파일을 직접 쓴다. PowerShell 의
 `>` 는 받은 글자를 다시 인코딩해 쓴다(Windows PowerShell 5.1 은 UTF-16) — 이
@@ -274,14 +275,14 @@ git pull
 ```
 
 ```bash
-# Linux — run-server.sh 로 띄운 창에서 Ctrl+C 로 먼저 내린다
+# Linux — 먼저 내린다: sudo systemctl stop sbomsight (창에서 띄웠다면 Ctrl+C)
 cd /경로/SBOMSight
 mariadb-dump -u root -p --single-transaction --routines sbomsight --result-file=/backup/before-upgrade.sql
 cp target/sbomsight-1.0.0.jar /backup/sbomsight-before-upgrade.jar
 
 git pull
 ./mvnw clean package -DskipTests
-./scripts/run-server.sh
+sudo systemctl start sbomsight      # 창에서 띄운다면 ./scripts/run-server.sh
 ```
 
 표 변경은 기동할 때 Flyway 가 적용한다. 올라온 뒤:
@@ -327,17 +328,20 @@ Copy-Item D:\backup\sbomsight-before-upgrade.jar target\sbomsight-1.0.0.jar
 ```
 
 ```bash
-# Linux — run-server.sh 로 띄운 창에서 Ctrl+C 로 먼저 내린다
+# Linux — 먼저 내린다: sudo systemctl stop sbomsight (창에서 띄웠다면 Ctrl+C)
 cd /경로/SBOMSight
 mariadb -u root -p -e "DROP DATABASE sbomsight; CREATE DATABASE sbomsight CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mariadb -u root -p sbomsight < /backup/before-upgrade.sql
 cp /backup/sbomsight-before-upgrade.jar target/sbomsight-1.0.0.jar
-./scripts/run-server.sh
+sudo systemctl start sbomsight      # 창에서 띄운다면 ./scripts/run-server.sh
 ```
 
 V15 는 이 길을 MariaDB 10.11 에서 끝까지 밟아 보았다. V14 인 DB 를 백업하고, 새
 jar 로 V15 를 적용한 뒤 되살렸다. 되살린 DB 는 마이그레이션 14까지로 돌아갔고,
 목표 버전과 한글 값도 원래대로였다. 이전 jar 도 그 DB 로 떴다.
+V16 은 절반만 밟았다 — V15 인 DB 를 백업하고 새 jar 로 V16 을 적용한 뒤, 그 백업을
+다른 DB 에 되살려 마이그레이션 15까지 · 같은 행 수로 돌아가는 것까지 보았다. 이전
+jar 로 띄워 보지는 않았다.
 백업 없이 jar 만 되돌려도 기동은 된다. Flyway 가 "DB 가 더 새 판" 이라고 경고하고
 넘어가며, 목표 버전 칸에는 여러 버전이 띄어 쓴 한 줄로 보인다.
 
@@ -379,6 +383,9 @@ Restart-Computer                                              # 재부팅 뒤 �
 **7 · 8절의 PowerShell 백업 · 되살리기 줄도 윈도우에서 돌려 보지 못했다.** 같은
 옵션을 리눅스의 MariaDB 10.11 클라이언트로 확인했다. `>` 로 받은 파일과
 `--result-file` 로 받은 파일이 같았고, `<` 와 `source` 로 되살린 DB 도 같았다.
-**V15 는 MySQL 8 에서 돌려 보지 못했다.** MySQL 8 을 쓴다면 업그레이드한 뒤
-기록의 V15 줄(`Successfully applied 1 migration`)과 대응 화면의 목표 버전을 먼저
-보고, 이상하면 8절의 되돌리기로 돌아간다.
+**MySQL 8 은 리눅스에서만 돌려 보았다.** V1~V16 을 MySQL 8.0.46(Ubuntu 패키지를
+풀어서 띄운 것)의 빈 DB 와 데이터가 있는 DB 양쪽에 태웠고(`tests/check-migrations.sh`),
+그 스키마 위에서 앱 전체 시험 436개가 통과했다(`tests/check-mariadb.sh`). 윈도우판
+MySQL 8 에서는 돌려 보지 못했다 — 업그레이드한 뒤 기록의 마이그레이션 줄
+(`Successfully applied`)과 대응 화면의 현재 · 목표 버전을 먼저 보고, 이상하면 8절의
+되돌리기로 돌아간다.

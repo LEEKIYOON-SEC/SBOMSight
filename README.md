@@ -36,7 +36,8 @@ HTTPS 는 필수다(443). 금융권 지침상 http 로는 열지 않는다.
 
 아래는 요약이다. **Windows 11 PC 에 처음부터 설치하는 전체 절차는
 [`docs/windows-setup.md`](docs/windows-setup.md) 에 있다** — 단계마다 확인
-명령과 막혔을 때 볼 곳이 붙어 있다.
+명령과 막혔을 때 볼 곳이 붙어 있다. **Linux 서버(Ubuntu 24.04 · systemd)는
+[`docs/linux-setup.md`](docs/linux-setup.md).**
 
 ### 1. 준비물
 
@@ -91,18 +92,17 @@ notepad config\env.ps1          # 비밀번호 채우기
 .\scripts\run-server.ps1 -Listen    # 방화벽까지 열고 기동 (관리자 PowerShell)
 ```
 ```bash
-# Linux — 환경변수로 준다. 저장소에 두지 않는다.
-export SBOMSIGHT_PORT=443
-export SBOMSIGHT_DB_URL='jdbc:mariadb://localhost:3306/sbomsight?...'
-export SBOMSIGHT_DB_PASSWORD='<비밀번호>'
-export SBOMSIGHT_KEYSTORE_PASSWORD='<키스토어비밀번호>'
+# Linux — config/env 에 값을 적어 두고 스크립트가 읽게 한다(값은 작은따옴표로).
+cp scripts/env.example.sh config/env && chmod 600 config/env
+nano config/env                     # 비밀번호 · DB 주소 채우기
 
 ./mvnw clean package -DskipTests
-java -jar target/sbomsight-1.0.0.jar
+./scripts/run-server.sh --check     # 준비 상태만 확인
+./scripts/run-server.sh             # 서비스로 두려면 docs/linux-setup.md 9단계(systemd)
 ```
 
 **Windows 는 443 에 관리자 권한이 필요 없다** — 낮은 포트를 제한하는 것은
-Linux 다(`setcap 'cap_net_bind_service=+ep' $(which java)`). Windows 에서
+Linux 다(서비스로 돌리면 systemd 의 `AmbientCapabilities` 가 준다 — linux-setup.md 9단계). Windows 에서
 443 이 안 열리면 대개 IIS 나 `World Wide Web Publishing Service` 가 이미
 쓰고 있거나, Hyper-V·WSL 이 예약해 둔 포트 구간에 걸린 것이다.
 `scripts\run-server.ps1 -Check` 가 둘 다 확인해 준다.
@@ -122,7 +122,8 @@ Linux 다(`setcap 'cap_net_bind_service=+ep' $(which java)`). Windows 에서
 
 창이 없으니 콘솔에 찍히던 것은 `logs\service.log` 로 간다. 운영 절차 전체 —
 서비스 다루기 · 운영 리듬 · 백업 · 업그레이드 — 는
-[`docs/operations.md`](docs/operations.md) 에 있다.
+[`docs/operations.md`](docs/operations.md) 에 있다. Linux 는 systemd 유닛으로 —
+[`docs/linux-setup.md`](docs/linux-setup.md) 9단계.
 
 ---
 
