@@ -314,7 +314,13 @@ public class ScanService {
             // 끝났다고 적는 것과 인벤토리를 새 검사 것으로 바꾸는 것을 **한 번에**
             // 한다. 따로 하면 그 사이에 두 검사의 패키지가 함께 보이거나(끝낸
             // 뒤 지우기 전) 아무것도 안 보인다(지운 뒤 끝내기 전).
+            //
+            // 자산 행을 먼저 잠근다 — 같은 자산을 건드리는 쓰기는 모두 자산 → 검사 →
+            // 패키지 행 차례다(ComponentInventoryService.restoreCurrent). 지금도 검사
+            // 행 갱신은 Hibernate 가 makeCurrent 의 질의 직전에야 내보내 자산이 먼저
+            // 잠기지만, 내보내는 시점에 기대지 않는다.
             transactions.executeWithoutResult(tx -> {
+                assets.lockById(scan.getAsset().getId());
                 scans.save(scan);
                 inventory.makeCurrent(scan.getAsset().getId(), scan.getId());
             });
@@ -351,21 +357,28 @@ public class ScanService {
      * 행은 이미 없다(ComponentInventoryService.restoreCurrent). 지금 검사가 아닌
      * 것을 지웠으면 패키지 목록을 건드리지 않는다.
      *
-     * <p><b>트랜잭션을 둘로 나눈다.</b> 지우기를 먼저 커밋하고(저장소의
-     * {@code delete} 가 제 트랜잭션을 연다), 다시 담기는 그 뒤에 제 트랜잭션에서
-     * 한다. 앞서 한 트랜잭션이었을 때 다시 담다가 터지면 지운 것까지 되돌려졌는데,
-     * 보관 파일은 그때 이미 지운 뒤였다 — 행만 있고 파일은 없는 검사가 남고, 화면은
-     * 500 이었고, 감사 기록도 남지 않았다(ScanDeleteInventoryTest). 다시 담지 못해도
-     * 지운 것은 지운 것이다 — 까닭을 돌려준다.
+     * <p><b>트랜잭션을 둘로 나눈다.</b> 지우기를 먼저 커밋하고, 다시 담기는 그 뒤에
+     * 제 트랜잭션에서 한다. 앞서 한 트랜잭션이었을 때 다시 담다가 터지면 지운 것까지
+     * 되돌려졌는데, 보관 파일은 그때 이미 지운 뒤였다 — 행만 있고 파일은 없는 검사가
+     * 남고, 화면은 500 이었고, 감사 기록도 남지 않았다(ScanDeleteInventoryTest). 다시
+     * 담지 못해도 지운 것은 지운 것이다 — 까닭을 돌려준다.
+     *
+     * <p>지울 때도 자산 행을 먼저 잠근다. 같은 자산의 검사가 끝나며 끝난 검사들의
+     * 패키지 행을 지우는 자리와 잠그는 차례가 엇갈리면 서로를 기다린다. 지금
+     * 검사였는지도 잠근 뒤에 본다.
      *
      * @return 패키지 목록을 다시 담았는지, 못 담았으면 그 까닭
      */
     public ComponentInventoryService.Restored delete(Scan scan) {
         long assetId = scan.getAsset().getId();
         long scanId = scan.getId();
-        boolean wasCurrent = scans.currentOf(assetId).map(Scan::getId)
-                                  .filter(current -> current == scanId).isPresent();
-        scans.delete(scan);      // findings 는 FK ON DELETE CASCADE
+        boolean wasCurrent = Boolean.TRUE.equals(transactions.execute(tx -> {
+            assets.lockById(assetId);
+            boolean current = scans.currentOf(assetId).map(Scan::getId)
+                                   .filter(id -> id == scanId).isPresent();
+            scans.delete(scan);      // findings 는 FK ON DELETE CASCADE
+            return current;
+        }));
         storage.deleteScanDir(assetId, scanId);
         if (!wasCurrent) {
             return ComponentInventoryService.Restored.NOTHING;

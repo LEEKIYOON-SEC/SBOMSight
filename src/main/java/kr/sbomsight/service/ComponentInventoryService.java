@@ -152,12 +152,16 @@ public class ComponentInventoryService {
      * 멈추고 경고만 남기므로 거기까지 담긴다 — grype 이 이미 읽고 끝낸 SBOM 이라
      * 그럴 일은 드물다.
      *
-     * <p>담는 사이에 이 자산의 다른 검사가 끝나 지금 검사가 바뀌었으면 담은 것은
-     * 버려진다({@link #makeCurrent}) — 새 검사가 제 목록을 담았으니 할 일이 없었던
-     * 것으로 돌려준다.
+     * <p><b>자산 행을 맨 먼저 잠근다.</b> 같은 자산을 건드리는 쓰기(검사를 만들 때 ·
+     * 끝낼 때 · 지울 때)와 같은 차례다 — 자산 → 검사 → 패키지 행. 앞서는 읽고 담은
+     * 뒤에야 잠갔는데 MariaDB 에서 둘 다 재현됐다. 담을 때 외래 키가 자산 행에 건
+     * 공유 잠금을 배타 잠금으로 올리는 사이에 같은 자산의 업로드 · 검사 마무리가
+     * 끼면 교착이 났다. 그리고 잠그기 전에 읽은 스냅숏으로 지금 검사를 골라, 그
+     * 사이에 끝난 새 검사의 행을 지웠다.
      */
     @Transactional
     public Restored restoreCurrent(long assetId) {
+        assets.lockById(assetId);
         Scan current = scans.currentOf(assetId).orElse(null);
         if (current == null || components.countByScanId(current.getId()) > 0) {
             return Restored.NOTHING;
@@ -184,6 +188,8 @@ public class ComponentInventoryService {
                 log.warn("임시 파일을 지우지 못했습니다: {}", plain);
             }
         }
+        // 잠금을 쥐고 있어 그사이 지금 검사가 바뀌지 않는다. 바뀌었다면 담은 것은
+        // makeCurrent 가 이미 버렸다.
         if (!makeCurrent(assetId, current.getId())) {
             return Restored.NOTHING;
         }

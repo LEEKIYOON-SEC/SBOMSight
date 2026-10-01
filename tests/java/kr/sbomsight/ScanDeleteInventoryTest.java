@@ -4,6 +4,7 @@ import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.AuditLog;
 import kr.sbomsight.domain.Scan;
+import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.AuditLogRepository;
 import kr.sbomsight.repo.ComponentRepository;
@@ -11,6 +12,7 @@ import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.AssetService;
 import kr.sbomsight.service.ComponentInventoryService;
 import kr.sbomsight.service.GrypeRunner;
+import kr.sbomsight.service.SbomStorage;
 import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,12 +29,17 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static kr.sbomsight.NewSbomKeepsDecisionsTest.SBOM_V1;
 import static kr.sbomsight.NewSbomKeepsDecisionsTest.SBOM_V2;
@@ -53,7 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>지키는 것: 지금 검사를 지우면 그 전 검사의 보관 SBOM 에서 다시 담고 그렇다고
  * 말한다 · 지금 검사가 아닌 것을 지우면 패키지 목록을 건드리지 않는다 · 다시
  * 담지 못해도 지운 것은 지운 것이다(보관 파일은 이미 지운 뒤다) — 까닭을 말하고
- * 감사 기록을 남긴다.
+ * 감사 기록을 남긴다 · 다시 담는 사이에 끝난 새 검사의 목록을 지우지 않는다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -66,6 +73,8 @@ class ScanDeleteInventoryTest {
     @Autowired AuditLogRepository auditLogs;
     @Autowired AssetService assetService;
     @Autowired ZoneService zoneService;
+    @Autowired SbomStorage storage;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @MockBean GrypeRunner grype;
 
@@ -186,6 +195,59 @@ class ScanDeleteInventoryTest {
         assertThat(deletionRecords(asset)).hasSize(1);
     }
 
+    /**
+     * 다시 담기는 <b>자산 행을 맨 먼저 잠근다.</b> 앞서는 지금 검사를 읽고 담은 뒤에야
+     * 잠가, 그사이 같은 자산의 새 검사가 끝나면 잠그기 전에 읽은 스냅숏대로 옛 검사를
+     * 지금 검사로 알고 새 검사의 행을 지웠다 — 취약점 화면은 새 검사를, 패키지 목록은
+     * 옛 검사를 말했다.
+     *
+     * <p><b>MariaDB · MySQL(REPEATABLE READ)에서만 드러난다</b>(check-mariadb.sh 로
+     * 고치기 전 판에서 실패를 확인했다). H2 는 잠근 뒤 커밋된 것을 바로 읽어 고치기
+     * 전에도 통과한다.
+     */
+    @Test
+    @DisplayName("다시 담는 사이에 같은 자산의 새 검사가 끝나도 그 검사의 패키지 목록을 지우지 않는다")
+    void aRestoreDoesNotWipeAScanThatFinishedMeanwhile() throws Exception {
+        Asset asset = committedAsset("race");
+        Scan old = scanned(asset, SBOM_V1);
+        inventory.discard(old.getId());          // 지금 검사를 막 지운 뒤처럼 — 그 전 검사에 행이 없다
+        Scan finishing = new Scan(asset, "tester");
+        finishing.setStatus(ScanStatus.RUNNING);
+        finishing = scans.saveAndFlush(finishing);
+        ingest(asset, finishing, "fresh");       // 도는 검사가 담아 둔 행
+        long finishingId = finishing.getId();
+
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch go = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicReference<ComponentInventoryService.Restored> restored = new AtomicReference<>();
+
+        // 검사 마무리(ScanService.run 의 마지막 트랜잭션) — 자산을 잠근 채 잠시 멈춘다.
+        Thread finisher = start(failure, () -> tx.executeWithoutResult(s -> {
+            assets.lockById(asset.getId());
+            locked.countDown();
+            await(go);
+            Scan done = scans.findById(finishingId).orElseThrow();
+            done.setStatus(ScanStatus.DONE);
+            scans.save(done);
+            inventory.makeCurrent(asset.getId(), finishingId);
+        }));
+        await(locked);
+        Thread restorer = start(failure, () -> restored.set(inventory.restoreCurrent(asset.getId())));
+        Thread.sleep(300);                       // 고치기 전이면 다시 담기가 여기서 먼저 읽는다
+        go.countDown();
+        finisher.join(30_000);
+        restorer.join(30_000);
+
+        assertThat(failure.get()).isNull();
+        assertThat(scans.currentOf(asset.getId()).map(Scan::getId)).contains(finishingId);
+        assertThat(current(asset))
+                .as("새 검사가 지금 검사인데 패키지 목록이 옛 검사 것이다")
+                .containsExactly("fresh@1.0");
+        assertThat(restored.get().happened()).isFalse();
+    }
+
     // --- 거들 -------------------------------------------------------------------
 
     /** 트랜잭션 없이 커밋되는 자산 — 끝나면 지운다. */
@@ -224,6 +286,43 @@ class ScanDeleteInventoryTest {
 
     private List<AuditLog> deletionRecords(Asset asset) {
         return auditLogs.export(null, AuditEvent.SCAN_DELETED, null, null, asset.getName());
+    }
+
+    /** 패키지 하나짜리 SBOM 을 읽어 그 검사의 행으로 담는다 — ScanService.run 이 하는 대로. */
+    private void ingest(Asset asset, Scan scan, String name) throws Exception {
+        Path file = Files.createTempFile("sbom-", ".json");
+        Files.writeString(file, """
+                { "artifacts": [ { "name": "%s", "version": "1.0", "type": "rpm",
+                                   "purl": "pkg:rpm/rocky/%s@1.0" } ] }
+                """.formatted(name, name));
+        try (ComponentInventoryService.Sink sink = inventory.open(asset.getId(), scan.getId())) {
+            storage.inspect(file, sink);
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    private static Thread start(AtomicReference<Throwable> failure, Runnable work) {
+        Thread thread = new Thread(() -> {
+            try {
+                work.run();
+            } catch (Throwable t) {
+                failure.compareAndSet(null, t);
+            }
+        });
+        thread.start();
+        return thread;
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(30, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("30초를 기다려도 오지 않았다");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
     }
 
     private static RequestPostProcessor admin() {
