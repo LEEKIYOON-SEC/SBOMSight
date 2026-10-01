@@ -701,8 +701,9 @@ public class AssetController {
         // 다음 사람이 찾지 못한다. 못 담았으면 그 까닭을 오류로.
         String message = "검사를 지웠습니다. 보관된 파일도 함께 삭제되었습니다.";
         if (restored.happened()) {
+            // 수는 진행 표시와 같은 꼴로(ScanStatusController) — 12만 개가 예사다.
             String again = "그 전 검사(" + WHEN.format(restored.from().getCreatedAt())
-                           + ")의 SBOM에서 패키지 " + restored.rows() + "개를 다시 담았습니다.";
+                           + String.format(")의 SBOM에서 패키지 %,d개를 다시 담았습니다.", restored.rows());
             message += " " + again;
             detail += " · " + again;
         }
