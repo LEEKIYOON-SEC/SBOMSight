@@ -44,6 +44,9 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
            """)
     int deleteFinishedOtherScans(@Param("assetId") Long assetId, @Param("scanId") Long scanId);
 
+    /** 이 검사에서 온 행 수 — 지금 검사에 패키지 목록이 담겨 있는지 볼 때. */
+    long countByScanId(Long scanId);
+
     @Modifying
     @Query("DELETE FROM Component c WHERE c.scan.id = :scanId")
     int deleteByScanId(@Param("scanId") Long scanId);

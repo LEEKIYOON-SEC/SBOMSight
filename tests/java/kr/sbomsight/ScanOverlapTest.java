@@ -54,7 +54,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 0행</b>이 됐다. 업로드를 두 번 해도 같았다. 둘 다 재현 시험으로 먼저 확인했다.
  *
  * <p>지키는 것: 같은 자산에 도는 검사는 하나다(겹치면 거절하고 말한다) · 늦게
- * 끝난 검사가 지금의 패키지 목록을 지우지 않는다.
+ * 끝난 검사가 지금의 패키지 목록을 지우지 않는다. 검사를 지울 때는
+ * {@link ScanDeleteInventoryTest}.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

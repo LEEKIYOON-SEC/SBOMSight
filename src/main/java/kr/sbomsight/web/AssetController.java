@@ -5,6 +5,7 @@ import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.service.AssetService;
+import kr.sbomsight.service.ComponentInventoryService;
 import kr.sbomsight.service.SbomStorage;
 import kr.sbomsight.service.PackageService;
 import kr.sbomsight.service.Paging;
@@ -694,11 +695,31 @@ public class AssetController {
         Long assetId = scan.getAsset().getId();
         String detail = scan.getSbomFilename() + " · 탐지 " + scan.getFindingCount() + "건";
         String assetName = scan.getAsset().getName();
-        scanService.delete(scan);
+        ComponentInventoryService.Restored restored = scanService.delete(scan);
+        // 지운 것이 지금 검사였으면 그 전 검사의 SBOM에서 패키지 목록을 다시
+        // 담았다. 무엇을 했는지 말한다 — 패키지 수가 바뀐 까닭이 화면에 없으면
+        // 다음 사람이 찾지 못한다. 못 담았으면 그 까닭을 오류로.
+        String message = "검사를 지웠습니다. 보관된 파일도 함께 삭제되었습니다.";
+        if (restored.happened()) {
+            String again = "그 전 검사(" + WHEN.format(restored.from().getCreatedAt())
+                           + ")의 SBOM에서 패키지 " + restored.rows() + "개를 다시 담았습니다.";
+            message += " " + again;
+            detail += " · " + again;
+        }
+        if (restored.failed()) {
+            flash.addFlashAttribute("error", "패키지 목록을 그 전 검사에서 다시 담지 못했습니다: "
+                                             + restored.problem());
+            detail += " · 패키지 목록을 다시 담지 못함";
+        }
         audit.record(AuditEvent.SCAN_DELETED, assetName, detail);
-        flash.addFlashAttribute("message", "검사를 지웠습니다. 보관된 파일도 함께 삭제되었습니다.");
+        flash.addFlashAttribute("message", message);
         return "redirect:/assets/" + assetId;
     }
+
+    /** 안내 글의 시각 — 검사 이력 화면과 같은 꼴. */
+    private static final java.time.format.DateTimeFormatter WHEN =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                                             .withZone(java.time.ZoneId.systemDefault());
 
     /** SBOM 업로드. 저장까지만 하고 grype 은 뒤에서 돌린다. */
     @PostMapping("assets/{id}/sbom")
