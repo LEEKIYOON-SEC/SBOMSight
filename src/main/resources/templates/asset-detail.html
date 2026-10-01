@@ -101,7 +101,7 @@
              th:text="'보이는 결과는 그 전 완료 검사(' + ${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')} + ')의 것입니다.'">보이는 결과는 그 전 완료 검사(2026-09-25 11:45)의 것입니다.</div>
       </div>
       <form method="post" th:action="@{'/scans/' + ${lastFailed.id} + '/rescan'}" class="inline"
-            th:if="${!#strings.isEmpty(lastFailed.sbomPath)}" sec:authorize="hasRole('ADMIN')">
+            th:if="${running == null and !#strings.isEmpty(lastFailed.sbomPath)}" sec:authorize="hasRole('ADMIN')">
         <button type="submit" class="btn btn-sm" title="보관된 SBOM을 다시 검사">다시 검사</button>
       </form>
     </div>
@@ -149,10 +149,16 @@
           <div>
             <label class="form-label" for="sbom-file">syft로 만든 SBOM 파일 (JSON)</label>
             <input type="file" class="form-control" id="sbom-file" name="file"
-                   accept=".json" required>
+                   accept=".json" required th:disabled="${running != null}">
           </div>
-          <button class="btn btn-dark" type="submit">검사 시작</button>
+          <button class="btn btn-dark" type="submit" th:disabled="${running != null}">검사 시작</button>
         </form>
+        <!--/*
+          **검사가 도는 동안에는 받지 않는다**(ScanService — 서버도 거절한다). 같은
+          자산의 검사 둘이 겹치면 끝날 때 서로가 담은 패키지 목록을 지웠다. 눌러도
+          거절될 단추를 열어 두면 고장으로 읽히므로 닫고 까닭을 적는다.
+        */-->
+        <p class="faint mt-2 mb-0" th:if="${running != null}">검사가 진행 중이라 지금은 업로드할 수 없습니다 — 끝나면 열립니다.</p>
         <!--/*
           대상 자산에서 도는 명령이다. 이 서버가 아니다.
 
@@ -460,8 +466,10 @@
                th:href="@{/vulns(scan=${s.id})}">열기</a>
             <!--/* 실패한 검사도 다시 검사한다 — SBOM 은 올린 순간 보관된다. 보관된
                  것이 없는 실패(파일을 손으로 지운 경우 등)에는 단추를 두지 않는다. */-->
+            <!--/* 검사가 도는 동안에는 두지 않는다 — 겹쳐 돌면 패키지 목록이 지워져
+                 서버가 거절한다(ScanService). 끝나면 다시 생긴다. */-->
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
-                  th:if="${s.status.name() == 'DONE' or (s.status.name() == 'FAILED' and !#strings.isEmpty(s.sbomPath))}"
+                  th:if="${running == null and (s.status.name() == 'DONE' or (s.status.name() == 'FAILED' and !#strings.isEmpty(s.sbomPath)))}"
                   sec:authorize="hasRole('ADMIN')">
               <button type="submit" class="btn btn-sm"
                       title="보관된 SBOM을 최신 취약점 DB로 다시 검사">다시 검사</button>

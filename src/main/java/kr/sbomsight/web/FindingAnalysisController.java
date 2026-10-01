@@ -65,8 +65,7 @@ public class FindingAnalysisController {
         // 저절로 바꾸지는 않는다. 사라진 까닭(올렸는지 · 검사 대상이
         // 바뀌었는지)은 도구가 알 수 없다. 번호는 둘 다 본다 — 적어 둔 번호가
         // 함께 온 CVE 쪽일 수 있다(findByCveIn 이 두 칸을 다 본다).
-        Scan latest = scans.findFirstByAssetIdAndStatusOrderByCreatedAtDesc(
-                analysis.getAsset().getId(), ScanStatus.DONE).orElse(null);
+        Scan latest = scans.currentOf(analysis.getAsset().getId()).orElse(null);
         model.addAttribute("latest", latest);
         model.addAttribute("present", latest == null ? List.<Finding>of()
                 : findings.findByCveIn(List.of(latest.getId()), analysis.getCve(), true).stream()

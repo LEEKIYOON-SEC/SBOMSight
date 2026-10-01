@@ -5,7 +5,6 @@ import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.FixVersions;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.Scan;
-import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.AuditService;
@@ -88,8 +87,7 @@ public class RemediationController {
                                Principal principal, RedirectAttributes flash) {
         Asset asset = assets.findById(assetId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "자산을 찾을 수 없습니다."));
-        Scan latest = scans.findFirstByAssetIdAndStatusOrderByCreatedAtDesc(
-                assetId, ScanStatus.DONE).orElse(null);
+        Scan latest = scans.currentOf(assetId).orElse(null);
         if (latest == null) {
             flash.addFlashAttribute("error",
                                     asset.getName() + " 자산은 완료된 검사가 없어 조치를 열 수 없습니다.");

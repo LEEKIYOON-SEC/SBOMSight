@@ -33,8 +33,26 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
     @Query("SELECT s FROM Scan s JOIN FETCH s.asset a JOIN FETCH a.zone WHERE s.id = :id")
     Optional<Scan> findWithAsset(@Param("id") Long id);
 
-    /** 자산의 가장 최근 완료 스캔. 목록과 보고서가 기준으로 삼는 것. */
-    Optional<Scan> findFirstByAssetIdAndStatusOrderByCreatedAtDesc(Long assetId, ScanStatus status);
+    /** {@link #currentOf} 의 질의 — 시각이 같으면 번호로 가른다. */
+    Optional<Scan> findFirstByAssetIdAndStatusOrderByCreatedAtDescIdDesc(Long assetId, ScanStatus status);
+
+    /**
+     * 자산의 <b>지금의 검사</b> — 가장 나중에 만들어진 완료 검사. 패키지 목록 ·
+     * 조치 · 검토 결과가 이것으로 고른다.
+     *
+     * <p>취약점 화면과 같은 규칙이다. 앞서 패키지 목록만 '마지막으로 끝난 검사' 를
+     * 기준으로 삼아, 검사가 겹치면 두 화면이 서로 다른 검사를 말했다. 시각이 같으면
+     * 번호로 가른다 — {@link #findLatestDonePerAsset} 와 같은 규칙.
+     */
+    default Optional<Scan> currentOf(Long assetId) {
+        return findFirstByAssetIdAndStatusOrderByCreatedAtDescIdDesc(assetId, ScanStatus.DONE);
+    }
+
+    /**
+     * 진행 중(대기 · 검사 중)인 검사가 있는가 — <b>같은 자산에 검사 둘을 돌리지
+     * 않는다</b>(ScanService). 끝날 때 서로의 패키지 목록을 지운다.
+     */
+    boolean existsByAssetIdAndStatusIn(Long assetId, java.util.Collection<ScanStatus> statuses);
 
     List<Scan> findByStatusIn(List<ScanStatus> statuses);
 

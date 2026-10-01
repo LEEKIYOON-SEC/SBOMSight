@@ -24,15 +24,25 @@ import java.util.List;
 public interface ComponentRepository extends JpaRepository<Component, Long> {
 
     /**
-     * 새 검사가 끝났다 — 그 자산의 <b>다른 검사에서 온 행을 지운다.</b>
+     * 새 검사가 그 자산의 지금 검사가 됐다 — <b>끝난 다른 검사에서 온 행을 지운다.</b>
      *
      * <p>넣기 전에 지우지 않고, 검사가 끝난 뒤에 지운다. 읽다가든 grype 에서든
      * 중간에 터지면 이전 인벤토리가 그대로 남아 있어야 한다 — 실패한 검사
      * 때문에 "이 자산에는 패키지가 없다" 가 되면 안 된다.
+     *
+     * <p><b>아직 도는 검사의 행은 두지 않고 지우지도 않는다.</b> 앞서 다른 검사의
+     * 행을 전부 지워, 겹쳐 돌던 검사가 담아 둔 것까지 사라졌다 — 그 검사가 끝나며
+     * 다시 이쪽 것을 지워 패키지가 0행이 됐다(ScanOverlapTest). 도는 검사의 행은
+     * 그 검사가 끝날 때 기준이 되거나 버려진다(ComponentInventoryService.makeCurrent).
      */
     @Modifying
-    @Query("DELETE FROM Component c WHERE c.asset.id = :assetId AND c.scan.id <> :scanId")
-    int deleteOtherScans(@Param("assetId") Long assetId, @Param("scanId") Long scanId);
+    @Query("""
+           DELETE FROM Component c
+           WHERE c.asset.id = :assetId AND c.scan.id <> :scanId
+             AND c.scan.id IN (SELECT s.id FROM Scan s
+                               WHERE s.asset.id = :assetId AND s.status IN ('DONE', 'FAILED'))
+           """)
+    int deleteFinishedOtherScans(@Param("assetId") Long assetId, @Param("scanId") Long scanId);
 
     @Modifying
     @Query("DELETE FROM Component c WHERE c.scan.id = :scanId")

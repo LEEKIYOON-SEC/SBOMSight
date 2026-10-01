@@ -179,8 +179,7 @@ class ReportTrendTest {
         assertThat(scope.failuresOf(onlyFailed.getId()).count()).isEqualTo(2);
         assertThat(scope.failedRuns()).as("기간 안의 실패만 — 1 + 2 + 1").isEqualTo(4);
         assertThat(scope.failedAfter(base)).isTrue();
-        assertThat(scope.failedAfter(scans.findFirstByAssetIdAndStatusOrderByCreatedAtDesc(
-                recovered.getId(), ScanStatus.DONE).orElseThrow()))
+        assertThat(scope.failedAfter(scans.currentOf(recovered.getId()).orElseThrow()))
                 .as("실패가 기준 검사 앞이면 수는 최신이다").isFalse();
 
         String html = flat(html(r));

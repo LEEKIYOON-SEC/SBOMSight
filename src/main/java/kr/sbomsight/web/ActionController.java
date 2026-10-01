@@ -160,8 +160,7 @@ public class ActionController {
         // 최신 검사에서 이 패키지가 아직 몇 건인가. **상태를 자동으로 바꾸지는
         // 않는다** — 대상이 바뀌어 사라진 것인지 정말 올린 것인지 우리가
         // 판단할 수 없다. 숫자만 보여 주고 판단은 담당자가 한다.
-        Scan latest = scans.findFirstByAssetIdAndStatusOrderByCreatedAtDesc(
-                remediation.getAsset().getId(), ScanStatus.DONE).orElse(null);
+        Scan latest = scans.currentOf(remediation.getAsset().getId()).orElse(null);
         model.addAttribute("latest", latest);
         model.addAttribute("remaining",
                 latest == null ? -1L

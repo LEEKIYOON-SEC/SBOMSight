@@ -40,6 +40,18 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
     @Query("SELECT a FROM Asset a JOIN FETCH a.zone WHERE a.id = :id")
     Optional<Asset> findWithZone(@Param("id") Long id);
 
+    /**
+     * 자산 행을 잠근다 — 트랜잭션이 끝날 때까지.
+     *
+     * <p>"이 자산에 도는 검사가 있는가" 를 보고 새 검사를 만드는 사이에 다른
+     * 요청이 끼어들 수 있다(두 번 누르기 · 두 사람). 둘 다 "없다" 를 보고 둘 다
+     * 만들면 막은 것이 아니다. 자산 하나를 잠가 차례로 보게 한다 — 검사가
+     * 끝나며 패키지 목록을 바꾸는 자리(ComponentInventoryService)도 같은 잠금을 쓴다.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM Asset a WHERE a.id = :id")
+    Optional<Asset> lockById(@Param("id") Long id);
+
     /** 구역 하나에 자산이 몇 대 있는가. 비어 있어야 지울 수 있다. */
     long countByZoneId(Long zoneId);
 

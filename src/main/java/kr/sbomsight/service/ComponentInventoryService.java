@@ -1,6 +1,9 @@
 package kr.sbomsight.service;
 
+import kr.sbomsight.domain.Scan;
+import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.ComponentRepository;
+import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.SbomStorage.ParsedComponent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,10 +42,15 @@ public class ComponentInventoryService {
 
     private final JdbcTemplate jdbc;
     private final ComponentRepository components;
+    private final ScanRepository scans;
+    private final AssetRepository assets;
 
-    public ComponentInventoryService(JdbcTemplate jdbc, ComponentRepository components) {
+    public ComponentInventoryService(JdbcTemplate jdbc, ComponentRepository components,
+                                     ScanRepository scans, AssetRepository assets) {
         this.jdbc = jdbc;
         this.components = components;
+        this.scans = scans;
+        this.assets = assets;
     }
 
     /**
@@ -56,26 +64,48 @@ public class ComponentInventoryService {
     }
 
     /**
-     * 이 검사가 기준이 된다 — 같은 자산의 <b>다른 검사에서 온 행을 지운다.</b>
+     * 검사가 끝났다 — <b>그 검사가 자산의 지금 검사이면</b> 패키지 목록을 그 검사
+     * 것으로 바꾸고, <b>아니면</b> 그 검사가 담은 것을 버린다.
      *
      * <p>넣기 전에 지우지 않고 <b>검사가 끝난 뒤에</b> 지운다({@code ScanService.run}
      * 이 완료 표시와 한 트랜잭션으로 부른다). 읽다가든 grype 에서든 터지면 이전
      * 인벤토리가 그대로 남아 있어야 한다 — 앞서 담자마자 지웠더니 grype 이 실패한
      * 자산의 패키지 목록이 통째로 사라졌다.
      *
+     * <p><b>지우는 것은 끝난 검사의 행뿐이다.</b> 앞서는 "그 자산의 다른 검사에서
+     * 온 행" 을 전부 지웠는데, 아직 도는 검사가 이미 담아 둔 행도 거기 들었다.
+     * 검사 둘이 겹치면 먼저 끝난 쪽이 나중 것의 행을, 나중 것이 먼저 것의 행을
+     * 지워 패키지가 0행이 됐다. 그리고 <b>늦게 끝났다고 기준이 되지 않는다</b> —
+     * 기준은 자산의 지금 검사({@link ScanRepository#currentOf})다. 취약점 화면이
+     * 같은 것을 기준으로 삼는다(ScanOverlapTest).
+     *
+     * <p>자산 행을 잠근다. 같은 자산의 검사를 만드는 자리(ScanService)와 차례를
+     * 맞춘다.
+     *
      * <p><b>트랜잭션을 제 것으로도 연다.</b> 부르는 쪽에 트랜잭션이 없으면
      * {@code @Modifying} 질의가 {@code Executing an update/delete query} 로
      * 터진다 — {@code runAsync} 가 같은 빈의 {@code run} 을 부르면 프록시를
      * 지나지 않아 실제로 그랬다. 시험 11개가 전부 통과한 채로(시험이 트랜잭션을
      * 대신 열어 주고 있었다).
+     *
+     * @return 그 검사가 지금 검사가 됐는가 — 아니면 담은 것을 버렸다
      */
     @Transactional
-    public void makeCurrent(long assetId, long scanId) {
-        int removed = components.deleteOtherScans(assetId, scanId);
+    public boolean makeCurrent(long assetId, long scanId) {
+        assets.lockById(assetId);
+        Long current = scans.currentOf(assetId).map(Scan::getId).orElse(null);
+        if (current == null || current != scanId) {
+            int dropped = components.deleteByScanId(scanId);
+            log.info("검사 {} 는 자산 {} 의 지금 검사(검사 {})가 아니라 담은 {}행을 버렸습니다",
+                    scanId, assetId, current, dropped);
+            return false;
+        }
+        int removed = components.deleteFinishedOtherScans(assetId, scanId);
         if (removed > 0) {
             log.info("자산 {} 의 이전 인벤토리 {}행을 새 검사 {} 것으로 바꿨습니다",
                     assetId, removed, scanId);
         }
+        return true;
     }
 
     /**

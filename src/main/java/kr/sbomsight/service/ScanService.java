@@ -5,6 +5,7 @@ import kr.sbomsight.config.SbomSightProperties;
 import kr.sbomsight.domain.*;
 import kr.sbomsight.grype.GrypeMapper;
 import kr.sbomsight.grype.GrypeReport;
+import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.repo.ScanRepository;
 import org.slf4j.Logger;
@@ -36,6 +37,7 @@ public class ScanService {
     private static final Logger log = LoggerFactory.getLogger(ScanService.class);
 
     private final ScanRepository scans;
+    private final AssetRepository assets;
     private final FindingRepository findings;
     private final SbomStorage storage;
     private final GrypeRunner grype;
@@ -45,11 +47,12 @@ public class ScanService {
     private final ComponentInventoryService inventory;
     private final TransactionTemplate transactions;
 
-    public ScanService(ScanRepository scans, FindingRepository findings, SbomStorage storage,
-                       GrypeRunner grype, GrypeMapper mapper, ObjectMapper json,
+    public ScanService(ScanRepository scans, AssetRepository assets, FindingRepository findings,
+                       SbomStorage storage, GrypeRunner grype, GrypeMapper mapper, ObjectMapper json,
                        SbomSightProperties properties, ComponentInventoryService inventory,
                        PlatformTransactionManager transactionManager) {
         this.scans = scans;
+        this.assets = assets;
         this.findings = findings;
         this.storage = storage;
         this.grype = grype;
@@ -71,6 +74,39 @@ public class ScanService {
     }
 
     /**
+     * 같은 자산에 검사가 이미 돌고 있다 — 올리는 자리와 다시 검사하는 자리에서
+     * 돌려보낸다. 메시지는 화면에 그대로 나간다.
+     */
+    public static class ScanInFlightException extends IllegalStateException {
+        public ScanInFlightException() {
+            super("이 자산의 검사가 아직 진행 중입니다. 끝난 뒤에 다시 하세요.");
+        }
+    }
+
+    /** 대기 · 검사 중 — 아직 끝나지 않은 검사. */
+    private static final List<ScanStatus> IN_FLIGHT = List.of(ScanStatus.QUEUED, ScanStatus.RUNNING);
+
+    /**
+     * <b>같은 자산에 검사 둘을 돌리지 않는다.</b>
+     *
+     * <p>검사는 SBOM 을 읽으며 패키지를 담고, 끝나면 그 자산의 지금 패키지 목록을
+     * 제 것으로 바꾼다. 둘이 겹치면 서로가 담아 둔 것을 지워 — `다시 검사` 를 연달아
+     * 두 번 눌렀더니 검사 셋이 다 완료인데 패키지가 0행이었다(ScanOverlapTest).
+     *
+     * <p>자산 행을 잠그고 본다. 잠그지 않으면 동시에 들어온 두 요청이 둘 다
+     * "도는 것이 없다" 를 보고 둘 다 만든다. 잠금은 새 검사가 들어간 트랜잭션이
+     * 끝날 때 풀린다 — 그때는 이미 대기 상태의 검사가 보인다.
+     *
+     * @throws ScanInFlightException 대기 · 검사 중인 검사가 있을 때
+     */
+    private void refuseIfScanInFlight(Long assetId) {
+        assets.lockById(assetId);
+        if (scans.existsByAssetIdAndStatusIn(assetId, IN_FLIGHT)) {
+            throw new ScanInFlightException();
+        }
+    }
+
+    /**
      * 업로드를 받아 스캔을 만들고 큐에 넣는다. 파일 저장까지만 하고 곧장 돌아온다.
      *
      * <p><b>형식부터 본다.</b> 패키지 목록을 읽지 못하는 SBOM 은 스캔을 만들기
@@ -78,6 +114,7 @@ public class ScanService {
      *
      * @return 만들어진 스캔. 상태는 QUEUED 다.
      * @throws UnsupportedSbomException 받는 형식(JSON 셋)이 아닐 때
+     * @throws ScanInFlightException    그 자산의 검사가 아직 돌고 있을 때
      */
     @Transactional
     public Scan submit(Asset asset, MultipartFile file, String actor) throws IOException {
@@ -86,6 +123,7 @@ public class ScanService {
                 throw new UnsupportedSbomException();
             }
         }
+        refuseIfScanInFlight(asset.getId());
         Scan scan = new Scan(asset, actor);
         scan.setSbomFilename(originalName(file));
         scan.setSbomBytes(file.getSize());
@@ -120,6 +158,7 @@ public class ScanService {
      *
      * @return 새로 만들어진 스캔. 상태는 QUEUED 다.
      * @throws UnsupportedSbomException 보관된 SBOM 이 받는 형식(JSON 셋)이 아닐 때
+     * @throws ScanInFlightException    그 자산의 검사가 아직 돌고 있을 때
      */
     @Transactional
     public Scan rescan(Scan source, String actor) throws IOException {
@@ -135,6 +174,7 @@ public class ScanService {
                 throw new UnsupportedSbomException();
             }
         }
+        refuseIfScanInFlight(source.getAsset().getId());
 
         Scan copy = new Scan(source.getAsset(), actor);
         copy.setSbomFilename(source.getSbomFilename());

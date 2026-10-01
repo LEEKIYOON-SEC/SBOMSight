@@ -674,8 +674,9 @@ public class AssetController {
             // 아니라 옆 탭이다.
             flash.addFlashAttribute("message",
                     "같은 SBOM을 다시 검사합니다. 끝나면 검사 이력에 새 줄로 나타납니다.");
-        } catch (ScanService.UnsupportedSbomException e) {
-            // 고장이 아니라 보관된 파일이 받는 형식이 아니다(예전에 받은 XML).
+        } catch (ScanService.UnsupportedSbomException | ScanService.ScanInFlightException e) {
+            // 고장이 아니다 — 보관된 파일이 받는 형식이 아니거나(예전에 받은 XML),
+            // 그 자산의 검사가 아직 돌고 있다(겹치면 서로의 패키지 목록을 지운다).
             // 업로드와 같이 오류 로그에 스택을 남기지 않는다.
             flash.addFlashAttribute("error", "다시 검사하지 못했습니다: " + e.getMessage());
         } catch (Exception e) {
@@ -716,8 +717,9 @@ public class AssetController {
             scanService.runAsync(scan.getId());
             flash.addFlashAttribute("message",
                     "SBOM 업로드 완료. grype 검사가 진행 중이며, 끝나면 검사 이력에 나타납니다.");
-        } catch (ScanService.UnsupportedSbomException e) {
-            // 고장이 아니라 고른 파일이 다른 것이다. 오류 로그에 스택을 남기지 않는다.
+        } catch (ScanService.UnsupportedSbomException | ScanService.ScanInFlightException e) {
+            // 고장이 아니다 — 고른 파일이 다른 것이거나, 그 자산의 검사가 아직
+            // 돌고 있다. 오류 로그에 스택을 남기지 않는다.
             flash.addFlashAttribute("error", "업로드하지 못했습니다: " + e.getMessage());
         } catch (Exception e) {
             log.error("업로드 실패 asset={}", id, e);
