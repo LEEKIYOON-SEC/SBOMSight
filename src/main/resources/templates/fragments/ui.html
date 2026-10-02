@@ -308,5 +308,30 @@
 </span>
 
 
+<!--/*
+  ─── SBOM 생성 시각 ───────────────────────────────────────────────────
+  그 SBOM 이 서버를 읽은 시각(Scan.sbomCreatedAt). 검사가 돈 시각과 다르다 —
+  옛 SBOM 을 다시 검사하면 검사 시각만 새것이다.
+
+  **대신 넣은 것이면 바로 옆에 그렇다고 적는다**(SbomTime). 한 칸에 성격이
+  다른 시각이 섞이므로, 밝히지 않으면 업로드 시각을 SBOM 의 시각으로 읽는다.
+  SBOM 에 적힌 시각을 쓴 보통의 경우에는 열 이름이 이미 말하므로 붙이지 않는다.
+  아직 SBOM 을 읽지 않았으면(대기 · 읽기 전 실패) 값을 적지 않는다.
+
+  `block` 이 참이면 그 말을 줄을 바꿔 적는다 — 폭을 좁게 쓰는 표의 칸.
+
+    <span th:replace="~{fragments/ui :: sbomtime(${scan}, false)}"></span>
+*/-->
+<span th:fragment="sbomtime(scan, block)" th:remove="tag">
+  <span class="mono" th:if="${scan.sbomTime.known()}"
+        th:text="${#temporals.format(scan.sbomCreatedAt, 'yyyy-MM-dd HH:mm')}">2026-09-01 10:26</span>
+  <span class="faint" th:unless="${scan.sbomTime.known()}">—</span>
+  <th:block th:if="${!#strings.isEmpty(scan.sbomTime.label())}">
+    <div class="faint note-line" th:if="${block}" th:text="${scan.sbomTime.label()}">업로드 시각으로 대체 (SBOM에 생성 시각 없음)</div>
+    <span class="faint" th:unless="${block}" th:text="'· ' + ${scan.sbomTime.label()}">· 업로드 시각으로 대체 (SBOM에 생성 시각 없음)</span>
+  </th:block>
+</span>
+
+
 </body>
 </html>

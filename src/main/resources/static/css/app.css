@@ -122,6 +122,9 @@ td.overdue { color: var(--critical); font-weight: 600; }
 
 /* 내용만큼만 차지하는 열. 남는 폭은 tight 가 아닌 열이 가져간다. */
 th.tight, td.tight { width: 1%; white-space: nowrap; }
+/* 좁은 칸 아래에 붙는 한 줄 설명(SBOM 생성 시각의 출처 등). 칸 폭을 그 말 길이로
+   벌리지 않게 줄을 바꾼다 — 낱말 안에서는 끊지 않는다. */
+td.tight .note-line { white-space: normal; word-break: keep-all; min-width: 9rem; font-size: 12px; }
 
 /* `tight` 가 아닌 머리는 접힌다.
 
@@ -534,6 +537,9 @@ dialog textarea { min-height: 4rem; }
 .report .docinfo th, .report .docinfo td {
   border: 1px solid var(--tblr-border-color); padding: 8px 12px; font-size: 13px;
 }
+/* SBOM 해시는 64자 한 덩이라 칸 폭을 넘는다. 아무 자리에서나 줄을 바꾼다 —
+   대조할 때는 복사해서 쓴다. */
+.report .docinfo td.hash { word-break: break-all; }
 
 /* 합계 줄. 표의 마지막 줄이 합계라는 것이 눈에 걸려야 한다. */
 .report tr.total > td { border-top: 2px solid var(--fg-muted); font-weight: 600; }

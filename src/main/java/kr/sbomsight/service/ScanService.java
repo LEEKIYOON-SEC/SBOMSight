@@ -129,8 +129,9 @@ public class ScanService {
         scan.setSbomBytes(file.getSize());
         scans.saveAndFlush(scan);   // 파일 경로에 스캔 번호가 필요하다
 
-        Path stored = storage.storeSbom(asset.getId(), scan.getId(), file);
-        scan.setSbomPath(stored.toString());
+        SbomStorage.Stored stored = storage.storeSbom(asset.getId(), scan.getId(), file);
+        scan.setSbomPath(stored.path().toString());
+        scan.setSbomSha256(stored.sha256());
         return scans.save(scan);
     }
 
@@ -180,6 +181,8 @@ public class ScanService {
         copy.setSbomFilename(source.getSbomFilename());
         copy.setSbomBytes(source.getSbomBytes());
         copy.setSbomFormat(source.getSbomFormat());
+        // 같은 SBOM 이다 — 생성 시각 · 해시 · 도구 · 대상은 원본 것. 검사 시각만 새것이다.
+        copy.inheritSbomFrom(source);
         copy.setRescanOf(source.getId());
         scans.saveAndFlush(copy);   // 파일 경로에 스캔 번호가 필요하다
 
@@ -271,6 +274,17 @@ public class ScanService {
 
             scan.setSbomFormat(info.format());
             scan.setComponentCount(info.componentCount());
+
+            // SBOM 이 제 자신에 대해 적어 온 것. 업로드한 검사만 여기서 읽는다 — 다시
+            // 검사는 원본 것을 이미 물려받았다(rescan). 바로 남긴다: 이 뒤에 grype 이
+            // 실패해도 어떤 SBOM 이었는지는 검사 이력에 남아야 한다.
+            if (scan.getSbomTime() == SbomTime.PENDING) {
+                SbomStorage.SbomMetadata about = info.metadata();
+                scan.resolveSbomTime(about.createdAt());
+                scan.setSbomTool(about.tool());
+                scan.setSbomTarget(about.target());
+                scans.save(scan);
+            }
 
             // 여기가 대개 가장 길다. 단계를 먼저 커밋해야 도는 동안 화면에 뜬다.
             scan.setStage(ScanStage.SCANNING);

@@ -401,7 +401,12 @@
       <table class="table table-vcenter card-table">
         <thead>
         <tr>
-          <th class="tight">시각</th><th class="tight">검사 상태</th>
+          <!--/*
+            **시각이 둘이다.** 검사 시각은 검사가 돈 때, SBOM 생성 시각은 그 SBOM 이
+            서버를 읽은 때다. 다시 검사는 검사 시각만 새것이다 — 옛 SBOM 을 새 DB 로
+            돌렸을 뿐 서버를 새로 본 것이 아니다. 앞서 첫 열의 이름이 `시각` 하나였다.
+          */-->
+          <th class="tight">검사 시각</th><th class="tight">SBOM 생성 시각</th><th class="tight">검사 상태</th>
           <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
           <th class="num tight">패키지</th>
           <!--/*
@@ -433,6 +438,7 @@
               <th:block th:if="${src == null}">다시 검사 · 원본 삭제됨</th:block>
             </div>
           </td>
+          <td class="tight"><span th:replace="~{fragments/ui :: sbomtime(${s}, true)}"></span></td>
           <td class="tight">
             <span class="status" th:classappend="${s.status}" th:text="${s.status.label()}">완료</span>
           </td>

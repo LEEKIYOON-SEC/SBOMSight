@@ -43,6 +43,23 @@ public class Scan {
     @Column(name = "finished_at")
     private Instant finishedAt;
 
+    /**
+     * <b>SBOM 생성 시각</b> — 그 SBOM 이 서버를 읽은 시각.
+     *
+     * <p>{@link #createdAt} 은 검사가 돈 시각이다. 둘을 하나로 쓰면 옛 SBOM 을 다시
+     * 검사한 것이 그 자산의 최신 상태가 되고, 30일 넘은 자산에서 빠지고, 보고서의
+     * 점검 일시가 오늘이 된다(재현 시험 P4 · P5 · P10).
+     *
+     * <p>SBOM 을 읽기 전에는 업로드 시각이 이 자리를 채운다 — 어디서 온 값인지는
+     * {@link #sbomTime} 이 말한다.
+     */
+    @Column(name = "sbom_created_at", nullable = false)
+    private Instant sbomCreatedAt = createdAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sbom_time_source", nullable = false, length = 16)
+    private SbomTime sbomTime = SbomTime.PENDING;
+
     @Column(name = "created_by", nullable = false, length = 64)
     private String createdBy = "";
 
@@ -67,6 +84,26 @@ public class Scan {
 
     @Column(name = "sbom_path", nullable = false, length = 500)
     private String sbomPath = "";
+
+    /**
+     * 올린 SBOM 파일 그대로의 SHA-256 (16진 소문자). 보고서에 찍힌 값과 보관된 파일의
+     * 값을 대조하면 그 파일로 만든 보고서인지 확인할 수 있다.
+     *
+     * <p>V17 이전에 올린 검사는 비어 있다 — 화면은 `확인되지 않음` 이라 적는다.
+     */
+    @Column(name = "sbom_sha256", length = 64)
+    private String sbomSha256;
+
+    /** SBOM 안에 적혀 온 생성 도구와 판 — `syft 1.52.0`. 없으면 빈 글자. */
+    @Column(name = "sbom_tool", nullable = false, length = 255)
+    private String sbomTool = "";
+
+    /**
+     * SBOM 안에 적혀 온 대상 — 디렉터리를 뜨면 그 경로, 이미지를 뜨면 이미지 이름,
+     * {@code --source-name} 을 주면 그 이름. 없으면 빈 글자.
+     */
+    @Column(name = "sbom_target", nullable = false, length = 255)
+    private String sbomTarget = "";
 
     @Column(name = "grype_path", nullable = false, length = 500)
     private String grypePath = "";
@@ -157,9 +194,101 @@ public class Scan {
      * <p>기본값은 만들어진 시각이다. 이 setter 는 예전 결과를 옮겨 담을 때와
      * 시험에서 쓴다 — 이력 비교는 이 시각으로 앞뒤를 가르므로, 값을 손대면
      * "지난 검사 대비"가 그만큼 달라진다.
+     *
+     * <p><b>SBOM 을 아직 읽지 않았으면 SBOM 생성 시각도 따라간다</b> — 읽기 전에는
+     * 업로드 시각이 그 자리를 채운다.
      */
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+        if (sbomTime == SbomTime.PENDING) {
+            this.sbomCreatedAt = createdAt;
+        }
+    }
+
+    public Instant getSbomCreatedAt() {
+        return sbomCreatedAt;
+    }
+
+    public SbomTime getSbomTime() {
+        return sbomTime;
+    }
+
+    /**
+     * SBOM 에서 읽은 생성 시각을 정한다 — <b>아직 읽지 않은 검사에서만.</b>
+     *
+     * <p>그 자리에 있던 업로드 시각과 견준다(D1).
+     * <ul>
+     *   <li>SBOM 에 시각이 없다 → 업로드 시각 그대로 · {@link SbomTime#NO_TIMESTAMP}</li>
+     *   <li>업로드보다 늦다(대상 서버의 시계가 틀림) → 업로드 시각 그대로 ·
+     *       {@link SbomTime#CLOCK_AHEAD}</li>
+     *   <li>그 밖 → SBOM 의 시각 · {@link SbomTime#SBOM}</li>
+     * </ul>
+     *
+     * <p>이미 정해진 것(다시 검사가 물려받은 것 · V17 이전 것)은 바꾸지 않는다 —
+     * 바꾸면 다시 검사가 원본의 업로드 시각 대신 제 검사 시각과 견주게 된다.
+     *
+     * @param fromSbom SBOM 에 적힌 시각, 없거나 읽지 못했으면 {@code null}
+     */
+    public void resolveSbomTime(Instant fromSbom) {
+        if (sbomTime != SbomTime.PENDING) {
+            return;
+        }
+        Instant uploaded = sbomCreatedAt;
+        if (fromSbom == null) {
+            sbomTime = SbomTime.NO_TIMESTAMP;
+        } else if (fromSbom.isAfter(uploaded)) {
+            sbomTime = SbomTime.CLOCK_AHEAD;
+        } else {
+            sbomCreatedAt = fromSbom;
+            sbomTime = SbomTime.SBOM;
+        }
+    }
+
+    /**
+     * 다시 검사 — <b>같은 SBOM 이므로 SBOM 이 말하는 것은 원본 것을 그대로 쓴다.</b>
+     *
+     * <p>생성 시각 · 그 출처 · 해시 · 도구 · 대상. 검사 시각만 새것이다. 원본이 아직
+     * SBOM 을 읽기 전에 실패했다면 이 검사가 읽는다 — 그때 견줄 업로드 시각도 원본
+     * 것이 넘어온다.
+     */
+    public void inheritSbomFrom(Scan source) {
+        this.sbomCreatedAt = source.sbomCreatedAt;
+        this.sbomTime = source.sbomTime;
+        this.sbomSha256 = source.sbomSha256;
+        this.sbomTool = source.sbomTool;
+        this.sbomTarget = source.sbomTarget;
+    }
+
+    public String getSbomSha256() {
+        return sbomSha256;
+    }
+
+    public void setSbomSha256(String sbomSha256) {
+        this.sbomSha256 = sbomSha256 == null || sbomSha256.isBlank() ? null : sbomSha256;
+    }
+
+    public String getSbomTool() {
+        return sbomTool;
+    }
+
+    public void setSbomTool(String sbomTool) {
+        this.sbomTool = clip(sbomTool, 255);
+    }
+
+    public String getSbomTarget() {
+        return sbomTarget;
+    }
+
+    public void setSbomTarget(String sbomTarget) {
+        this.sbomTarget = clip(sbomTarget, 255);
+    }
+
+    private static String clip(String value, int max) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.length() <= max ? trimmed : trimmed.substring(0, max);
     }
 
     public Instant getFinishedAt() {

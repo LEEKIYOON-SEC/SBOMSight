@@ -3,6 +3,8 @@ package kr.sbomsight.service;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.core.TreeNode;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import kr.sbomsight.config.SbomSightProperties;
 import org.slf4j.Logger;
@@ -14,6 +16,12 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -47,19 +55,43 @@ public class SbomStorage {
         this.properties = properties;
     }
 
-    /** 업로드된 SBOM 을 gzip 으로 보관하고 그 경로를 돌려준다. */
-    public Path storeSbom(long assetId, long scanId, MultipartFile file) throws IOException {
+    /**
+     * 보관한 자리와 <b>올린 파일 그대로의 SHA-256</b>.
+     *
+     * @param sha256 16진 소문자 64자
+     */
+    public record Stored(Path path, String sha256) {
+    }
+
+    /**
+     * 업로드된 SBOM 을 gzip 으로 보관하고, <b>흘려보내는 김에 SHA-256 을 잰다.</b>
+     *
+     * <p>잰 것은 압축하기 전의 바이트다 — 올린 사람이 제 파일에 {@code sha256sum} 을
+     * 돌려 보고서의 값과 대조할 수 있어야 한다. 파일을 한 번 더 읽지 않는다.
+     */
+    public Stored storeSbom(long assetId, long scanId, MultipartFile file) throws IOException {
         Path dir = properties.scanDir(assetId, scanId);
         Files.createDirectories(dir);
         Path target = dir.resolve("sbom.json.gz");
 
-        try (InputStream in = new BufferedInputStream(file.getInputStream(), BUFFER);
+        MessageDigest sha256 = sha256();
+        try (InputStream in = new DigestInputStream(
+                     new BufferedInputStream(file.getInputStream(), BUFFER), sha256);
              OutputStream out = new GZIPOutputStream(
                      new BufferedOutputStream(Files.newOutputStream(target), BUFFER), BUFFER)) {
             in.transferTo(out);
         }
         log.info("SBOM 보관: {} ({} → {} 바이트)", target, file.getSize(), Files.size(target));
-        return target;
+        return new Stored(target, HexFormat.of().formatHex(sha256.digest()));
+    }
+
+    private static MessageDigest sha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            // 자바 표준 구현이 반드시 갖추는 알고리즘이다(java.security.MessageDigest 문서).
+            throw new IllegalStateException(e);
+        }
     }
 
     /**
@@ -198,6 +230,7 @@ public class SbomStorage {
     public SbomInfo inspect(Path plainJson, Consumer<ParsedComponent> sink) {
         String format = "";
         int components = 0;
+        SbomMetadataReader metadata = new SbomMetadataReader();
 
         try (JsonParser parser = jsonFactory.createParser(
                 new BufferedInputStream(Files.newInputStream(plainJson), BUFFER))) {
@@ -218,6 +251,14 @@ public class SbomStorage {
                             || field.equals("artifacts")) {
                         countingField = field;
                     }
+                    // SBOM 이 제 자신에 대해 적어 온 칸 — 그 칸 하나만 트리로 읽는다.
+                    // 작다(수백 바이트). 다 읽고 나면 그 값의 끝에 서 있으므로 깊이는
+                    // 그대로다.
+                    if (METADATA_FIELDS.contains(field)) {
+                        parser.nextToken();
+                        readMetadata(field, parser.readValueAsTree(), metadata);
+                        continue;
+                    }
                 }
 
                 if (token == JsonToken.START_ARRAY && countingField != null) {
@@ -236,7 +277,46 @@ public class SbomStorage {
             // 셀 수 없다고 업로드를 막지는 않는다. grype 이 읽을 수 있으면 그만이다.
             log.warn("SBOM 을 훑지 못했습니다: {}", e.getMessage());
         }
-        return new SbomInfo(format, components);
+        return new SbomInfo(format, components, metadata.finish(format));
+    }
+
+    /**
+     * 맨 윗단에서 SBOM 이 제 자신에 대해 적는 칸. 세 형식의 칸 이름이 겹치지 않는다 —
+     * {@code name} 은 SPDX 문서 이름이고, 다른 형식이면 쓰지 않는다
+     * ({@link SbomMetadataReader#finish}).
+     */
+    private static final Set<String> METADATA_FIELDS =
+            Set.of("metadata", "creationInfo", "name", "source", "descriptor");
+
+    private static void readMetadata(String field, TreeNode tree,
+                                     SbomMetadataReader metadata) {
+        if (!(tree instanceof JsonNode node)) {
+            return;
+        }
+        switch (field) {
+            case "metadata" -> {
+                if (node.isObject()) {
+                    metadata.cyclonedx(node);
+                }
+            }
+            case "creationInfo" -> {
+                if (node.isObject()) {
+                    metadata.spdxCreationInfo(node);
+                }
+            }
+            case "name" -> metadata.spdxName(node);
+            case "source" -> {
+                if (node.isObject()) {
+                    metadata.syftSource(node);
+                }
+            }
+            case "descriptor" -> {
+                if (node.isObject()) {
+                    metadata.syftDescriptor(node);
+                }
+            }
+            default -> { }
+        }
     }
 
     /**
@@ -276,6 +356,17 @@ public class SbomStorage {
                                   String purl, String location) {
     }
 
-    public record SbomInfo(String format, int componentCount) {
+    /** @param metadata SBOM 이 제 자신에 대해 적어 온 것 — 없는 칸은 비어 있다 */
+    public record SbomInfo(String format, int componentCount, SbomMetadata metadata) {
+    }
+
+    /**
+     * SBOM 이 제 자신에 대해 적어 온 것.
+     *
+     * @param createdAt 생성 시각 — 없거나 읽지 못했으면 {@code null}
+     * @param tool      생성 도구와 판(`syft 1.52.0`) — 여럿이면 쉼표로, 없으면 빈 글자
+     * @param target    대상 — 없으면 빈 글자
+     */
+    public record SbomMetadata(Instant createdAt, String tool, String target) {
     }
 }

@@ -38,7 +38,17 @@
     <h1 th:text="${report.overview.asset.name} + ' 취약점 점검 결과 보고'">web-01 취약점 점검 결과 보고</h1>
   </div>
 
-  <!--/* ══ 문서 정보 ══════════════════════════════════════════════════ */-->
+  <!--/*
+    ══ 문서 정보 ══════════════════════════════════════════════════
+    **`점검 일시` 를 둘로 나눴다 — SBOM 생성 시각과 검사 시각.** 앞서 한 줄이
+    검사가 돈 시각이었다. 40일 전에 뜬 SBOM 을 오늘 다시 검사하면 이 줄이 오늘이
+    되어, 서버를 오늘 점검한 것처럼 읽혔다. 서버의 상태는 SBOM 생성 시각의 것이고,
+    검사 시각과 취약점 DB 기준일은 그 상태를 무엇으로 대조했는지다.
+
+    SBOM 해시 · 생성 도구 · 대상은 SBOM 이 제 자신에 대해 적어 온 것이다(Scan).
+    해시는 올린 파일 그대로의 SHA-256 — 보관된 파일과 대조하면 이 보고서가 그
+    파일로 만든 것인지 확인할 수 있다. 2단계(V17) 전에 올린 검사는 값이 없다.
+  */-->
   <table class="table docinfo">
     <tbody>
     <tr>
@@ -49,7 +59,13 @@
         <th:block th:if="${!#strings.isEmpty(report.overview.asset.osName)}">
           · <span th:text="${report.overview.asset.osName}">Rocky Linux 9.3</span></th:block>
       </td>
-      <th>점검 일시</th>
+      <th>SBOM 대상</th>
+      <td th:text="${#strings.isEmpty(report.scan.sbomTarget)} ? '확인되지 않음' : ${report.scan.sbomTarget}">/</td>
+    </tr>
+    <tr>
+      <th>SBOM 생성 시각</th>
+      <td><span th:replace="~{fragments/ui :: sbomtime(${report.scan}, false)}"></span></td>
+      <th>검사 시각</th>
       <td th:text="${#temporals.format(report.scan.createdAt, 'yyyy-MM-dd HH:mm')}">—</td>
     </tr>
     <tr>
@@ -65,6 +81,13 @@
     <tr>
       <th>SBOM</th>
       <td class="mono" th:text="${report.overview.sbomFilename}">sbom.json</td>
+      <th>SBOM 해시</th>
+      <td class="mono hash" th:text="${report.scan.sbomSha256 == null} ? '확인되지 않음'
+                                      : 'sha256:' + ${report.scan.sbomSha256}">sha256:3f2a…</td>
+    </tr>
+    <tr>
+      <th>SBOM 생성 도구</th>
+      <td th:text="${#strings.isEmpty(report.scan.sbomTool)} ? '확인되지 않음' : ${report.scan.sbomTool}">syft 1.52.0</td>
       <th>grype 인식 배포판</th>
       <td th:text="${#strings.isEmpty(report.overview.distroName)} ? '—'
                    : ${report.overview.distroName} + ' ' + ${report.overview.distroVersion}">—</td>

@@ -174,6 +174,50 @@ for f in $MIGRATIONS; do
         echo "  └ 조치 2행과 등록한 검사(설치 버전 넷 · 빈 것 하나 / 버전 400가지)를 넣었다" ;;
     esac
 
+    # V17 이 검사마다 SBOM 생성 시각을 채운다 — 원본은 만든 시각, 다시 검사는 사슬을
+    # 거슬러 올라간 원본의 만든 시각, 원본이 지워진 다시 검사는 제 시각. 채울 것이
+    # 있는 상태에서 태워야 한다. 경계 사례:
+    #   사슬(원본 → 다시 → 다시의 다시 → 그 다시), 그 사이에 올린 새 원본,
+    #   원본이 지워진 다시 검사, 실패한 검사, 그리고 41칸짜리 긴 사슬 — 한 번에 한
+    #   칸씩 올라가는 갱신이었다면 스무 번에 끝까지 닿지 않는 길이다.
+    # 옛 규칙(검사 시각)으로는 마지막 다시 검사가 최신이고, 새 규칙으로는 새 원본이다.
+    case "$(basename "$f")" in V16__*)
+        LONG="INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename)
+              VALUES (4, 'DONE', '2026-06-01 09:00:00', 'v17check', 'long-00');
+              SET @p = LAST_INSERT_ID();"
+        for i in $(seq 1 40); do
+            LONG="$LONG
+              INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, rescan_of)
+              VALUES (4, 'DONE', '2026-06-01 09:00:00' + INTERVAL $i HOUR, 'v17check',
+                      'long-$(printf %02d "$i")', @p);
+              SET @p = LAST_INSERT_ID();"
+        done
+        run "$DB" -e "
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename)
+        VALUES (3, 'DONE', '2026-08-01 10:00:00', 'v17check', 'chain-o1');
+        SET @o1 = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, rescan_of)
+        VALUES (3, 'DONE', '2026-08-10 10:00:00', 'v17check', 'chain-r1', @o1);
+        SET @r1 = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, rescan_of)
+        VALUES (3, 'DONE', '2026-08-20 10:00:00', 'v17check', 'chain-r2', @r1);
+        SET @r2 = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, rescan_of)
+        VALUES (3, 'DONE', '2026-08-25 10:00:00', 'v17check', 'chain-r3', @r2);
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename)
+        VALUES (3, 'DONE', '2026-08-15 10:00:00', 'v17check', 'new-o2');
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename)
+        VALUES (3, 'DONE', '2026-07-01 10:00:00', 'v17check', 'gone-o3');
+        SET @o3 = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, rescan_of)
+        VALUES (3, 'DONE', '2026-07-05 10:00:00', 'v17check', 'orphan-r4', @o3);
+        DELETE FROM scans WHERE id = @o3;
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename)
+        VALUES (3, 'FAILED', '2026-08-28 10:00:00', 'v17check', 'failed-o5');
+        $LONG"
+        echo "  └ 검사 48행을 넣었다 (사슬 넷 · 새 원본 · 원본을 지운 다시 검사 · 실패 · 41칸 사슬)" ;;
+    esac
+
     case "$(basename "$f")" in V9__*)
         run "$DB" -e "
         INSERT INTO risk_acceptances
@@ -302,8 +346,8 @@ echo "  component FK 둘 다 ON DELETE CASCADE"
 # 실제로 지워 본다. 제약 이름만 보고 넘어가면 방향이 뒤집혀 있어도 통과한다.
 ASSET_ID=$(run "$DB" -N -e "SELECT id FROM assets LIMIT 1;")
 run "$DB" -e "
-INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename)
-VALUES ($ASSET_ID, 'DONE', NOW(6), 'migcheck', 'sbom.json');"
+INSERT INTO scans (asset_id, status, created_at, sbom_created_at, created_by, sbom_filename)
+VALUES ($ASSET_ID, 'DONE', NOW(6), NOW(6), 'migcheck', 'sbom.json');"
 SCAN_ID=$(run "$DB" -N -e "SELECT id FROM scans WHERE created_by='migcheck';")
 run "$DB" -e "
 INSERT INTO component (asset_id, scan_id, name, version, type, purl, location) VALUES
@@ -413,6 +457,54 @@ WIDTH=$(run "$DB" -N -e "
     WHERE TABLE_SCHEMA='$DB' AND TABLE_NAME='remediations' AND COLUMN_NAME='from_version';")
 [ "$WIDTH" = "4000" ] || { echo "  from_version 이 $WIDTH 자입니다 (4000 이어야 함)"; exit 1; }
 echo "  from_version 4000자"
+
+# --- V17: SBOM 생성 시각 · 해시 · 도구 · 대상 ------------------------------
+#
+# 옛 검사는 SBOM 을 다시 읽어 채우지 않는다 — 시각 자리에 그 SBOM 을 업로드한
+# 시각을 넣고 출처를 UNCONFIRMED 로 둔다. 다시 검사는 사슬을 거슬러 원본의 것을,
+# 원본이 지워진 다시 검사(rescan_of 가 비었다)는 제 것을.
+
+for row in "chain-o1|2026-08-01 10:00" "chain-r1|2026-08-01 10:00" "chain-r2|2026-08-01 10:00" \
+           "chain-r3|2026-08-01 10:00" "new-o2|2026-08-15 10:00" "orphan-r4|2026-07-05 10:00" \
+           "failed-o5|2026-08-28 10:00"; do
+    name=${row%%|*}; want=${row#*|}
+    got=$(run "$DB" -N -e "
+        SELECT DATE_FORMAT(sbom_created_at, '%Y-%m-%d %H:%i') FROM scans WHERE sbom_filename='$name';")
+    [ "$got" = "$want" ] || { echo "  $name 의 SBOM 생성 시각이 '$got' 입니다 (기대 '$want')"; exit 1; }
+done
+echo "  원본은 만든 시각 · 다시 검사는 사슬 끝 원본의 만든 시각 · 원본이 지워진 다시 검사는 제 시각"
+
+LONG_AT=$(run "$DB" -N -e "
+    SELECT CONCAT(COUNT(*), '|', COUNT(DISTINCT sbom_created_at), '|',
+                  DATE_FORMAT(MIN(sbom_created_at), '%Y-%m-%d %H:%i'))
+    FROM scans WHERE sbom_filename LIKE 'long-%';")
+[ "$LONG_AT" = "41|1|2026-06-01 09:00" ] || {
+    echo "  41칸 사슬이 '$LONG_AT' 입니다 (기대 '41|1|2026-06-01 09:00') — 끝까지 거슬러 오르지 못했습니다"; exit 1; }
+echo "  41칸 사슬도 전부 원본의 시각"
+
+# 옛 규칙(검사 시각)으로는 사슬의 마지막 다시 검사(8/25)가 최신이었다 — 옛 SBOM 이다.
+CURRENT=$(run "$DB" -N -e "
+    SELECT sbom_filename FROM scans WHERE asset_id=3 AND status='DONE'
+    ORDER BY sbom_created_at DESC, created_at DESC, id DESC LIMIT 1;")
+[ "$CURRENT" = "new-o2" ] || { echo "  db-01 의 최신 검사가 '$CURRENT' 입니다 (기대 'new-o2')"; exit 1; }
+echo "  옛 SBOM 을 다시 검사한 줄이 최신 검사가 되지 않음 (새 원본이 최신)"
+
+LEGACY=$(run "$DB" -N -e "
+    SELECT CONCAT(COUNT(*), '|', SUM(sbom_time_source='UNCONFIRMED'), '|',
+                  SUM(sbom_sha256 IS NULL), '|', SUM(sbom_tool=''), '|', SUM(sbom_target=''))
+    FROM scans WHERE created_by <> 'migcheck';")
+N=${LEGACY%%|*}
+[ "$LEGACY" = "$N|$N|$N|$N|$N" ] || {
+    echo "  옛 검사의 출처 · 해시 · 도구 · 대상이 '$LEGACY' 입니다 — 전부 확인되지 않음이어야 합니다"; exit 1; }
+echo "  옛 검사 ${N}행 — 출처 UNCONFIRMED · 해시 · 도구 · 대상은 비움 (지어내 채우지 않음)"
+
+NULLABLE=$(run "$DB" -N -e "
+    SELECT IS_NULLABLE FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA='$DB' AND TABLE_NAME='scans' AND COLUMN_NAME='sbom_created_at';")
+[ "$NULLABLE" = "NO" ] || { echo "  sbom_created_at 이 비어도 되는 칸입니다"; exit 1; }
+run "$DB" -e "SHOW COLUMNS FROM scans LIKE 'sbom_root';" | grep -q sbom_root \
+    && { echo "  이관에 쓴 sbom_root 가 남아 있습니다"; exit 1; }
+echo "  sbom_created_at 은 비지 않는 칸 · 이관에 쓴 칸은 지움"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo
