@@ -15,7 +15,7 @@ ALTER TABLE scans
     ADD COLUMN sbom_created_at  DATETIME(6)  NULL AFTER finished_at,
     -- PENDING · SBOM · NO_TIMESTAMP · CLOCK_AHEAD · UNCONFIRMED (SbomTime)
     ADD COLUMN sbom_time_source VARCHAR(16)  NOT NULL DEFAULT 'UNCONFIRMED' AFTER sbom_created_at,
-    ADD COLUMN sbom_sha256      CHAR(64)     NULL AFTER sbom_path,
+    ADD COLUMN sbom_sha256      VARCHAR(64)  NULL AFTER sbom_path,
     ADD COLUMN sbom_tool        VARCHAR(255) NOT NULL DEFAULT '' AFTER sbom_sha256,
     ADD COLUMN sbom_target      VARCHAR(255) NOT NULL DEFAULT '' AFTER sbom_tool;
 
