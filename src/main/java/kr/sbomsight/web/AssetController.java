@@ -409,9 +409,10 @@ public class AssetController {
         model.addAttribute("tab", tab);
         Asset asset = asset(id);
         List<Scan> history = scans.findByAssetIdOrderByCreatedAtDesc(id);
-        Scan latest = history.stream()
-                .filter(s -> s.getStatus() == ScanStatus.DONE)
-                .findFirst().orElse(null);
+        // 최신 검사 — SBOM 생성 시각으로 고른다(ScanRepository.currentOf). 이력은 검사가
+        // 돈 차례로 서므로 그 첫 완료 줄이 아니다: 예전에 떠 둔 SBOM 을 늦게 올리면 이력의
+        // 맨 위에 서지만 최신 검사는 아니다.
+        Scan latest = scans.currentOf(id).orElse(null);
 
         // 아직 도는 중인 검사. 있으면 화면이 진행 카드를 띄우고 물어본다.
         Scan running = history.stream().filter(Scan::isInFlight).findFirst().orElse(null);
@@ -423,6 +424,12 @@ public class AssetController {
         Scan newest = history.isEmpty() ? null : history.get(0);
         model.addAttribute("lastFailed",
                 newest != null && newest.getStatus() == ScanStatus.FAILED ? newest : null);
+        // 가장 최근에 돈 검사가 완료됐는데 최신 검사가 아니다 — 그 SBOM 이 최신 검사의
+        // SBOM 보다 먼저 생성됐다. 화면 · 보고서가 그 결과를 쓰지 않는다는 것을 말하지
+        // 않으면 방금 올린 것이 반영되지 않은 고장으로 읽힌다.
+        model.addAttribute("olderSbom",
+                newest != null && newest.getStatus() == ScanStatus.DONE && latest != null
+                        && !newest.getId().equals(latest.getId()) ? newest : null);
 
         model.addAttribute("asset", asset);
         model.addAttribute("zones", zoneService.all());
@@ -675,10 +682,11 @@ public class AssetController {
             // 아니라 옆 탭이다.
             flash.addFlashAttribute("message",
                     "같은 SBOM을 다시 검사합니다. 끝나면 검사 이력에 새 줄로 나타납니다.");
-        } catch (ScanService.UnsupportedSbomException | ScanService.ScanInFlightException e) {
+        } catch (ScanService.UnsupportedSbomException | ScanService.ScanInFlightException
+                 | ScanService.NotLatestScanException e) {
             // 고장이 아니다 — 보관된 파일이 받는 형식이 아니거나(예전에 받은 XML),
-            // 그 자산의 검사가 아직 돌고 있다(겹치면 서로의 패키지 목록을 지운다).
-            // 업로드와 같이 오류 로그에 스택을 남기지 않는다.
+            // 그 자산의 검사가 아직 돌고 있거나(겹치면 서로의 패키지 목록을 지운다),
+            // 최신 검사가 아닌 옛 검사다(D2). 업로드와 같이 오류 로그에 스택을 남기지 않는다.
             flash.addFlashAttribute("error", "다시 검사하지 못했습니다: " + e.getMessage());
         } catch (Exception e) {
             log.error("재검사 실패 scan={}", scanId, e);

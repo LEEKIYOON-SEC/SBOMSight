@@ -3,6 +3,7 @@ package kr.sbomsight.domain;
 import jakarta.persistence.*;
 
 import java.time.Instant;
+import java.util.Comparator;
 
 /**
  * 스캔 — SBOM 한 장에 grype 을 한 번 돌린 결과.
@@ -14,6 +15,18 @@ import java.time.Instant;
 @Entity
 @Table(name = "scans")
 public class Scan {
+
+    /**
+     * 자산의 검사를 <b>옛것에서 최신으로</b> 줄 세운다 — SBOM 생성 시각, 같으면 검사
+     * 시각, 그것도 같으면 번호(D1). 마지막이 그 자산의 최신 검사다.
+     *
+     * <p>{@code ScanRepository.currentOf} 와 최신 검사를 고르는 질의들이 같은 규칙을
+     * 질의로 적고 있다 — 하나를 고치면 같이 고친다.
+     */
+    public static final Comparator<Scan> BY_SBOM_TIME =
+            Comparator.comparing(Scan::getSbomCreatedAt)
+                      .thenComparing(Scan::getCreatedAt)
+                      .thenComparing(Scan::getId);
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -44,7 +57,8 @@ public class Scan {
     private Instant finishedAt;
 
     /**
-     * <b>SBOM 생성 시각</b> — 그 SBOM 이 서버를 읽은 시각.
+     * <b>SBOM 생성 시각</b> — 그 SBOM 이 서버를 읽은 시각. 자산의 최신 검사를 이것으로
+     * 고른다({@link #BY_SBOM_TIME}).
      *
      * <p>{@link #createdAt} 은 검사가 돈 시각이다. 둘을 하나로 쓰면 옛 SBOM 을 다시
      * 검사한 것이 그 자산의 최신 상태가 되고, 30일 넘은 자산에서 빠지고, 보고서의
@@ -192,8 +206,8 @@ public class Scan {
      * 검사 시각을 정한다.
      *
      * <p>기본값은 만들어진 시각이다. 이 setter 는 예전 결과를 옮겨 담을 때와
-     * 시험에서 쓴다 — 이력 비교는 이 시각으로 앞뒤를 가르므로, 값을 손대면
-     * "지난 검사 대비"가 그만큼 달라진다.
+     * 시험에서 쓴다 — 최신 검사와 "지난 검사 대비"는 SBOM 생성 시각, 그다음 이
+     * 시각으로 앞뒤를 가르므로({@link #BY_SBOM_TIME}) 값을 손대면 그만큼 달라진다.
      *
      * <p><b>SBOM 을 아직 읽지 않았으면 SBOM 생성 시각도 따라간다</b> — 읽기 전에는
      * 업로드 시각이 그 자리를 채운다.

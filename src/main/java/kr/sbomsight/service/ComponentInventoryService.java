@@ -200,6 +200,24 @@ public class ComponentInventoryService {
     }
 
     /**
+     * 최신 검사가 아닌 끝난 검사의 행을 버린다 — <b>최신 검사의 목록을 다시 담은 뒤에도
+     * 남은 것.</b>
+     *
+     * <p>{@link #restoreCurrent} 는 최신 검사의 보관 SBOM 이 없으면 아무것도 지우지 않고
+     * 까닭만 돌려준다. 그대로 두면 패키지 화면이 최신 검사가 아닌 SBOM 의 목록을 말한다 —
+     * 취약점 화면과 다른 검사다(1단계에서 막은 것). 비어 있는 편이 맞다: 화면은 "아직
+     * 담긴 패키지가 없습니다" 라고 말한다.
+     *
+     * @return 버린 행 수
+     */
+    @Transactional
+    public int dropStale(long assetId) {
+        assets.lockById(assetId);
+        long keep = scans.currentOf(assetId).map(Scan::getId).orElse(-1L);
+        return components.deleteFinishedOtherScans(assetId, keep);
+    }
+
+    /**
      * 이 검사에서 온 행을 버린다 — 읽다가 실패했을 때.
      *
      * <p>여기도 제 트랜잭션이 필요하다. 없으면 <b>실패를 되돌리는 길이 같은

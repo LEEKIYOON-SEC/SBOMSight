@@ -86,17 +86,15 @@ public class ReportService {
      * 수를 그대로 늘어놓는다(다시 세지 않는다). 같은 SBOM 을 새 DB 로 다시 검사한
      * 것은 화면이 표시한다 — 자산이 아니라 취약점 DB 가 움직인 것이다.
      *
-     * <p>앞 검사는 6장 위 표({@link #diff})와 <b>같은 규칙</b>으로 고른다 — 이
-     * 검사보다 먼저 끝난 완료 검사. 그래야 이 표의 끝에서 둘째 줄이 위 표의
-     * `이전 검사` 와 같은 검사다. 실패한 검사는 넣지 않는다 — 0건이 아니라 모르는 것이다.
+     * <p>앞 검사는 6장 위 표({@link #diff})와 <b>같은 규칙</b>으로 고른다 — 최신 검사를
+     * 고르는 순서({@link Scan#BY_SBOM_TIME})에서 이 검사 앞에 오는 완료 검사. 그래야 이
+     * 표의 끝에서 둘째 줄이 위 표의 `이전 검사` 와 같은 검사다. 실패한 검사는 넣지
+     * 않는다 — 0건이 아니라 모르는 것이다.
      *
      * <p>앞 검사가 없으면 비운다 — 한 줄짜리 추이는 없다.
      */
     private List<TrendRow> trend(Scan scan) {
-        List<Scan> recent = new ArrayList<>(scans.findByAssetIdOrderByCreatedAtDesc(scan.getAsset().getId())
-                .stream()
-                .filter(s -> s.getStatus() == ScanStatus.DONE)
-                .filter(s -> s.getCreatedAt().isBefore(scan.getCreatedAt()))
+        List<Scan> recent = new ArrayList<>(earlier(scan).stream()
                 .limit(TREND - 1)
                 .toList());
         if (recent.isEmpty()) {
@@ -115,6 +113,21 @@ public class ReportService {
                                   s.getId().equals(scan.getId())));
         }
         return rows;
+    }
+
+    /**
+     * 이 검사 <b>앞</b>의 완료 검사 — 최신 검사를 고르는 순서({@link Scan#BY_SBOM_TIME})로,
+     * 바로 앞의 것부터.
+     *
+     * <p>같은 SBOM 을 다시 검사한 것은 원본 뒤에 온다(SBOM 생성 시각이 같고 검사 시각이
+     * 늦다) — 그 보고서의 "지난 검사 대비" 는 취약점 DB 가 움직인 몫이다.
+     */
+    private List<Scan> earlier(Scan scan) {
+        return scans.findByAssetIdAndStatusOrderBySbomCreatedAtDescCreatedAtDescIdDesc(
+                        scan.getAsset().getId(), ScanStatus.DONE)
+                .stream()
+                .filter(s -> Scan.BY_SBOM_TIME.compare(s, scan) < 0)
+                .toList();
     }
 
     // --- 노출면 --------------------------------------------------------------
@@ -387,13 +400,13 @@ public class ReportService {
      *
      * <p>{@code (CVE, 패키지명)} 으로 대조한다. 버전을 넣으면 패치했을 때 키가
      * 바뀌어 "해소 1건 + 신규 1건"으로 갈라져 화면이 거짓말을 한다.
+     *
+     * <p>지난 검사는 <b>최신 검사를 고르는 순서</b>에서 바로 앞의 완료 검사다
+     * ({@link #earlier}). 앞서는 이 검사보다 먼저 <i>돈</i> 검사였다 — 예전에 떠 둔
+     * SBOM 을 늦게 올리면 최신 검사의 보고서가 "첫 검사" 라고 말했다.
      */
     private Diff diff(Scan scan) {
-        Optional<Scan> previous = scans.findByAssetIdOrderByCreatedAtDesc(scan.getAsset().getId())
-                .stream()
-                .filter(s -> s.getStatus() == ScanStatus.DONE)
-                .filter(s -> s.getCreatedAt().isBefore(scan.getCreatedAt()))
-                .findFirst();
+        Optional<Scan> previous = earlier(scan).stream().findFirst();
 
         if (previous.isEmpty()) {
             return new Diff(null, 0, 0, 0);

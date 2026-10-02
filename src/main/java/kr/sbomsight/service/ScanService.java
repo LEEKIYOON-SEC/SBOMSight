@@ -83,6 +83,20 @@ public class ScanService {
         }
     }
 
+    /**
+     * 최신 검사가 아닌 완료 검사를 다시 검사하려 했다(D2) — 메시지는 화면에 그대로 나간다.
+     *
+     * <p>옛 SBOM 을 새 취약점 DB 로 다시 돌릴 까닭이 없다. 앞서 단추가 모든 줄에 있었고,
+     * 옛 줄에서 누르면 옛 SBOM 이 최신 검사가 됐다(재현 시험 P4). 지금은 그렇게 되지는
+     * 않지만(SBOM 생성 시각으로 고른다) 누를 수 있으면 누른다 — 화면은 단추를 두지 않고,
+     * 주소로 직접 와도 여기서 막는다.
+     */
+    public static class NotLatestScanException extends IllegalStateException {
+        public NotLatestScanException() {
+            super("최신 검사와 실패한 검사만 다시 검사할 수 있습니다.");
+        }
+    }
+
     /** 대기 · 검사 중 — 아직 끝나지 않은 검사. */
     private static final List<ScanStatus> IN_FLIGHT = List.of(ScanStatus.QUEUED, ScanStatus.RUNNING);
 
@@ -152,6 +166,9 @@ public class ScanService {
      * 없었거나 서버가 다시 시작되어 멈춘 검사도 같은 SBOM 으로 다시 돌릴 수 있다.
      * 실패한 검사는 그대로 남는다 — 실패했다는 사실도 이력이다.
      *
+     * <p><b>최신 검사와 실패한 검사만 받는다</b>(D2). 완료된 옛 검사는 거절한다 —
+     * {@link NotLatestScanException}. 최신 검사인지는 자산 행을 잠근 뒤에 본다.
+     *
      * <p><b>올릴 때와 같은 형식 검사를 거친다</b>({@link SbomStorage#detectFormat}).
      * 올리는 자리가 JSON 만 받기 전에 들어온 XML 을 다시 돌리면, 패키지 목록을
      * 읽지 못한 채 grype 만 돌아 완료되고 그 자산의 패키지 목록이 지워진다
@@ -160,6 +177,7 @@ public class ScanService {
      * @return 새로 만들어진 스캔. 상태는 QUEUED 다.
      * @throws UnsupportedSbomException 보관된 SBOM 이 받는 형식(JSON 셋)이 아닐 때
      * @throws ScanInFlightException    그 자산의 검사가 아직 돌고 있을 때
+     * @throws NotLatestScanException   완료됐지만 그 자산의 최신 검사가 아닐 때
      */
     @Transactional
     public Scan rescan(Scan source, String actor) throws IOException {
@@ -176,12 +194,18 @@ public class ScanService {
             }
         }
         refuseIfScanInFlight(source.getAsset().getId());
+        if (source.getStatus() == ScanStatus.DONE
+                && scans.currentOf(source.getAsset().getId()).map(Scan::getId)
+                        .filter(source.getId()::equals).isEmpty()) {
+            throw new NotLatestScanException();
+        }
 
         Scan copy = new Scan(source.getAsset(), actor);
         copy.setSbomFilename(source.getSbomFilename());
         copy.setSbomBytes(source.getSbomBytes());
         copy.setSbomFormat(source.getSbomFormat());
-        // 같은 SBOM 이다 — 생성 시각 · 해시 · 도구 · 대상은 원본 것. 검사 시각만 새것이다.
+        // 같은 SBOM 이다 — 생성 시각 · 해시 · 도구 · 대상은 원본 것. 검사 시각만 새것이라,
+        // 옛 SBOM 을 다시 검사해도 그 자산의 최신 검사가 되지 않는다(ScanRepository.currentOf).
         copy.inheritSbomFrom(source);
         copy.setRescanOf(source.getId());
         scans.saveAndFlush(copy);   // 파일 경로에 스캔 번호가 필요하다

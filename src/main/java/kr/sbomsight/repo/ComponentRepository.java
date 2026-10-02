@@ -47,6 +47,26 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
     /** 이 검사에서 온 행 수 — 지금 검사에 패키지 목록이 담겨 있는지 볼 때. */
     long countByScanId(Long scanId);
 
+    /**
+     * 패키지 행을 쥐고 있는 <b>끝난</b> 검사 — 자산마다. 최신 검사가 아닌 것이 섞여
+     * 있으면 그 자산의 패키지 목록이 최신 검사의 것이 아니다(InventoryReconciler).
+     *
+     * <p>검사 쪽에서 묻는다 — 검사마다 행이 있는지만 본다(ix_component_scan). 패키지
+     * 표를 통째로 훑어 묶으면 12만 개짜리 자산 백 대에서 천만 행이다.
+     */
+    @Query("""
+           SELECT s.asset.id AS assetId, s.id AS scanId FROM Scan s
+           WHERE s.status IN ('DONE', 'FAILED')
+             AND EXISTS (SELECT c.id FROM Component c WHERE c.scan.id = s.id)
+           """)
+    List<Holder> findFinishedScansHoldingRows();
+
+    interface Holder {
+        Long getAssetId();
+
+        Long getScanId();
+    }
+
     @Modifying
     @Query("DELETE FROM Component c WHERE c.scan.id = :scanId")
     int deleteByScanId(@Param("scanId") Long scanId);

@@ -106,6 +106,22 @@
       </form>
     </div>
 
+    <!--/*
+      가장 최근에 돈 검사가 완료됐는데 최신 검사가 아니다 — 예전에 떠 둔 SBOM 을 늦게
+      올렸다(또는 업그레이드 전에 옛 줄을 다시 검사했다). 최신 검사는 SBOM 생성 시각으로
+      고르므로(D1) 그 결과는 화면 · 보고서의 기준이 되지 않는다. 말하지 않으면 방금
+      올린 것이 반영되지 않은 고장으로 읽힌다. 그 검사는 이력에 남는다 — 엉뚱한 것을
+      올렸으면 지운다.
+    */-->
+    <div class="alert alert-warning" id="older-sbom" th:if="${olderSbom != null}">
+      <b>최신 검사를 바꾸지 않음</b>
+      <div>마지막으로 검사한 SBOM이 최신 검사의 SBOM보다 먼저 생성되었습니다. 화면과 보고서는 최신 검사를 기준으로 합니다.</div>
+      <div class="mt-1">마지막으로 검사한 SBOM · 생성 시각
+        <span th:replace="~{fragments/ui :: sbomtime(${olderSbom}, false)}"></span></div>
+      <div>최신 검사의 SBOM · 생성 시각
+        <span th:replace="~{fragments/ui :: sbomtime(${latest}, false)}"></span></div>
+    </div>
+
     <div class="card">
       <div class="card-header"><h2 class="card-title">기본 정보</h2></div>
       <div class="card-body">
@@ -441,6 +457,8 @@
           <td class="tight"><span th:replace="~{fragments/ui :: sbomtime(${s}, true)}"></span></td>
           <td class="tight">
             <span class="status" th:classappend="${s.status}" th:text="${s.status.label()}">완료</span>
+            <!--/* 화면 · 보고서의 기준이 되는 줄. `다시 검사` 단추가 이 줄에만 있는 까닭이다. */-->
+            <span class="tag" th:if="${latest != null and s.id == latest.id}">최신 검사</span>
           </td>
           <td class="num tight" th:text="${s.status.name() == 'DONE'} ? ${#numbers.formatInteger(s.findingCount, 0, 'COMMA')} : '—'">—</td>
           <!--/*
@@ -474,8 +492,11 @@
                  것이 없는 실패(파일을 손으로 지운 경우 등)에는 단추를 두지 않는다. */-->
             <!--/* 검사가 도는 동안에는 두지 않는다 — 겹쳐 돌면 패키지 목록이 지워져
                  서버가 거절한다(ScanService). 끝나면 다시 생긴다. */-->
+            <!--/* **완료된 줄은 최신 검사에만 둔다**(D2). 앞서 모든 줄에 있었고, 옛 줄에서
+                 누르면 옛 SBOM 이 최신이 됐다(재현 시험 P4). 옛 SBOM 을 새 DB 로 돌릴 까닭이
+                 없다 — 서버도 거절한다. */-->
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
-                  th:if="${running == null and (s.status.name() == 'DONE' or (s.status.name() == 'FAILED' and !#strings.isEmpty(s.sbomPath)))}"
+                  th:if="${running == null and ((s.status.name() == 'DONE' and latest != null and s.id == latest.id) or (s.status.name() == 'FAILED' and !#strings.isEmpty(s.sbomPath)))}"
                   sec:authorize="hasRole('ADMIN')">
               <button type="submit" class="btn btn-sm"
                       title="보관된 SBOM을 최신 취약점 DB로 다시 검사">다시 검사</button>
