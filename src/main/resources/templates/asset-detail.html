@@ -455,7 +455,12 @@
             돌렸을 뿐 서버를 새로 본 것이 아니다. 앞서 첫 열의 이름이 `시각` 하나였다.
           */-->
           <th class="tight">검사 시각</th><th class="tight">SBOM 생성 시각</th><th class="tight">검사 상태</th>
-          <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
+          <!--/*
+            `이전 대비` 머리만 `tight` 를 뺀다 — 두 줄로 접힌다(app.css 의 `tight 가 아닌
+            머리`). 값(`+3`)보다 칸 이름이 넓어 그 이름이 칸 폭을 정하고 있었다.
+            `SBOM 생성 시각` 칸을 더하자 표가 1366px 에서 넘쳤고, 그 폭을 여기서 일부 낸다.
+          */-->
+          <th class="num tight">탐지</th><th class="num">이전 대비</th>
           <th class="num tight">패키지</th>
           <!--/*
             `DB 기준일` 이라고만 적혀 있어 무엇의 기준일인지 읽히지 않았다.
@@ -478,8 +483,11 @@
               원본을 **스캔 번호가 아니라 시각으로** 가리킨다. `원본 1` 은
               내부 번호라 사람이 아는 값이 아니었고, 이력이 쌓이면 그 번호로
               어느 줄인지 찾을 수도 없다. 원본이 지워졌으면 그렇게 적는다.
+
+              두 줄로 접는다(`note-line`). 한 줄이면 이 말이 첫 칸을 160px 에서 249px 로
+              벌려, `SBOM 생성 시각` 칸을 더한 뒤로는 표가 화면 폭을 넘는다.
             */-->
-            <div class="faint" th:if="${s.isRescan()}" th:with="src=${origins.get(s.rescanOf)}">
+            <div class="faint note-line" th:if="${s.isRescan()}" th:with="src=${origins.get(s.rescanOf)}">
               <th:block th:if="${src != null}">다시 검사 · 원본
                 <span class="mono"
                       th:text="${#temporals.format(src.createdAt, 'yyyy-MM-dd HH:mm')}">—</span></th:block>
@@ -489,8 +497,9 @@
           <td class="tight"><span th:replace="~{fragments/ui :: sbomtime(${s}, true)}"></span></td>
           <td class="tight">
             <span class="status" th:classappend="${s.status}" th:text="${s.status.label()}">완료</span>
-            <!--/* 화면 · 보고서의 기준이 되는 줄. `다시 검사` 단추가 이 줄에만 있는 까닭이다. */-->
-            <span class="tag" th:if="${latest != null and s.id == latest.id}">최신 검사</span>
+            <!--/* 화면 · 보고서의 기준이 되는 줄. `다시 검사` 단추가 이 줄에만 있는 까닭이다.
+                 상태 아래 줄에 둔다 — 옆에 두면 이 한 줄 때문에 칸이 73px 에서 136px 로 는다. */-->
+            <div class="mt-1" th:if="${latest != null and s.id == latest.id}"><span class="tag">최신 검사</span></div>
           </td>
           <td class="num tight" th:text="${s.status.name() == 'DONE'} ? ${#numbers.formatInteger(s.findingCount, 0, 'COMMA')} : '—'">—</td>
           <!--/*
@@ -509,9 +518,12 @@
           <td class="tight faint"
               th:text="${s.grypeDbBuilt != null} ? ${#temporals.format(s.grypeDbBuilt, 'yyyy-MM-dd')} : '—'">—</td>
           <td class="faint">
-            <span th:text="${s.sbomFilename}">sbom.json</span>
-            <!--/* SBOM 대상이 자산 이름과 다른 줄 — 어느 검사를 지울지 고를 때 본다. */-->
-            <span class="tag nofix" th:if="${s.sbomTargetDiffersFrom(asset.name)}"
+            <!--/* 이 표에서 폭이 남는 칸은 여기 하나다. 이름이 좁은 화면에서 접히게(longname)
+                 두지 않으면 빈칸 없는 파일 이름 하나가 표를 넘긴다. */-->
+            <span class="longname" th:text="${s.sbomFilename}">sbom.json</span>
+            <!--/* SBOM 대상이 자산 이름과 다른 줄 — 어느 검사를 지울지 고를 때 본다. 대상은
+                 이미지 이름처럼 길 수 있다(`docker.io/library/nginx:1.27`). */-->
+            <span class="tag nofix longname" th:if="${s.sbomTargetDiffersFrom(asset.name)}"
                   th:text="'SBOM 대상 ' + ${s.sbomTarget}">SBOM 대상 web-02</span>
             <span th:if="${s.status.name() == 'FAILED'}" class="tag nofix"
                   th:text="${s.errorMessage}">오류</span>

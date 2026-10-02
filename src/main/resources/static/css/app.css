@@ -122,9 +122,13 @@ td.overdue { color: var(--critical); font-weight: 600; }
 
 /* 내용만큼만 차지하는 열. 남는 폭은 tight 가 아닌 열이 가져간다. */
 th.tight, td.tight { width: 1%; white-space: nowrap; }
-/* 좁은 칸 아래에 붙는 한 줄 설명(SBOM 생성 시각의 출처 등). 칸 폭을 그 말 길이로
-   벌리지 않게 줄을 바꾼다 — 낱말 안에서는 끊지 않는다. */
-td.tight .note-line { white-space: normal; word-break: keep-all; min-width: 9rem; font-size: 12px; }
+/* 좁은 칸 아래에 붙는 한 줄 설명(SBOM 생성 시각의 출처 · 다시 검사의 원본 등). 칸 폭을
+   그 말 길이로 벌리지 않게 줄을 바꾼다 — 낱말 안에서는 끊지 않는다. 칸 폭은 설명 위의
+   시각(`2026-10-01 12:22`)이 정한다. 최소 폭을 따로 주면(앞서 9rem) 그만큼 시각보다
+   넓어져, 검사 이력 표에서 시각 칸 둘이 16px 씩 남는 폭을 먹었다. */
+td.tight .note-line { white-space: normal; word-break: keep-all; font-size: 12px; }
+/* 설명 안의 시각은 한 덩이다 — `2026-10-01` / `12:17` 로 갈라 놓지 않는다. */
+td.tight .note-line .mono { white-space: nowrap; }
 
 /* `tight` 가 아닌 머리는 접힌다.
 
@@ -285,6 +289,17 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
   font-size: 12.5px; font-weight: 600; white-space: nowrap;
   background: var(--subtle); color: var(--fg-muted);
 }
+
+/* 긴 이름 — 올린 파일 이름 · SBOM 대상(이미지 이름). 칸이 좁으면 **어디서든** 접는다.
+   빈칸이 없는 이름은 통째로 한 낱말이라 그 폭이 칸의 최소 폭이 되고, 표가 그 아래로
+   줄지 못해 화면을 넘는다 — 넘친 만큼 오른쪽 끝(검사 이력의 다시 검사 · 삭제 단추)이
+   가려진다. 여러 판을 늘어놓는 칸(`.fixlist`)과 달리 이름은 한 칸에 하나라 접혀도
+   둘로 읽히지 않는다. 붙임표처럼 접을 자리가 있으면 거기서 먼저 접힌다(`anywhere`).
+
+   딱지 안의 이름도 접는다. 딱지는 줄바꿈하지 않는 것이 원칙이지만(위) 그 까닭은
+   한국어가 글자 단위로 쪼개지는 것이었다 — 낱말은 묶어 둔다(`keep-all`). */
+.longname { overflow-wrap: anywhere; }
+.tag.longname { white-space: normal; word-break: keep-all; }
 
 /* 보고서의 `비고` 칸. 줄로 쌓되 한 줄은 쪼개지지 않게 둔다. */
 .remark { white-space: nowrap; }
