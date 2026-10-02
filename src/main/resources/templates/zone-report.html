@@ -201,6 +201,21 @@
                   th:text="'(' + ${report.scope.coveragePercent()} + '%)'">(0%)</span>
           </td></tr>
       <!--/*
+        **그중 이 기간에 서버를 새로 본 것은 몇 대인가**(R4). 앞서 위 한 줄뿐이었고,
+        40일 전에 뜬 SBOM 을 이번 기간에 다시 검사해도 거기 들었다. 가르는 기준은
+        기준 검사의 SBOM 생성 시각이다(D11 말). 기간 전에 생성된 SBOM 을 기간 안에
+        올린 자산은 다시 검사만 한 것이 아니어서 따로 센다 — 있을 때만 적는다.
+      */-->
+      <tr th:if="${report.scope.assetsScanned > 0}">
+          <td>└ 이 기간에 SBOM이 생성된 자산</td>
+          <td class="num tight" th:text="${report.scope.sbomCreatedInPeriod} + '대'">0대</td></tr>
+      <tr th:if="${report.scope.oldSbomUploaded > 0}">
+          <td>└ 이 기간 전에 생성된 SBOM을 업로드한 자산</td>
+          <td class="num tight" th:text="${report.scope.oldSbomUploaded} + '대'">0대</td></tr>
+      <tr th:if="${report.scope.assetsScanned > 0}">
+          <td>└ 이 기간에 다시 검사만 한 자산</td>
+          <td class="num tight" th:text="${report.scope.rescanOnly} + '대'">0대</td></tr>
+      <!--/*
         **안 돌린 것과 돌렸는데 실패한 것을 가른다.** 앞서 둘 다 `검사 기록이
         없는 자산` 이었다. 실패한 자산은 기록이 있다 — 고칠 곳이 SBOM 을 올리는
         쪽이 아니라 검사 쪽(grype · 취약점 DB)이다.
@@ -267,7 +282,7 @@
       `ReportProseTest` 가 기계로 막는다.
     */-->
     <p class="footnote" th:if="${report.scope.assetsScanned > 0}">
-      ※ 기준 — 자산마다 이 기간의 마지막 검사
+      ※ 기준 — 자산마다 이 기간에 돈 검사 중 최신 검사
       (<span th:text="${#temporals.format(report.scope.oldestScan, 'yyyy-MM-dd HH:mm')}">—</span>
       ~ <span th:text="${#temporals.format(report.scope.newestScan, 'yyyy-MM-dd HH:mm')}">—</span>).
       <!--/*
@@ -402,6 +417,8 @@
           <th class="tight">자산</th>
           <th class="tight" th:if="${report.scope.wholeSite()}">구역</th>
           <th class="tight">기준이 된 검사</th>
+          <!--/* 기준 검사가 이 기간에 돌았어도 SBOM 은 옛것일 수 있다 — 다시 검사만 했으면. */-->
+          <th class="tight">SBOM 생성 시각</th>
           <th class="num tight">탐지</th>
           <th class="num tight">심각</th>
           <th class="num tight">높음</th>
@@ -432,10 +449,11 @@
             <div class="danger-text" th:if="${report.scope.failedAfter(r.scan)}"
                  th:text="'이후 검사 실패 ' + ${#temporals.format(report.scope.failuresOf(r.asset.id).last, 'yyyy-MM-dd HH:mm')}">이후 검사 실패</div>
           </td>
-          <td class="tight faint" th:unless="${r.scanned()}" colspan="5"
+          <td class="tight faint" th:unless="${r.scanned()}" colspan="6"
               th:with="f=${report.scope.failuresOf(r.asset.id)}"
               th:text="${f == null} ? '이 기간에 검사 없음' : '이 기간의 검사 ' + ${f.count} + '회 모두 실패'">이 기간에 검사 없음</td>
           <th:block th:if="${r.scanned()}">
+            <td class="tight"><span th:replace="~{fragments/ui :: sbomtime(${r.scan}, true)}"></span></td>
             <td class="num tight" th:text="${#numbers.formatInteger(r.findingCount(), 0, 'COMMA')}">0</td>
             <td class="num tight" th:text="${r.critical > 0} ? ${r.critical} : '—'">—</td>
             <td class="num tight" th:text="${r.high > 0} ? ${r.high} : '—'">—</td>
@@ -659,7 +677,7 @@
     </table>
     <p class="footnote">
       ※ 조치 하나 = (자산, 패키지). 완료 · 탐지 남음 = 조치 상태는 완료인데
-      기간 중 마지막 검사에 해소 건수가 남은 것.
+      기간 중 최신 검사에 해소 건수가 남은 것.
     </p>
 
     <h3 th:if="${!report.action.overdueRows.isEmpty()}">기한이 지난 조치</h3>

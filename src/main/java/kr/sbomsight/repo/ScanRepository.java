@@ -197,6 +197,22 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
                                             @Param("before") java.time.Instant before);
 
     /**
+     * 기간 중에 <b>SBOM 을 올린</b> 자산 — 다시 검사가 아닌 완료 검사가 하나라도 있는 것.
+     *
+     * <p>구역 보고서 1장이 "다시 검사만 한 자산" 을 가를 때 쓴다. 기준 검사 하나로는
+     * 모른다 — 기간 안에 옛 SBOM 을 올리고 그것을 다시 검사했으면 기준 검사는 다시 검사다.
+     */
+    @Query("""
+           SELECT DISTINCT a.id FROM Scan s JOIN s.asset a JOIN a.zone z
+           WHERE s.status = 'DONE' AND s.rescanOf IS NULL AND a.archivedAt IS NULL
+             AND s.createdAt >= :from AND s.createdAt < :to
+             AND (:zoneId IS NULL OR z.id = :zoneId)
+           """)
+    List<Long> findAssetIdsWithUploadBetween(@Param("zoneId") Long zoneId,
+                                             @Param("from") java.time.Instant from,
+                                             @Param("to") java.time.Instant to);
+
+    /**
      * 기간 중 <b>실패한</b> 검사 — 자산마다 횟수와 마지막 시각.
      *
      * <p>구역 보고서는 자산마다 기간 안의 마지막 <b>완료</b> 검사로 센다. 그 뒤에

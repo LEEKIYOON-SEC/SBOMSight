@@ -112,7 +112,9 @@ public class ZoneReportService {
         scans.countFailedPerAssetBetween(zoneId, start, end)
              .forEach(f -> failures.put(f.getAssetId(), new Failures(f.getFailures(), f.getLastFailedAt())));
 
-        Scope scope = scope(zone, from, to, inScope, current, notScanned, scanRuns, failures);
+        Set<Long> uploaded = new HashSet<>(scans.findAssetIdsWithUploadBetween(zoneId, start, end));
+        Scope scope = scope(zone, from, to, start, inScope, current, notScanned, scanRuns, failures,
+                            uploaded);
         // **2·3장은 탐지 전부, 4·5장(과 그것을 잇는 6장의 건수)은 목록이다.**
         // 목록은 검토 결과가 해당 없음 · 오탐인 건을 뺀다 — 취약점 화면 · 자산
         // 보고서와 같은 규칙. 뺀 건수는 1장이 말한다.
@@ -130,10 +132,25 @@ public class ZoneReportService {
 
     // --- 1장: 점검 범위 -----------------------------------------------------
 
-    private Scope scope(Zone zone, LocalDate from, LocalDate to, List<Asset> inScope,
+    /**
+     * @param start    기간의 시작 시각 — SBOM 생성 시각을 가르는 선
+     * @param uploaded 기간 안에 SBOM 을 올린 자산(다시 검사가 아닌 완료 검사가 있는 것)
+     */
+    private Scope scope(Zone zone, LocalDate from, LocalDate to, Instant start, List<Asset> inScope,
                         List<Scan> current, List<Asset> notScanned, long scanRuns,
-                        Map<Long, Failures> failures) {
+                        Map<Long, Failures> failures, Set<Long> uploaded) {
         long totalFindings = current.stream().mapToLong(Scan::getFindingCount).sum();
+
+        // **이 기간에 서버를 새로 본 자산인가** — 기준 검사의 SBOM 생성 시각으로 가른다(R4).
+        // 앞서는 기간 안에 돈 검사가 있으면 전부 "검사한 자산" 이었다. 40일 전에 뜬 SBOM 을
+        // 이번 달에 다시 검사해도 들어가, 몇 대를 이번에 실제로 봤는지 읽을 수 없었다.
+        // 기간 전에 생성된 SBOM 은 둘로 가른다 — 기간 안에 올렸는가, 다시 검사만 했는가.
+        long sbomCreated = current.stream()
+                .filter(s -> !s.getSbomCreatedAt().isBefore(start)).count();
+        long oldSbomUploaded = current.stream()
+                .filter(s -> s.getSbomCreatedAt().isBefore(start))
+                .filter(s -> uploaded.contains(s.getAsset().getId())).count();
+        long rescanOnly = current.size() - sbomCreated - oldSbomUploaded;
 
         // 기간 동안 grype 이 바뀌었으면 증감의 일부는 서버가 아니라 도구가
         // 움직인 것이다. 판이 둘 이상이면 그 사실을 보고서에 적는다.
@@ -153,7 +170,8 @@ public class ZoneReportService {
         Instant newest = current.stream().map(Scan::getCreatedAt)
                                 .max(Comparator.naturalOrder()).orElse(null);
 
-        return new Scope(zone, from, to, inScope.size(), current.size(), notScanned,
+        return new Scope(zone, from, to, inScope.size(), current.size(),
+                         sbomCreated, oldSbomUploaded, rescanOnly, notScanned,
                          scanRuns, totalFindings, List.copyOf(grypeVersions),
                          List.copyOf(dbDates), oldest, newest, Map.copyOf(failures));
     }
@@ -533,11 +551,18 @@ public class ZoneReportService {
     /**
      * 1장 — 점검 범위.
      *
+     * <p>{@code assetsScanned} 는 셋으로 갈린다 — 더하면 그 수다.
+     *
+     * @param sbomCreatedInPeriod 기준 검사의 SBOM 생성 시각이 기간 안 — 이 기간에 서버를 새로 봤다
+     * @param oldSbomUploaded     SBOM 은 기간 전에 생성됐는데 기간 안에 올렸다
+     * @param rescanOnly          SBOM 은 기간 전 것이고 기간 안에는 다시 검사만 했다
      * @param notScanned 기간 안에 완료된 검사가 없는 자산. <b>이 목록이 이 장의 핵심이다.</b>
      * @param failures   기간 중 실패한 검사가 있는 자산 → 횟수 · 마지막 시각
      */
     public record Scope(Zone zone, LocalDate from, LocalDate to,
-                        int assetsInScope, int assetsScanned, List<Asset> notScanned,
+                        int assetsInScope, int assetsScanned,
+                        long sbomCreatedInPeriod, long oldSbomUploaded, long rescanOnly,
+                        List<Asset> notScanned,
                         long scanRuns, long totalFindings,
                         List<String> grypeVersions, List<LocalDate> dbDates,
                         Instant oldestScan, Instant newestScan,
@@ -780,8 +805,8 @@ public class ZoneReportService {
      * <p>대기 · 진행 / 완료 · 탐지 남음 / 미등록 — 자산 보고서 5장과 같은
      * 세 갈래다. 세 갈래의 건수를 더하면 4장 합계다.
      *
-     * @param open          대기 · 진행인 조치 전부 — 기간 중 마지막 검사에 해소 건수가 없는 것도 든다
-     * @param doneRemaining 조치 상태는 완료인데 기간 중 마지막 검사에 해소 건수가 남은 조치
+     * @param open          대기 · 진행인 조치 전부 — 기간 중 최신 검사에 해소 건수가 없는 것도 든다
+     * @param doneRemaining 조치 상태는 완료인데 기간 중 최신 검사에 해소 건수가 남은 조치
      */
     public record Action(long total, long open, long overdue,
                          long openedInPeriod, long closedInPeriod,
