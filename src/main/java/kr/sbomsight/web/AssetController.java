@@ -439,6 +439,12 @@ public class AssetController {
         model.addAttribute("olderSbom",
                 newest != null && newest.getStatus() == ScanStatus.DONE && latest != null
                         && !newest.getId().equals(latest.getId()) ? newest : null);
+        // 가장 최근에 돈 검사의 SBOM 대상이 이 자산의 이름과 다르다 — 엉뚱한 자산에 올렸을
+        // 수 있다. 막지 않고 알린다(이미지 이름을 그대로 쓰는 곳도 있다). 경로로 뜬 SBOM 은
+        // 가를 수 없어 말하지 않는다(Scan.sbomTargetDiffersFrom).
+        model.addAttribute("targetMismatch",
+                newest != null && newest.getStatus() == ScanStatus.DONE
+                        && newest.sbomTargetDiffersFrom(asset.getName()) ? newest : null);
 
         model.addAttribute("asset", asset);
         model.addAttribute("zones", zoneService.all());

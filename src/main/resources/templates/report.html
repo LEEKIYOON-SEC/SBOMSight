@@ -60,7 +60,12 @@
           · <span th:text="${report.overview.asset.osName}">Rocky Linux 9.3</span></th:block>
       </td>
       <th>SBOM 대상</th>
-      <td th:text="${#strings.isEmpty(report.scan.sbomTarget)} ? '확인되지 않음' : ${report.scan.sbomTarget}">/</td>
+      <!--/* 자산 이름과 다르면 그 자리에서 적는다 — 다른 서버의 SBOM 으로 만든 보고서일 수
+           있다. 경로(dir:/)는 가를 수 없어 적지 않는다(Scan.sbomTargetDiffersFrom). */-->
+      <td>
+        <span th:text="${#strings.isEmpty(report.scan.sbomTarget)} ? '확인되지 않음' : ${report.scan.sbomTarget}">/</span>
+        <b class="danger-text" th:if="${report.scan.sbomTargetDiffersFrom(report.overview.asset.name)}">· 자산 이름과 다름</b>
+      </td>
     </tr>
     <tr>
       <th>SBOM 생성 시각</th>

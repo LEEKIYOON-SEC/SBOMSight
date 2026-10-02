@@ -27,9 +27,12 @@ SBOMSight 은 대상 서버에 붙지 않는다. **파일만 받는다.**
 syft 바이너리를 미리 반입해 두고 대상 서버에서 돌린다.
 
 ```bash
-syft dir:/ -o cyclonedx-json > web-01.sbom.json                  # 파일시스템 전체
-syft registry.internal/app:1.2 -o cyclonedx-json > app.sbom.json  # 이미지
+syft dir:/ --source-name web-01 -o cyclonedx-json > web-01.sbom.json                  # 파일시스템 전체
+syft registry.internal/app:1.2 --source-name app-01 -o cyclonedx-json > app-01.sbom.json  # 이미지
 ```
+
+`--source-name` 에는 이 도구에 등록한 자산 이름을 넣는다 — 다른 자산에 올리면
+검사 뒤에 경고가 뜬다(운영 문서 §4).
 
 만든 JSON 만 반출한다. **SBOM 에는 설치 패키지 목록과 파일 경로가 담긴다.**
 반출 승인 절차가 있다면 그 대상이 된다.
@@ -77,7 +80,7 @@ systemctl status <service>
 **SBOM 을 다시 떠서 업로드한다.** 그것이 유일한 확인 방법이다.
 
 ```bash
-syft dir:/ -o cyclonedx-json > web-01.sbom.json   # 패치 후 다시
+syft dir:/ --source-name web-01 -o cyclonedx-json > web-01.sbom.json   # 패치 후 다시
 ```
 
 같은 자산에 업로드하면 보고서의 **지난 검사 대비** 에 해소·신규·유지가 나온다.

@@ -452,9 +452,12 @@ db-01,내부업무,Rocky Linux 8.9,원장 DB
 검사할 서버에서 syft 를 돌린다. **이 PC 가 아니다.**
 
 ```bash
-syft dir:/ -o cyclonedx-json > web-01.sbom.json      # 서버 전체
-syft <이미지> -o cyclonedx-json > app.sbom.json       # 컨테이너
+syft dir:/ --source-name web-01 -o cyclonedx-json > web-01.sbom.json      # 서버 전체
+syft <이미지> --source-name app-01 -o cyclonedx-json > app-01.sbom.json      # 컨테이너
 ```
+
+`--source-name` 에는 이 도구에 등록할 자산 이름을 넣는다 — 다른 자산에 올리면
+검사 뒤에 경고가 뜬다.
 
 **JSON 셋만 받는다** — CycloneDX JSON · SPDX JSON · syft JSON. 패키지 목록을
 JSON 에서만 읽으므로 XML·tag-value 는 업로드하는 자리에서 돌려보낸다.

@@ -128,6 +128,18 @@
         <span th:replace="~{fragments/ui :: sbomtime(${latest}, false)}"></span></div>
     </div>
 
+    <!--/*
+      가장 최근에 돈 검사의 SBOM 대상이 자산 이름과 다르다. 엉뚱한 자산에 올린 SBOM 일 수
+      있다 — 그대로 두면 다른 서버의 패키지 · 취약점이 이 자산의 것으로 쌓인다. 막지는
+      않는다(이미지 이름을 그대로 쓰는 곳도 있다). 경로로 뜬 SBOM(dir:/)은 가를 수 없다.
+    */-->
+    <div class="alert alert-warning" id="target-mismatch" th:if="${targetMismatch != null}">
+      <b>SBOM 대상이 자산 이름과 다름</b>
+      <div>다른 자산의 SBOM이면 검사 이력에서 그 검사를 지우세요.</div>
+      <div class="mt-1">SBOM 대상 · <code th:text="${targetMismatch.sbomTarget}">web-02</code>
+        · 자산 이름 · <code th:text="${asset.name}">web-01</code></div>
+    </div>
+
     <div class="card">
       <div class="card-header"><h2 class="card-title">기본 정보</h2></div>
       <div class="card-body">
@@ -189,13 +201,20 @@
           의 `>` 는 UTF-16 으로 적어서 grype 이 읽지 못한다. 파일 이름을
           syft 에 넘기면 syft 가 UTF-8 로 쓴다.)
         */-->
+        <!--/*
+          **`--source-name <자산 이름>` 을 넣는다.** 넣지 않으면 SBOM 대상이 모든 서버에서
+          `/` 라서 SBOM 이 무엇을 떴는지 말하지 않는다. 넣으면 SBOM 안에 이 자산의 이름이
+          남고(syft 1.52.0 으로 확인), 다른 자산에 올렸을 때 경고가 뜬다(target-mismatch).
+          파일 이름에도 자산 이름을 넣는다 — 여러 대를 받으면 파일이 섞인다.
+        */-->
         <details class="help">
           <summary>SBOM 생성 가이드</summary>
           <div class="inner">
             <div><b>Linux</b>
-              <div><code>syft dir:/ -o cyclonedx-json &gt; sbom.json</code></div></div>
+              <div><code th:inline="text">syft dir:/ --source-name [[${asset.name}]] -o cyclonedx-json &gt; [[${asset.name}]].sbom.json</code></div></div>
             <div class="mt-2"><b>Windows</b>
-              <div><code>syft dir:C:\ -o cyclonedx-json=sbom.json</code></div></div>
+              <div><code th:inline="text">syft dir:C:\ --source-name [[${asset.name}]] -o cyclonedx-json=[[${asset.name}]].sbom.json</code></div></div>
+            <div class="mt-2"><code>--source-name</code> — SBOM 안에 자산 이름을 남깁니다. 다른 자산에 업로드하면 검사 뒤에 경고가 뜹니다.</div>
             <div class="mt-2" th:text="'받는 형식 — ' + ${T(kr.sbomsight.service.SbomStorage).ACCEPTED_FORMATS}">
               받는 형식 — CycloneDX JSON · SPDX JSON · syft JSON</div>
           </div>
@@ -484,6 +503,9 @@
               th:text="${s.grypeDbBuilt != null} ? ${#temporals.format(s.grypeDbBuilt, 'yyyy-MM-dd')} : '—'">—</td>
           <td class="faint">
             <span th:text="${s.sbomFilename}">sbom.json</span>
+            <!--/* SBOM 대상이 자산 이름과 다른 줄 — 어느 검사를 지울지 고를 때 본다. */-->
+            <span class="tag nofix" th:if="${s.sbomTargetDiffersFrom(asset.name)}"
+                  th:text="'SBOM 대상 ' + ${s.sbomTarget}">SBOM 대상 web-02</span>
             <span th:if="${s.status.name() == 'FAILED'}" class="tag nofix"
                   th:text="${s.errorMessage}">오류</span>
           </td>

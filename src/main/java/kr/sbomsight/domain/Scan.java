@@ -297,6 +297,27 @@ public class Scan {
         this.sbomTarget = clip(sbomTarget, 255);
     }
 
+    /** 드라이브 문자로 시작하는 윈도우 경로 — {@code C:\} · {@code D:/data}. */
+    private static final java.util.regex.Pattern WINDOWS_PATH =
+            java.util.regex.Pattern.compile("^[A-Za-z]:([\\\\/].*)?$");
+
+    /**
+     * SBOM 대상이 <b>자산 이름과 다른가</b> — 엉뚱한 자산에 올린 SBOM 을 가리려는 것이다.
+     *
+     * <p>대상이 경로면 가를 수 없다 — {@code syft dir:/} 로 뜨면 모든 서버가 {@code /} 다.
+     * 이름이면(가이드의 {@code --source-name <자산 이름>}, 또는 이미지 이름) 자산 이름과
+     * 견준다. 대소문자는 가리지 않는다 — 호스트 이름은 대소문자를 가리지 않는다. 비어
+     * 있으면(SBOM 이 대상을 적지 않았거나 V17 전 검사) 다르다고 하지 않는다.
+     */
+    public boolean sbomTargetDiffersFrom(String assetName) {
+        String target = sbomTarget == null ? "" : sbomTarget.trim();
+        if (target.isEmpty() || target.startsWith("/") || target.startsWith("\\")
+                || target.startsWith(".") || WINDOWS_PATH.matcher(target).matches()) {
+            return false;
+        }
+        return !target.equalsIgnoreCase(assetName == null ? "" : assetName.trim());
+    }
+
     private static String clip(String value, int max) {
         if (value == null) {
             return "";
