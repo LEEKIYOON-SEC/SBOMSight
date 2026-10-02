@@ -77,7 +77,13 @@ public class AssetController {
         this.remediationService = remediationService;
     }
 
-    /** 마지막 검사가 이보다 오래되면 "오래됐다" 고 센다. */
+    /**
+     * 최신 검사의 <b>SBOM 생성 시각</b>이 이보다 오래되면 "오래됐다" 고 센다(R4).
+     *
+     * <p>검사가 돈 시각이 아니다 — 앞서는 그것으로 세어, 40일 전에 뜬 SBOM 을 오늘 다시
+     * 검사하면 `30일 넘은 자산` 에서 빠졌다(재현 시험 P5). 서버를 다시 본 것이 아니라
+     * 옛 SBOM 을 새 취약점 DB 로 돌렸을 뿐이다.
+     */
     private static final int STALE_DAYS = 30;
 
     /**
@@ -256,7 +262,7 @@ public class AssetController {
                 .minus(STALE_DAYS, java.time.temporal.ChronoUnit.DAYS);
         long noScan = rows.stream().filter(r -> !r.hasScan()).count();
         long stale = rows.stream()
-                .filter(r -> r.hasScan() && r.latest().getCreatedAt().isBefore(cut)).count();
+                .filter(r -> r.hasScan() && r.latest().getSbomCreatedAt().isBefore(cut)).count();
         long critical = rows.stream().mapToLong(r -> r.severityCount("critical")).sum();
         long high = rows.stream().mapToLong(r -> r.severityCount("high")).sum();
         long kev = rows.stream().mapToLong(AssetRow::kevCount).sum();
@@ -289,7 +295,7 @@ public class AssetController {
                 .minus(STALE_DAYS, java.time.temporal.ChronoUnit.DAYS);
         return switch (filter) {
             case "noscan" -> !row.hasScan();
-            case "stale" -> row.hasScan() && row.latest().getCreatedAt().isBefore(cut);
+            case "stale" -> row.hasScan() && row.latest().getSbomCreatedAt().isBefore(cut);
             default -> true;
         };
     }
@@ -299,11 +305,14 @@ public class AssetController {
      *
      * <p><b>검사가 없는 자산은 방향과 무관하게 언제나 뒤로.</b> 탐지 0건으로
      * 놓고 줄 세우면 "안전하다" 는, 아무도 확인하지 않은 판정이 된다.
+     *
+     * <p>{@code scanned} 는 SBOM 생성 시각으로 줄 세운다 — 그 열이 그것이다(주소의 이름은
+     * 그대로 둔다. 붙여 둔 링크가 있다).
      */
     private Comparator<AssetRow> comparator(String sort, String dir) {
         Comparator<AssetRow> base = switch (sort) {
             case "scanned" -> Comparator.comparing(
-                    r -> r.hasScan() ? r.latest().getCreatedAt() : null,
+                    r -> r.hasScan() ? r.latest().getSbomCreatedAt() : null,
                     Comparator.nullsLast(Comparator.naturalOrder()));
             case "findings" -> Comparator.comparingLong(
                     (AssetRow r) -> r.hasScan() ? r.latest().getFindingCount() : -1).reversed();
@@ -844,10 +853,13 @@ public class AssetController {
             return rows.stream().filter(r -> !r.hasScan()).count();
         }
 
-        /** 이 구역에서 가장 오래된 마지막 검사. 없으면 {@code null}. */
-        public java.time.Instant oldestScan() {
+        /**
+         * 이 구역 자산들의 최신 검사 가운데 가장 오래된 SBOM 생성 시각. 없으면 {@code null}.
+         * `30일 넘은 자산` 과 같은 기준이다 — 다시 검사는 이 값을 새로 만들지 않는다.
+         */
+        public java.time.Instant oldestSbom() {
             return rows.stream().filter(AssetRow::hasScan)
-                       .map(r -> r.latest().getCreatedAt())
+                       .map(r -> r.latest().getSbomCreatedAt())
                        .min(java.time.Instant::compareTo).orElse(null);
         }
     }

@@ -178,8 +178,13 @@
                 <a th:href="@{${links.copy().with('sort', 'name').with('dir', sort == 'name' and dir == 'asc' ? 'desc' : 'asc').here()}}">자산
                   <span class="sortmark" th:if="${sort == 'name'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↑</span></a></th>
               <th class="tight">운영체제</th>
+              <!--/*
+                **SBOM 생성 시각이다 — 검사가 돈 시각이 아니다.** `30일 넘은 자산` 이 이
+                값으로 센다(R4). 앞서 이 열은 `마지막 검사` 였고, 옛 SBOM 을 다시 검사하면
+                오늘 날짜가 찍혀 그 자산이 새로 본 것처럼 읽혔다.
+              */-->
               <th class="tight sortable">
-                <a th:href="@{${links.copy().with('sort', 'scanned').with('dir', sort == 'scanned' and dir == 'desc' ? 'asc' : 'desc').here()}}">마지막 검사
+                <a th:href="@{${links.copy().with('sort', 'scanned').with('dir', sort == 'scanned' and dir == 'desc' ? 'asc' : 'desc').here()}}">SBOM 생성 시각
                   <span class="sortmark" th:if="${sort == 'scanned'}" th:text="${dir == 'asc'} ? '↑' : '↓'">↓</span></a></th>
               <th class="num tight sortable">
                 <a th:href="@{${links.copy().with('sort', 'findings').with('dir', sort == 'findings' and dir == 'asc' ? 'desc' : 'asc').here()}}">탐지
@@ -241,8 +246,8 @@
               </td>
               <td class="tight faint" th:text="${#strings.isEmpty(row.asset.osName)} ? '—' : ${row.asset.osName}">Rocky 9.3</td>
 
-              <td class="tight mono faint" th:if="${row.hasScan()}"
-                  th:text="${#temporals.format(row.latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</td>
+              <td class="tight faint" th:if="${row.hasScan()}">
+                <span th:replace="~{fragments/ui :: sbomtime(${row.latest}, true)}"></span></td>
               <td class="tight faint" th:unless="${row.hasScan()}">검사 없음</td>
 
               <td class="num tight fw-bold"

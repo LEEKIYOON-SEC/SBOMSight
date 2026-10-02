@@ -26,8 +26,14 @@
       <span th:text="${#strings.isEmpty(asset.osName)} ? '운영체제 —' : ${asset.osName}">Rocky Linux 9.3</span>
       <th:block th:if="${!#strings.isEmpty(asset.note)}">
         · <span th:text="${asset.note}">대외 웹</span></th:block>
+      <!--/*
+        시각이 둘이다 — SBOM 생성 시각은 서버의 상태가 언제 것인지, 검사 시각은 그것을
+        언제 취약점 DB 와 대조했는지. 앞서 `마지막 검사` 하나였고, 옛 SBOM 을 다시
+        검사하면 오늘 날짜가 찍혀 서버를 오늘 본 것처럼 읽혔다.
+      */-->
       <th:block th:if="${latest != null}">
-        · 마지막 검사 <span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</span></th:block>
+        · SBOM 생성 시각 <span th:replace="~{fragments/ui :: sbomtime(${latest}, false)}"></span>
+        · 검사 시각 <span class="mono" th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</span></th:block>
           <th:block th:if="${latest == null}"> · 검사 없음</th:block>
           </div>
           <div class="mt-2" style="max-width:340px" th:if="${latest != null and latest.findingCount > 0}">
