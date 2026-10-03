@@ -131,9 +131,12 @@
           <thead>
           <tr>
             <th class="tight">자산</th><th class="tight">구역</th>
-            <th class="tight">패키지</th><th class="num tight">조치 회차</th><th>현재 → 목표</th>
+            <!--/* 숫자 칸의 머리는 접는다(app.css — `tight` 가 아닌 머리). 값은 한 자리인데 머리를
+                 한 줄로 두면 `조치 회차` · `등록 당시 건수` 글자 폭이 칸 폭이 된다 — 조치 회차 칸을
+                 더하자 1280px 에서 표가 카드를 80px 넘었다(앞서 8px). 값 칸은 그대로 한 줄이다. */-->
+            <th class="tight">패키지</th><th class="num">조치 회차</th><th>현재 → 목표</th>
             <th class="tight">조치 상태</th><th class="tight">담당</th>
-            <th class="tight">기한</th><th class="num tight">등록 당시 건수</th>
+            <th class="tight">기한</th><th class="num">등록 당시 건수</th>
             <th>설명</th>
           </tr>
           </thead>
