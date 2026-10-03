@@ -59,6 +59,7 @@ class PageRenderTest {
     @Autowired ZoneService zoneService;
     @Autowired kr.sbomsight.repo.AppUserRepository appUsers;
     @Autowired kr.sbomsight.repo.FindingAnalysisRepository analysisRepository;
+    @Autowired kr.sbomsight.repo.ComponentRepository components;
 
     private Asset asset;
     private Scan scan;
@@ -195,7 +196,11 @@ class PageRenderTest {
         fresh.setZone(asset.getZone());
         assets.saveAndFlush(fresh);
 
-        String table = open("/");
+        // **이 시험의 구역만 본다.** 전체 목록(`/`)을 세면 앞서 돈 시험 클래스가
+        // 남긴 자산까지 막대를 세어, 시험 순서에 따라 붙고 떨어진다 — 진짜 DB
+        // (Flyway 스키마, 클래스 사이에 지우지 않는다)에서 CI 의 순서로 돌 때
+        // 1 이 아니라 7 이 나왔다. 조각이 그려지는 표는 같다.
+        String table = open("/?zone=" + asset.getZone().getId());
         assertThat(table)
                 .as("자산이 있는데 빈 화면 문구가 함께 뜨면 th:if 가 안 먹은 것이다")
                 .doesNotContain("등록된 자산이 없습니다");
@@ -498,6 +503,11 @@ class PageRenderTest {
     @Test
     @DisplayName("인벤토리가 비면 '없다' 가 아니라 '아직 안 담겼다' 고 말한다")
     void emptyInventorySaysNotYetRead() throws Exception {
+        // **인벤토리를 비운 상태를 만든다.** 이 문구는 인벤토리 전체가 비었을 때만
+        // 뜬다(PackageController — countCurrent). 앞서 돈 시험 클래스가 담아 둔
+        // 패키지가 있으면 시험 순서에 따라 떨어졌다 — 진짜 DB 에서 CI 의 순서로
+        // 돌 때 그랬다. 이 시험은 트랜잭션 안이라 끝나면 지운 것이 되돌아온다.
+        components.deleteAllInBatch();
         String html = open("/packages");
         assertThat(html).contains("아직 담긴 패키지가 없습니다");
         assertThat(html)
