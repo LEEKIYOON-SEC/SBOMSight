@@ -54,7 +54,12 @@ jobs:
 
       - name: 테스트
         env:
-          SPRING_DATASOURCE_URL: jdbc:mariadb://127.0.0.1:3306/sbomsight_ci?sslMode=disable
+          # allowPublicKeyRetrieval — 이미지는 계정을 만든 뒤 서버를 다시 띄우므로 인증
+          # 캐시가 비어 있다. caching_sha2_password 는 그 첫 접속을 TLS 없이 받으면 서버의
+          # RSA 공개 키로 비밀번호를 보내게 하는데, 이 옵션이 없으면 드라이버가 키를 받지
+          # 않아 `RSA public key is not available client side` 로 붙지 못한다(이 작업이
+          # 그렇게 실패하고 있었다). 운영 주소(application.yml)와 같은 까닭이다.
+          SPRING_DATASOURCE_URL: jdbc:mariadb://127.0.0.1:3306/sbomsight_ci?sslMode=disable&allowPublicKeyRetrieval=true
           SPRING_DATASOURCE_USERNAME: root
           SPRING_DATASOURCE_PASSWORD: root
           SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.mariadb.jdbc.Driver
