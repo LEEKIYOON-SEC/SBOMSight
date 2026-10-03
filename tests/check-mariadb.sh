@@ -52,8 +52,11 @@ export SPRING_DATASOURCE_URL="jdbc:mariadb://${HOST}:${PORT}/${DB}?sslMode=disab
 export SPRING_DATASOURCE_USERNAME="$USER"
 export SPRING_DATASOURCE_PASSWORD="$PASS"
 export SPRING_DATASOURCE_DRIVER_CLASS_NAME="org.mariadb.jdbc.Driver"
-# 스키마는 Flyway 가 만든다 — 운영에서 쓰는 그 파일들이다.
+# 스키마는 Flyway 가 만든다 — 운영에서 쓰는 그 파일들이다. 그 스키마가 엔티티와
+# 맞는지는 운영(application.yml)처럼 Hibernate 가 따진다(validate) — 위 2) 다.
+# none 이면 칸의 타입이 달라도 질의만 돌면 통과한다. V17 의 sbom_sha256 CHAR(64) 가
+# 이 스크립트를 지나고 앱을 띄울 때에야 드러났다.
 export SPRING_FLYWAY_ENABLED=true
-export SPRING_JPA_HIBERNATE_DDL_AUTO=none
+export SPRING_JPA_HIBERNATE_DDL_AUTO=validate
 
 ./mvnw -B test "$@"
