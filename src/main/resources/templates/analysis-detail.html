@@ -106,7 +106,8 @@
           <td class="tight" th:text="${e.fieldLabel}">검토 상태</td>
           <td th:text="(${#strings.isEmpty(e.before)} ? '—' : ${e.before}) + ' → '
                        + (${#strings.isEmpty(e.after)} ? '—' : ${e.after})">미검토 → 해당 없음</td>
-          <td class="tight" th:text="${e.actor}">admin</td>
+          <!--/* 계정이 빈 줄은 사람이 한 일이 아니다(V18 의 `검토 결과 합침`) — 감사 로그처럼 `—`. */-->
+          <td class="tight" th:text="${#strings.isEmpty(e.actor)} ? '—' : ${e.actor}">admin</td>
         </tr>
         </tbody>
       </table>
@@ -121,6 +122,17 @@
       <p class="footnote" style="margin-top:0;padding-top:0;border-top:0">
         ※ 이력에 남는 칸 — 검토 상태 · 근거 · 대응 방안 · 재검토일.
         설명 · 추가 보안 통제 · 결재 문서 번호는 지금 값만(위 표).
+      </p>
+      <!--/*
+        V18 이 둘로 갈린 검토 결과를 합치며 남긴 줄이 있을 때만(D4). 말하지 않으면
+        `검토 결과 합침` 이 무엇인지, 같은 시각대에 앞뒤가 안 맞는 줄이 왜 섞였는지
+        (다른 쪽의 이력이 그때의 시각으로 함께 있다) 읽히지 않는다. 다른 쪽의 적는
+        칸은 이력에 담지 않는 칸이라 감사 로그에 있다. 각주는 90자 안(ReportProseTest).
+      */-->
+      <p class="footnote" style="margin-top:0;padding-top:0;border-top:0"
+         th:if="${analysis.events.![field].contains('검토 결과 합침')}">
+        ※ 검토 결과 합침 — CVE 번호와 별칭으로 갈려 있던 둘을 나중에 고친 이쪽으로 합침.
+        다른 쪽의 설명 · 추가 보안 통제 · 결재 문서 번호는 감사 로그에.
       </p>
     </div>
   </div>

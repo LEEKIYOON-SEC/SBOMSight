@@ -94,7 +94,9 @@ class AnalysisDetailTest {
                 .contains("검토 상태</td> <td>검토 중 → 해당 없음</td> <td class=\"tight\">bob")
                 .contains("근거</td> <td>— → 취약한 코드를 실행하지 않음</td> <td class=\"tight\">bob")
                 .as("이력이 무엇을 남기는지 밝힌다")
-                .contains("설명 · 추가 보안 통제 · 결재 문서 번호는 지금 값만");
+                .contains("설명 · 추가 보안 통제 · 결재 문서 번호는 지금 값만")
+                .as("합친 줄이 없으면 합침 각주도 없다")
+                .doesNotContain("※ 검토 결과 합침");
         // 최신 검사에 이 탐지가 아직 있다.
         assertThat(flat(html)).contains("이 탐지 <b>1건</b>");
         // 고치는 것은 관리자만.
@@ -105,6 +107,20 @@ class AnalysisDetailTest {
                 .contains("analysis-link")
                 .as("적은 뒤 이 화면으로 돌아온다")
                 .contains("name=\"back\" value=\"/analyses/" + analysis.getId() + "\"");
+    }
+
+    @Test
+    @DisplayName("둘로 갈렸던 검토 결과를 합친 줄은 무엇인지 밝힌다 — 계정은 `—`")
+    void aMergedRowIsExplained() throws Exception {
+        // V18 이 남기는 줄과 같은 꼴(D4) — 계정은 비어 있고, 변경 내용은 지운 쪽의
+        // 결정 → 남긴 번호. 시험은 H2 라 V18 이 돌지 않는다(check-migrations 가 V18 자체를 본다).
+        analysis.record("", "검토 결과 합침", "GHSA-7777-aaaa-bbbb · 검토 중", "CVE-2099-7777");
+
+        String html = flat(page("/analyses/" + analysis.getId(), "VIEWER"));
+        assertThat(html)
+                .contains("검토 결과 합침</td> <td>GHSA-7777-aaaa-bbbb · 검토 중 → CVE-2099-7777</td>"
+                          + " <td class=\"tight\">—</td>")
+                .contains("※ 검토 결과 합침 — CVE 번호와 별칭으로 갈려 있던 둘을 나중에 고친 이쪽으로 합침.");
     }
 
     @Test

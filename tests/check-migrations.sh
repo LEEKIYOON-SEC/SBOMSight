@@ -218,6 +218,69 @@ for f in $MIGRATIONS; do
         echo "  └ 검사 48행을 넣었다 (사슬 넷 · 새 원본 · 원본을 지운 다시 검사 · 실패 · 41칸 사슬)" ;;
     esac
 
+    # V18 이 둘로 갈린 검토 결과를 합친다(D4). 합칠 것이 있는 상태에서 태워야 한다.
+    # 경계 사례:
+    #   짝 — GHSA 쪽이 옛 결정(설명 · 추가 보안 통제 · 결재 문서 번호가 있다), CVE 쪽이
+    #        나중 결정. 이력이 하나씩. 탐지 한 줄이 두 번호를 함께 갖고 있다
+    #   근거 탐지가 없는 짝 — 합치지 않는다
+    #   셋이 엮인 묶음(GHSA 둘이 한 CVE 를) — 합치지 않는다
+    #   고친 시각이 같은 짝 — 나중에 만든 행이 남는다
+    #   같은 번호의 다른 패키지 · 탐지가 다른 자산에만 있는 짝 — 그대로
+    # 검사는 db-01(자산 3)에 넣지 않는다 — V17 확인이 그 자산의 최신 검사를 본다.
+    case "$(basename "$f")" in V17__*)
+        run "$DB" -e "
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (1, 'DONE', NOW(6), 'v18check', 'v18-a1', NOW(6));
+        SET @s1 = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (2, 'DONE', NOW(6), 'v18check', 'v18-a2', NOW(6));
+        SET @s2 = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (5, 'DONE', NOW(6), 'v18check', 'v18-a5', NOW(6));
+        SET @s5 = LAST_INSERT_ID();
+        INSERT INTO findings (scan_id, finding_key, cve, related_cve, package_name) VALUES
+         (@s1, 'GHSA-p3|lodash',  'GHSA-p3aa-bbbb-cccc', 'CVE-2025-9999', 'lodash'),
+         (@s2, 'GHSA-t1|netty',   'GHSA-t1t1-t1t1-t1t1', 'CVE-2025-7777', 'netty'),
+         (@s2, 'GHSA-t2|netty',   'GHSA-t2t2-t2t2-t2t2', 'CVE-2025-7777', 'netty'),
+         (@s5, 'GHSA-tie|zlib',   'GHSA-tiet-tiet-tiet', 'CVE-2025-5555', 'zlib');
+        INSERT INTO finding_analysis
+          (asset_id, cve, package_name, state, justification, response,
+           note, other_control, approval_doc, review_by, created_at, updated_at, updated_by)
+        VALUES
+         (1, 'GHSA-p3aa-bbbb-cccc', 'lodash', 'NOT_AFFECTED', 'CODE_NOT_REACHABLE', NULL,
+          '해당 함수를 쓰지 않음', '내부망만', '보안-2026-0001', NULL,
+          '2026-08-01 09:00:00', '2026-08-01 09:00:00', 'kim'),
+         (1, 'CVE-2025-9999', 'lodash', 'EXPLOITABLE', NULL, 'UPDATE', '', '', '', NULL,
+          '2026-09-01 09:00:00', '2026-09-01 09:00:00', 'lee'),
+         (1, 'GHSA-nolk-nolk-nolk', 'jackson', 'NOT_AFFECTED', 'CODE_NOT_PRESENT', NULL, '', '', '', NULL,
+          '2026-08-01 09:00:00', '2026-08-01 09:00:00', 'kim'),
+         (1, 'CVE-2025-8888', 'jackson', 'EXPLOITABLE', NULL, NULL, '', '', '', NULL,
+          '2026-09-01 09:00:00', '2026-09-01 09:00:00', 'lee'),
+         (2, 'GHSA-t1t1-t1t1-t1t1', 'netty', 'NOT_AFFECTED', 'CODE_NOT_PRESENT', NULL, '', '', '', NULL,
+          '2026-08-01 09:00:00', '2026-08-01 09:00:00', 'kim'),
+         (2, 'CVE-2025-7777', 'netty', 'IN_TRIAGE', NULL, NULL, '', '', '', NULL,
+          '2026-08-15 09:00:00', '2026-08-15 09:00:00', 'lee'),
+         (2, 'GHSA-t2t2-t2t2-t2t2', 'netty', 'EXPLOITABLE', NULL, 'WILL_NOT_FIX', '', '', '', '2026-12-31',
+          '2026-09-01 09:00:00', '2026-09-01 09:00:00', 'park'),
+         (5, 'GHSA-tiet-tiet-tiet', 'zlib', 'IN_TRIAGE', NULL, NULL, '', '', '', NULL,
+          '2026-08-01 09:00:00', '2026-08-01 09:00:00', 'kim'),
+         (5, 'CVE-2025-5555', 'zlib', 'NOT_AFFECTED', 'CODE_NOT_PRESENT', NULL, '', '', '', NULL,
+          '2026-08-01 09:00:00', '2026-08-01 09:00:00', 'lee'),
+         (1, 'CVE-2025-9999', 'other-pkg', 'NOT_AFFECTED', 'CODE_NOT_PRESENT', NULL, '', '', '', NULL,
+          '2026-08-01 09:00:00', '2026-08-01 09:00:00', 'kim'),
+         (4, 'GHSA-p3aa-bbbb-cccc', 'lodash', 'NOT_AFFECTED', 'CODE_NOT_PRESENT', NULL, '', '', '', NULL,
+          '2026-08-01 09:00:00', '2026-08-01 09:00:00', 'kim'),
+         (4, 'CVE-2025-9999', 'lodash', 'EXPLOITABLE', NULL, NULL, '', '', '', NULL,
+          '2026-09-01 09:00:00', '2026-09-01 09:00:00', 'lee');
+        INSERT INTO finding_analysis_event (analysis_id, at, actor, field_name, before_value, after_value)
+        SELECT id, '2026-08-01 09:00:00', 'kim', '상태', '미검토', '해당 없음' FROM finding_analysis
+        WHERE asset_id = 1 AND cve = 'GHSA-p3aa-bbbb-cccc' AND package_name = 'lodash';
+        INSERT INTO finding_analysis_event (analysis_id, at, actor, field_name, before_value, after_value)
+        SELECT id, '2026-09-01 09:00:00', 'lee', '상태', '미검토', '해당됨' FROM finding_analysis
+        WHERE asset_id = 1 AND cve = 'CVE-2025-9999' AND package_name = 'lodash';"
+        echo "  └ 검토 결과 12행을 넣었다 (짝 · 근거 없는 짝 · 셋 엮임 · 같은 시각 짝 · 다른 패키지 · 다른 자산)" ;;
+    esac
+
     case "$(basename "$f")" in V9__*)
         run "$DB" -e "
         INSERT INTO risk_acceptances
@@ -505,6 +568,72 @@ NULLABLE=$(run "$DB" -N -e "
 run "$DB" -e "SHOW COLUMNS FROM scans LIKE 'sbom_root';" | grep -q sbom_root \
     && { echo "  이관에 쓴 sbom_root 가 남아 있습니다"; exit 1; }
 echo "  sbom_created_at 은 비지 않는 칸 · 이관에 쓴 칸은 지움"
+
+# --- V18: 둘로 갈린 검토 결과 ------------------------------------------------
+#
+# 나중에 고친 쪽을 남기고, 다른 쪽의 이력은 그때의 시각 그대로 옮기고, 다른 쪽의
+# 결정은 `검토 결과 합침` 한 줄과 감사 로그로 남긴다(D4).
+
+rows() {   # rows <자산> <패키지> → 개수|번호들|상태들
+    run "$DB" -N -e "
+        SELECT CONCAT(COUNT(*), '|', GROUP_CONCAT(cve ORDER BY cve), '|',
+                      GROUP_CONCAT(state ORDER BY cve))
+        FROM finding_analysis WHERE asset_id = $1 AND package_name = '$2';"
+}
+
+GOT=$(rows 1 lodash)
+[ "$GOT" = "1|CVE-2025-9999|EXPLOITABLE" ] || { echo "  짝이 '$GOT' 입니다 (기대 1|CVE-2025-9999|EXPLOITABLE)"; exit 1; }
+KEPT=$(run "$DB" -N -e "
+    SELECT CONCAT(response, '|', updated_by, '|', DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i'), '|',
+                  DATE_FORMAT(created_at, '%Y-%m-%d %H:%i'))
+    FROM finding_analysis WHERE asset_id = 1 AND package_name = 'lodash';")
+[ "$KEPT" = "UPDATE|lee|2026-09-01 09:00|2026-08-01 09:00" ] \
+    || { echo "  남긴 행이 '$KEPT' 입니다 — 값 · 고친 시각은 그대로, 처음 기록은 둘 중 이른 것(2026-08-01)"; exit 1; }
+echo "  짝은 하나로 — 나중에 고친 쪽(CVE · 해당됨)이 남고 그 값은 그대로 · 처음 기록은 둘 중 이른 것"
+
+HIST=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(CONCAT(e.field_name, ':', e.before_value, '>', e.after_value, '@', e.actor)
+                        ORDER BY e.at, e.id SEPARATOR ' / ')
+    FROM finding_analysis_event e JOIN finding_analysis a ON a.id = e.analysis_id
+    WHERE a.asset_id = 1 AND a.package_name = 'lodash';")
+WANT="상태:미검토>해당 없음@kim / 상태:미검토>해당됨@lee / 검토 결과 합침:GHSA-p3aa-bbbb-cccc · 해당 없음 · 취약한 코드를 실행하지 않음>CVE-2025-9999@"
+[ "$HIST" = "$WANT" ] || { echo "  이력이 '$HIST' 입니다"; echo "  기대 '$WANT'"; exit 1; }
+MOVED=$(run "$DB" -N -e "
+    SELECT DATE_FORMAT(e.at, '%Y-%m-%d %H:%i') FROM finding_analysis_event e
+    JOIN finding_analysis a ON a.id = e.analysis_id
+    WHERE a.asset_id = 1 AND a.package_name = 'lodash' AND e.actor = 'kim';")
+[ "$MOVED" = "2026-08-01 09:00" ] || { echo "  옮긴 이력의 시각이 '$MOVED' 입니다 (그때의 시각이어야 함)"; exit 1; }
+echo "  지운 쪽의 이력은 그때의 시각으로 옮기고, 그 결정은 \`검토 결과 합침\` 한 줄로"
+
+AUDIT=$(run "$DB" -N -e "
+    SELECT CONCAT(COUNT(*), '|', SUM(actor = ''), '|',
+                  SUM(ABS(TIMESTAMPDIFF(MINUTE, at, UTC_TIMESTAMP())) < 30))
+    FROM audit_log WHERE action = 'ANALYSIS_MERGED';")
+[ "$AUDIT" = "2|2|2" ] || { echo "  감사 로그가 '$AUDIT' 입니다 (기대 2|2|2 — 둘 · 계정 비움 · UTC)"; exit 1; }
+DETAIL=$(run "$DB" -N -e "
+    SELECT CONCAT(target, ' :: ', detail) FROM audit_log
+    WHERE action = 'ANALYSIS_MERGED' AND target LIKE '%CVE-2025-9999';")
+WANT="web-01 · CVE-2025-9999 :: lodash · GHSA-p3aa-bbbb-cccc · 해당 없음 · 취약한 코드를 실행하지 않음 → CVE-2025-9999 · 설명: 해당 함수를 쓰지 않음 · 추가 보안 통제: 내부망만 · 결재 문서 번호: 보안-2026-0001"
+[ "$DETAIL" = "$WANT" ] || { echo "  감사 로그 내용이 '$DETAIL' 입니다"; echo "  기대 '$WANT'"; exit 1; }
+echo "  감사 로그 2줄 — 계정 비움 · UTC 시각 · 이력에 없는 칸(설명 · 추가 보안 통제 · 결재 문서 번호)까지"
+
+GOT=$(rows 5 zlib)
+[ "$GOT" = "1|CVE-2025-5555|NOT_AFFECTED" ] || { echo "  같은 시각의 짝이 '$GOT' 입니다 (나중에 만든 CVE 행)"; exit 1; }
+echo "  고친 시각이 같으면 나중에 만든 행이 남음"
+
+for want in "1|jackson|2|CVE-2025-8888,GHSA-nolk-nolk-nolk" \
+            "2|netty|3|CVE-2025-7777,GHSA-t1t1-t1t1-t1t1,GHSA-t2t2-t2t2-t2t2" \
+            "1|other-pkg|1|CVE-2025-9999" \
+            "4|lodash|2|CVE-2025-9999,GHSA-p3aa-bbbb-cccc"; do
+    IFS='|' read -r asset pkg n ids <<< "$want"
+    GOT=$(rows "$asset" "$pkg")
+    [ "${GOT%|*}" = "$n|$ids" ] || { echo "  자산 $asset · $pkg 가 '$GOT' 입니다 (그대로여야 함: $n|$ids)"; exit 1; }
+done
+echo "  근거 탐지 없는 짝 · 셋 엮임 · 다른 패키지 · 다른 자산은 그대로"
+
+run "$DB" -N -e "SHOW TABLES LIKE 'analysis%v18';" | grep -q . \
+    && { echo "  이관에 쓴 표가 남아 있습니다"; exit 1; }
+echo "  이관에 쓴 표는 지움"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

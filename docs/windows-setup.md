@@ -656,6 +656,8 @@ Copy-Item target\sbomsight-1.0.0.jar C:\work\sbomsight-before-upgrade.jar
 >
 > **V15 는 조치의 목표 버전을 다시 모은다** — 하나였던 것을 수정 버전 전부로.
 > **V16 은 현재 버전을 같은 식으로** — 하나였던 것을 그 검사의 설치 버전 전부로.
+> **V18 은 둘로 갈린 검토 결과를 하나로 합친다** — 같은 취약점이 CVE 번호와 별칭
+> (GHSA)으로 따로 적힌 두 줄 중 나중에 고친 쪽을 남기고, 다른 쪽은 이력과 감사 로그에 남긴다.
 > 되돌리는 절차는 [`docs/operations.md` 8절](operations.md#8-업그레이드) 에 있다.
 
 ```powershell
