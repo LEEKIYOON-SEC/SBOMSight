@@ -36,24 +36,31 @@ public final class CsvWriter {
     }
 
     /**
-     * @param doneRemaining 완료인데 최신 검사에 해소 건수가 남은 조치(id → 건수) —
-     *                      `조치 상태` 를 화면 · 보고서와 같은 `완료 · 탐지 남음` 으로 적는다
+     * 조치 — 화면의 조치 목록과 같은 줄.
+     *
+     * <p>{@code 조치 회차} 를 함께 적는다 — 같은 패키지의 지난 회차와 지금 회차가 한 파일에
+     * 나란히 오므로, 그 칸이 없으면 두 줄을 가를 수 없다(D5).
+     *
+     * @param afterDone 완료인데 지금 검사에 해소 건수가 남은 조치(id → 갈래) — `조치 상태` 를
+     *                  화면 · 보고서와 같은 말(완료 · 탐지 남음 · 신규 탐지 · 검증 대기)로 적는다
      */
     public static void writeRemediations(OutputStream out, List<Remediation> list,
-                                         java.util.Map<Long, Long> doneRemaining)
+                                         java.util.Map<Long, AfterDone> afterDone)
             throws IOException {
         try (Writer writer = start(out)) {
-            row(writer, "자산", "패키지", "현재 버전", "목표 버전", "조치 상태", "담당", "기한",
-                        "등록 당시 건수", "설명", "등록", "최종 변경");
+            row(writer, "자산", "패키지", "조치 회차", "현재 버전", "목표 버전", "조치 상태", "담당",
+                        "기한", "등록 당시 건수", "설명", "등록", "최종 변경");
             for (Remediation r : list) {
+                AfterDone left = afterDone.get(r.getId());
                 row(writer,
                     r.getAsset().getName(),
                     r.getPackageName(),
+                    String.valueOf(r.getRoundNo()),
                     // 하나로 고르지 않는다 — 여럿이면 `현재 버전 N가지: a · b` (V16)
                     FixVersions.describe("현재 버전", r.getFromVersions()),
                     // 하나로 고르지 않는다 — 여럿이면 `수정 버전 N가지: a · b` (화면과 같은 규칙)
                     FixVersions.describe(r.getToVersions()),
-                    doneRemaining.containsKey(r.getId()) ? "완료 · 탐지 남음" : r.getStatus().label(),
+                    left != null ? left.label() : r.getStatus().label(),
                     r.getOwner(),
                     r.getDueDate() == null ? "" : r.getDueDate().format(DAY),
                     String.valueOf(r.getOpenedCount()),

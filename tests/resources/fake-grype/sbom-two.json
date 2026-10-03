@@ -1,0 +1,127 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "GHSA-aaaa-1111-1111",
+        "dataSource": "fake",
+        "namespace": "github:language:fake",
+        "severity": "High",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": {
+              "baseScore": 9.8
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.1.1n"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2025-1111",
+          "dataSource": "fake",
+          "namespace": "nvd:cpe"
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "dpkg-matcher",
+          "searchedBy": {
+            "namespace": "debian:distro:debian:11"
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-aaaa-1111-1111",
+            "versionConstraint": "< 1.1.1n"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "openssl",
+        "version": "1.1.1k",
+        "type": "deb",
+        "purl": "pkg:deb/debian/openssl@1.1.1k",
+        "locations": [
+          {
+            "path": "/var/lib/dpkg/status"
+          }
+        ]
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-zzzz-2222-2222",
+        "dataSource": "fake",
+        "namespace": "github:language:fake",
+        "severity": "High",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": {
+              "baseScore": 9.8
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.1.1n"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2021-2222",
+          "dataSource": "fake",
+          "namespace": "nvd:cpe"
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "dpkg-matcher",
+          "searchedBy": {
+            "namespace": "debian:distro:debian:11"
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-zzzz-2222-2222",
+            "versionConstraint": "< 1.1.1n"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "openssl",
+        "version": "1.1.1k",
+        "type": "deb",
+        "purl": "pkg:deb/debian/openssl@1.1.1k",
+        "locations": [
+          {
+            "path": "/var/lib/dpkg/status"
+          }
+        ]
+      }
+    }
+  ],
+  "source": {
+    "type": "sbom"
+  },
+  "distro": {
+    "name": "debian",
+    "version": "11"
+  },
+  "descriptor": {
+    "version": "0.0.0-fake",
+    "db": {
+      "built": "2026-09-01T00:00:00Z"
+    }
+  }
+}

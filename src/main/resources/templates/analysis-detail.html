@@ -113,21 +113,23 @@
       </table>
     </div>
     <!--/*
-      **이력이 무엇을 남기는지 밝힌다.** 이력은 고르는 칸만 남긴다(FindingAnalysisTest
-      — 적는 칸만 고친 것은 이력을 늘리지 않는다). 그것을 말하지 않으면 결재 문서
-      번호를 바꾼 일도 여기 있으리라 읽힌다 — 없는 기록을 있는 것처럼 보이게 두지
-      않는다.
+      **이력이 무엇을 남기는지 밝힌다.** 이제 바뀐 칸은 전부 남는다 — 적는 칸(설명 ·
+      추가 보안 통제 · 결재 문서 번호)도(V19). 앞서는 고르는 칸만 남겼으므로 그 전에
+      바뀐 적는 칸은 없다. 그 시각 전에 만든 검토 결과에만 그것을 말한다 — 말하지
+      않으면 결재 문서 번호를 바꾼 일도 여기 있으리라 읽힌다. 없는 기록을 있는 것처럼
+      보이게 두지 않는다.
     */-->
-    <div class="card-footer">
-      <p class="footnote" style="margin-top:0;padding-top:0;border-top:0">
-        ※ 이력에 남는 칸 — 검토 상태 · 근거 · 대응 방안 · 재검토일.
-        설명 · 추가 보안 통제 · 결재 문서 번호는 지금 값만(위 표).
-      </p>
+    <div class="card-footer"
+         th:if="${historySince != null or analysis.events.![field].contains('검토 결과 합침')}">
+      <p class="footnote" style="margin-top:0;padding-top:0;border-top:0" th:if="${historySince != null}"
+         th:text="'※ 설명 · 추가 보안 통제 · 결재 문서 번호는 ' + ${#temporals.format(historySince, 'yyyy-MM-dd HH:mm')}
+                  + ' 부터 바뀐 것만 이력에 — 그 전 것은 지금 값만(위 표).'">※ 설명 · 추가 보안 통제 · 결재 문서 번호는 2026-10-03 09:00 부터 바뀐 것만 이력에 — 그 전 것은 지금 값만(위 표).</p>
       <!--/*
         V18 이 둘로 갈린 검토 결과를 합치며 남긴 줄이 있을 때만(D4). 말하지 않으면
         `검토 결과 합침` 이 무엇인지, 같은 시각대에 앞뒤가 안 맞는 줄이 왜 섞였는지
-        (다른 쪽의 이력이 그때의 시각으로 함께 있다) 읽히지 않는다. 다른 쪽의 적는
-        칸은 이력에 담지 않는 칸이라 감사 로그에 있다. 각주는 90자 안(ReportProseTest).
+        (다른 쪽의 이력이 그때의 시각으로 함께 있다) 읽히지 않는다. 합친 것은 이력이 적는
+        칸을 담기 전(V18 — V19 앞)이라 다른 쪽의 적는 칸은 감사 로그에 있다. 각주는 90자
+        안(ReportProseTest).
       */-->
       <p class="footnote" style="margin-top:0;padding-top:0;border-top:0"
          th:if="${analysis.events.![field].contains('검토 결과 합침')}">

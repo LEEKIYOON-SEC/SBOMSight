@@ -173,23 +173,34 @@ class FindingAnalysisTest {
                                      .contains("상태", "대응", "재검토일");
     }
 
-    /** 손대지 않은 칸까지 쌓으면 이력이 읽히지 않는다. */
+    /**
+     * 손대지 않은 칸까지 쌓으면 이력이 읽히지 않는다.
+     *
+     * <p>앞서 이 시험은 설명을 고쳐도 이력이 늘지 않는 것을 지켰다 — 이력이 고르는 칸만
+     * 남기던 때라, 결재 문서 번호를 누가 언제 바꿨는지 답할 것이 없었다. 이제 적는 칸
+     * (설명 · 추가 보안 통제 · 결재 문서 번호)도 앞뒤 값을 남긴다(R8, V19). 지키는 것은
+     * 그대로 "바뀐 칸만" 이다 — 설명만 고치면 설명 한 줄.
+     */
     @Test
     @DisplayName("바뀌지 않은 칸은 이력에 쌓이지 않는다")
     void unchangedFieldsAreNotLogged() {
         FindingAnalysis first = acceptRisk("CVE-1", "openssl");
-        // 처음 적을 때는 상태·대응·재검토일 셋이 빈 값에서 바뀐다.
+        // 처음 적을 때는 고르는 칸 셋(상태 · 대응 · 재검토일)과 적는 칸 셋이 빈 값에서 바뀐다.
         int afterFirst = first.getEvents().size();
-        assertThat(afterFirst).isEqualTo(3);
+        assertThat(afterFirst).isEqualTo(6);
 
-        // 고르는 값 셋은 그대로 두고 적는 칸만 고친다.
+        // 나머지는 그대로 두고 설명만 고친다.
         FindingAnalysis same = service.record(asset, "CVE-1", "openssl",
                 AnalysisState.EXPLOITABLE, null, AnalysisResponse.WILL_NOT_FIX,
                 "설명만 고칩니다", "내부망에서만 접근", "보안-2026-0143", future(), "tester");
 
         assertThat(same.getEvents())
-                .as("고르는 값이 그대로인데 이력이 늘었다")
-                .hasSize(afterFirst);
+                .as("설명만 고쳤는데 이력이 한 줄보다 많이 늘었다 — 손대지 않은 칸까지 쌓였다")
+                .hasSize(afterFirst + 1);
+        FindingAnalysisEvent last = same.getEvents().get(afterFirst);
+        assertThat(last.getField()).isEqualTo("설명");
+        assertThat(last.getBefore()).isEqualTo("업스트림에 수정 버전이 없고 해당 기능을 쓰지 않습니다");
+        assertThat(last.getAfter()).isEqualTo("설명만 고칩니다");
         assertThat(same.getNote()).isEqualTo("설명만 고칩니다");
     }
 

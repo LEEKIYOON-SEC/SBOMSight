@@ -9,9 +9,6 @@ import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.AuditService;
 import kr.sbomsight.service.RemediationService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,8 +35,6 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 @Controller
 public class RemediationController {
 
-    private static final Logger log = LoggerFactory.getLogger(RemediationController.class);
-
     private final ScanRepository scans;
     private final AssetRepository assets;
     private final RemediationService service;
@@ -65,7 +60,7 @@ public class RemediationController {
                        Principal principal, RedirectAttributes flash) {
         Scan scan = scans.findWithAsset(scanId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
-        return opened(openOrRejoin(scan.getAsset(), scan, packageName, principal.getName()),
+        return opened(service.open(scan.getAsset(), scan, packageName, principal.getName()),
                       packageName, flash);
     }
 
@@ -93,41 +88,21 @@ public class RemediationController {
                                     asset.getName() + " 자산은 완료된 검사가 없어 조치를 열 수 없습니다.");
             return "redirect:/assets/" + assetId;
         }
-        return opened(openOrRejoin(asset, latest, packageName, principal.getName()),
+        return opened(service.open(asset, latest, packageName, principal.getName()),
                       packageName, flash);
-    }
-
-    /**
-     * 열거나, <b>동시에 눌린 다른 요청이 먼저 연 것에 합류한다.</b>
-     *
-     * <p>조치는 {@code (자산, 패키지)} 하나에 하나이고 같은 패키지의 검토
-     * 여러 줄이 모두 `조치 등록` 을 달고 있다 — 두 번 눌리는 것은 예외가
-     * 아니라 보통이고, 빠르게 두 번 누르면 두 요청이 겹친다. 그때 DB 의
-     * 유일 제약이 막아 <b>데이터는 갈라지지 않지만</b>, 예외가 그대로
-     * 올라가면 화면이 500 이 되어 <b>조치가 열렸는지 아닌지를 알 수 없다.</b>
-     *
-     * <p>열린 것을 읽어 그리로 보낸다 — 두 번 눌러 하나가 열리는 것은
-     * 원래 의도한 동작이고, 겹쳐 눌렸다는 사정은 누른 사람이 알 필요가 없다.
-     */
-    private RemediationService.Opened openOrRejoin(Asset asset, Scan scan,
-                                                   String packageName, String actor) {
-        try {
-            return service.open(asset, scan, packageName, actor);
-        } catch (DataIntegrityViolationException race) {
-            log.info("조치를 여는 요청이 겹쳤습니다 — 먼저 열린 것으로 보냅니다: {} · {}",
-                     asset.getName(), packageName);
-            return service.rejoin(asset.getId(), packageName);
-        }
     }
 
     /**
      * 연 뒤에는 그 조치로 간다 — <b>담당과 기한을 적을 자리가 거기다.</b>
      *
-     * <p>{@link RemediationService#open} 은 같은 {@code (자산, 패키지)} 에
-     * 둘을 만들지 않는다. 이미 있으면 그것을 돌려주므로 두 번 눌러도 조치가
-     * 늘지 않는다 — 대신 말이 달라야 한다. "등록했습니다" 라고 해 놓고
-     * 아무것도 안 생기면 다음에 또 누른다. <b>앞서 이 주석만 있고 코드는
-     * 양쪽에 같은 말을 하고 있었다.</b>
+     * <p>{@link RemediationService#open} 은 열린 조치가 있으면 그것을 돌려주므로 두 번
+     * 눌러도 조치가 늘지 않는다 — 대신 말이 달라야 한다. "등록했습니다" 라고 해 놓고
+     * 아무것도 안 생기면 다음에 또 누른다. 닫힌 조치만 있던 패키지면 새 조치가 다음
+     * 회차로 열린다(D5) — 그것도 말한다.
+     *
+     * <p>동시에 두 번 눌린 것은 서비스가 자산 잠금으로 줄 세운다 — 뒤 요청은 앞 요청이
+     * 연 조치를 받는다. 앞서는 DB 의 유일 제약이 막고 여기서 그 예외를 받아 먼저 열린
+     * 것으로 보냈는데, 회차가 생기며 그 제약을 풀었다(V19).
      *
      * <p>새로 만든 것만 감사 로그에 남긴다. 등록 당시 건수와 현재 · 목표 버전을
      * 함께 적는다 — 조치를 지우면 그 스냅샷이 함께 사라지고, 남는 것은
@@ -137,16 +112,19 @@ public class RemediationController {
                           RedirectAttributes flash) {
         Remediation remediation = opened.remediation();
         if (opened.created()) {
+            String round = remediation.getRoundNo() > 1 ? remediation.getRoundNo() + "회차 · " : "";
             audit.record(AuditEvent.REMEDIATION_CREATED,
                          remediation.getAsset().getName() + " · " + packageName,
-                         "등록 당시 " + remediation.getOpenedCount() + "건"
+                         round + "등록 당시 " + remediation.getOpenedCount() + "건"
                          + (remediation.getFromVersions().isEmpty() ? ""
                             : (remediation.getFromVersions().size() == 1 ? " · 현재 " : " · ")
                               + FixVersions.describe("현재 버전", remediation.getFromVersions()))
                          + (remediation.getToVersions().isEmpty() ? ""
                             : (remediation.getToVersions().size() == 1 ? " · 목표 " : " · ")
                               + FixVersions.describe(remediation.getToVersions())));
-            flash.addFlashAttribute("message", packageName + " 조치를 등록했습니다.");
+            flash.addFlashAttribute("message", remediation.getRoundNo() > 1
+                    ? packageName + " 조치를 " + remediation.getRoundNo() + "회차로 등록했습니다."
+                    : packageName + " 조치를 등록했습니다.");
         } else {
             flash.addFlashAttribute("message", packageName + " 조치는 이미 등록되어 있습니다.");
         }

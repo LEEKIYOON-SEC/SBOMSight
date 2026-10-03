@@ -93,8 +93,13 @@ class AnalysisDetailTest {
                 .contains("검토 상태</td> <td>미검토 → 검토 중</td> <td class=\"tight\">alice")
                 .contains("검토 상태</td> <td>검토 중 → 해당 없음</td> <td class=\"tight\">bob")
                 .contains("근거</td> <td>— → 취약한 코드를 실행하지 않음</td> <td class=\"tight\">bob")
-                .as("이력이 무엇을 남기는지 밝힌다")
-                .contains("설명 · 추가 보안 통제 · 결재 문서 번호는 지금 값만")
+                // 앞서는 적는 칸이 이력에 없어 "지금 값만" 이라는 각주를 늘 달았다. 이제 그
+                // 칸도 남는다(R8, V19) — 각주는 그 전에 만든 것에만(ChangeHistoryTest).
+                .as("적는 칸도 앞뒤 값이 이력에 남는다")
+                .contains("설명</td> <td>— → 호출 경로 없음</td> <td class=\"tight\">bob")
+                .contains("결재 문서 번호</td> <td>— → 보안-2026-0001</td> <td class=\"tight\">bob")
+                .as("모든 칸을 남기기 시작한 뒤에 만든 것 — `지금 값만` 각주가 없다")
+                .doesNotContain("부터 바뀐 것만")
                 .as("합친 줄이 없으면 합침 각주도 없다")
                 .doesNotContain("※ 검토 결과 합침");
         // 최신 검사에 이 탐지가 아직 있다.

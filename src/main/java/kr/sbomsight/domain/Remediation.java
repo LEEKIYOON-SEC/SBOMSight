@@ -36,6 +36,24 @@ public class Remediation {
     private String packageName;
 
     /**
+     * <b>조치 회차</b> — 같은 (자산, 패키지)에 몇 번째로 연 조치인가(D5).
+     *
+     * <p>앞서 조치는 (자산, 패키지)에 하나뿐이었다. 완료한 뒤 같은 패키지에 새 취약점이
+     * 나오면 그 완료된 조치를 다시 열 수밖에 없었고, 다시 열면 완료 시각이 지워져 기간
+     * 중 완료에서 그 완료가 사라졌다(재현 시험 P2). 이제 닫힌 조치만 있으면 새 조치를
+     * 연다({@link #followUp}) — 열린 조치는 (자산, 패키지)에 하나다(RemediationService.open).
+     */
+    @Column(name = "round_no", nullable = false)
+    private int roundNo = 1;
+
+    /**
+     * <b>이전 조치</b> — 바로 앞 회차의 번호. 첫 회차는 비어 있다. FK 는 두지 않는다
+     * (V19 머리말 — 자산을 지울 때 한 번에 사라지는 사이에 끼지 않게).
+     */
+    @Column(name = "previous_id")
+    private Long previousId;
+
+    /**
      * 등록 당시의 설치 버전 <b>전부</b> — 수정 버전과 같은 꼴로 잇는다
      * ({@link FixVersions}). 앞서는 CVSS 가 가장 높은 건의 것 하나였다 — 같은
      * 패키지가 두 벌 깔린 자산에서 한 벌이 조치 어디에도 없었다. 넓힌 것은 {@code V16}.
@@ -84,8 +102,9 @@ public class Remediation {
     @Column(name = "closed_at")
     private Instant closedAt;
 
+    /** 한 번에 여러 줄(상태 · 담당 · 기한 · 설명)이 같은 시각에 남으므로 순서를 번호로 마저 정한다. */
     @OneToMany(mappedBy = "remediation", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("at ASC")
+    @OrderBy("at ASC, id ASC")
     private List<RemediationEvent> events = new ArrayList<>();
 
     protected Remediation() {
@@ -113,6 +132,39 @@ public class Remediation {
         this.events.add(new RemediationEvent(this, actor, previous, next, comment));
     }
 
+    /**
+     * 담당 · 기한 · 설명을 고치고, <b>바뀐 칸마다</b> 앞뒤 값을 발자취에 남긴다(R8).
+     *
+     * <p>앞서는 상태가 바뀔 때만 남겨, 상태를 그대로 두고 기한만 미루면 발자취에 아무것도
+     * 없었다 — "누가 기한을 밀었나" 에 답할 것이 다음 수정이 덮어쓰는 {@code updated_by}
+     * 하나였다. 변경 사유는 같은 저장의 줄마다 붙인다. 손대지 않은 칸은 남기지 않는다.
+     */
+    public void edit(String owner, LocalDate dueDate, String note, String actor, String comment) {
+        String newOwner = owner == null ? "" : owner.trim();
+        String newNote = note == null ? "" : note;
+        changed(actor, "담당", this.owner, newOwner, comment);
+        changed(actor, "기한", this.dueDate == null ? "" : this.dueDate.toString(),
+                dueDate == null ? "" : dueDate.toString(), comment);
+        changed(actor, "설명", this.note, newNote, comment);
+        this.owner = newOwner;
+        this.dueDate = dueDate;
+        this.note = newNote;
+    }
+
+    private void changed(String actor, String field, String before, String after, String comment) {
+        if (!before.equals(after)) {
+            events.add(RemediationEvent.field(this, actor, field, before, after, comment));
+        }
+    }
+
+    /**
+     * 앞 회차를 잇는다 — 회차는 하나 늘고, 이전 조치는 그 조치다(D5).
+     */
+    public void followUp(Remediation previous) {
+        this.roundNo = previous.roundNo + 1;
+        this.previousId = previous.getId();
+    }
+
     public Long getId() {
         return id;
     }
@@ -123,6 +175,14 @@ public class Remediation {
 
     public String getPackageName() {
         return packageName;
+    }
+
+    public int getRoundNo() {
+        return roundNo;
+    }
+
+    public Long getPreviousId() {
+        return previousId;
     }
 
     public String getFromVersion() {

@@ -39,13 +39,16 @@ public class FindingAnalysisController {
     private final AssetRepository assets;
     private final ScanRepository scans;
     private final FindingRepository findings;
+    private final kr.sbomsight.service.SettingsService settings;
 
     public FindingAnalysisController(FindingAnalysisService analyses, AssetRepository assets,
-                                     ScanRepository scans, FindingRepository findings) {
+                                     ScanRepository scans, FindingRepository findings,
+                                     kr.sbomsight.service.SettingsService settings) {
         this.analyses = analyses;
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
+        this.settings = settings;
     }
 
     /**
@@ -71,6 +74,9 @@ public class FindingAnalysisController {
                 : findings.findByCveIn(List.of(latest.getId()), analysis.getCve(), true).stream()
                           .filter(f -> f.getPackageName().equals(analysis.getPackageName()))
                           .toList());
+        // 이력이 적는 칸까지 남기 시작한 시각 — 그보다 먼저 만든 것에만 각주로(V19).
+        model.addAttribute("historySince", settings.historyFieldsSince()
+                .filter(since -> analysis.getCreatedAt().isBefore(since)).orElse(null));
         return "analysis-detail";
     }
 

@@ -26,7 +26,43 @@ import java.util.Optional;
  */
 public interface RemediationRepository extends JpaRepository<Remediation, Long> {
 
-    Optional<Remediation> findByAssetIdAndPackageName(Long assetId, String packageName);
+    /** (자산, 패키지)의 조치를 회차가 늦은 것부터 — 맨 앞이 지금 조치(최신 회차). */
+    List<Remediation> findByAssetIdAndPackageNameOrderByRoundNoDescIdDesc(Long assetId, String packageName);
+
+    /**
+     * (자산, 패키지)의 <b>지금 조치</b> — 최신 회차.
+     *
+     * <p>회차가 생긴 뒤로(D5, V19) 한 (자산, 패키지)에 조치가 여럿일 수 있다. 앞서 쓰던
+     * {@code findByAssetIdAndPackageName} 은 하나를 전제로 해, 둘째 회차가 생기는 순간
+     * "결과가 하나가 아님" 으로 터진다. 열린 조치는 많아야 하나이고, 있으면 그것이 최신
+     * 회차다(RemediationService).
+     */
+    default Optional<Remediation> findLatest(Long assetId, String packageName) {
+        return findByAssetIdAndPackageNameOrderByRoundNoDescIdDesc(assetId, packageName)
+                .stream().findFirst();
+    }
+
+    /** 이 가운데 다음 회차가 이어받은 조치 — 지난 회차라 완료 뒤 표시를 붙이지 않는다. */
+    @Query("SELECT r.previousId FROM Remediation r WHERE r.previousId IN :ids")
+    List<Long> findPreviousIdsIn(@Param("ids") java.util.Collection<Long> ids);
+
+    /** 이 조치를 이은 다음 회차 — 있으면 이 조치는 다시 열지도 지우지도 않는다. */
+    Optional<Remediation> findFirstByPreviousId(Long previousId);
+
+    /**
+     * 기간 안에 <b>완료로 바뀐</b> 조치 — 구역 보고서의 `기간 중 완료`.
+     *
+     * <p>완료 시각 칸({@code closed_at})으로 세면 다시 연 순간 그 칸이 비어, 기간 중에
+     * 있었던 완료가 사라졌다(재현 시험 P2). 이력의 완료 줄은 남는다. 같은 조치가 기간
+     * 중에 두 번 완료돼도 하나로 센다.
+     */
+    @Query("""
+           SELECT DISTINCT e.remediation.id FROM RemediationEvent e
+           WHERE e.toStatus = 'DONE' AND e.fromStatus <> 'DONE'
+             AND e.at >= :start AND e.at < :end
+           """)
+    List<Long> findClosedBetween(@Param("start") java.time.Instant start,
+                                 @Param("end") java.time.Instant end);
 
     List<Remediation> findByAssetIdOrderByStatusAscPackageNameAsc(Long assetId);
 

@@ -9,6 +9,7 @@ import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.RemediationService;
+import kr.sbomsight.service.SettingsService;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -51,16 +52,18 @@ public class ActionController {
     private final ScanRepository scans;
     private final ZoneService zones;
     private final AuditService audit;
+    private final SettingsService settings;
 
     public ActionController(RemediationRepository remediations, RemediationService service,
                             FindingAnalysisService analyses, ScanRepository scans,
-                            ZoneService zones, AuditService audit) {
+                            ZoneService zones, AuditService audit, SettingsService settings) {
         this.remediations = remediations;
         this.service = service;
         this.analyses = analyses;
         this.scans = scans;
         this.zones = zones;
         this.audit = audit;
+        this.settings = settings;
     }
 
     /**
@@ -132,30 +135,37 @@ public class ActionController {
                     ? rows.stream().filter(a -> !a.isOpen()).count()
                     : analyses.list(true, zone, archived).size() - rows.size());
             model.addAttribute("overdue", analyses.reviewOverdue(archived));
-            // 검토 결과 줄에서 조치로 넘어가는 길. 조치는 `(자산, 패키지)`
-            // 하나에 하나라 검토 여러 건이 조치 하나를 가리킨다 — 이미
-            // 열려 있으면 `조치 등록` 이 아니라 `조치 보기` 다.
+            // 검토 결과 줄에서 조치로 넘어가는 길. 검토 여러 건이 그 (자산, 패키지)의
+            // 지금 조치(최신 회차) 하나를 가리킨다 — 이미 있으면 `조치 등록` 이 아니라
+            // 그 조치다. 완료 · 신규 탐지면 옆에 `조치 등록`(다음 회차)을 둔다(D11).
             java.util.Map<String, Remediation> actions = service.byAssetPackage(
                     rows.stream().map(a -> a.getAsset().getId()).distinct().toList());
             model.addAttribute("actions", actions);
-            model.addAttribute("doneRemaining", service.doneRemaining(actions.values()));
+            model.addAttribute("afterDone", service.afterDone(actions.values()));
         } else {
             org.springframework.data.domain.Page<Remediation> shown =
                     Paging.slice(service.list(zone, status, archived), page, size);
             model.addAttribute("remediations", shown);
-            // 완료인데 최신 검사에 해소 건수가 남은 조치 — 보고서 5장과 같은 말로 적는다.
-            model.addAttribute("doneRemaining", service.doneRemaining(shown.getContent()));
+            // 완료인데 지금 검사에 해소 건수가 남은 조치 — 세 갈래(AfterDone), 보고서 5장과
+            // 같은 규칙 · 같은 말로 적는다.
+            model.addAttribute("afterDone", service.afterDone(shown.getContent()));
             model.addAttribute("overdue", remediations.findOverdue(LocalDate.now(), archived));
         }
         return "actions";
     }
 
-    /** 조치 하나 — 상태·담당·기한과 그동안의 발자취. */
+    /** 조치 하나 — 상태·담당·기한, 조치 회차 · 조치 대상, 그동안의 발자취. */
     @GetMapping("/{id}")
     public String detail(@PathVariable Long id, Model model) {
         Remediation remediation = remediation(id);
         model.addAttribute("remediation", remediation);
         model.addAttribute("statuses", RemediationStatus.values());
+        // 회차 — 이전 조치, 그리고 이 조치가 지난 회차면 최신 회차(D5 · D11).
+        model.addAttribute("previous", service.previous(remediation).orElse(null));
+        model.addAttribute("latestRound", service.latestOf(remediation).orElse(null));
+        // 이력이 적는 칸까지 남기 시작한 시각 — 그보다 먼저 만든 조치에만 각주로(V19).
+        model.addAttribute("historySince", settings.historyFieldsSince()
+                .filter(since -> remediation.getCreatedAt().isBefore(since)).orElse(null));
 
         // 최신 검사에서 이 패키지가 아직 몇 건인가. **상태를 자동으로 바꾸지는
         // 않는다** — 대상이 바뀌어 사라진 것인지 정말 올린 것인지 우리가
@@ -166,9 +176,12 @@ public class ActionController {
                 latest == null ? -1L
                         : service.remainingCounts(remediation.getAsset().getId(), latest)
                                  .getOrDefault(remediation.getId(), 0L));
-        // 완료로 닫았는데 해소 건수가 남았는가 — 보고서 5장의 `완료 · 탐지 남음`.
+        // 완료로 닫았는데 해소 건수가 남았는가 — 세 갈래(AfterDone), 보고서 5장과 같은 말.
         // 위의 `탐지` 는 해당 없음 · 오탐까지 센 수라 축이 다르다(둘 다 보여 준다).
-        model.addAttribute("doneRemaining", service.doneRemaining(List.of(remediation)));
+        model.addAttribute("afterDone", service.afterDone(List.of(remediation)).get(remediation.getId()));
+        // 조치 대상 — 등록 당시의 탐지. 지금 검사에 아직 있는지 번호로 맞댄다(R9).
+        model.addAttribute("targets", service.targets(remediation));
+        model.addAttribute("presentIds", service.idsIn(latest, remediation.getPackageName()));
         return "action-detail";
     }
 
@@ -185,7 +198,13 @@ public class ActionController {
         Remediation remediation = remediation(id);
         // **고치기 전에 읽는다.** `service.update` 가 같은 객체를 바꾼다.
         String changed = changes(remediation, status, owner, dueDate, note);
-        service.update(remediation, status, owner, dueDate, note, principal.getName(), comment);
+        try {
+            service.update(remediation, status, owner, dueDate, note, principal.getName(), comment);
+        } catch (IllegalArgumentException refused) {
+            // 다음 회차가 이은 조치를 다시 열려 했다 — 열린 조치가 둘이 된다(D5).
+            flash.addFlashAttribute("error", refused.getMessage());
+            return "redirect:/actions/" + id;
+        }
         if (!changed.isEmpty()) {
             audit.record(AuditEvent.REMEDIATION_UPDATED,
                          remediation.getAsset().getName() + " · "
@@ -246,7 +265,13 @@ public class ActionController {
     public String delete(@PathVariable Long id, RedirectAttributes flash) {
         Remediation remediation = remediation(id);
         String target = remediation.getAsset().getName() + " · " + remediation.getPackageName();
-        service.delete(remediation);
+        try {
+            service.delete(remediation);
+        } catch (IllegalArgumentException refused) {
+            // 다음 회차가 이은 조치 — 지우면 회차가 끊긴다.
+            flash.addFlashAttribute("error", refused.getMessage());
+            return "redirect:/actions/" + id;
+        }
         audit.record(AuditEvent.REMEDIATION_DELETED, target,
                      "등록 당시 " + remediation.getOpenedCount() + "건 · "
                      + remediation.getStatus().label());
@@ -277,7 +302,7 @@ public class ActionController {
         } else {
             List<Remediation> rows = service.list(zone, status, archived);
             CsvWriter.writeRemediations(response.getOutputStream(), rows,
-                                        service.doneRemaining(rows));
+                                        service.afterDone(rows));
         }
     }
 

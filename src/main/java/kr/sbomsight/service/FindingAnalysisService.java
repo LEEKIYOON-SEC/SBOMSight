@@ -126,6 +126,12 @@ public class FindingAnalysisService {
         note(analysis, actor, "재검토일",
              String.valueOf(analysis.getReviewBy() == null ? "" : analysis.getReviewBy()),
              String.valueOf(newReviewBy == null ? "" : newReviewBy));
+        // 적는 칸도 남긴다(R8, V19). 앞서는 고르는 칸만 남겨 "결재 문서 번호는 언제
+        // 바뀌었나" 에 답할 것이 없었다. 저장하는 꼴(앞뒤 빈칸을 뗀 값)으로 견준다 —
+        // 빈칸만 다른 것은 바뀐 것이 아니다.
+        note(analysis, actor, "설명", analysis.getNote(), trimmed(note));
+        note(analysis, actor, "추가 보안 통제", analysis.getOtherControl(), trimmed(otherControl));
+        note(analysis, actor, "결재 문서 번호", analysis.getApprovalDoc(), trimmed(approvalDoc));
 
         analysis.setState(newState);
         analysis.setJustification(newJustification);
@@ -152,6 +158,10 @@ public class FindingAnalysisService {
         if (!Objects.equals(before, after)) {
             analysis.record(actor, field, before, after);
         }
+    }
+
+    private static String trimmed(String text) {
+        return text == null ? "" : text.trim();
     }
 
     /** 이력에 남기는 말은 화면에 찍는 말과 같아야 한다 — 사람이 읽는 것이다. */

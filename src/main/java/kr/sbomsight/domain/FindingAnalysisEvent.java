@@ -32,15 +32,22 @@ public class FindingAnalysisEvent {
     @Column(nullable = false, length = 64)
     private String actor = "";
 
-    /** 무엇이 바뀌었나 — {@code 상태} · {@code 근거} · {@code 대응} · {@code 재검토일} … */
+    /**
+     * 무엇이 바뀌었나 — {@code 상태} · {@code 근거} · {@code 대응} · {@code 재검토일}, 그리고
+     * (V19 부터) {@code 설명} · {@code 추가 보안 통제} · {@code 결재 문서 번호}.
+     */
     @Column(name = "field_name", nullable = false, length = 32)
     private String field = "";
 
-    /** 바뀌기 전 값. 화면에 찍는 말로 담는다 — 이력은 사람이 읽는 것이다. */
-    @Column(name = "before_value", nullable = false, length = 255)
+    /**
+     * 바뀌기 전 값. 화면에 찍는 말로 담는다 — 이력은 사람이 읽는 것이다.
+     *
+     * <p>설명(2,000자)까지 담는다(V19). 앞서 255자라 적는 칸은 이력에 넣을 수 없었다.
+     */
+    @Column(name = "before_value", nullable = false, length = 2000)
     private String before = "";
 
-    @Column(name = "after_value", nullable = false, length = 255)
+    @Column(name = "after_value", nullable = false, length = 2000)
     private String after = "";
 
     protected FindingAnalysisEvent() {
@@ -57,7 +64,7 @@ public class FindingAnalysisEvent {
 
     private static String clip(String value) {
         String text = value == null ? "" : value.trim();
-        return text.length() > 255 ? text.substring(0, 255) : text;
+        return text.length() > 2000 ? text.substring(0, 2000) : text;
     }
 
     public Long getId() {

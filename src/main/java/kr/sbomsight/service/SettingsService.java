@@ -45,6 +45,15 @@ public class SettingsService {
         return current;
     }
 
+    /**
+     * 이력이 적는 칸까지 남기 시작한 시각({@link AppSetting#HISTORY_FIELDS_SINCE}) — 없으면
+     * 비어 있다(처음부터 전부 남긴 것).
+     */
+    @Transactional(readOnly = true)
+    public Optional<java.time.Instant> historyFieldsSince() {
+        return settings.findById(AppSetting.HISTORY_FIELDS_SINCE).map(AppSetting::getUpdatedAt);
+    }
+
     @Transactional(readOnly = true)
     public String allowedIpsText() {
         return settings.findById(AppSetting.ALLOWED_IPS)

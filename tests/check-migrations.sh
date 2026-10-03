@@ -66,6 +66,8 @@ INSERT INTO assets (name, group_name, os_name, note, created_at) VALUES
  ('db-01','내부업무','Rocky 8.9','',NOW(6)),
  ('log-01','','Ubuntu 22.04','',NOW(6)),
  ('dev-01','   ','Rocky 9.3','',NOW(6));"
+# V19 확인에 쓰는 긴 번호 — 탐지 칸(128자)에는 들고 옛 조치 대상 칸(64자)에는 안 드는 길이.
+LONGID="LONG-$(printf 'x%.0s' $(seq 1 90))"
 for f in $MIGRATIONS; do
     case "$(basename "$f")" in V1__*|V2__*|V3__*|V4__*) continue ;; esac
     printf '  %-28s ' "$(basename "$f")"
@@ -279,6 +281,36 @@ for f in $MIGRATIONS; do
         SELECT id, '2026-09-01 09:00:00', 'lee', '상태', '미검토', '해당됨' FROM finding_analysis
         WHERE asset_id = 1 AND cve = 'CVE-2025-9999' AND package_name = 'lodash';"
         echo "  └ 검토 결과 12행을 넣었다 (짝 · 근거 없는 짝 · 셋 엮임 · 같은 시각 짝 · 다른 패키지 · 다른 자산)" ;;
+    esac
+
+    # V19 가 조치 대상을 등록한 검사에서 채우고(R9), (자산, 패키지)의 유일 키를 풀고(R7),
+    # 이력 칸을 더하고 넓힌다(R8). 채울 것이 있는 상태에서 태워야 한다. 경계 사례:
+    #   경로만 다른 같은 탐지(하나로) · 대소문자만 다른 설치 버전(둘로) · 함께 온 CVE ·
+    #   64자를 넘는 번호(탐지와 같은 너비여야 한다 — 좁으면 이 판이 멈춘다)
+    # 앞 판들이 넣은 조치 — 등록한 검사가 있는 것(tomcat-coyote · log4j-core · widepkg),
+    # 지워진 것(libxml2), 모르는 것(openssl · glibc · zlib) — 도 함께 본다.
+    # 대기로 넣는다 — V14 확인이 완료 조치 전부를 센다(V13 의 zlib 하나).
+    case "$(basename "$f")" in V18__*)
+        run "$DB" -e "
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (5, 'DONE', NOW(6), 'v19check', 'v19-a5', NOW(6));
+        SET @s = LAST_INSERT_ID();
+        INSERT INTO findings (scan_id, finding_key, cve, related_cve, package_name, package_version,
+                              fix_state, fixed_version) VALUES
+         (@s, 'GHSA-v19|pyyaml|/a',     'GHSA-v19v-v19v-v19v', 'CVE-2026-1919', 'pyyaml', '5.3', 'fixed', '5.4'),
+         (@s, 'GHSA-v19|pyyaml|/b',     'GHSA-v19v-v19v-v19v', 'CVE-2026-1919', 'pyyaml', '5.3', 'fixed', '5.4'),
+         (@s, 'CVE-2026-1920|pyyaml|c', 'CVE-2026-1920', '', 'pyyaml', '6.0-RC1', 'fixed', '6.0.1'),
+         (@s, 'CVE-2026-1920|pyyaml|d', 'CVE-2026-1920', '', 'pyyaml', '6.0-rc1', 'fixed', '6.0.1'),
+         (@s, '$LONGID|pyyaml', '$LONGID', '', 'pyyaml', '5.3', 'not-fixed', '');
+        INSERT INTO remediations
+          (asset_id, package_name, from_version, to_version, status, owner, opened_scan_id,
+           opened_count, note, created_at, created_by, updated_at, updated_by)
+        VALUES (5, 'pyyaml', '5.3 6.0-RC1 6.0-rc1', '5.4 6.0.1', 'OPEN', '', @s,
+                5, '', NOW(6), 'admin', NOW(6), 'admin');
+        INSERT INTO remediation_events (remediation_id, at, actor, from_status, to_status, comment)
+        SELECT id, NOW(6), 'admin', 'OPEN', 'OPEN', '조치 등록' FROM remediations
+        WHERE asset_id = 5 AND package_name = 'pyyaml';"
+        echo "  └ 조치 1행과 등록한 검사(같은 탐지 둘 · 대소문자만 다른 버전 · 95자 번호)를 넣었다" ;;
     esac
 
     case "$(basename "$f")" in V9__*)
@@ -634,6 +666,92 @@ echo "  근거 탐지 없는 짝 · 셋 엮임 · 다른 패키지 · 다른 자
 run "$DB" -N -e "SHOW TABLES LIKE 'analysis%v18';" | grep -q . \
     && { echo "  이관에 쓴 표가 남아 있습니다"; exit 1; }
 echo "  이관에 쓴 표는 지움"
+
+# --- V19: 조치 회차 · 조치 대상 · 이력 칸 -------------------------------------
+#
+# 조치 대상은 등록한 검사에서 채운다(V15 · V16 과 같은 방식) — 똑같은 줄은 하나로,
+# 글자가 다르면 둘로. 등록한 검사가 지워졌거나 모르는 조치는 비워 둔다(지어내 채우지
+# 않는다 — 화면이 `확인되지 않음` 이라 적는다). 있던 조치는 모두 1회차다.
+
+targets() {   # targets <패키지> → 그 패키지 조치의 조치 대상 수
+    run "$DB" -N -e "
+        SELECT COUNT(t.id) FROM remediations r LEFT JOIN remediation_targets t ON t.remediation_id = r.id
+        WHERE r.package_name = '$1';"
+}
+
+for want in "pyyaml|4" "tomcat-coyote|6" "log4j-core|6" "widepkg|400" \
+            "libxml2|0" "openssl|0" "glibc|0" "zlib|0"; do
+    pkg=${want%%|*}; n=${want#*|}
+    got=$(targets "$pkg")
+    [ "$got" = "$n" ] || { echo "  $pkg 의 조치 대상이 $got 줄입니다 (기대 $n)"; exit 1; }
+done
+echo "  등록한 검사에서 조치 대상을 채움 · 등록한 검사가 지워졌거나 모르는 조치는 비워 둠"
+
+PY=$(run "$DB" -N -e "
+    SELECT CONCAT(SUM(t.cve = 'GHSA-v19v-v19v-v19v' AND t.related_cve = 'CVE-2026-1919'
+                      AND t.package_version = '5.3' AND t.fixed_version = '5.4'), '|',
+                  COUNT(DISTINCT CASE WHEN t.cve = 'CVE-2026-1920' THEN t.package_version COLLATE utf8mb4_bin END), '|',
+                  SUM(t.cve = '$LONGID' AND CHAR_LENGTH(t.cve) = 95))
+    FROM remediation_targets t JOIN remediations r ON r.id = t.remediation_id
+    WHERE r.package_name = 'pyyaml';")
+[ "$PY" = "1|2|1" ] || {
+    echo "  pyyaml 의 조치 대상이 '$PY' 입니다 (기대 1|2|1 — 같은 탐지 하나 · 대소문자 다른 버전 둘 · 긴 번호 그대로)"; exit 1; }
+echo "  경로만 다른 같은 탐지는 하나로 · 대소문자만 다른 버전은 둘로 · 함께 온 CVE 와 95자 번호는 그대로"
+
+ROUNDS=$(run "$DB" -N -e "
+    SELECT CONCAT(COUNT(*), '|', SUM(round_no = 1), '|', SUM(previous_id IS NULL)) FROM remediations;")
+N=${ROUNDS%%|*}
+[ "$ROUNDS" = "$N|$N|$N" ] || { echo "  있던 조치의 회차가 '$ROUNDS' 입니다 (전부 1회차 · 이전 조치 없음이어야 함)"; exit 1; }
+echo "  있던 조치 ${N}행 — 전부 1회차 · 이전 조치 없음"
+
+EVENTS=$(run "$DB" -N -e "
+    SELECT CONCAT(COUNT(*), '|', SUM(field_name = '' AND before_value = '' AND after_value = ''))
+    FROM remediation_events;")
+N=${EVENTS%%|*}
+[ "$N" -gt 0 ] && [ "$EVENTS" = "$N|$N" ] || {
+    echo "  있던 조치 이력이 '$EVENTS' 입니다 — 새 칸은 비어 있어야 합니다(상태 줄)"; exit 1; }
+WIDTH=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(CONCAT(TABLE_NAME, '.', COLUMN_NAME, '=', CHARACTER_MAXIMUM_LENGTH)
+                        ORDER BY TABLE_NAME, COLUMN_NAME SEPARATOR ' ')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = '$DB' AND COLUMN_NAME IN ('before_value', 'after_value', 'field_name')
+      AND TABLE_NAME IN ('remediation_events', 'finding_analysis_event');")
+WANT="finding_analysis_event.after_value=2000 finding_analysis_event.before_value=2000 finding_analysis_event.field_name=32 remediation_events.after_value=1000 remediation_events.before_value=1000 remediation_events.field_name=32"
+[ "$WIDTH" = "$WANT" ] || { echo "  이력 칸이 '$WIDTH' 입니다"; echo "  기대 '$WANT'"; exit 1; }
+echo "  있던 조치 이력 ${N}줄은 상태 줄 그대로 · 이력 칸 — 조치 1,000자 · 검토 결과 2,000자"
+
+run "$DB" -N -e "SHOW INDEX FROM remediations WHERE Key_name = 'uk_remediation_open';" | grep -q . \
+    && { echo "  (자산, 패키지) 유일 키가 남아 있습니다"; exit 1; }
+run "$DB" -N -e "SHOW INDEX FROM remediations WHERE Key_name = 'ix_remediation_asset_pkg';" | grep -q . \
+    || { echo "  (자산, 패키지) 색인이 없습니다 — 자산 FK 와 조치 찾기가 기대는 색인"; exit 1; }
+# 실제로 넣어 본다 — 1회차를 완료로 닫고 같은 (자산, 패키지)의 2회차를 연다.
+run "$DB" -e "
+    UPDATE remediations SET status = 'DONE', closed_at = NOW(6)
+    WHERE asset_id = 5 AND package_name = 'pyyaml';
+    INSERT INTO remediations
+      (asset_id, package_name, round_no, previous_id, from_version, to_version, status, owner,
+       opened_count, note, created_at, created_by, updated_at, updated_by)
+    SELECT asset_id, package_name, 2, id, '', '', 'OPEN', '', 0, '', NOW(6), 'admin', NOW(6), 'admin'
+    FROM remediations WHERE asset_id = 5 AND package_name = 'pyyaml';"
+SECOND=$(run "$DB" -N -e "
+    SELECT CONCAT(COUNT(*), '|', MAX(round_no)) FROM remediations WHERE asset_id = 5 AND package_name = 'pyyaml';")
+[ "$SECOND" = "2|2" ] || { echo "  2회차를 넣지 못했습니다 ('$SECOND')"; exit 1; }
+echo "  (자산, 패키지) 유일 키를 풀고 보통 색인으로 — 같은 패키지에 2회차가 들어감"
+
+# 조치를 지우면 그 조치 대상도 사라진다 — 제약 이름만 보고 넘어가면 방향이 뒤집혀
+# 있어도 통과한다. 이전 조치에는 FK 가 없다 — 1회차를 지워도 2회차는 막히지 않고
+# 남는다(앱이 다음 회차가 있는 조치를 지우지 않는다 — RemediationService.delete).
+run "$DB" -e "DELETE FROM remediations WHERE asset_id = 5 AND package_name = 'pyyaml' AND round_no = 1;"
+LEFT="$(targets pyyaml)|$(run "$DB" -N -e "
+    SELECT COUNT(*) FROM remediations WHERE asset_id = 5 AND package_name = 'pyyaml';")"
+[ "$LEFT" = "0|1" ] || { echo "  조치를 지운 뒤 '$LEFT' 입니다 (기대 0|1 — 대상은 함께 사라지고 2회차는 남음)"; exit 1; }
+echo "  조치를 지우면 조치 대상도 사라짐 (ON DELETE CASCADE) · 이전 조치에는 FK 없음"
+
+SINCE=$(run "$DB" -N -e "
+    SELECT CONCAT(setting_value, '|', ABS(TIMESTAMPDIFF(MINUTE, updated_at, UTC_TIMESTAMP())) < 30)
+    FROM app_settings WHERE name = 'history_fields_since';")
+[ "$SINCE" = "V19|1" ] || { echo "  이력이 모든 칸을 남기기 시작한 시각이 '$SINCE' 입니다 (기대 V19|1 — UTC)"; exit 1; }
+echo "  이력이 모든 칸을 남기기 시작한 시각을 UTC 로 적음 (그 전 기록에만 각주)"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

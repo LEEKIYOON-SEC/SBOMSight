@@ -46,14 +46,16 @@ public class ReportService {
     private final ScanRepository scans;
     private final RemediationRepository remediations;
     private final FindingAnalysisService analyses;
+    private final RemediationService remediationService;
 
     public ReportService(FindingRepository findings, ScanRepository scans,
                          RemediationRepository remediations,
-                         FindingAnalysisService analyses) {
+                         FindingAnalysisService analyses, RemediationService remediationService) {
         this.findings = findings;
         this.scans = scans;
         this.remediations = remediations;
         this.analyses = analyses;
+        this.remediationService = remediationService;
     }
 
     @Transactional(readOnly = true)
@@ -430,11 +432,26 @@ public class ReportService {
                                           (a, b) -> a, LinkedHashMap::new));
         List<Remediation> registered = remediations
                 .findByAssetIdOrderByStatusAscPackageNameAsc(scan.getAsset().getId());
-        Map<String, Remediation> byPackage = registered.stream()
-                .collect(Collectors.toMap(Remediation::getPackageName, r -> r, (a, b) -> a));
+        // 패키지마다 **지금 조치** — 최신 회차(D5). 지난 회차는 다음 회차가 이어받았다.
+        Map<String, Remediation> byPackage = new HashMap<>();
+        RemediationService.latestPerPackage(registered).values()
+                .forEach(r -> byPackage.put(r.getPackageName(), r));
+        // 완료했는데 이 검사에 해소 건수가 남았으면 무엇인가(AfterDone) — 조치 화면과
+        // 같은 규칙을 <b>이 검사</b>에 비춘다.
+        Map<Long, AfterDone> after = remediationService.afterDone(
+                byPackage.values(), Map.of(scan.getAsset().getId(), scan));
 
+        // 3장의 줄은 전부 해소 건수가 있는 패키지라, 닫힌 조치가 붙으면 늘 갈래가 있다 —
+        // 혹시 없으면 앞서의 뜻(탐지 남음)으로 둔다. 빼면 5장의 합이 3장과 어긋난다.
         List<ActionRow> rows = targets.fixTargets().stream()
-                .map(action -> new ActionRow(action, byPackage.get(action.packageName())))
+                .map(action -> {
+                    Remediation r = byPackage.get(action.packageName());
+                    AfterDone left = r == null ? null : after.get(r.getId());
+                    if (r != null && r.getStatus().isClosed() && left == null) {
+                        left = new AfterDone(AfterDone.Kind.REMAINING, action.fixableCount());
+                    }
+                    return new ActionRow(action, r, left);
+                })
                 .toList();
 
         // 5장 아래 표. 3장 순서로 조치가 달린 줄을 싣고, 그 뒤에 **이 검사에
@@ -446,10 +463,12 @@ public class ReportService {
                                    .collect(Collectors.toSet());
         List<TrackedRow> tracking = new ArrayList<>();
         rows.stream().filter(ActionRow::isTracked)
-            .forEach(r -> tracking.add(new TrackedRow(r.remediation(), r.action().fixableCount())));
+            .forEach(r -> tracking.add(new TrackedRow(r.remediation(), r.action().fixableCount(),
+                                                      r.afterDone())));
         registered.stream()
+                  .filter(r -> r == byPackage.get(r.getPackageName()))
                   .filter(r -> !r.getStatus().isClosed() && !targeted.contains(r.getPackageName()))
-                  .forEach(r -> tracking.add(new TrackedRow(r, 0)));
+                  .forEach(r -> tracking.add(new TrackedRow(r, 0, null)));
 
         // 고칠 수 없는 건에 "왜 그대로 두는가" 가 적혀 있는지. 점검에서
         // 반드시 묻는 것이고, 답이 없으면 방치로 읽힌다.
@@ -630,22 +649,23 @@ public class ReportService {
     /**
      * 5장 — 조치 진행 현황.
      *
-     * <p><b>세 갈래로 가른다</b> — 대기 · 진행 / 완료 · 탐지 남음 / 미등록.
-     * 조치를 완료로 바꿨는데 이 검사에 그 패키지의 해소 건수가 남아 있으면,
-     * 앞서 이 장은 `등록` 에, 구역 보고서 6장은 `미등록` 에 넣었다 — 같은
-     * 자산 하나를 두고 두 보고서의 수가 달랐다(띄운 앱에서 374 와 406).
-     * 완료했는데 남은 것은 둘 다 아니다. 구역 보고서가 같은 갈래로 센다
-     * ({@code RemediationProgressTest}).
+     * <p><b>갈래로 가른다</b> — 대기 · 진행 / 완료 · 탐지 남음 / 완료 · 신규 탐지 / 완료 ·
+     * 검증 대기 / 미등록. 조치를 완료로 바꿨는데 이 검사에 그 패키지의 해소 건수가 남아
+     * 있으면, 앞서 이 장은 `등록` 에, 구역 보고서 6장은 `미등록` 에 넣었다 — 같은 자산
+     * 하나를 두고 두 보고서의 수가 달랐다(띄운 앱에서 374 와 406). 완료했는데 남은 것은
+     * 둘 다 아니다. 그리고 남은 것도 셋으로 가른다({@link AfterDone}) — 대상이 남은 것 ·
+     * 새로 나온 것 · SBOM 이 완료보다 앞이라 아직 모르는 것. 구역 보고서가 같은 갈래로
+     * 센다({@code RemediationProgressTest} · {@code AfterDoneTest}).
      *
      * <p><b>단위가 둘이다.</b> {@code …Packages()} 는 <b>패키지</b> 수이고
      * ({@link Remediation} 이 (자산, 패키지)로 등록된다), {@code …Findings()}
      * 는 그것이 덮는 <b>건</b> 수다. 보고서가 "미등록 15개" 라고만 쓰면 읽는
      * 사람은 그 15 가 48건 중 얼마인지 알 수 없다 — <b>단위가 말없이 바뀌는
      * 자리</b>이고, 결재로 올라가는 문서에서 그것이 가장 먼저 의심받는다.
-     * 늘 함께 적는다. 세 갈래의 건수를 더하면 3장 합계다.
+     * 늘 함께 적는다. 갈래들의 건수를 더하면 3장 합계다.
      *
-     * @param rows     3장의 줄 — 조치 대상 패키지와, 등록된 조치가 있으면 그것
-     * @param tracking 5장 아래 표의 줄 — 대기 · 진행인 조치 전부와 완료 · 탐지 남음
+     * @param rows     3장의 줄 — 조치 대상 패키지와, 등록된 조치(최신 회차)가 있으면 그것
+     * @param tracking 5장 아래 표의 줄 — 대기 · 진행인 조치 전부와 완료했는데 남은 것
      */
     public record Progress(List<ActionRow> rows, List<TrackedRow> tracking,
                            List<PackageAction> residual, List<FindingAnalysis> explained,
@@ -658,23 +678,48 @@ public class ReportService {
 
         /** 대기 · 진행 — 그 상태인 조치 전부. 이 검사에 해소 건수가 없는 것도 든다. */
         public long openPackages() {
-            return tracking.stream().filter(r -> !r.isDoneRemaining()).count();
+            return tracking.stream().filter(TrackedRow::isOpen).count();
         }
 
         /** 대기 · 진행인 조치가 덮는 건수. 3장의 `해소 건수` 와 같은 축이다. */
         public long openFindings() {
-            return tracking.stream().filter(r -> !r.isDoneRemaining())
+            return tracking.stream().filter(TrackedRow::isOpen)
                            .mapToLong(TrackedRow::fixableCount).sum();
         }
 
-        /** 완료 · 탐지 남음 — 조치 상태는 완료인데 이 검사에 해소 건수가 남은 패키지. */
+        /** 완료 · 탐지 남음 — 완료했는데 이 검사에 조치 대상이 남은 패키지. */
         public long doneRemainingPackages() {
-            return tracking.stream().filter(TrackedRow::isDoneRemaining).count();
+            return packages(AfterDone.Kind.REMAINING);
         }
 
         public long doneRemainingFindings() {
-            return tracking.stream().filter(TrackedRow::isDoneRemaining)
-                           .mapToLong(TrackedRow::fixableCount).sum();
+            return findings(AfterDone.Kind.REMAINING);
+        }
+
+        /** 완료 · 신규 탐지 — 완료했는데 이 검사에 남은 것이 조치 대상이 아니다. */
+        public long doneNewPackages() {
+            return packages(AfterDone.Kind.NEW_FINDINGS);
+        }
+
+        public long doneNewFindings() {
+            return findings(AfterDone.Kind.NEW_FINDINGS);
+        }
+
+        /** 완료 · 검증 대기 — 이 검사의 SBOM 이 조치 완료보다 앞이다. */
+        public long donePendingPackages() {
+            return packages(AfterDone.Kind.PENDING);
+        }
+
+        public long donePendingFindings() {
+            return findings(AfterDone.Kind.PENDING);
+        }
+
+        private long packages(AfterDone.Kind kind) {
+            return tracking.stream().filter(t -> t.is(kind)).count();
+        }
+
+        private long findings(AfterDone.Kind kind) {
+            return tracking.stream().filter(t -> t.is(kind)).mapToLong(TrackedRow::fixableCount).sum();
         }
 
         /** 미등록 — 조치 대상인데 아무도 맡지 않은 패키지. */
@@ -745,28 +790,47 @@ public class ReportService {
         }
     }
 
-    /** 조치 표 한 줄 — 후보와, 실제로 등록된 조치가 있으면 그것. */
-    public record ActionRow(PackageAction action, Remediation remediation) {
+    /**
+     * 조치 표 한 줄 — 후보와, 실제로 등록된 조치(그 패키지의 최신 회차)가 있으면 그것.
+     *
+     * @param afterDone 완료했는데 이 검사에 해소 건수가 남았으면 그 갈래, 아니면 {@code null}
+     */
+    public record ActionRow(PackageAction action, Remediation remediation, AfterDone afterDone) {
 
         public boolean isTracked() {
             return remediation != null;
         }
 
         /**
-         * 완료 · 탐지 남음. 3장의 줄은 전부 해소 건수가 있는 패키지라, 닫힌
-         * 조치가 여기 붙어 있으면 곧 그 뜻이다.
+         * 조치 상태 칸 — 완료했는데 남았으면 그 갈래의 말, 아니면 상태. 3장의 줄은 전부
+         * 해소 건수가 있는 패키지라, 닫힌 조치가 붙어 있으면 늘 갈래가 있다 — `완료` 만
+         * 찍으면 "끝났다는데 왜 조치 대상에 있나" 로 읽힌다.
          */
-        public boolean isDoneRemaining() {
-            return remediation != null && remediation.getStatus().isClosed();
+        public String statusLabel() {
+            return afterDone != null ? afterDone.label() : remediation.getStatus().label();
+        }
+
+        /** 완료 · 신규 탐지 — 새 조치(다음 회차)를 여는 `조치 등록` 을 둔다(D11). */
+        public boolean opensNextRound() {
+            return afterDone != null && afterDone.isNew();
         }
     }
 
     /** 5장 아래 표 한 줄 — 조치와, 이 검사에서 그 조치가 덮는 해소 건수. */
-    public record TrackedRow(Remediation remediation, long fixableCount) {
+    public record TrackedRow(Remediation remediation, long fixableCount, AfterDone afterDone) {
 
-        /** 닫혔는데 이 표에 있으면 해소 건수가 남은 것이다 — 남은 것이 없으면 싣지 않는다. */
-        public boolean isDoneRemaining() {
-            return remediation.getStatus().isClosed();
+        /** 대기 · 진행. */
+        public boolean isOpen() {
+            return !remediation.getStatus().isClosed();
+        }
+
+        /** 조치 상태 칸 — 완료했는데 남았으면 그 갈래의 말. */
+        public String statusLabel() {
+            return afterDone != null ? afterDone.label() : remediation.getStatus().label();
+        }
+
+        boolean is(AfterDone.Kind kind) {
+            return afterDone != null && afterDone.kind() == kind;
         }
     }
 

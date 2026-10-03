@@ -589,21 +589,22 @@
         <table class="table table-vcenter card-table">
           <thead>
           <tr>
-            <th class="tight">패키지</th><th>현재 → 목표</th>
+            <th class="tight">패키지</th><th class="num tight">조치 회차</th><th>현재 → 목표</th>
             <th class="tight">조치 상태</th><th class="tight">담당</th>
             <th class="tight">기한</th><th>설명</th>
           </tr>
           </thead>
           <tbody>
-          <tr th:each="r : ${remediations}">
-            <td class="tight"><a th:href="@{'/actions/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td>
+          <tr th:each="r : ${remediations}" th:with="left=${afterDone.get(r.id)}">
+            <td class="tight"><a th:href="@{'/actions/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td><td class="num tight" th:text="${r.roundNo}">1</td>
             <td class="faint mono">
               <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
               <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
             </td>
-            <!--/* 완료인데 최신 검사에 해소 건수가 남았으면 보고서 5장과 같은 말로. */-->
-            <td class="tight" th:classappend="${doneRemaining.containsKey(r.id)} ? 'danger-text' : ''"
-                th:text="${doneRemaining.containsKey(r.id)} ? '완료 · 탐지 남음' : ${r.status.label()}">대기</td>
+            <!--/* 완료인데 지금 검사에 해소 건수가 남았으면 세 갈래(AfterDone) — 보고서 5장과 같은 말로.
+                 검증 대기는 붉게 그리지 않는다 — 고친 뒤의 SBOM 이 아직 없는 것이다. */-->
+            <td class="tight" th:classappend="${left != null and !left.isPending()} ? 'danger-text' : ''"
+                th:text="${left != null} ? ${left.label()} : ${r.status.label()}">대기</td>
             <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
             <td class="tight" th:classappend="${r.overdue} ? 'overdue' : ''"
                 th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>

@@ -4,7 +4,13 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
-/** 조치의 발자취 한 줄. 누가 언제 무엇을 바꿨는지. */
+/**
+ * 조치의 발자취 한 줄. 누가 언제 무엇을 바꿨는지.
+ *
+ * <p>두 가지다. <b>상태 줄</b>은 {@code from_status → to_status}, <b>칸 줄</b>은 담당 ·
+ * 기한 · 설명 가운데 바뀐 칸의 이름과 앞뒤 값이다({@link #field}, V19). 앞서는 상태 줄만
+ * 있어 기한만 미룬 것은 남지 않았다.
+ */
 @Entity
 @Table(name = "remediation_events")
 public class RemediationEvent {
@@ -44,6 +50,17 @@ public class RemediationEvent {
     @Column(nullable = false, length = 1000)
     private String comment = "";
 
+    /** 칸 줄이면 바뀐 칸의 이름(담당 · 기한 · 설명), 상태 줄이면 비어 있다. */
+    @Column(name = "field_name", nullable = false, length = 32)
+    private String field = "";
+
+    /** 칸 줄의 바뀌기 전 값. 설명이 1,000자까지라 그만큼 둔다. */
+    @Column(name = "before_value", nullable = false, length = 1000)
+    private String before = "";
+
+    @Column(name = "after_value", nullable = false, length = 1000)
+    private String after = "";
+
     protected RemediationEvent() {
     }
 
@@ -54,6 +71,28 @@ public class RemediationEvent {
         this.fromStatus = from.name();
         this.toStatus = to.name();
         this.comment = comment == null ? "" : comment;
+    }
+
+    /**
+     * 칸 줄 — 담당 · 기한 · 설명 가운데 바뀐 칸 하나. 상태 칸은 비워 둔다(상태 줄이 아니다).
+     */
+    static RemediationEvent field(Remediation remediation, String actor, String field,
+                                  String before, String after, String comment) {
+        RemediationEvent e = new RemediationEvent();
+        e.remediation = remediation;
+        e.actor = actor == null ? "" : actor;
+        e.fromStatus = "";
+        e.toStatus = "";
+        e.field = field;
+        e.before = clip(before);
+        e.after = clip(after);
+        e.comment = comment == null ? "" : comment;
+        return e;
+    }
+
+    private static String clip(String value) {
+        String text = value == null ? "" : value;
+        return text.length() > 1000 ? text.substring(0, 1000) : text;
     }
 
     /**
@@ -96,5 +135,27 @@ public class RemediationEvent {
 
     public String getComment() {
         return comment;
+    }
+
+    /** 칸 줄인가 — 아니면 상태 줄이다. */
+    public boolean isFieldChange() {
+        return !field.isEmpty();
+    }
+
+    /** 화면의 `바꾼 칸` — 상태 줄은 `조치 상태`. */
+    public String getFieldLabel() {
+        return isFieldChange() ? field : "조치 상태";
+    }
+
+    public String getField() {
+        return field;
+    }
+
+    public String getBefore() {
+        return before;
+    }
+
+    public String getAfter() {
+        return after;
     }
 }

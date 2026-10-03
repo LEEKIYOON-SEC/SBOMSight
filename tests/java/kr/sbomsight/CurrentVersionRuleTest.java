@@ -94,7 +94,7 @@ class CurrentVersionRuleTest {
                             .param("packageName", "log4j-core")
                             .with(user("tester").roles("ADMIN")).with(csrf()));
         Remediation opened = remediations
-                .findByAssetIdAndPackageName(asset.getId(), "log4j-core").orElseThrow();
+                .findLatest(asset.getId(), "log4j-core").orElseThrow();
 
         assertThat(opened.getFromVersions())
                 .as("CVSS 가 가장 높은 건의 버전 하나만 적었다")
@@ -130,12 +130,13 @@ class CurrentVersionRuleTest {
                             .param("packageName", "zlib")
                             .with(user("tester").roles("ADMIN")).with(csrf()));
         Remediation opened = remediations
-                .findByAssetIdAndPackageName(asset.getId(), "zlib").orElseThrow();
+                .findLatest(asset.getId(), "zlib").orElseThrow();
 
         assertThat(opened.getFromVersion()).isEqualTo("1.2.11");
         String html = open("/actions/" + opened.getId());
         assertThat(html).contains("<span class=\"ver\">1.2.11</span>").doesNotContain("현재 버전 1가지");
-        assertThat(open("/actions/export.csv")).contains("\"zlib\",\"1.2.11\",\"1.2.13\"");
+        // 패키지 바로 뒤가 `조치 회차` 다(V19) — 같은 패키지의 지난 회차와 지금 회차를 가르는 칸.
+        assertThat(open("/actions/export.csv")).contains("\"zlib\",\"1\",\"1.2.11\",\"1.2.13\"");
     }
 
     private String open(String url) throws Exception {

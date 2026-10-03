@@ -187,10 +187,12 @@
                          ${f.packageName}, '')}"></a>
       </td>
 
-      <td class="tight" th:with="r=${actions.get(f.scan.asset.id + '|' + f.packageName)}">
-        <!--/* 완료인데 최신 검사에 해소 건수가 남았으면 보고서 5장과 같은 말로. */-->
+      <td class="tight" th:with="r=${actions.get(f.scan.asset.id + '|' + f.packageName)},
+                                 left=${r != null} ? ${afterDone.get(r.id)} : null">
+        <!--/* 그 (자산, 패키지)의 지금 조치(최신 회차). 완료인데 지금 검사에 해소 건수가
+             남았으면 세 갈래(AfterDone) — 보고서 5장과 같은 말로. */-->
         <a th:if="${r != null}" th:href="@{'/actions/' + ${r.id}}"
-           th:with="label=${doneRemaining.containsKey(r.id)} ? '완료 · 탐지 남음' : ${r.status.label()}"
+           th:with="label=${left != null} ? ${left.label()} : ${r.status.label()}"
            th:title="${r.packageName} + ' 조치 · ' + ${label}"
            th:text="${label}">대기</a>
         <!--/*
@@ -202,7 +204,9 @@
           모양만 링크이고 <b>POST 하는 submit</b> 이다. 링크로 두면 주소만
           알면 눌리지 않고도 조치가 열린다.
         */-->
-        <form th:if="${r == null}" method="post" sec:authorize="hasRole('ADMIN')"
+        <!--/* 완료 · 신규 탐지면 새 조치(다음 회차)를 같은 단추로 연다 — 표시 아래에(D11). */-->
+        <form th:if="${r == null or (left != null and left.isNew())}" method="post"
+              sec:authorize="hasRole('ADMIN')"
               th:action="@{'/assets/' + ${f.scan.asset.id} + '/remediations'}">
           <input type="hidden" name="packageName" th:value="${f.packageName}">
           <button type="submit" class="linkbtn">조치 등록</button>

@@ -68,11 +68,19 @@ class DoneRemainingScreenTest {
         asset.setZone(zone);
         assets.saveAndFlush(asset);
 
+        // 조치를 먼저 완료한다 — 아래 최신 검사는 **완료 뒤에 뜬 SBOM** 이다. 그래야 남은
+        // 것이 `탐지 남음` 이다. SBOM 이 완료보다 앞이면 `검증 대기` 다(AfterDoneTest, V19).
+        // 대상(등록 당시 탐지)을 모르는 조치라 남은 것은 대상인지 가르지 않고 탐지 남음이다.
+        for (String pkg : new String[]{"pg-done", "pg-nofix", "pg-na", "pg-older"}) {
+            remediation(pkg, RemediationStatus.DONE);
+        }
+        remediation("pg-open", RemediationStatus.OPEN);
+
         // 지난 검사에만 있던 것 — 최신 검사가 기준이다.
         Scan older = scan(Instant.now().minus(2, ChronoUnit.DAYS));
         finding(older, "CVE-2099-10", "pg-older", "fixed");
 
-        latest = scan(Instant.now());
+        latest = scan(Instant.now().plusMillis(5));
         finding(latest, "CVE-2099-1", "pg-done", "fixed");
         finding(latest, "CVE-2099-2", "pg-done", "fixed");
         finding(latest, "CVE-2099-3", "pg-done", "fixed");
@@ -87,11 +95,6 @@ class DoneRemainingScreenTest {
                         AnalysisJustification.CODE_NOT_PRESENT, null, "시험", "", "", null, "tester");
         analyses.record(asset, "CVE-2099-1", "pg-done", AnalysisState.IN_TRIAGE,
                         null, null, "보는 중", "", "", null, "tester");
-
-        for (String pkg : new String[]{"pg-done", "pg-nofix", "pg-na", "pg-older"}) {
-            remediation(pkg, RemediationStatus.DONE);
-        }
-        remediation("pg-open", RemediationStatus.OPEN);
     }
 
     private Scan scan(Instant at) {
@@ -112,6 +115,9 @@ class DoneRemainingScreenTest {
 
     private void remediation(String pkg, RemediationStatus status) {
         Remediation r = new Remediation(asset, pkg, "tester");
+        // 등록 당시 건수는 있는데 조치 대상이 없다 — 등록한 검사가 지워져 대상을 모르는 옛
+        // 조치의 꼴(V19). 건수가 0 이면 `등록 당시 탐지 없음` 이라 남은 것은 신규 탐지다.
+        r.setOpenedCount(1);
         r.moveTo(RemediationStatus.OPEN, "tester", "조치 등록");
         if (status != RemediationStatus.OPEN) {
             r.moveTo(status, "tester", "");
@@ -124,7 +130,7 @@ class DoneRemainingScreenTest {
     void everyScreenSaysWhatTheReportSays() throws Exception {
         // 기준: 두 보고서가 센 것 — pg-done 하나.
         ReportService.Progress asset5 = reports.build(latest).progress();
-        assertThat(asset5.tracking()).filteredOn(ReportService.TrackedRow::isDoneRemaining)
+        assertThat(asset5.tracking()).filteredOn(t -> "완료 · 탐지 남음".equals(t.statusLabel()))
                 .extracting(t -> t.remediation().getPackageName()).containsExactly("pg-done");
         LocalDate today = LocalDate.now();
         assertThat(zoneReports.build(zone.getId(), today.minusDays(1), today.plusDays(1))

@@ -114,7 +114,7 @@ class ReviewToActionTest {
            .andExpect(redirectedUrlPattern("/actions/*"));
 
         Remediation opened = remediations
-                .findByAssetIdAndPackageName(asset.getId(), pkg)
+                .findLatest(asset.getId(), pkg)
                 .orElseThrow(() -> new AssertionError("조치가 안 열렸습니다"));
 
         assertThat(opened.getFromVersion()).isEqualTo("2.14.1");
@@ -154,7 +154,7 @@ class ReviewToActionTest {
                             .with(user("viewer").roles("VIEWER")).with(csrf()))
            .andExpect(status().isForbidden());
 
-        assertThat(remediations.findByAssetIdAndPackageName(asset.getId(), pkg))
+        assertThat(remediations.findLatest(asset.getId(), pkg))
                 .isEmpty();
     }
 
@@ -187,7 +187,7 @@ class ReviewToActionTest {
                             .param("packageName", pkg)
                             .with(user("tester").roles("ADMIN")).with(csrf()));
         Remediation opened = remediations
-                .findByAssetIdAndPackageName(asset.getId(), pkg).orElseThrow();
+                .findLatest(asset.getId(), pkg).orElseThrow();
 
         assertThat(open("/actions?tab=analyses"))
                 .as("이미 연 조치가 있는데 `조치 등록` 이 또 떠 있다")

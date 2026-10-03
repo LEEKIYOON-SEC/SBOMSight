@@ -151,9 +151,11 @@
           <td class="tight faint">5장</td></tr>
       <tr><td>조치 진행</td>
           <td class="num tight"
-              th:text="'대기 · 진행 ' + ${report.action.open} + '개 · 완료 · 탐지 남음 '
-                       + ${report.action.doneRemaining} + '개 · 미등록 '
-                       + ${#numbers.formatInteger(report.action.untrackedFindings, 0, 'COMMA')} + '건'">—</td>
+              th:with="a=${report.action}"
+              th:text="'대기 · 진행 ' + ${a.open} + '개 · 완료 · 탐지 남음 ' + ${a.doneRemaining} + '개'
+                       + (${a.doneNew > 0} ? ' · 완료 · 신규 탐지 ' + ${a.doneNew} + '개' : '')
+                       + (${a.donePending > 0} ? ' · 완료 · 검증 대기 ' + ${a.donePending} + '개' : '')
+                       + ' · 미등록 ' + ${#numbers.formatInteger(a.untrackedFindings, 0, 'COMMA')} + '건'">—</td>
           <td class="tight faint">6장</td></tr>
       <tr><td>기간 시작 대비</td>
           <td class="num tight" th:if="${report.judgement.movement.comparable()}"
@@ -638,10 +640,14 @@
       그것이 덮는 건수를 옆 열에 함께 적는다. 그 열은 4장과 같은
       `해소 건수` 다 — 앞서 `덮는 건수` 라는 다른 이름이었다.
 
-      **세 갈래 — 대기 · 진행 / 완료 · 탐지 남음 / 미등록.** 자산 보고서
-      5장과 같은 갈래, 같은 말이다. 앞서 완료로 닫았는데 탐지가 남은 것을
-      이 장은 `미등록` 으로, 자산 보고서는 `등록` 으로 셌다. 세 갈래의
-      해소 건수를 더하면 4장 합계다.
+      **갈래 — 대기 · 진행 / 완료 · 탐지 남음 / 완료 · 신규 탐지 / 완료 · 검증
+      대기 / 미등록.** 자산 보고서 5장과 같은 갈래, 같은 말이다. 앞서 완료로
+      닫았는데 탐지가 남은 것을 이 장은 `미등록` 으로, 자산 보고서는 `등록` 으로
+      셌다. 완료한 뒤 남은 것은 자산마다 기간 중 최신 검사에 비춰 셋으로 가른다
+      (AfterDone). 갈래들의 해소 건수를 더하면 4장 합계다.
+
+      **기간 중 완료는 이력의 완료 줄로 센다.** 완료 시각 칸으로 세면 다시 연 순간
+      그 칸이 비어, 기간 중에 있었던 완료가 사라졌다(재현 시험 P2).
     */-->
     <table class="table">
       <thead><tr><th class="tight">구분</th><th class="num tight">조치</th>
@@ -658,6 +664,15 @@
           <td class="num tight" th:text="${report.action.doneRemaining} + '개'">0개</td>
           <td class="num tight" th:classappend="${report.action.doneRemainingFindings > 0} ? 'danger-text' : ''"
               th:text="${#numbers.formatInteger(report.action.doneRemainingFindings, 0, 'COMMA')} + '건'">0건</td></tr>
+      <tr><td class="tight">완료 · 신규 탐지</td>
+          <td class="num tight" th:text="${report.action.doneNew} + '개'">0개</td>
+          <td class="num tight" th:classappend="${report.action.doneNewFindings > 0} ? 'danger-text' : ''"
+              th:text="${#numbers.formatInteger(report.action.doneNewFindings, 0, 'COMMA')} + '건'">0건</td></tr>
+      <!--/* 검증 대기는 붉게 그리지 않는다 — 조치가 덜 된 것이 아니라 고친 뒤의 SBOM 이 아직 없다. */-->
+      <tr><td class="tight">완료 · 검증 대기</td>
+          <td class="num tight" th:text="${report.action.donePending} + '개'">0개</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(report.action.donePendingFindings, 0, 'COMMA')} + '건'">0건</td></tr>
       <!--/* 아무도 맡지 않은 것. 이 줄이 없으면 "등록 3개" 가 전부처럼 읽힌다. */-->
       <tr><td class="tight">미등록</td>
           <td class="num tight faint">—</td>
@@ -676,8 +691,15 @@
       </tbody>
     </table>
     <p class="footnote">
-      ※ 조치 하나 = (자산, 패키지). 완료 · 탐지 남음 = 조치 상태는 완료인데
-      기간 중 최신 검사에 해소 건수가 남은 것.
+      ※ 조치 하나 = (자산, 패키지)의 한 회차. 기간 중 완료 = 이력의 완료 줄.
+    </p>
+    <!--/*
+      완료 뒤 세 갈래의 말 — 자산 보고서 5장과 같은 줄. 장마다 문단 둘, 각주 90자
+      (ReportProseTest). 무엇에 비추는지(자산마다 기간 중 최신 검사)는 1장 각주 `※ 기준`.
+    */-->
+    <p class="footnote">
+      ※ 완료 · 탐지 남음 = 조치 대상이 남음 · 완료 · 신규 탐지 = 남은 것이 조치 대상 아님 ·
+      완료 · 검증 대기 = SBOM이 조치 완료보다 앞.
     </p>
 
     <h3 th:if="${!report.action.overdueRows.isEmpty()}">기한이 지난 조치</h3>

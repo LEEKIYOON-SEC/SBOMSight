@@ -131,7 +131,7 @@
           <thead>
           <tr>
             <th class="tight">자산</th><th class="tight">구역</th>
-            <th class="tight">패키지</th><th>현재 → 목표</th>
+            <th class="tight">패키지</th><th class="num tight">조치 회차</th><th>현재 → 목표</th>
             <th class="tight">조치 상태</th><th class="tight">담당</th>
             <th class="tight">기한</th><th class="num tight">등록 당시 건수</th>
             <th>설명</th>
@@ -139,13 +139,16 @@
           </thead>
           <tbody>
           <!--/*
-            **완료 · 탐지 남음은 흐리게 그리지 않는다.** 완료로 닫았는데 최신 검사에
-            해소 건수가 남은 조치다(보고서 5장과 같은 규칙 · 같은 말). 앞서 `완료` 로
-            적고 흐리게 그려, 보고서가 "탐지 남음" 이라고 한 조치가 여기서는 끝난
-            일로 보였다.
+            **완료했는데 남은 것은 흐리게 그리지 않는다** — 완료 · 탐지 남음 · 신규 탐지 ·
+            검증 대기(AfterDone, 보고서 5장과 같은 규칙 · 같은 말). 앞서 `완료` 로 적고
+            흐리게 그려, 보고서가 "탐지 남음" 이라고 한 조치가 여기서는 끝난 일로 보였다.
+
+            **조치 회차**를 패키지 바로 뒤에 적는다(D11) — 같은 패키지의 지난 회차와 지금
+            회차가 나란히 오면 그 칸으로 가른다. 지난 회차는 그냥 완료다.
           */-->
           <tr th:each="r : ${remediations.content}"
-              th:style="${r.status.isClosed() and !doneRemaining.containsKey(r.id)} ? 'opacity:.6' : ''">
+              th:with="left=${afterDone.get(r.id)}"
+              th:style="${r.status.isClosed() and left == null} ? 'opacity:.6' : ''">
             <td class="tight"><a th:href="@{'/assets/' + ${r.asset.id}}"
                                  th:text="${r.asset.name}">web-01</a></td>
             <td class="tight faint">
@@ -153,7 +156,7 @@
                                          ? '#6f7e8d' : ${r.asset.zone.color})"></i>
               <span th:text="${r.asset.zone.name}">DMZ</span></td>
             <td class="tight"><a th:href="@{'/actions/' + ${r.id}}"
-                                 th:text="${r.packageName}">openssl</a></td>
+                                 th:text="${r.packageName}">openssl</a></td><td class="num tight" th:text="${r.roundNo}">1</td>
             <!--/* 목표를 하나로 고르지 않는다 — 보고서 3장과 같은 규칙(fixversions).
                  현재 버전도 같다(curversions, V16).
                  줄바꿈을 막지 않는다: 스물다섯 가지를 한 줄로 두면 표가 화면을 넘는다. */-->
@@ -161,8 +164,8 @@
               <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
               <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
             </td>
-            <td class="tight" th:classappend="${doneRemaining.containsKey(r.id)} ? 'danger-text' : ''"
-                th:text="${doneRemaining.containsKey(r.id)} ? '완료 · 탐지 남음' : ${r.status.label()}">대기</td>
+            <td class="tight" th:classappend="${left != null and !left.isPending()} ? 'danger-text' : ''"
+                th:text="${left != null} ? ${left.label()} : ${r.status.label()}">대기</td>
             <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
             <td class="tight num" th:classappend="${r.overdue} ? 'overdue' : ''"
                 th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
@@ -270,10 +273,14 @@
               <span class="faint" th:if="${a.reviewBy == null}">—</span>
             </td>
 
-            <td class="tight" th:with="r=${actions.get(a.asset.id + '|' + a.packageName)}">
+            <!--/* 그 (자산, 패키지)의 지금 조치(최신 회차). 완료 · 신규 탐지면 새 조치(다음
+                 회차)를 여는 `조치 등록` 을 옆에 둔다(D11). */-->
+            <td class="tight" th:with="r=${actions.get(a.asset.id + '|' + a.packageName)},
+                                       left=${r != null} ? ${afterDone.get(r.id)} : null">
               <a th:if="${r != null}" th:href="@{'/actions/' + ${r.id}}"
-                 th:text="${doneRemaining.containsKey(r.id)} ? '완료 · 탐지 남음' : ${r.status.label()}">대기</a>
-              <form th:if="${r == null}" method="post" sec:authorize="hasRole('ADMIN')"
+                 th:text="${left != null} ? ${left.label()} : ${r.status.label()}">대기</a>
+              <form th:if="${r == null or (left != null and left.isNew())}" method="post"
+                    sec:authorize="hasRole('ADMIN')"
                     th:action="@{'/assets/' + ${a.asset.id} + '/remediations'}">
                 <input type="hidden" name="packageName" th:value="${a.packageName}">
                 <button type="submit" class="btn btn-sm">조치 등록</button>

@@ -84,7 +84,7 @@ class WordingTest {
 
         mvc.perform(post("/assets/" + asset.getId() + "/remediations").param("packageName", "wording-pkg")
                             .with(user("tester").roles("ADMIN")).with(csrf()));
-        Remediation opened = remediations.findByAssetIdAndPackageName(asset.getId(), "wording-pkg")
+        Remediation opened = remediations.findLatest(asset.getId(), "wording-pkg")
                                          .orElseThrow();
 
         String html = open("/actions/" + opened.getId());

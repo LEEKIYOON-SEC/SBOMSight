@@ -161,8 +161,11 @@
           <td class="tight faint">4장</td></tr>
       <tr><td>조치 진행 (패키지)</td>
           <td class="num tight"
-              th:text="'대기 · 진행 ' + ${report.progress.openPackages()} + '개 · 완료 · 탐지 남음 '
-                       + ${report.progress.doneRemainingPackages()} + '개 · 미등록 ' + ${report.progress.untracked()} + '개'">—</td>
+              th:with="p=${report.progress}"
+              th:text="'대기 · 진행 ' + ${p.openPackages()} + '개 · 완료 · 탐지 남음 ' + ${p.doneRemainingPackages()} + '개'
+                       + (${p.doneNewPackages() > 0} ? ' · 완료 · 신규 탐지 ' + ${p.doneNewPackages()} + '개' : '')
+                       + (${p.donePendingPackages() > 0} ? ' · 완료 · 검증 대기 ' + ${p.donePendingPackages()} + '개' : '')
+                       + ' · 미등록 ' + ${p.untracked()} + '개'">—</td>
           <td class="tight faint">5장</td></tr>
       <tr><td>지난 검사 대비</td>
           <td class="num tight" th:if="${report.targets.diff.hasPrevious()}"
@@ -192,9 +195,7 @@
         <td class="num tight" th:classappend="${a.hasReachable()} ? 'danger-text' : ''"
             th:text="${a.hasReachable()} ? ${a.reachableCount} : '—'">—</td>
         <td class="tight">
-          <span th:if="${row.isDoneRemaining()}">완료 · 탐지 남음</span>
-          <span th:if="${row.isTracked() and !row.isDoneRemaining()}"
-                th:text="${row.remediation.status.label()}">대기</span>
+          <span th:if="${row.isTracked()}" th:text="${row.statusLabel()}">대기</span>
           <span class="faint" th:unless="${row.isTracked()}">미등록</span>
         </td>
       </tr>
@@ -442,12 +443,11 @@
         <td class="num tight" th:text="${a.maxCvss != null} ? ${a.maxCvss} : '—'">—</td>
         <!--/*
           완료로 닫았는데 이 표에 있으면 해소 건수가 남은 것이다 — `완료` 만
-          찍으면 "끝났다는데 왜 조치 대상에 있나" 로 읽힌다. 5장과 같은 말.
+          찍으면 "끝났다는데 왜 조치 대상에 있나" 로 읽힌다. 남은 것은 세 갈래
+          (AfterDone) — 5장과 같은 말.
         */-->
         <td class="tight">
-          <span th:if="${row.isDoneRemaining()}">완료 · 탐지 남음</span>
-          <span th:if="${row.isTracked() and !row.isDoneRemaining()}"
-                th:text="${row.remediation.status.label()}">대기</span>
+          <span th:if="${row.isTracked()}" th:text="${row.statusLabel()}">대기</span>
           <span class="faint" th:unless="${row.isTracked()}">미등록</span>
         </td>
         <!--/*
@@ -469,9 +469,10 @@
           "아직 안 했나" 로 읽힌다.
         */-->
         <td class="tight no-print" sec:authorize="hasRole('ADMIN')">
-          <a th:if="${row.isTracked()}" class="btn btn-sm"
+          <a th:if="${row.isTracked() and !row.opensNextRound()}" class="btn btn-sm"
              th:href="@{'/actions/' + ${row.remediation.id}}">조치 보기</a>
-          <form th:unless="${row.isTracked()}" method="post"
+          <!--/* 완료 · 신규 탐지 — 새 조치(다음 회차)를 연다(D11). 이 검사에서 연다. */-->
+          <form th:if="${!row.isTracked() or row.opensNextRound()}" method="post"
                 th:action="@{'/scans/' + ${report.scan.id} + '/remediations'}">
             <input type="hidden" name="packageName" th:value="${a.packageName}">
             <button type="submit" class="btn btn-sm">조치 등록</button>
@@ -590,15 +591,17 @@
   <section th:with="p=${report.progress}">
     <h2>5. 조치 진행 현황</h2>
     <!--/*
-      **세 갈래 — 대기 · 진행 / 완료 · 탐지 남음 / 미등록.** 구역 보고서
-      6장과 같은 갈래, 같은 말이다. 앞서 완료로 닫았는데 탐지가 남은 것을
-      이 장은 `등록` 으로, 구역 보고서는 `미등록` 으로 셌다 — 같은 자산
-      하나를 두고 두 보고서가 달랐다.
+      **갈래 — 대기 · 진행 / 완료 · 탐지 남음 / 완료 · 신규 탐지 / 완료 · 검증
+      대기 / 미등록.** 구역 보고서 6장과 같은 갈래, 같은 말이다. 앞서 완료로
+      닫았는데 탐지가 남은 것을 이 장은 `등록` 으로, 구역 보고서는 `미등록` 으로
+      셌다 — 같은 자산 하나를 두고 두 보고서가 달랐다. 완료한 뒤 남은 것은 셋으로
+      가른다(AfterDone — 조치 화면과 같은 규칙): 대상이 남았나 · 새로 나왔나 ·
+      SBOM이 완료보다 앞이라 아직 모르나.
 
       **개수만 적지 않는다.** 조치는 (자산, 패키지)로 등록되고 2장은 건으로
       센다. `미등록 15개` 만 쓰면 그 15 가 48건 중 얼마인지 말해 주지 않아,
       보고받는 사람이 두 수를 이을 수 없다 — 단위가 말없이 바뀌는 자리다.
-      패키지 수와 그것이 덮는 건수를 늘 함께 적는다. 세 갈래의 건수를
+      패키지 수와 그것이 덮는 건수를 늘 함께 적는다. 갈래들의 건수를
       더하면 3장 합계다 — 합계 줄이 그것을 보인다. 패키지 수는 더하지
       않는다: 대기 · 진행에는 이 검사에 해소 건수가 없는 조치도 든다.
     */-->
@@ -616,6 +619,15 @@
           <td class="num tight" th:text="${p.doneRemainingPackages()} + '개'">0개</td>
           <td class="num tight" th:classappend="${p.doneRemainingFindings() > 0} ? 'danger-text' : ''"
               th:text="${#numbers.formatInteger(p.doneRemainingFindings(), 0, 'COMMA')} + '건'">0건</td></tr>
+      <tr><td class="tight">완료 · 신규 탐지</td>
+          <td class="num tight" th:text="${p.doneNewPackages()} + '개'">0개</td>
+          <td class="num tight" th:classappend="${p.doneNewFindings() > 0} ? 'danger-text' : ''"
+              th:text="${#numbers.formatInteger(p.doneNewFindings(), 0, 'COMMA')} + '건'">0건</td></tr>
+      <!--/* 검증 대기는 붉게 그리지 않는다 — 조치가 덜 된 것이 아니라 고친 뒤의 SBOM 이 아직 없다. */-->
+      <tr><td class="tight">완료 · 검증 대기</td>
+          <td class="num tight" th:text="${p.donePendingPackages()} + '개'">0개</td>
+          <td class="num tight"
+              th:text="${#numbers.formatInteger(p.donePendingFindings(), 0, 'COMMA')} + '건'">0건</td></tr>
       <tr><td class="tight">미등록</td>
           <td class="num tight" th:text="${p.untracked()} + '개'">0개</td>
           <td class="num tight" th:classappend="${p.untrackedFindings() > 0} ? 'danger-text' : ''"
@@ -646,10 +658,7 @@
       <tbody>
       <tr th:each="t : ${p.tracking}" th:with="r=${t.remediation}">
         <td class="tight"><b th:text="${r.packageName}">openssl</b></td>
-        <td class="tight">
-          <span th:if="${t.isDoneRemaining()}">완료 · 탐지 남음</span>
-          <span th:unless="${t.isDoneRemaining()}" th:text="${r.status.label()}">대기</span>
-        </td>
+        <td class="tight" th:text="${t.statusLabel()}">대기</td>
         <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
         <td class="tight num" th:classappend="${r.overdue} ? 'overdue' : ''"
             th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
@@ -662,8 +671,14 @@
       <b th:if="${p.reviewOverdue() > 0}" class="danger-text"
          th:text="'재검토일 지남 ' + ${p.reviewOverdue()} + '건'">—</b>
     </p>
+    <!--/*
+      완료 뒤 세 갈래의 말을 한 줄로 푼다 — 장마다 문단 둘(위 `해당 없음` 과 이것),
+      각주 90자(ReportProseTest). 검증 대기가 풀리는 길(새 SBOM 업로드)은 조치 상세가 말한다
+      — 이 줄에는 들어가지 않는다.
+    */-->
     <p class="footnote" th:unless="${p.isEmpty()}">
-      ※ 완료 · 탐지 남음 = 조치 상태는 완료인데 이 검사에 해소 건수가 남은 것.
+      ※ 완료 · 탐지 남음 = 조치 대상이 남음 · 완료 · 신규 탐지 = 남은 것이 조치 대상 아님 ·
+      완료 · 검증 대기 = SBOM이 조치 완료보다 앞.
       <b th:if="${p.overdue() > 0}" class="danger-text"
          th:text="'기한 지남 ' + ${p.overdue()} + '개'">—</b>
       <b th:if="${p.reviewOverdue() > 0}" class="danger-text"

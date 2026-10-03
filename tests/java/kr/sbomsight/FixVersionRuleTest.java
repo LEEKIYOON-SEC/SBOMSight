@@ -123,7 +123,7 @@ class FixVersionRuleTest {
                             .param("packageName", "tomcat-coyote")
                             .with(user("tester").roles("ADMIN")).with(csrf()));
         Remediation opened = remediations
-                .findByAssetIdAndPackageName(asset.getId(), "tomcat-coyote").orElseThrow();
+                .findLatest(asset.getId(), "tomcat-coyote").orElseThrow();
         assertThat(opened.getToVersions())
                 .as("조치가 보고서와 다른 목표를 적었다")
                 .containsExactlyElementsOf(ALL);

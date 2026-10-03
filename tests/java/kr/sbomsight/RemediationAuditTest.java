@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -30,11 +31,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 읽었다. 스물넷은 남았고 <b>셋이 한 줄도 남지 않았다</b> — 조치를 여는 두
  * 길과 조치를 고치는 길. 지우는 것만 남고 있었다.
  *
- * <p><b>발자취로 대신할 수 없다.</b> {@code remediation_events} 는
- * {@link Remediation#moveTo} 가 부를 때만 쌓이고, 그것은 <b>상태가 바뀔 때만</b>
- * 불린다. 상태를 그대로 두고 기한만 미루면 어디에도 아무것도 남지 않았다 —
- * {@code updated_by} 한 칸이 덮어써지는 것이 전부였다. 게다가 조치를 지우면
- * 발자취는 함께 사라진다({@code cascade = ALL}).
+ * <p><b>발자취로 대신할 수 없다.</b> 앞서 {@code remediation_events} 는 <b>상태가
+ * 바뀔 때만</b> 쌓였다. 상태를 그대로 두고 기한만 미루면 어디에도 아무것도 남지
+ * 않았다 — {@code updated_by} 한 칸이 덮어써지는 것이 전부였다. 이제 발자취도 바뀐
+ * 칸마다 남지만(R8, V19), 조치를 지우면 발자취는 함께 사라진다({@code cascade = ALL}).
  *
  * <p><b>{@code @Transactional} 이다.</b> 여기서 남긴 감사 줄이 쌓이면
  * {@code AuditLogTest} 처럼 전체를 세는 시험이 흔들린다.
@@ -106,7 +106,7 @@ class RemediationAuditTest {
     /**
      * 두 번 눌러도 등록은 한 번이다.
      *
-     * <p>조치는 {@code (자산, 패키지)} 하나에 하나이고 같은 패키지의 검토
+     * <p>열린 조치는 {@code (자산, 패키지)} 하나에 하나이고 같은 패키지의 검토
      * 여러 줄이 모두 `조치 등록` 을 달고 있다 — 두 번 눌리는 것은 예외가
      * 아니라 보통이다. 그때마다 `등록` 이 남으면 감사 로그가 없던 일을 말한다.
      */
@@ -127,12 +127,15 @@ class RemediationAuditTest {
      * <p>이 시험이 없어서 못 봤다. 담당과 기한만 고치면 발자취에도 감사
      * 로그에도 한 줄이 없었고, 남는 것은 {@code updated_by} 한 칸이었다 —
      * 그 칸은 다음 수정이 덮어쓴다.
+     *
+     * <p>앞서 이 시험은 "발자취는 늘지 않는다" 도 지켰다 — 발자취가 상태 줄뿐이던 때의
+     * 사실이다. 이제 바뀐 칸마다 앞뒤 값이 발자취에도 남는다(R8, V19).
      */
     @Test
-    @DisplayName("담당·기한만 바꿔도 `조치 변경` 이 남는다 — 발자취에는 남지 않는다")
+    @DisplayName("담당·기한만 바꿔도 `조치 변경` 이 남는다 — 발자취에도 칸마다 한 줄")
     void changingOnlyTheOwnerIsRecorded() throws Exception {
         open("/assets/" + asset.getId() + "/remediations");
-        Remediation opened = remediations.findByAssetIdAndPackageName(asset.getId(), pkg)
+        Remediation opened = remediations.findLatest(asset.getId(), pkg)
                                          .orElseThrow();
         int eventsBefore = opened.getEvents().size();
 
@@ -153,8 +156,12 @@ class RemediationAuditTest {
 
         Remediation after = remediations.findDetail(opened.getId()).orElseThrow();
         assertThat(after.getEvents())
-                .as("상태가 그대로면 발자취는 늘지 않는다 — 그래서 감사 로그가 필요하다")
-                .hasSize(eventsBefore);
+                .as("상태를 그대로 두고 담당 · 기한만 바꿨다 — 그 둘만 한 줄씩, 손대지 않은 설명은 없다")
+                .hasSize(eventsBefore + 2);
+        assertThat(after.getEvents().subList(eventsBefore, eventsBefore + 2))
+                .extracting(RemediationEvent::getField, RemediationEvent::getBefore,
+                            RemediationEvent::getAfter)
+                .containsExactly(tuple("담당", "", "홍길동"), tuple("기한", "", "2099-12-31"));
     }
 
     /** 상태를 바꾸면 발자취와 감사 로그 양쪽에 남는다. */
@@ -162,7 +169,7 @@ class RemediationAuditTest {
     @DisplayName("상태를 바꾸면 `조치 변경` 에 앞뒤 상태가 적힌다")
     void changingTheStatusRecordsBothSides() throws Exception {
         open("/assets/" + asset.getId() + "/remediations");
-        Remediation opened = remediations.findByAssetIdAndPackageName(asset.getId(), pkg)
+        Remediation opened = remediations.findLatest(asset.getId(), pkg)
                                          .orElseThrow();
 
         mvc.perform(post("/actions/" + opened.getId())
@@ -188,7 +195,7 @@ class RemediationAuditTest {
     @DisplayName("고친 것이 없으면 `조치 변경` 이 남지 않는다")
     void savingWithoutAChangeIsNotRecorded() throws Exception {
         open("/assets/" + asset.getId() + "/remediations");
-        Remediation opened = remediations.findByAssetIdAndPackageName(asset.getId(), pkg)
+        Remediation opened = remediations.findLatest(asset.getId(), pkg)
                                          .orElseThrow();
 
         mvc.perform(post("/actions/" + opened.getId())
@@ -216,14 +223,16 @@ class RemediationAuditTest {
     @DisplayName("V14 가 남긴 `하지 않고 닫음 → 대기` 이력이 있어도 조치 상세가 열린다")
     void aHistoryRowFromV14StillRenders() throws Exception {
         open("/assets/" + asset.getId() + "/remediations");
-        Remediation opened = remediations.findByAssetIdAndPackageName(asset.getId(), pkg)
+        Remediation opened = remediations.findLatest(asset.getId(), pkg)
                                          .orElseThrow();
         remediations.flush();
 
-        // V14__drop_remediation_accepted.sql 의 1) 과 같은 모양이다.
+        // V14__drop_remediation_accepted.sql 의 1) 과 같은 모양이다. 뒤의 세 칸은 V19 가
+        // 그 줄에 채운 값이다(DEFAULT '') — 칸 줄이 아니라 상태 줄로 읽힌다.
         jdbc.update("INSERT INTO remediation_events "
-                    + "(remediation_id, at, actor, from_status, to_status, comment) "
-                    + "VALUES (?, CURRENT_TIMESTAMP, 'system', 'ACCEPTED', 'OPEN', 'V14')",
+                    + "(remediation_id, at, actor, from_status, to_status, comment, "
+                    + "field_name, before_value, after_value) "
+                    + "VALUES (?, CURRENT_TIMESTAMP, 'system', 'ACCEPTED', 'OPEN', 'V14', '', '', '')",
                     opened.getId());
         // 앞서 읽어 둔 이력이 캐시에 남아 있으면 새 줄을 읽지 않고 통과한다.
         entityManager.clear();

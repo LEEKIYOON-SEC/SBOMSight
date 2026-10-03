@@ -864,6 +864,21 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
            """)
     List<AssetFindingKey> findKeysIn(@Param("scanIds") Collection<Long> scanIds);
 
+    /**
+     * 수정 버전이 있는 탐지의 번호들 — 완료한 조치의 패키지에 <b>무엇이</b> 남았는지 가른다
+     * (RemediationService.afterDone — 조치 대상인가, 새 탐지인가).
+     *
+     * <p>{@code fixState = 'fixed'} 는 보고서의 `해소 건수` 와 같은 축이다. 해당 없음 ·
+     * 오탐은 여기서 빼지 않고 부르는 쪽이 자바의 같은 규칙(FindingAnalysisService.analysisOf)
+     * 으로 뺀다 — 이 저장소에 열여섯 벌 있는 그 식을 한 벌 더 늘리지 않는다.
+     */
+    @Query("""
+           SELECT s.asset.id AS assetId, f.cve AS cve, f.relatedCve AS relatedCve,
+                  f.packageName AS packageName
+           FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds AND f.fixState = 'fixed'
+           """)
+    List<AssetFindingKey> findFixableKeysIn(@Param("scanIds") Collection<Long> scanIds);
+
     /** 노출면 계산에 쓰는 네 칸. */
     interface ExposureRow {
         String getVector();

@@ -95,7 +95,7 @@ class NewSbomKeepsDecisionsTest {
                             .param("packageName", "openssl"))
                .andExpect(status().is3xxRedirection());
             Remediation remediation = remediations
-                    .findByAssetIdAndPackageName(asset.getId(), "openssl").orElseThrow();
+                    .findLatest(asset.getId(), "openssl").orElseThrow();
             mvc.perform(post("/actions/" + remediation.getId()).with(admin()).with(csrf())
                             .param("status", "IN_PROGRESS").param("owner", "홍길동")
                             .param("dueDate", LocalDate.now().plusDays(30).toString())

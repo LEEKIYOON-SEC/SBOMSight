@@ -40,12 +40,29 @@
       이 패키지 탐지 <b th:text="${remaining} + '건'">0건</b>.
     </span>
     <!--/*
-      **완료로 닫았는데 해소 건수가 남았으면 보고서와 같은 말로 적는다.** 위의
-      `탐지` 는 해당 없음 · 오탐까지 센 수이고, 이 줄의 `해소 건수` 는 보고서
-      3 · 5장의 축(수정 버전 있음 · 해당 없음 · 오탐 제외)이다 — 둘을 섞지 않는다.
+      **완료로 닫았는데 해소 건수가 남았으면 보고서와 같은 말로 적는다** — 세 갈래
+      (AfterDone): 탐지 남음 · 신규 탐지 · 검증 대기. 위의 `탐지` 는 해당 없음 · 오탐까지
+      센 수이고, 이 줄의 `해소 건수` 는 보고서 3 · 5장의 축(수정 버전 있음 · 해당 없음 ·
+      오탐 제외)이다 — 둘을 섞지 않는다.
+
+      검증 대기는 붉게 그리지 않는다 — 조치가 덜 된 것이 아니라 고친 뒤의 SBOM 이 아직
+      없는 것이다. 신규 탐지는 새 조치(다음 회차)를 그 옆 단추로 연다(D11).
     */-->
-    <div class="danger-text" th:if="${doneRemaining.containsKey(remediation.id)}"
-         th:text="'완료 · 탐지 남음 — 해소 건수 ' + ${doneRemaining.get(remediation.id)} + '건'">완료 · 탐지 남음</div>
+    <div th:if="${afterDone != null}" th:classappend="${afterDone.isPending()} ? '' : 'danger-text'">
+      <span th:text="${afterDone.label()} + ' — 해소 건수 ' + ${afterDone.fixable()} + '건'">완료 · 탐지 남음 — 해소 건수 1건</span>
+      <span class="faint" th:if="${afterDone.isNew()}"> · 조치 대상에 없던 탐지</span>
+    </div>
+    <!--/* 검증 대기 — 무엇이 앞인지 두 시각으로 보이고, 어떻게 풀리는지 말한다(D11 답). */-->
+    <div class="faint" th:if="${afterDone != null and afterDone.isPending()}"
+         th:text="'최신 검사의 SBOM 생성 시각 ' + ${#temporals.format(latest.sbomCreatedAt, 'yyyy-MM-dd HH:mm')}
+                  + ' — 조치 완료(' + ${#temporals.format(remediation.closedAt, 'yyyy-MM-dd HH:mm')}
+                  + ')보다 앞 · 새 SBOM을 업로드하면 풀림'">최신 검사의 SBOM 생성 시각 2026-09-30 10:00 — 조치 완료(2026-10-01 09:00)보다 앞 · 새 SBOM을 업로드하면 풀림</div>
+    <form th:if="${afterDone != null and afterDone.isNew()}" method="post" sec:authorize="hasRole('ADMIN')"
+          th:action="@{'/assets/' + ${remediation.asset.id} + '/remediations'}" style="margin-top:8px">
+      <input type="hidden" name="packageName" th:value="${remediation.packageName}">
+      <button type="submit" class="btn btn-sm">조치 등록</button>
+      <span class="faint ms-2" th:text="${remediation.roundNo + 1} + '회차로 엶'">2회차로 엶</span>
+    </form>
     </div>
   </div>
 
@@ -86,7 +103,7 @@
     */-->
     <form method="post" th:action="@{'/actions/' + ${remediation.id} + '/delete'}"
           sec:authorize="hasRole('ADMIN')" style="margin-top:12px"
-          data-confirm="이 조치를 지웁니다. 상태 변경 이력도 함께 사라집니다.\n되돌릴 수 없습니다.\n\n계속할까요?">
+          data-confirm="이 조치를 지웁니다. 이력과 조치 대상도 함께 사라집니다.\n되돌릴 수 없습니다.\n\n계속할까요?">
       <button type="submit" class="btn btn-sm btn-outline-danger">조치 삭제</button>
       <span class="faint ms-2">잘못 등록한 것을 지움 · 감사 로그에는 남음</span>
     </form>
@@ -101,7 +118,7 @@
       근거 · 재검토일 · 결재 문서 번호가 함께 남음.
     </p>
     <table class="table kv" sec:authorize="!hasRole('ADMIN')">
-      <tr><th>조치 상태</th><td th:text="${doneRemaining.containsKey(remediation.id)} ? '완료 · 탐지 남음'
+      <tr><th>조치 상태</th><td th:text="${afterDone != null} ? ${afterDone.label()}
                                         : ${remediation.status.label()}">대기</td></tr>
       <tr><th>담당</th><td th:text="${#strings.isEmpty(remediation.owner)} ? '—' : ${remediation.owner}">—</td></tr>
       <tr><th>기한</th><td th:text="${remediation.dueDate != null} ? ${#temporals.format(remediation.dueDate, 'yyyy-MM-dd')} : '—'">—</td></tr>
@@ -110,7 +127,16 @@
     </div>
   </div>
 
-  <h2>대상</h2>
+  <!--/*
+    **조치 대상** — 이 조치가 무엇을 고치려던 것인가(R9). 패키지와 버전, 등록 당시의
+    탐지(번호 · 설치 버전 · 수정 버전), 그리고 지금 검사에 아직 있는지. 앞서는 패키지만
+    알아, 완료한 뒤 같은 패키지에 새 취약점이 나오면 덜 된 것인지 새 것인지를 가를 수
+    없었다(완료 · 탐지 남음 / 신규 탐지).
+
+    **조치 회차 · 이전 조치**(D5 · D11) — 닫힌 조치가 있는 패키지에 다시 등록하면 새
+    조치가 다음 회차로 열리고 앞 조치를 가리킨다. 이 조치가 지난 회차면 최신 회차로 잇는다.
+  */-->
+  <h2>조치 대상</h2>
   <div class="card">
     <div class="card-body">
     <table class="table kv">
@@ -121,30 +147,72 @@
       <tr><th>등록 당시 건수</th><td th:text="${remediation.openedCount} + '건'">0건</td></tr>
       <tr><th>등록</th>
           <td th:text="${#temporals.format(remediation.createdAt, 'yyyy-MM-dd HH:mm')} + ' · ' + ${remediation.createdBy}">—</td></tr>
+      <tr><th>조치 회차</th><td><th:block th:text="${remediation.roundNo}">1</th:block><th:block th:if="${latestRound != null}"> · 최신 <a th:href="@{'/actions/' + ${latestRound.id}}" th:text="${latestRound.roundNo} + '회차'">2회차</a></th:block></td></tr>
+      <tr><th>이전 조치</th><td><a th:if="${previous != null}" th:href="@{'/actions/' + ${previous.id}}"
+             th:text="${previous.roundNo} + '회차 · ' + ${previous.status.label()}">1회차 · 완료</a><span th:if="${previous == null}">—</span></td></tr>
     </table>
+    </div>
+    <!--/* 등록 당시의 탐지. 지금 검사에 아직 있는지는 번호 둘 중 하나라도 같은 것으로 본다(R6). */-->
+    <div class="table-responsive" th:unless="${targets.isEmpty()}">
+      <table class="table table-vcenter card-table">
+        <thead><tr><th class="tight">취약점</th><th class="tight">설치 버전</th>
+                   <th class="tight">수정 버전</th><th class="tight">최신 검사</th></tr></thead>
+        <tbody>
+        <tr th:each="t : ${targets}">
+          <td class="tight"><span class="mono" th:text="${t.displayId}">CVE-2023-0001</span>
+              <div class="faint mono" th:if="${!#strings.isEmpty(t.secondaryId)}" th:text="${t.secondaryId}">GHSA-…</div></td>
+          <td class="tight mono" th:text="${#strings.isEmpty(t.packageVersion)} ? '—' : ${t.packageVersion}">1.0</td>
+          <td class="tight mono" th:text="${#strings.isEmpty(t.fixedVersion)} ? '—' : ${t.fixedVersion}">1.1</td>
+          <td th:text="${latest == null} ? '—'
+                       : (${presentIds.contains(t.cve) or (!#strings.isEmpty(t.relatedCve) and presentIds.contains(t.relatedCve))}
+                          ? '있음' : '없음')">있음</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+    <!--/* 등록 당시 탐지를 남기기 전(V19)에 등록했고 그 검사가 지워진 조치 — 지어내 채우지 않는다. */-->
+    <div class="card-footer" th:if="${targets.isEmpty()}">
+      <span class="faint" th:text="${remediation.openedCount == 0} ? '등록 당시 탐지 없음'
+                                   : '등록 당시 탐지 — 확인되지 않음(등록한 검사가 남아 있지 않음)'">—</span>
     </div>
   </div>
 
   <h2>이력</h2>
   <div class="card">
+    <!--/*
+      '처리' 라는 열 이름 아래에 계정이 들어 있었다. 이름과 내용이 달랐다 —
+      무엇을 처리했는지 적힌 줄 알고 보면 사람 이름이 있다.
+
+      한 번 저장할 때 바뀐 것마다 한 줄이다 — 조치 상태는 상태 줄, 담당 · 기한 · 설명은
+      앞뒤 값(R8). 앞서는 상태 줄만 있어 기한만 미룬 것은 남지 않았다. 칸 이름과 변경
+      내용은 검토 결과 상세와 같은 꼴이다.
+    */-->
     <table class="table table-vcenter card-table">
-      <!--/*
-        '처리' 라는 열 이름 아래에 계정이 들어 있었다. 이름과 내용이 달랐다 —
-        무엇을 처리했는지 적힌 줄 알고 보면 사람 이름이 있다.
-      */-->
-      <thead><tr><th class="tight">시각</th><th class="tight">변경</th>
-                 <th class="tight">계정</th><th>변경 사유</th></tr></thead>
+      <thead><tr><th class="tight">시각</th><th class="tight">바꾼 칸</th>
+                 <th>변경 내용</th><th class="tight">계정</th><th>변경 사유</th></tr></thead>
       <tbody>
       <tr th:each="e : ${remediation.events}">
         <td class="tight" th:text="${#temporals.format(e.at, 'yyyy-MM-dd HH:mm')}">—</td>
+        <td class="tight" th:text="${e.fieldLabel}">조치 상태</td>
         <!--/* 등록 줄은 앞뒤가 같다(대기 → 대기). 바뀐 것이 없으니 지금 상태만 적는다. */-->
-        <td class="tight" th:text="${e.fromLabel == e.toLabel} ? ${e.toLabel}
-                                   : ${e.fromLabel} + ' → ' + ${e.toLabel}">—</td>
-        <td class="tight" th:text="${e.actor}">admin</td>
+        <td th:if="${!e.fieldChange}" th:text="${e.fromLabel == e.toLabel} ? ${e.toLabel}
+                                   : ${e.fromLabel} + ' → ' + ${e.toLabel}">대기</td>
+        <td th:if="${e.fieldChange}" th:text="(${#strings.isEmpty(e.before)} ? '—' : ${e.before}) + ' → '
+                                   + (${#strings.isEmpty(e.after)} ? '—' : ${e.after})">— → 홍길동</td>
+        <td class="tight" th:text="${#strings.isEmpty(e.actor)} ? '—' : ${e.actor}">admin</td>
         <td class="faint" th:text="${#strings.isEmpty(e.comment)} ? '—' : ${e.comment}">—</td>
       </tr>
       </tbody>
     </table>
+    <!--/*
+      이력이 담당 · 기한 · 설명까지 남기 시작한 시각(V19) 전에 등록한 조치에만. 그 전에
+      바뀐 것은 이 표에 없다 — 말하지 않으면 "기한은 한 번도 안 바뀌었다" 로 읽힌다.
+    */-->
+    <div class="card-footer" th:if="${historySince != null}">
+      <p class="footnote" style="margin-top:0;padding-top:0;border-top:0"
+         th:text="'※ 담당 · 기한 · 설명은 ' + ${#temporals.format(historySince, 'yyyy-MM-dd HH:mm')}
+                  + ' 부터 바뀐 것만 이 표에 — 그 전 것은 지금 값만.'">※ 담당 · 기한 · 설명은 2026-10-03 09:00 부터 바뀐 것만 이 표에 — 그 전 것은 지금 값만.</p>
+    </div>
   </div>
   </div>
     </div>

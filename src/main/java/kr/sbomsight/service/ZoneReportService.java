@@ -65,16 +65,18 @@ public class ZoneReportService {
     private final FindingRepository findings;
     private final RemediationRepository remediations;
     private final FindingAnalysisService analyses;
+    private final RemediationService remediationService;
 
     public ZoneReportService(AssetRepository assets, ZoneRepository zones, ScanRepository scans,
                              FindingRepository findings, RemediationRepository remediations,
-                             FindingAnalysisService analyses) {
+                             FindingAnalysisService analyses, RemediationService remediationService) {
         this.assets = assets;
         this.zones = zones;
         this.scans = scans;
         this.findings = findings;
         this.remediations = remediations;
         this.analyses = analyses;
+        this.remediationService = remediationService;
     }
 
     /**
@@ -121,7 +123,7 @@ public class ZoneReportService {
         Exposure exposure = exposure(current, true);
         Aggregate aggregate = aggregate(current, exposure, inScope, notScanned);
         Judgement judgement = judgement(current, baseline, exposure(current, false));
-        Action action = action(zoneId, inScope, judgement, start, end, scanIds(current));
+        Action action = action(zoneId, inScope, judgement, start, end, current);
         // 부록 — 실제 악용 · 심각과 그 설명 첫 문장(Appendix). 목록이다: 해당
         // 없음 · 오탐은 4 · 5장처럼 뺀다. 한 줄이 여러 자산에 걸리면 자산 수를 센다.
         List<Appendix.Row> appendix = current.isEmpty() ? List.of()
@@ -417,7 +419,8 @@ public class ZoneReportService {
     // --- 6장: 조치 진행 현황 ------------------------------------------------
 
     private Action action(Long zoneId, List<Asset> inScope, Judgement judgement,
-                          Instant start, Instant end, List<Long> scanIds) {
+                          Instant start, Instant end, List<Scan> current) {
+        List<Long> scanIds = scanIds(current);
         Set<Long> scope = inScope.stream().map(Asset::getId)
                                  .collect(java.util.stream.Collectors.toSet());
         List<Remediation> all = remediations.findByZone(zoneId).stream()
@@ -429,10 +432,10 @@ public class ZoneReportService {
         long openedInPeriod = all.stream()
                 .filter(r -> !r.getCreatedAt().isBefore(start) && r.getCreatedAt().isBefore(end))
                 .count();
-        long closedInPeriod = all.stream()
-                .filter(r -> r.getClosedAt() != null
-                             && !r.getClosedAt().isBefore(start) && r.getClosedAt().isBefore(end))
-                .count();
+        // 기간 중 완료 — **이력의 완료 줄**로 센다. 완료 시각 칸(closed_at)으로 세면 다시 연
+        // 순간 그 칸이 비어 기간 중에 있었던 완료가 사라졌다(재현 시험 P2).
+        Set<Long> closedBetween = new HashSet<>(remediations.findClosedBetween(start, end));
+        long closedInPeriod = all.stream().filter(r -> closedBetween.contains(r.getId())).count();
 
         // 검토가 끝난 것(해당 없음·오탐)도 가져온다 — 목록에서는 빠지지만
         // "왜 그대로 두는가" 에는 그것도 답이다.
@@ -450,14 +453,21 @@ public class ZoneReportService {
         // "등록된 조치 3개" 만 적으면 읽는 사람은 그 3 이 138건 중 얼마인지
         // 알 수 없다 — 결재로 올라가는 문서에서 가장 먼저 의심받는 자리다.
         //
-        // **세 갈래로 가른다** — 대기 · 진행 / 완료 · 탐지 남음 / 미등록.
-        // 앞서 완료로 닫힌 조치의 패키지에 탐지가 남아 있으면 `미등록` 으로
-        // 셌다. 자산 보고서는 같은 것을 `등록` 으로 셌다 — 같은 자산 하나를
-        // 두고 두 보고서가 달랐다(RemediationProgressTest).
-        Map<String, Remediation> byKey = all.stream()
-                .collect(java.util.stream.Collectors.toMap(
-                        r -> r.getAsset().getId() + "|" + r.getPackageName(), r -> r, (a, b) -> a));
-        long openFindings = 0, doneRemaining = 0, doneRemainingFindings = 0, untrackedFindings = 0;
+        // **갈래로 가른다** — 대기 · 진행 / 완료 · 탐지 남음 / 완료 · 신규 탐지 /
+        // 완료 · 검증 대기 / 미등록. 앞서 완료로 닫힌 조치의 패키지에 탐지가 남아
+        // 있으면 `미등록` 으로 셌다. 자산 보고서는 같은 것을 `등록` 으로 셌다 — 같은
+        // 자산 하나를 두고 두 보고서가 달랐다(RemediationProgressTest). 완료한 뒤 남은
+        // 것은 조치 화면과 같은 규칙(AfterDone)으로 가르되, 자산마다 **기간 중 최신
+        // 검사**에 비춘다. (자산, 패키지)의 조치는 최신 회차다(D5).
+        Map<String, Remediation> byKey = RemediationService.latestPerPackage(all);
+        Map<Long, Scan> scanPerAsset = new HashMap<>();
+        current.forEach(s -> scanPerAsset.put(s.getAsset().getId(), s));
+        Map<Long, AfterDone> after = remediationService.afterDone(byKey.values(), scanPerAsset);
+        long openFindings = 0, untrackedFindings = 0;
+        Map<AfterDone.Kind, long[]> done = new java.util.EnumMap<>(AfterDone.Kind.class);
+        for (AfterDone.Kind kind : AfterDone.Kind.values()) {
+            done.put(kind, new long[2]);
+        }
         // 4장의 `해소 건수` 와 같은 축이다 — 해당 없음 · 오탐은 넣지 않는다.
         for (FindingRepository.AssetPackageCount row
                 : findings.countPerAssetPackage(scanIds, false)) {
@@ -467,20 +477,26 @@ public class ZoneReportService {
             Remediation r = byKey.get(row.getAssetId() + "|" + row.getPackageName());
             if (r == null) {
                 untrackedFindings += row.getFixable();
-            } else if (r.getStatus().isClosed()) {
-                doneRemaining++;
-                doneRemainingFindings += row.getFixable();
-            } else {
+            } else if (!r.getStatus().isClosed()) {
                 openFindings += row.getFixable();
+            } else {
+                // 갈래는 AfterDone 이 정한다. 이 줄은 해소 건수가 있으니 늘 갈래가 있다 —
+                // 혹시 없으면 앞서의 뜻(탐지 남음)으로 센다. 빼면 합계가 4장과 어긋난다.
+                AfterDone left = after.get(r.getId());
+                AfterDone.Kind kind = left != null ? left.kind() : AfterDone.Kind.REMAINING;
+                done.get(kind)[0]++;
+                done.get(kind)[1] += row.getFixable();
             }
         }
 
         Map<String, Set<Long>> answeredAssets = new HashMap<>();
         Map<String, Reviewed> reviewed = reviewByPackage(inScope, scanIds, answeredAssets);
         return new Action(all.size(), open, overdue, openedInPeriod, closedInPeriod,
-                          overdueRows, explained, judgement.blocked(),
-                          openFindings, doneRemaining, doneRemainingFindings, untrackedFindings,
-                          reviewed, answeredAssets);
+                          overdueRows, explained, judgement.blocked(), openFindings,
+                          done.get(AfterDone.Kind.REMAINING)[0], done.get(AfterDone.Kind.REMAINING)[1],
+                          done.get(AfterDone.Kind.NEW_FINDINGS)[0], done.get(AfterDone.Kind.NEW_FINDINGS)[1],
+                          done.get(AfterDone.Kind.PENDING)[0], done.get(AfterDone.Kind.PENDING)[1],
+                          untrackedFindings, reviewed, answeredAssets);
     }
 
     /**
@@ -792,22 +808,27 @@ public class ZoneReportService {
     /**
      * 6장 — 조치 진행 현황.
      *
-     * <p><b>단위가 둘이다.</b> {@code total} · {@code open} ·
-     * {@code doneRemaining} 은 <b>조치</b> 수((자산, 패키지)로 등록된다)이고,
-     * {@code …Findings} 는 그것이 덮는 <b>건</b> 수다. 둘을 함께 적지 않으면
-     * "등록된 조치 3개" 가 138건 중 얼마인지 말해 주지 않는다.
+     * <p><b>단위가 둘이다.</b> {@code total} · {@code open} · {@code done…} 은
+     * <b>조치</b> 수((자산, 패키지)로 등록된다)이고, {@code …Findings} 는 그것이
+     * 덮는 <b>건</b> 수다. 둘을 함께 적지 않으면 "등록된 조치 3개" 가 138건 중
+     * 얼마인지 말해 주지 않는다.
      *
-     * <p>대기 · 진행 / 완료 · 탐지 남음 / 미등록 — 자산 보고서 5장과 같은
-     * 세 갈래다. 세 갈래의 건수를 더하면 4장 합계다.
+     * <p>대기 · 진행 / 완료 · 탐지 남음 / 완료 · 신규 탐지 / 완료 · 검증 대기 / 미등록 —
+     * 자산 보고서 5장과 같은 갈래다({@link AfterDone}). 갈래들의 건수를 더하면 4장 합계다.
      *
-     * @param open          대기 · 진행인 조치 전부 — 기간 중 최신 검사에 해소 건수가 없는 것도 든다
-     * @param doneRemaining 조치 상태는 완료인데 기간 중 최신 검사에 해소 건수가 남은 조치
+     * @param open           대기 · 진행인 조치 전부 — 기간 중 최신 검사에 해소 건수가 없는 것도 든다
+     * @param closedInPeriod 기간 안에 완료로 바뀐 조치 — 이력의 완료 줄로 센다
+     * @param doneRemaining  완료했는데 기간 중 최신 검사에 조치 대상이 남은 조치
+     * @param doneNew        완료했는데 남은 것이 조치 대상이 아닌 조치
+     * @param donePending    완료했는데 기간 중 최신 검사의 SBOM 이 완료보다 앞인 조치
      */
     public record Action(long total, long open, long overdue,
                          long openedInPeriod, long closedInPeriod,
                          List<Remediation> overdueRows, List<FindingAnalysis> explained,
                          List<ZonePackageAction> residual,
                          long openFindings, long doneRemaining, long doneRemainingFindings,
+                         long doneNew, long doneNewFindings,
+                         long donePending, long donePendingFindings,
                          long untrackedFindings,
                          Map<String, Reviewed> reviewed, Map<String, Set<Long>> answeredAssets) {
 

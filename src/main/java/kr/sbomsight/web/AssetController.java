@@ -468,8 +468,9 @@ public class AssetController {
                         List.of(latest.getId()), null, null, null, null, null));
         List<Remediation> assetRemediations = remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id);
         model.addAttribute("remediations", assetRemediations);
-        // 완료인데 최신 검사에 해소 건수가 남은 조치 — 조치 화면 · 보고서 5장과 같은 말.
-        model.addAttribute("doneRemaining", remediationService.doneRemaining(assetRemediations));
+        // 완료인데 지금 검사에 해소 건수가 남은 조치 — 세 갈래(AfterDone), 조치 화면 ·
+        // 보고서 5장과 같은 말. 회차가 여럿이면 지난 회차는 그냥 완료다.
+        model.addAttribute("afterDone", remediationService.afterDone(assetRemediations));
         // 이 자산에 대해 내린 결정 둘을 한 탭에서 본다. 검토 결과를 대응
         // 화면에서만 볼 수 있으면 "이 서버 것만" 을 물을 자리가 없다.
         model.addAttribute("assetAnalyses", analyses.forAsset(id));
