@@ -21,6 +21,9 @@
     <p class="text-secondary mb-3" id="analysis-what">—</p>
 
     <input type="hidden" name="assetId" id="analysis-asset">
+    <!--/* 표 · CVE 상세에서 열면 탐지 번호가 실린다 — 서버가 그 탐지의 두 번호로 있던
+         행을 먼저 찾는다(R6). 검토 결과 상세에서 열면 비어 있다. */-->
+    <input type="hidden" name="findingId" id="analysis-finding">
     <input type="hidden" name="cve" id="analysis-cve">
     <input type="hidden" name="packageName" id="analysis-pkg">
     <input type="hidden" name="back" th:value="${back}">
@@ -116,15 +119,18 @@
   채운다). 취약점 목록 · CVE 상세 · 검토 결과 상세가 같은 조각을 쓴다. 앞서 이
   `data-…` 열두 줄을 화면마다 적으려던 참이었다 — 칸이 하나 늘면 여기 한 곳만.
 
+  `findingId` 는 탐지 번호 — 표 · CVE 상세가 싣는다. 서버가 그 탐지의 두 번호(주 식별자 ·
+  함께 온 CVE)로 있던 행을 먼저 찾아 고친다. 검토 결과 상세는 그 행 자신을 고치므로 null.
   `cve` 는 화면에 찍는 번호(finding.displayId)다 — 결재도 보고도 그 번호로 돈다.
   `cls` 는 모양(목록은 글자 링크, 상세는 단추). 조회 계정에는 그리지 않는다.
 
-    <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${assetId}, ${cve}, ${pkg}, 'btn btn-sm')}"></a>
+    <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${assetId}, ${f.id}, ${cve}, ${pkg}, 'btn btn-sm')}"></a>
 */-->
-<a th:fragment="link(a, assetId, cve, pkg, cls)" sec:authorize="hasRole('ADMIN')" href="#"
+<a th:fragment="link(a, assetId, findingId, cve, pkg, cls)" sec:authorize="hasRole('ADMIN')" href="#"
    class="analysis-link" th:classappend="${cls}"
    th:text="${a != null and !a.untouched} ? '수정' : '작성'"
-   th:attr="data-asset=${assetId}, data-cve=${cve}, data-pkg=${pkg}, data-label=${cve},
+   th:attr="data-asset=${assetId}, data-finding=${findingId != null} ? ${findingId} : '',
+            data-cve=${cve}, data-pkg=${pkg}, data-label=${cve},
             data-state=${a != null} ? ${a.state.name()} : 'NOT_SET',
             data-justification=${a != null and a.justification != null} ? ${a.justification.name()} : '',
             data-response=${a != null and a.response != null} ? ${a.response.name()} : '',

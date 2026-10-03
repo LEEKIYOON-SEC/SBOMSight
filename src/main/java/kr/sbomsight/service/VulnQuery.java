@@ -400,10 +400,11 @@ public class VulnQuery {
      * <p><b>거르개를 그대로 건다.</b> 세는 쪽이 안 걸면 `7건 중 2건 검토`
      * 의 7 이 같은 화면의 건수와 달라진다.
      *
-     * <p>검토됐는지 맞추는 규칙은 목록의 행과 <b>같아야 한다</b> — 번호를
-     * 둘 다 보고(GHSA 가 주 식별자인 건), 손대지 않은 행
-     * ({@code untouched})은 세지 않는다. 한쪽만 고치면 같은 건이 표에서는
-     * `작성` 인데 묶은 줄에서는 `검토됨` 으로 센다.
+     * <p>검토됐는지 맞추는 규칙은 목록의 행과 <b>같아야 한다</b> — 같은 함수
+     * ({@link FindingAnalysisService#analysisOf})로 그 줄의 행을 고르고, 손대지 않은
+     * 행({@code untouched})은 세지 않는다. 앞서 여기는 두 번호 중 <i>어느 쪽이든</i>
+     * 손댄 행이 있으면 셌다 — 둘로 갈린 건에서 표가 고른 나중 행이 `작성` 인데 묶은
+     * 줄은 `검토됨` 으로 셌다.
      */
     private Map<String, Reviewed> reviewedCounts(Scope scope, boolean byCve, String q,
                                                  String severity, Boolean fixable, Boolean kev,
@@ -418,20 +419,15 @@ public class VulnQuery {
             long[] row = counts.computeIfAbsent(byCve ? display : key.getPackageName(),
                                                 name -> new long[2]);
             row[1]++;
-            if (touched(byAssetKey, key.getAssetId(), display, key.getPackageName())
-                    || touched(byAssetKey, key.getAssetId(), key.getCve(), key.getPackageName())) {
+            FindingAnalysis found = FindingAnalysisService.analysisOf(
+                    byAssetKey, key.getAssetId(), key.getCve(), related, key.getPackageName());
+            if (found != null && !found.isUntouched()) {
                 row[0]++;
             }
         }
         Map<String, Reviewed> out = new LinkedHashMap<>();
         counts.forEach((name, row) -> out.put(name, new Reviewed(row[0], row[1])));
         return out;
-    }
-
-    private static boolean touched(Map<String, FindingAnalysis> byAssetKey, Long assetId,
-                                   String cve, String packageName) {
-        FindingAnalysis found = byAssetKey.get(assetId + "|" + cve + "|" + packageName);
-        return found != null && !found.isUntouched();
     }
 
     /**

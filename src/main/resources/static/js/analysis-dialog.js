@@ -46,6 +46,9 @@
     if (link) {
       e.preventDefault();
       dialog.querySelector('#analysis-asset').value = link.dataset.asset;
+      // 탐지 번호 — 비어 있으면(검토 결과 상세) 서버는 번호로 찾는다. 앞서 연 줄의
+      // 번호가 남지 않게 언제나 덮어쓴다.
+      dialog.querySelector('#analysis-finding').value = link.dataset.finding || '';
       dialog.querySelector('#analysis-cve').value = link.dataset.cve;
       dialog.querySelector('#analysis-pkg').value = link.dataset.pkg;
       dialog.querySelector('#analysis-what').textContent =

@@ -163,18 +163,16 @@
         오히려 오탐은 수정 버전이 있는 행에서 더 자주 나온다.
       */-->
       <!--/*
-        키를 **화면에 찍는 번호**로 잡는다. grype 이 GHSA 를 주 식별자로 낸
-        건은 f.cve 가 `GHSA-…` 이고 사람이 읽는 것은 함께 온 CVE 번호다.
-        결재도 보고도 CVE 번호로 도는데 우리만 GHSA 로 묶어 두면, 같은 건을
-        적어 놓고도 목록에서는 "아직 안 적음" 으로 보인다 — 실제로 그랬다.
+        **두 번호를 다 본다.** grype 이 GHSA 를 주 식별자로 낸 건은 f.cve 가
+        `GHSA-…` 이고 사람이 읽는 것은 함께 온 CVE 번호다. 어느 쪽으로 적혔든
+        (CVE 로 적은 것 · 위험 수용에서 옮겨 온 GHSA 행) 찾는다.
 
-        옛 주 식별자로 적힌 것(위험 수용에서 옮겨 온 행)도 찾아야 하므로
-        두 번호를 모두 본다. grype 의 DB 가 바뀌어 주 식별자가 GHSA 에서
-        CVE 로 옮겨 가도 적어 둔 것이 조용히 떨어져 나가지 않는다.
+        **찾는 규칙은 서비스 한 곳에 있다**(FindingAnalysisService.analysisOf) —
+        목록 · 보고서 · SQL 과 같은 규칙이다. 앞서 여기만 CVE 쪽을 먼저 찾아,
+        둘로 갈린 건(재현 시험 P3)에서 이 칸은 고친 결정을, 목록 · 보고서는 옛
+        결정을 말했다. 둘이면 나중에 고친 것이다.
       */-->
-      <td th:with="key=${f.scan.asset.id + '|' + f.displayId + '|' + f.packageName},
-                   alt=${f.scan.asset.id + '|' + f.cve + '|' + f.packageName},
-                   a=${analyses.containsKey(key)} ? ${analyses.get(key)} : ${analyses.get(alt)}">
+      <td th:with="a=${T(kr.sbomsight.service.FindingAnalysisService).analysisOf(analyses, f)}">
         <th:block th:if="${a != null and !a.untouched}">
           <a th:replace="~{fragments/ui :: reviewstate(${a})}"></a>
           <span th:if="${a.response != null}" class="tag"
@@ -185,7 +183,7 @@
                th:text="'재검토일 ' + ${a.reviewBy} + ' 지남'">재검토일 지남</div>
         </th:block>
 
-        <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${f.scan.asset.id}, ${f.displayId},
+        <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${f.scan.asset.id}, ${f.id}, ${f.displayId},
                          ${f.packageName}, '')}"></a>
       </td>
 

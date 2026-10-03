@@ -2,6 +2,7 @@ package kr.sbomsight.service;
 
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.FindingAnalysisRepository;
+import kr.sbomsight.repo.FindingRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,11 +34,47 @@ public class FindingAnalysisService {
             Arrays.stream(AnalysisState.values()).filter(AnalysisState::isOpen).toList();
 
     private final FindingAnalysisRepository analyses;
+    private final FindingRepository findings;
     private final AuditService audit;
 
-    public FindingAnalysisService(FindingAnalysisRepository analyses, AuditService audit) {
+    public FindingAnalysisService(FindingAnalysisRepository analyses, FindingRepository findings,
+                                  AuditService audit) {
         this.analyses = analyses;
+        this.findings = findings;
         this.audit = audit;
+    }
+
+    /**
+     * 탐지 한 줄에서 적는다 — 표 · CVE 상세의 `작성` · `수정`.
+     *
+     * <p><b>그 탐지의 두 번호로 있던 행을 먼저 찾는다</b>(R6). 앞서는 화면이 보낸 번호
+     * (화면에 찍는 번호) 하나로만 찾아, GHSA 로 적어 둔 건에 나중에 CVE 가 붙은 뒤 표에서
+     * 고치면 새 행이 생겼다 — 같은 취약점의 결정이 둘로 갈렸다(재현 시험 P3). 찾는 규칙은
+     * 읽을 때({@link #analysisOf})와 같다. 그런 행이 둘이면 나중에 고친 것을 고친다.
+     * 없으면 화면에 찍는 번호(있으면 CVE)로 새로 만든다 — 결재 · 보고가 그 번호로 돈다.
+     *
+     * <p>탐지는 이 자산 · 이 패키지의 것이어야 한다. 화면은 언제나 맞는 짝을 보낸다 —
+     * 어긋나면 손으로 만든 요청이라 적지 않고 알린다.
+     */
+    @Transactional
+    public FindingAnalysis recordForFinding(Asset asset, Long findingId, String packageName,
+                                            AnalysisState state, AnalysisJustification justification,
+                                            AnalysisResponse response, String note, String otherControl,
+                                            String approvalDoc, LocalDate reviewBy, String actor) {
+        Finding finding = findings.findById(findingId)
+                .orElseThrow(() -> new IllegalArgumentException("탐지를 찾을 수 없습니다."));
+        if (!finding.getScan().getAsset().getId().equals(asset.getId())
+                || !finding.getPackageName().equals(packageName)) {
+            throw new IllegalArgumentException("다른 자산 · 패키지의 탐지입니다.");
+        }
+        FindingAnalysis existing = later(
+                analyses.findOne(asset.getId(), finding.getCve(), packageName).orElse(null),
+                hasRelated(finding.getCve(), finding.getRelatedCve())
+                        ? analyses.findOne(asset.getId(), finding.getRelatedCve(), packageName).orElse(null)
+                        : null);
+        String cve = existing != null ? existing.getCve() : finding.getDisplayId();
+        return record(asset, cve, packageName, state, justification, response,
+                      note, otherControl, approvalDoc, reviewBy, actor);
     }
 
     /**
@@ -206,10 +243,8 @@ public class FindingAnalysisService {
      * <p>적어 둔 것이 없으면 {@link AnalysisState#NOT_SET}(미검토)다. 없는
      * 것을 "괜찮다" 로 읽지 않는다 — 아무도 보지 않았다는 뜻이다.
      *
-     * <p><b>번호를 둘 다 본다.</b> grype 의 주 식별자가 GHSA 일 때 적어 둔
-     * 번호는 함께 온 CVE 쪽일 수 있다. 한쪽만 맞추면 적어 둔 검토 결과가
-     * 보고서에서 사라진다. 이 규칙은 보고서 1장의 `제외` 집계와 2.4 의
-     * 검토 결과 분포가 <b>같아야 하므로 여기 한 곳에만 둔다.</b>
+     * <p>맞추는 규칙은 {@link #analysisOf} 한 곳에 있다. 보고서 1장의 `제외` 집계와
+     * 2.4 의 검토 결과 분포가 <b>같아야 하므로.</b>
      *
      * @param byKey {@code "CVE|패키지명"} → 적어 둔 것
      */
@@ -222,20 +257,63 @@ public class FindingAnalysisService {
     /**
      * 탐지 한 줄에 <b>적어 둔 검토 결과</b> — 없으면 {@code null}.
      *
-     * <p>{@link #stateOf} 와 같은 규칙이다(주 식별자로 적힌 것이 먼저, 없으면
-     * 함께 온 CVE 번호로 적힌 것). 보고서 4장이 그 줄의 대응 방안과 재검토일을
-     * 모을 때 쓴다 — 상태만으로는 모자라다.
+     * <p><b>규칙은 하나다</b>(R6). 같은 자산 · 같은 패키지에서 번호가 탐지의 주
+     * 식별자 또는 함께 온 CVE 와 같은 행이고, 그런 행이 둘이면 <b>나중에 고친 것</b>
+     * 이다(D4 — {@link #later}). 앞서 여기와 SQL 은 주 식별자 쪽을 먼저, 표는 CVE
+     * 쪽을 먼저 찾았다. 둘로 갈린 건(재현 시험 P3)에서 표는 고친 결정(해당됨)을,
+     * 목록 · 보고서는 옛 결정(해당 없음)을 말했다. 저장({@link #recordForFinding}) ·
+     * 표 · 묶어 보는 화면 · SQL(FindingRepository)이 이 규칙 하나를 쓴다.
+     *
+     * <p>보고서 4장이 그 줄의 대응 방안과 재검토일을 모을 때도 쓴다 — 상태만으로는
+     * 모자라다.
      */
     public static FindingAnalysis analysisOf(Map<String, FindingAnalysis> byKey,
                                              String cve, String relatedCve, String packageName) {
-        FindingAnalysis direct = byKey.get(cve + "|" + packageName);
-        if (direct != null) {
-            return direct;
+        return later(byKey.get(cve + "|" + packageName),
+                     hasRelated(cve, relatedCve) ? byKey.get(relatedCve + "|" + packageName) : null);
+    }
+
+    /**
+     * 위와 같은 것을 <b>자산 id 를 키에 넣은 지도</b>({@link #byAssetKey})로 — 구역 ·
+     * 전체 범위의 목록, CVE 상세, 묶어 보는 화면.
+     */
+    public static FindingAnalysis analysisOf(Map<String, FindingAnalysis> byAssetKey, Long assetId,
+                                             String cve, String relatedCve, String packageName) {
+        String prefix = assetId + "|";
+        return later(byAssetKey.get(prefix + cve + "|" + packageName),
+                     hasRelated(cve, relatedCve)
+                             ? byAssetKey.get(prefix + relatedCve + "|" + packageName) : null);
+    }
+
+    /** 표 · CVE 상세가 줄마다 부른다(finding-table · vuln-detail). */
+    public static FindingAnalysis analysisOf(Map<String, FindingAnalysis> byAssetKey, Finding finding) {
+        return analysisOf(byAssetKey, finding.getScan().getAsset().getId(),
+                          finding.getCve(), finding.getRelatedCve(), finding.getPackageName());
+    }
+
+    /**
+     * 둘 중 <b>나중에 고친 것</b> — 고친 시각, 같으면 나중에 만든 행(id). 하나가 없으면
+     * 다른 하나.
+     *
+     * <p>시각은 <b>마이크로초까지만</b> 견준다. DB 의 칸(DATETIME(6))이 거기까지라
+     * SQL(FindingRepository)은 그 값으로 견주는데, 막 저장한 행은 메모리에 나노초가
+     * 남아 있다. 자르지 않으면 같은 두 행을 두 규칙이 다르게 고를 수 있다.
+     */
+    static FindingAnalysis later(FindingAnalysis a, FindingAnalysis b) {
+        if (a == null || b == null) {
+            return a == null ? b : a;
         }
-        if (relatedCve != null && !relatedCve.isBlank()) {
-            return byKey.get(relatedCve + "|" + packageName);
+        int byTime = a.getUpdatedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS)
+                      .compareTo(b.getUpdatedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+        if (byTime != 0) {
+            return byTime > 0 ? a : b;
         }
-        return null;
+        return a.getId() > b.getId() ? a : b;
+    }
+
+    /** 함께 온 CVE 가 주 식별자와 다른 번호인가 — 같으면 한 번만 찾는다. */
+    private static boolean hasRelated(String cve, String relatedCve) {
+        return relatedCve != null && !relatedCve.isBlank() && !relatedCve.equals(cve);
     }
 
     /** 상태마다 0 부터 시작하는 빈 표. 없는 줄이 빠지면 표가 판마다 달라진다. */

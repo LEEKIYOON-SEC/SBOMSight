@@ -79,10 +79,15 @@ public class FindingAnalysisController {
      *
      * <p>빈 문자열을 {@code null} 로 받는다. 화면의 고르개는 "고르지 않음" 을
      * 빈 값으로 보내는데, 스프링이 그대로 enum 으로 바꾸려 하면 400 이 난다.
+     *
+     * <p><b>표 · CVE 상세는 탐지 번호({@code findingId})를 함께 보낸다</b> — 서버가 그
+     * 탐지의 두 번호로 있던 행을 먼저 찾는다(FindingAnalysisService.recordForFinding).
+     * 검토 결과 상세는 그 행 자신을 고치므로 보내지 않는다 — 그 행의 번호로 찾는다.
      */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public String record(@RequestParam Long assetId,
+                         @RequestParam(required = false) Long findingId,
                          @RequestParam String cve,
                          @RequestParam String packageName,
                          @RequestParam(required = false) String state,
@@ -103,12 +108,19 @@ public class FindingAnalysisController {
                     enumOf(AnalysisJustification.class, justification);
             AnalysisResponse newResponse = enumOf(AnalysisResponse.class, response);
             java.time.LocalDate newReviewBy = date(reviewBy);
+            AnalysisState chosen = newState == null ? AnalysisState.NOT_SET : newState;
+            Runnable write = () -> {
+                if (findingId == null) {
+                    analyses.record(asset, cve, packageName, chosen, newJustification, newResponse,
+                                    note, otherControl, approvalDoc, newReviewBy, principal.getName());
+                } else {
+                    analyses.recordForFinding(asset, findingId, packageName, chosen, newJustification,
+                                              newResponse, note, otherControl, approvalDoc, newReviewBy,
+                                              principal.getName());
+                }
+            };
             try {
-                analyses.record(asset, cve, packageName,
-                                newState == null ? AnalysisState.NOT_SET : newState,
-                                newJustification, newResponse,
-                                note, otherControl, approvalDoc, newReviewBy,
-                                principal.getName());
+                write.run();
             } catch (org.springframework.dao.DataIntegrityViolationException race) {
                 // **동시에 두 번 눌렸다.** `record` 는 `없으면 만든다` 인데 그
                 // 사이에 다른 요청이 같은 `(자산, CVE, 패키지)` 를 만들 수 있다.
@@ -120,11 +132,7 @@ public class FindingAnalysisController {
                 // 바뀐 칸만 이력에 남는다. 두 번째도 겹치면 그때는 올린다.
                 log.info("검토 결과를 적는 요청이 겹쳤습니다 — 다시 한 번 적습니다: {} · {}",
                          cve, packageName);
-                analyses.record(asset, cve, packageName,
-                                newState == null ? AnalysisState.NOT_SET : newState,
-                                newJustification, newResponse,
-                                note, otherControl, approvalDoc, newReviewBy,
-                                principal.getName());
+                write.run();
             }
             flash.addFlashAttribute("message", cve + "의 검토 결과를 적었습니다.");
         } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {

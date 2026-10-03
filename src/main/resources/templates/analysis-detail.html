@@ -30,7 +30,7 @@
     <div th:fragment="actions" class="btn-list">
       <a class="btn" th:if="${!present.isEmpty() and analysis.asset.archivedAt == null}"
          th:href="@{'/vulns/' + ${analysis.cve}}">CVE 상세</a>
-      <a th:replace="~{fragments/analysis-dialog :: link(${analysis}, ${analysis.asset.id}, ${analysis.cve},
+      <a th:replace="~{fragments/analysis-dialog :: link(${analysis}, ${analysis.asset.id}, null, ${analysis.cve},
                        ${analysis.packageName}, 'btn btn-dark')}"></a>
     </div>
   </th:block>

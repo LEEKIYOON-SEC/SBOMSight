@@ -146,11 +146,9 @@
             <th class="tight">검사 시각</th><th class="tight">검토 결과</th><th class="tight"></th>
           </tr></thead>
           <tbody>
-          <!--/* 키는 목록(finding-table)과 같다 — 화면에 찍는 번호, 없으면 주 식별자. */-->
+          <!--/* 찾는 규칙은 목록(finding-table)과 같다 — 서비스 한 곳(analysisOf). */-->
           <tr th:each="f : ${rows.content}"
-              th:with="key=${f.scan.asset.id + '|' + f.displayId + '|' + f.packageName},
-                       alt=${f.scan.asset.id + '|' + f.cve + '|' + f.packageName},
-                       a=${analyses.containsKey(key)} ? ${analyses.get(key)} : ${analyses.get(alt)}">
+              th:with="a=${T(kr.sbomsight.service.FindingAnalysisService).analysisOf(analyses, f)}">
             <td class="tight"><a th:href="@{'/assets/' + ${f.scan.asset.id}}"
                                  style="font-weight:600" th:text="${f.scan.asset.name}">web-01</a></td>
             <td class="tight faint">
@@ -173,7 +171,7 @@
               <span class="faint" th:unless="${a != null and !a.untouched}">미검토</span>
             </td>
             <td class="tight actions">
-              <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${f.scan.asset.id}, ${f.displayId},
+              <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${f.scan.asset.id}, ${f.id}, ${f.displayId},
                                ${f.packageName}, 'btn btn-sm')}"></a>
               <a class="btn btn-sm" th:href="@{'/assets/' + ${f.scan.asset.id}(tab='vulns')}">열기</a></td>
           </tr>

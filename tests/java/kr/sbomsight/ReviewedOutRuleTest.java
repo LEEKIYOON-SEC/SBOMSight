@@ -104,10 +104,15 @@ class ReviewedOutRuleTest {
         finding("CVE-R-4", "", "p-triage");        review(asset, "CVE-R-4", "p-triage", AnalysisState.IN_TRIAGE);
         // 주 식별자가 GHSA 이고 사람은 CVE 번호로 적었다
         finding("GHSA-r-5", "CVE-R-5", "p-ghsa");  review(asset, "CVE-R-5", "p-ghsa", AnalysisState.NOT_AFFECTED);
-        // 두 번호 모두 적혀 있으면 주 식별자 쪽이 이긴다
+        // 두 번호 모두 적혀 있으면(둘로 갈린 행) **나중에 고친 쪽**이 이긴다(R6 · D4).
+        // 앞서는 주 식별자 쪽이 이겼다 — 표는 CVE 쪽을 골라, 같은 건을 표는 고친
+        // 결정으로 · 목록과 보고서는 옛 결정으로 말했다(재현 시험 P3).
         finding("GHSA-r-6", "CVE-R-6", "p-both");
         review(asset, "GHSA-r-6", "p-both", AnalysisState.IN_TRIAGE);
-        review(asset, "CVE-R-6", "p-both", AnalysisState.NOT_AFFECTED);
+        review(asset, "CVE-R-6", "p-both", AnalysisState.NOT_AFFECTED);      // 나중 — 빠진다
+        finding("GHSA-r-9", "CVE-R-9", "p-both-2");
+        review(asset, "CVE-R-9", "p-both-2", AnalysisState.NOT_AFFECTED);
+        review(asset, "GHSA-r-9", "p-both-2", AnalysisState.IN_TRIAGE);      // 나중 — 남는다
         // 다른 자산의 검토는 이 자산의 탐지를 빼지 않는다
         finding("CVE-R-7", "", "p-elsewhere");     review(other, "CVE-R-7", "p-elsewhere", AnalysisState.NOT_AFFECTED);
         // 적은 것이 없다
@@ -127,11 +132,11 @@ class ReviewedOutRuleTest {
         assertThat(shown)
                 .as("SQL 이 남긴 것과 stateOf 가 열려 있다고 본 것이 다르다")
                 .isEqualTo(openByJava)
-                .containsExactlyInAnyOrder("p-accept", "p-triage", "p-both", "p-elsewhere", "p-none");
+                .containsExactlyInAnyOrder("p-accept", "p-triage", "p-both-2", "p-elsewhere", "p-none");
 
         assertThat(findings.countReviewedOut(List.of(scan.getId()), null, null, null, null, null))
                 .as("빠진 건수")
-                .isEqualTo(3);   // p-na · p-fp · p-ghsa
+                .isEqualTo(4);   // p-na · p-fp · p-ghsa · p-both
     }
 
     @Test

@@ -368,9 +368,10 @@ public class ZoneReportService {
     /**
      * 기간 시작 직전 대비 신규 · 해소 · 유지.
      *
-     * <p>대조 축은 {@code (자산, CVE, 패키지명)} 이다. 버전을 넣으면 패치한
-     * 건이 "해소 1건 + 신규 1건" 으로 갈라져 보이고, 자산을 빼면 A 서버에서
-     * 고치고 B 서버에서 생긴 것이 상쇄되어 둘 다 없던 일이 된다.
+     * <p>대조 축은 {@code (자산, 번호, 패키지명)} 이다 — 번호는 주 식별자 · 함께 온
+     * CVE 중 하나라도 같으면 같은 것({@link FindingMatch}, 자산 보고서 6장과 같다).
+     * 버전을 넣으면 패치한 건이 "해소 1건 + 신규 1건" 으로 갈라져 보이고, 자산을
+     * 빼면 A 서버에서 고치고 B 서버에서 생긴 것이 상쇄되어 둘 다 없던 일이 된다.
      *
      * <p><b>기준선이 없는 자산은 대조에서 뺀다.</b> 기간 중에 처음 등록한
      * 서버의 탐지를 전부 "신규" 로 세면 증감이 부풀려진다 — 새로 본 것이지
@@ -393,26 +394,20 @@ public class ZoneReportService {
                 .filter(s -> comparableAssets.contains(s.getAsset().getId()))
                 .toList();
 
-        Set<String> now = keys(comparable);
-        Set<String> before = keys(baselineComparable);
+        FindingMatch.Counts counts = FindingMatch.compare(keys(comparable), keys(baselineComparable));
 
-        long added = now.stream().filter(k -> !before.contains(k)).count();
-        long resolved = before.stream().filter(k -> !now.contains(k)).count();
-        long kept = now.stream().filter(before::contains).count();
-
-        return new Movement(added, resolved, kept, comparable.size(),
+        return new Movement(counts.added(), counts.resolved(), counts.kept(), comparable.size(),
                             current.size() - comparable.size(), latest(baselineComparable));
     }
 
-    private Set<String> keys(List<Scan> forScans) {
+    private List<FindingMatch.Key> keys(List<Scan> forScans) {
         if (forScans.isEmpty()) {
-            return Set.of();
+            return List.of();
         }
-        Set<String> out = new HashSet<>();
-        for (FindingRepository.AssetFindingKey k : findings.findKeysIn(scanIds(forScans))) {
-            out.add(k.getAssetId() + "|" + k.getCve() + "|" + k.getPackageName());
-        }
-        return out;
+        return findings.findKeysIn(scanIds(forScans)).stream()
+                .map(k -> new FindingMatch.Key(k.getAssetId(), k.getCve(), k.getRelatedCve(),
+                                               k.getPackageName()))
+                .toList();
     }
 
     private Instant latest(List<Scan> list) {

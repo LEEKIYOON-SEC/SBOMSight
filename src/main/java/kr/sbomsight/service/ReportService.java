@@ -398,8 +398,10 @@ public class ReportService {
     /**
      * 지난 스캔 대비 신규 · 해소 · 유지.
      *
-     * <p>{@code (CVE, 패키지명)} 으로 대조한다. 버전을 넣으면 패치했을 때 키가
-     * 바뀌어 "해소 1건 + 신규 1건"으로 갈라져 화면이 거짓말을 한다.
+     * <p>같은 패키지에서 번호(주 식별자 · 함께 온 CVE)가 하나라도 같으면 같은 취약점이다
+     * ({@link FindingMatch} — 검토 결과를 맞추는 규칙과 같다). 앞서는 주 식별자 하나로
+     * 맞대어, 같은 취약점의 주 식별자가 바뀌면 "해소 1 + 신규 1" 로 갈렸다. 버전은 넣지
+     * 않는다 — 넣으면 패치했을 때 키가 바뀌어 같은 것이 갈라진다.
      *
      * <p>지난 검사는 <b>최신 검사를 고르는 순서</b>에서 바로 앞의 완료 검사다
      * ({@link #earlier}). 앞서는 이 검사보다 먼저 <i>돈</i> 검사였다 — 예전에 떠 둔
@@ -412,13 +414,10 @@ public class ReportService {
             return new Diff(null, 0, 0, 0);
         }
 
-        Set<String> now = new HashSet<>(findings.findCvePackagePairs(scan.getId()));
-        Set<String> before = new HashSet<>(findings.findCvePackagePairs(previous.get().getId()));
-
-        long added = now.stream().filter(k -> !before.contains(k)).count();
-        long resolved = before.stream().filter(k -> !now.contains(k)).count();
-        long kept = now.stream().filter(before::contains).count();
-        return new Diff(previous.get(), added, resolved, kept);
+        FindingMatch.Counts counts = FindingMatch.compare(
+                FindingMatch.of(findings.findKeyRows(scan.getId())),
+                FindingMatch.of(findings.findKeyRows(previous.get().getId())));
+        return new Diff(previous.get(), counts.added(), counts.resolved(), counts.kept());
     }
 
     // --- 5장: 조치 진행 현황 -------------------------------------------------
