@@ -407,12 +407,22 @@ echo "  수용·철회 이력 $EVENTS 줄이 그때 시각 그대로 남음"
 # 쓰던 설치는 감사 로그의 로그인 기록으로 채운다 — 지어내는 것이 아니라
 # 우리가 이미 가지고 있는 값이다.
 
+# 기대값도 DB 안에서 만든다 — 씨앗이 DB 의 NOW() 로 들어갔으니 그 행과 그대로 견준다.
+# 앞서 셸의 `date` 로 날짜를 만들어, 셸과 DB 의 시간대가 다르면 그날의 몇 시간 동안 날짜가
+# 하루 어긋나 거짓으로 실패했다(셸 America/Los_Angeles · DB UTC 로 재현).
+#   마지막 = 성공 중 가장 최근(1일 전) · 그 전 = 두 번째(3일 전) — 2일 전의 실패는 세지 않는다.
 LOGINS=$(run "$DB" -N -e "
-    SELECT CONCAT(DATE(last_login_at),'|',DATE(previous_login_at))
+    SELECT CONCAT(
+      last_login_at     = (SELECT at FROM audit_log WHERE actor = 'oldtimer' AND action = 'LOGIN_SUCCESS'
+                           AND at > NOW(6) - INTERVAL 2 DAY),
+      '|',
+      previous_login_at = (SELECT at FROM audit_log WHERE actor = 'oldtimer' AND action = 'LOGIN_SUCCESS'
+                           AND at < NOW(6) - INTERVAL 2 DAY AND at > NOW(6) - INTERVAL 5 DAY))
     FROM users WHERE username='oldtimer';")
-WANT="$(date -d '1 day ago' +%F)|$(date -d '3 days ago' +%F)"
-[ "$LOGINS" = "$WANT" ] || {
-    echo "  옛 계정의 로그인 시각이 '$LOGINS' 입니다 (기대 '$WANT')"; exit 1; }
+[ "$LOGINS" = "1|1" ] || {
+    echo "  옛 계정의 로그인 시각이 감사 로그와 다릅니다 ('$LOGINS' — 기대 1|1: 마지막 = 1일 전 성공 · 그 전 = 3일 전 성공)"
+    run "$DB" -N -e "SELECT last_login_at, previous_login_at FROM users WHERE username='oldtimer';"
+    exit 1; }
 echo "  감사 로그에서 마지막·그 전 로그인을 채움 (실패 기록은 안 셈)"
 
 # 로그인한 적 없는 계정은 둘 다 비어 있어야 한다. 채워 넣으면 '최초 로그인'
