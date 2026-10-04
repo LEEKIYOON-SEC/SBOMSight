@@ -389,6 +389,42 @@ class FindingAnalysisTest {
                 .contains(">수정</a>");
     }
 
+    /**
+     * <b>번호가 64자를 넘는 탐지에도 적는다.</b>
+     *
+     * <p>탐지의 번호 칸은 128자인데(V2) 검토 결과의 번호 칸은 64자였다(V11). 65자가 넘는
+     * 번호의 탐지에 검토 결과를 적으면 DB 가 거절했고, 화면은 그것을 "동시에 두 번 눌렸다"
+     * 로 읽어 한 번 더 적다가 오류 화면이 됐다. 조치 대상(V19)은 처음부터 탐지와 같은 128자다.
+     */
+    @Test
+    @DisplayName("64자가 넘는 번호의 탐지에도 검토 결과를 적는다 — 탐지와 같은 128자")
+    void longIdentifiersCanBeReviewed() throws Exception {
+        String longId = "LONG-" + "x".repeat(90);   // 95자 — check-migrations 의 LONGID 와 같은 꼴
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scans.saveAndFlush(scan);
+        Finding f = new Finding(scan, longId + "|pyyaml", longId, "pyyaml");
+        f.setSeverity("High");
+        f.setFixState("not-fixed");
+        findings.saveAndFlush(f);
+        scan.setFindingCount(1);
+        scans.saveAndFlush(scan);
+
+        mvc.perform(post("/analyses").param("assetId", asset.getId().toString())
+                                     .param("cve", longId).param("packageName", "pyyaml")
+                                     .param("state", "IN_TRIAGE").param("note", "긴 번호")
+                                     .with(user("tester").roles("ADMIN")).with(csrf()))
+           .andExpect(status().is3xxRedirection());
+
+        assertThat(repo.findByAsset(asset.getId()))
+                .as("적은 검토 결과가 번호 그대로 남는다")
+                .singleElement()
+                .satisfies(a -> {
+                    assertThat(a.getCve()).isEqualTo(longId).hasSize(95);
+                    assertThat(a.getState()).isEqualTo(AnalysisState.IN_TRIAGE);
+                });
+    }
+
     // --- 화면 ---------------------------------------------------------------
 
     @Test

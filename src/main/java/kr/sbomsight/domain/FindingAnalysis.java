@@ -41,7 +41,11 @@ public class FindingAnalysis {
     @org.hibernate.annotations.OnDelete(action = org.hibernate.annotations.OnDeleteAction.CASCADE)
     private Asset asset;
 
-    @Column(nullable = false, length = 64)
+    /**
+     * 탐지의 번호 — 탐지와 같은 너비(128자, V21). 앞서 64자라 그보다 긴 번호의 탐지에는
+     * 검토 결과를 적을 수 없었다(DB 가 거절했다).
+     */
+    @Column(nullable = false, length = 128)
     private String cve;
 
     @Column(name = "package_name", nullable = false, length = 255)

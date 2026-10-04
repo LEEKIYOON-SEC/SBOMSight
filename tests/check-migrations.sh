@@ -823,6 +823,28 @@ KEPT=$(run "$DB" -N -e "
     echo "  자산을 지운 뒤 '$KEPT' 입니다 (기대 0|3|1|1 — 자산은 사라지고 발행본 · 검사 목록 · 이력은 남음)"; exit 1; }
 echo "  자산을 지워도 발행본 · 가리키던 검사 번호 · 이력은 남음 (검사 · 자산 쪽 FK 없음)"
 
+# --- V21: 검토 결과의 번호 칸 — 탐지와 같은 128자 -------------------------------
+#
+# 탐지의 번호를 그대로 받는 칸 셋이 같은 너비인가. 앞서 검토 결과만 64자라 그보다 긴
+# 번호의 탐지에는 검토 결과를 적을 수 없었다. 95자 번호가 실제로 들어가는지 넣어 본다.
+
+CVEW=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(CONCAT(TABLE_NAME, '=', CHARACTER_MAXIMUM_LENGTH)
+                        ORDER BY FIELD(TABLE_NAME, 'findings', 'finding_analysis', 'remediation_targets')
+                        SEPARATOR ' ')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = '$DB' AND COLUMN_NAME = 'cve'
+      AND TABLE_NAME IN ('findings', 'finding_analysis', 'remediation_targets');")
+WANT="findings=128 finding_analysis=128 remediation_targets=128"
+[ "$CVEW" = "$WANT" ] || { echo "  번호 칸이 '$CVEW' 입니다 (기대 '$WANT')"; exit 1; }
+ANY=$(run "$DB" -N -e "SELECT MIN(id) FROM assets;")
+run "$DB" -e "
+    INSERT INTO finding_analysis (asset_id, cve, package_name, state, created_at, updated_at)
+    VALUES ($ANY, '$LONGID', 'v21check', 'IN_TRIAGE', NOW(6), NOW(6));"
+GOT=$(run "$DB" -N -e "SELECT CHAR_LENGTH(cve) FROM finding_analysis WHERE package_name = 'v21check';")
+[ "$GOT" = "95" ] || { echo "  95자 번호의 검토 결과가 '$GOT' 자로 들어갔습니다"; exit 1; }
+echo "  번호 칸 — 탐지 · 검토 결과 · 조치 대상 모두 128자 · 95자 번호의 검토 결과가 그대로 들어감"
+
 run -e "DROP DATABASE \`$DB\`;"
 echo
 echo "마이그레이션 확인 통과"
