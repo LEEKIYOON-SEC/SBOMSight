@@ -535,6 +535,13 @@ dialog textarea { min-height: 4rem; }
 .report { max-width: 72rem; }
 .report-title { margin-bottom: 32px; padding-bottom: 14px; border-bottom: 2px solid var(--fg); }
 .report-title h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 4px; }
+/* 발행하지 않은 보고서 — 열 때마다 지금 데이터로 계산한다(R11). 인쇄에도 찍힌다: 초안을
+   인쇄한 종이가 결재본으로 읽히지 않게. 배경은 인쇄에서 빠지므로 테두리로 보인다. */
+.report .draft-mark {
+  display: inline-block; margin: 6px 0 0; padding: 2px 10px;
+  border: 1px solid var(--medium-line); border-radius: 4px;
+  background: var(--medium-bg); color: var(--medium); font-size: 12.5px; font-weight: 600;
+}
 
 .report section { margin-bottom: 40px; break-inside: auto; }
 .report h2 {

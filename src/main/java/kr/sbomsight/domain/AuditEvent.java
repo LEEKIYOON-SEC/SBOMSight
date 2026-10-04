@@ -86,6 +86,12 @@ public enum AuditEvent {
     RISK_ACCEPTED("위험 수용"),
     RISK_ACCEPTANCE_REVOKED("위험 수용 철회"),
 
+    // --- 보고서 ---
+    /** 보고서를 발행했다(V20) — 발행 번호 · 대상 · 발행본 해시를 남긴다. */
+    REPORT_PUBLISHED("보고서 발행"),
+    /** 발행본의 결재 문서 번호를 적거나 바꿨다 — 앞뒤 값. 발행본의 이력에도 남는다. */
+    PUBLICATION_APPROVAL_DOC_CHANGED("발행본 결재 문서 번호 변경"),
+
     // --- 설정 ---
     // `SETTING_CHANGED` 를 뺐다. 선언만 있고 어디서도 기록하지 않았는데
     // 화면의 `행위` 고르개는 `values()` 로 만들어진다 — 고르면 언제나 0건인

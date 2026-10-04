@@ -500,6 +500,13 @@
             <!--/* 화면 · 보고서의 기준이 되는 줄. `다시 검사` 단추가 이 줄에만 있는 까닭이다.
                  상태 아래 줄에 둔다 — 옆에 두면 이 한 줄 때문에 칸이 73px 에서 136px 로 는다. */-->
             <div class="mt-1" th:if="${latest != null and s.id == latest.id}"><span class="tag">최신 검사</span></div>
+            <!--/* 발행본이 가리키는 검사 — 지우지 못한다(D6). 그래서 이 줄에는 `삭제` 단추가 없다.
+                 여럿이 가리키면 최근 것으로 간다. 단추 칸이 아니라 여기 둔다 — 그 검사에 대한
+                 사실이고, 단추 칸에 두면 표가 1280px 에서 더 넘친다(재 보고 옮겼다). */-->
+            <div class="mt-1" th:if="${published.get(s.id) != null}">
+              <a class="tag" th:href="@{'/reports/publications/' + ${published.get(s.id).id}}"
+                 th:title="'발행본(' + ${published.get(s.id).number} + ')이 가리키는 검사 · 지울 수 없음'">발행본</a>
+            </div>
           </td>
           <td class="num tight" th:text="${s.status.name() == 'DONE'} ? ${#numbers.formatInteger(s.findingCount, 0, 'COMMA')} : '—'">—</td>
           <!--/*
@@ -551,8 +558,10 @@
             <a class="btn btn-sm" th:if="${!#strings.isEmpty(s.sbomPath)}"
                th:href="@{'/scans/' + ${s.id} + '/sbom'}"
                title="업로드한 SBOM 원본 내려받기">SBOM</a>
+            <!--/* 발행본이 가리키는 검사는 지우지 못한다(D6) — 단추를 두지 않는다(검사 상태 칸의
+                 `발행본` 표시가 까닭을 말한다). 서버도 거절한다(ScanService.PublishedScanException). */-->
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/delete'}" class="inline"
-                  sec:authorize="hasRole('ADMIN')"
+                  th:if="${published.get(s.id) == null}" sec:authorize="hasRole('ADMIN')"
                   data-confirm="이 검사와 보관된 SBOM·검사 결과를 지웁니다.\n되돌릴 수 없습니다.\n\n계속할까요?">
               <button type="submit" class="btn btn-sm btn-outline-danger">삭제</button>
             </form>

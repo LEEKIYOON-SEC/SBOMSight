@@ -7,6 +7,7 @@ import kr.sbomsight.grype.GrypeMapper;
 import kr.sbomsight.grype.GrypeReport;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.FindingRepository;
+import kr.sbomsight.repo.ReportPublicationRepository;
 import kr.sbomsight.repo.ScanRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,11 +46,13 @@ public class ScanService {
     private final ObjectMapper json;
     private final SbomSightProperties properties;
     private final ComponentInventoryService inventory;
+    private final ReportPublicationRepository publications;
     private final TransactionTemplate transactions;
 
     public ScanService(ScanRepository scans, AssetRepository assets, FindingRepository findings,
                        SbomStorage storage, GrypeRunner grype, GrypeMapper mapper, ObjectMapper json,
                        SbomSightProperties properties, ComponentInventoryService inventory,
+                       ReportPublicationRepository publications,
                        PlatformTransactionManager transactionManager) {
         this.scans = scans;
         this.assets = assets;
@@ -60,6 +63,7 @@ public class ScanService {
         this.json = json;
         this.properties = properties;
         this.inventory = inventory;
+        this.publications = publications;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -94,6 +98,20 @@ public class ScanService {
     public static class NotLatestScanException extends IllegalStateException {
         public NotLatestScanException() {
             super("최신 검사와 실패한 검사만 다시 검사할 수 있습니다.");
+        }
+    }
+
+    /**
+     * 발행본이 가리키는 검사를 지우려 했다(D6) — 메시지는 화면에 그대로 나간다.
+     *
+     * <p>그 검사는 발행본의 수가 나온 근거다. 지우면 발행본은 남아도 "이 수가 어디서
+     * 나왔나" 를 확인할 검사가 없다. 자산을 통째로 지우는 것은 막지 않는다(D6 — 발행본은
+     * 남는다). 번호 뒤에 조사를 붙이지 않는다 — 번호의 끝 글자에 따라 조사가 갈린다.
+     */
+    public static class PublishedScanException extends IllegalStateException {
+        public PublishedScanException(List<String> numbers) {
+            super("이 검사는 발행본(" + String.join(" · ", numbers)
+                  + ")이 가리키고 있어 지울 수 없습니다.");
         }
     }
 
@@ -405,13 +423,24 @@ public class ScanService {
      * 패키지 행을 지우는 자리와 잠그는 차례가 엇갈리면 서로를 기다린다. 지금
      * 검사였는지도 잠근 뒤에 본다.
      *
+     * <p><b>발행본이 가리키는 검사는 지우지 않는다(D6).</b> 그것도 잠근 뒤에 본다 —
+     * 발행도 같은 자산 행을 잠그고 가리킬 검사를 적으므로(PublicationService), 겹치면
+     * 어느 한쪽이 먼저 끝난 것을 보고 판단한다.
+     *
      * @return 패키지 목록을 다시 담았는지, 못 담았으면 그 까닭
+     * @throws PublishedScanException 발행본이 이 검사를 가리킨다
      */
     public ComponentInventoryService.Restored delete(Scan scan) {
         long assetId = scan.getAsset().getId();
         long scanId = scan.getId();
         boolean wasCurrent = Boolean.TRUE.equals(transactions.execute(tx -> {
             assets.lockById(assetId);
+            List<String> published = publications.findNumbersReferring(scanId).stream()
+                    .map(ReportPublicationRepository.NumberRow::getNumber)
+                    .toList();
+            if (!published.isEmpty()) {
+                throw new PublishedScanException(published);
+            }
             boolean current = scans.currentOf(assetId).map(Scan::getId)
                                    .filter(id -> id == scanId).isPresent();
             scans.delete(scan);      // findings 는 FK ON DELETE CASCADE

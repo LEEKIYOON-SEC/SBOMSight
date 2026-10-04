@@ -344,7 +344,7 @@ sudo systemctl start sbomsight
 
 표 변경은 기동할 때 Flyway 가 적용한다(`journalctl -u sbomsight` 에 `Migrating schema` ·
 `Successfully applied`). 올라온 뒤 **로그아웃하고 다시 로그인해 본다.** 되돌리는 절차와
-V15 · V16 이 무엇을 바꾸는지는 [`docs/operations.md` 8절](operations.md#8-업그레이드).
+마이그레이션마다 무엇을 바꾸는지는 [`docs/operations.md` 8절](operations.md#8-업그레이드).
 
 ---
 

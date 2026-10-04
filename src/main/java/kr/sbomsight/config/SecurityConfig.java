@@ -58,8 +58,9 @@ public class SecurityConfig {
      * <p><b>{@code style-src-attr} 만 {@code 'unsafe-inline'} 이다.</b> 심각도
      * 막대의 폭처럼 값이 서버에서 오는 것은 {@code style="width:37%"} 로만
      * 낼 수 있다(클래스로는 낼 수 없는 수다). 글자를 내보내는 자리는 전부
-     * Thymeleaf 가 이스케이프하고({@code th:utext} 0개) 스크립트는 막혀
-     * 있으므로, 남는 위험은 모양이 흐트러지는 정도다.
+     * Thymeleaf 가 이스케이프하고 스크립트는 막혀 있으므로, 남는 위험은 모양이
+     * 흐트러지는 정도다. {@code th:utext} 는 발행본 보기 한 곳뿐이다 — 이 앱이 그때
+     * 이스케이프하며 그려 저장한 문서를, 해시가 맞을 때만 내보낸다(PublicationTest).
      *
      * <p><b>{@code form-action 'self'}</b> — 폼이 남의 서버로 가지 않는다.
      * 자산 목록과 SBOM 이 담긴 폼이 바깥으로 제출되는 것을 막는 줄이다.

@@ -54,13 +54,15 @@ public class AssetController {
     private final ComponentRepository components;
     private final PackageService packages;
     private final RemediationService remediationService;
+    private final ReportPublicationRepository publications;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
                            AssetService assetService, ZoneService zoneService, AuditService audit,
                            FindingAnalysisService analyses, SbomStorage storage,
                            VulnQuery vulns, ComponentRepository components,
-                           PackageService packages, RemediationService remediationService) {
+                           PackageService packages, RemediationService remediationService,
+                           ReportPublicationRepository publications) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
@@ -75,6 +77,7 @@ public class AssetController {
         this.components = components;
         this.packages = packages;
         this.remediationService = remediationService;
+        this.publications = publications;
     }
 
     /**
@@ -458,6 +461,15 @@ public class AssetController {
         // 것이다** — `원본 1` 은 내부 번호라 사람이 아는 값이 아니다.
         model.addAttribute("origins", history.stream()
                 .collect(Collectors.toMap(Scan::getId, s -> s, (a, b) -> a)));
+        // 발행본이 가리키는 검사 — 이력 탭이 그 줄의 검사 상태 칸에 `발행본` 을 붙이고 `삭제`
+        // 단추를 두지 않는다. 서버가 거절할 단추를 두지 않는다(ScanService.PublishedScanException).
+        // 여럿이 가리키면 최근 것으로 간다.
+        Map<Long, ReportPublicationRepository.ScanReference> published = new HashMap<>();
+        if ("history".equals(tab) && !history.isEmpty()) {
+            publications.findReferences(history.stream().map(Scan::getId).toList())
+                        .forEach(r -> published.putIfAbsent(r.getScanId(), r));
+        }
+        model.addAttribute("published", published);
         model.addAttribute("severity", latest == null ? Map.of() : severityMap(latest.getId()));
         // 취약점 탭의 숫자는 **그 탭이 처음 열었을 때 보여 주는 줄 수**다 —
         // 해당 없음 · 오탐은 기본에서 빠진다. 탐지 건수(개요 · 이력 · 자산
@@ -719,7 +731,14 @@ public class AssetController {
         Long assetId = scan.getAsset().getId();
         String detail = scan.getSbomFilename() + " · 탐지 " + scan.getFindingCount() + "건";
         String assetName = scan.getAsset().getName();
-        ComponentInventoryService.Restored restored = scanService.delete(scan);
+        ComponentInventoryService.Restored restored;
+        try {
+            restored = scanService.delete(scan);
+        } catch (ScanService.PublishedScanException e) {
+            // 고장이 아니다 — 발행본의 근거라 지우지 않는다(D6). 지운 것이 없으니 감사 로그도 없다.
+            flash.addFlashAttribute("error", e.getMessage());
+            return "redirect:/assets/" + assetId;
+        }
         // 지운 것이 지금 검사였으면 그 전 검사의 SBOM에서 패키지 목록을 다시
         // 담았다. 무엇을 했는지 말한다 — 패키지 수가 바뀐 까닭이 화면에 없으면
         // 다음 사람이 찾지 못한다. 못 담았으면 그 까닭을 오류로.

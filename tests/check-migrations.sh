@@ -753,6 +753,66 @@ SINCE=$(run "$DB" -N -e "
 [ "$SINCE" = "V19|1" ] || { echo "  이력이 모든 칸을 남기기 시작한 시각이 '$SINCE' 입니다 (기대 V19|1 — UTC)"; exit 1; }
 echo "  이력이 모든 칸을 남기기 시작한 시각을 UTC 로 적음 (그 전 기록에만 각주)"
 
+# --- V20: 보고서 발행본 ---------------------------------------------------------
+#
+# 새 표 셋 — 옮길 데이터가 없다. 지키는 것은 넷: 칸 너비(결재 문서 번호는 검토 결과와
+# 같은 128자) · 발행 번호는 겹쳐 들어가지 않는다 · 검사 목록과 이력은 없는 발행본을
+# 가리키지 못한다 · 자산을 지워도 발행본과 그 검사 목록은 남는다(검사 쪽 FK 없음, D6).
+
+PUBCOLS=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(CONCAT(COLUMN_NAME, '=', DATA_TYPE,
+                               IFNULL(CONCAT('(', CHARACTER_MAXIMUM_LENGTH, ')'), ''))
+                        ORDER BY COLUMN_NAME SEPARATOR ' ')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = '$DB' AND TABLE_NAME = 'report_publications'
+      AND COLUMN_NAME IN ('approval_doc', 'document_html', 'document_json', 'document_sha256', 'target_name');")
+WANT="approval_doc=varchar(128) document_html=longtext(4294967295) document_json=longtext(4294967295) document_sha256=varchar(64) target_name=varchar(255)"
+[ "$PUBCOLS" = "$WANT" ] || { echo "  발행본 칸이 '$PUBCOLS' 입니다"; echo "  기대 '$WANT'"; exit 1; }
+echo "  발행본 칸 — 문서 둘은 LONGTEXT · 해시 64자 · 결재 문서 번호 128자(검토 결과와 같음)"
+
+PUBSCAN=$(run "$DB" -N -e "SELECT MIN(id) FROM scans WHERE asset_id = 5;")
+publish() {   # publish <종류> <연도> <일련번호> — 가리키는 검사는 자산 5의 첫 검사
+    run "$DB" -e "
+        INSERT INTO report_publications
+          (kind, pub_year, pub_seq, published_at, published_by, target_name, asset_id, scan_id,
+           document_json, document_html, document_sha256)
+        VALUES ('$1', $2, $3, NOW(6), 'admin', 'v20-check', 5, $PUBSCAN, '{}', '<p>v20</p>', REPEAT('a', 64));"
+}
+publish SCAN 2026 1
+publish SCAN 2026 2
+publish ZONE 2027 1
+if publish ZONE 2026 2 2>/dev/null; then
+    echo "  같은 발행 번호(2026-0002)가 두 번 들어갔습니다"; exit 1
+fi
+echo "  발행 번호(연도, 일련번호)는 겹쳐 들어가지 않음 · 해가 바뀌면 1 부터"
+
+PUB=$(run "$DB" -N -e "SELECT id FROM report_publications WHERE pub_year = 2026 AND pub_seq = 1;")
+run "$DB" -e "
+    INSERT INTO report_publication_scans (publication_id, scan_id) VALUES ($PUB, $PUBSCAN);
+    INSERT INTO report_publication_events (publication_id, at, actor, before_value, after_value)
+    VALUES ($PUB, NOW(6), 'admin', '', '보안-2026-0143');"
+for t in report_publication_scans report_publication_events; do
+    case $t in
+        report_publication_scans)  bad="INSERT INTO $t (publication_id, scan_id) VALUES (999999, $PUBSCAN);" ;;
+        report_publication_events) bad="INSERT INTO $t (publication_id, at) VALUES (999999, NOW(6));" ;;
+    esac
+    if run "$DB" -e "$bad" 2>/dev/null; then
+        echo "  $t 가 없는 발행본을 가리켰습니다 — 발행본 쪽 FK 가 없습니다"; exit 1
+    fi
+done
+echo "  가리키는 검사 · 결재 문서 번호 이력은 없는 발행본을 가리키지 못함 (FK)"
+
+# 자산을 지운다 — 앱과 같은 차례로(검사 먼저, 그다음 자산 — AssetService.delete).
+run "$DB" -e "DELETE FROM scans WHERE asset_id = 5; DELETE FROM assets WHERE id = 5;"
+KEPT=$(run "$DB" -N -e "
+    SELECT CONCAT((SELECT COUNT(*) FROM assets WHERE id = 5), '|',
+                  (SELECT COUNT(*) FROM report_publications WHERE asset_id = 5), '|',
+                  (SELECT COUNT(*) FROM report_publication_scans WHERE scan_id = $PUBSCAN), '|',
+                  (SELECT COUNT(*) FROM report_publication_events WHERE publication_id = $PUB));")
+[ "$KEPT" = "0|3|1|1" ] || {
+    echo "  자산을 지운 뒤 '$KEPT' 입니다 (기대 0|3|1|1 — 자산은 사라지고 발행본 · 검사 목록 · 이력은 남음)"; exit 1; }
+echo "  자산을 지워도 발행본 · 가리키던 검사 번호 · 이력은 남음 (검사 · 자산 쪽 FK 없음)"
+
 run -e "DROP DATABASE \`$DB\`;"
 echo
 echo "마이그레이션 확인 통과"

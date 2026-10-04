@@ -493,12 +493,27 @@ public class ReportService {
     // -----------------------------------------------------------------------
 
     /**
-     * @param trend    6장 아래 표 — 최근 완료 검사(오래된 것부터). 하나뿐이면 비어 있다
-     * @param appendix 부록 — 실제 악용 · 심각 취약점(한 줄 = 취약점 하나)
+     * @param trend     6장 아래 표 — 최근 완료 검사(오래된 것부터). 하나뿐이면 비어 있다
+     * @param appendix  부록 — 실제 악용 · 심각 취약점(한 줄 = 취약점 하나)
+     * @param printedAt 계산한 시각 — 초안의 `출력 시각`
      */
     public record Report(Scan scan, Overview overview, Summary summary,
                          Targets targets, Progress progress, List<TrendRow> trend,
                          List<Appendix.Row> appendix, java.time.Instant printedAt) {
+
+        /**
+         * 이 보고서의 수가 나온 완료 검사 — 이 검사와 6장(이전 검사 · 최근 검사 추이)의 검사.
+         * 발행하면 이 검사들을 가리킨다(V20) — 하나씩 지우지 못한다.
+         */
+        public List<Scan> basisScans() {
+            Map<Long, Scan> basis = new LinkedHashMap<>();
+            basis.put(scan.getId(), scan);
+            if (targets.diff().hasPrevious()) {
+                basis.putIfAbsent(targets.diff().previous().getId(), targets.diff().previous());
+            }
+            trend.forEach(t -> basis.putIfAbsent(t.scan().getId(), t.scan()));
+            return List.copyOf(basis.values());
+        }
     }
 
     /**

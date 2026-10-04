@@ -65,9 +65,10 @@ class PageRenderTest {
     private Scan scan;
     private Remediation remediation;
     private kr.sbomsight.domain.FindingAnalysis analysis;
+    private long publicationId;
 
     @BeforeEach
-    void seed() {
+    void seed() throws Exception {
         // `.with(user("tester"))` 는 인증된 주체를 꽂을 뿐 계정을 만들지 않는다.
         // 내 계정 화면은 진짜 계정을 찾으므로 여기 하나 둔다.
         if (!appUsers.existsByUsername("tester")) {
@@ -125,6 +126,13 @@ class PageRenderTest {
                         "업스트림에 수정 버전이 없고 해당 기능은 외부에 노출되지 않습니다",
                         "WAF 에서 해당 경로 차단", "보안-2026-0143",
                         LocalDate.now().plusDays(30), "tester");
+
+        // 발행본 하나 — 발행 단추와 같은 길로(R11). 발행본 화면 둘이 전 화면 걸음에 든다.
+        String published = mvc.perform(post("/reports/scan/" + scan.getId() + "/publish")
+                                                .with(user("tester").roles("ADMIN")).with(csrf()))
+                               .andExpect(status().is3xxRedirection())
+                               .andReturn().getResponse().getRedirectedUrl();
+        publicationId = Long.parseLong(published.substring(published.lastIndexOf('/') + 1));
     }
 
     private String open(String url) throws Exception {
@@ -728,6 +736,8 @@ class PageRenderTest {
                 "/reports",
                 "/reports/scan/" + scan.getId(),
                 "/reports/zone",
+                "/reports/publications",
+                "/reports/publications/" + publicationId,
                 "/password",
                 "/me");
     }

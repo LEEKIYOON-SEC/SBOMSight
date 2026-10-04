@@ -3,10 +3,12 @@ package kr.sbomsight.web;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.repo.AssetRepository;
+import kr.sbomsight.repo.ReportPublicationRepository;
 import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
@@ -30,18 +32,27 @@ import java.util.stream.Collectors;
  *
  * <p>검사가 없는 자산도 목록에 남긴다. 빠지면 "안 본 것" 과 "문제가 없는 것"
  * 을 구분할 수 없다 — 이 도구에서 반복해 지키는 규칙이다.
+ *
+ * <p><b>발행본도 여기서 찾는다</b>(R11) — 최근 몇 개와 전체 목록으로 가는 길. 로그인한 뒤
+ * 결재에 올린 문서를 다시 찾는 자리가 기둥의 `보고서` 다.
  */
 @Controller
 public class ReportsController {
 
+    /** 이 화면에 싣는 최근 발행본 수. 나머지는 발행본 목록에서. */
+    private static final int RECENT_PUBLICATIONS = 5;
+
     private final ScanRepository scans;
     private final AssetRepository assets;
     private final ZoneService zoneService;
+    private final ReportPublicationRepository publications;
 
-    public ReportsController(ScanRepository scans, AssetRepository assets, ZoneService zoneService) {
+    public ReportsController(ScanRepository scans, AssetRepository assets, ZoneService zoneService,
+                             ReportPublicationRepository publications) {
         this.scans = scans;
         this.assets = assets;
         this.zoneService = zoneService;
+        this.publications = publications;
     }
 
     /**
@@ -100,6 +111,7 @@ public class ReportsController {
         model.addAttribute("lastMonthFrom", today.minusMonths(1).withDayOfMonth(1));
         model.addAttribute("lastMonthTo", today.withDayOfMonth(1).minusDays(1));
         model.addAttribute("quarterFrom", today.minusMonths(2).withDayOfMonth(1));
+        model.addAttribute("recentPublications", publications.findRows(PageRequest.of(0, RECENT_PUBLICATIONS)));
         return "reports";
     }
 }

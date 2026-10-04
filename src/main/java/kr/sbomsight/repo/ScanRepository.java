@@ -250,4 +250,14 @@ public interface ScanRepository extends JpaRepository<Scan, Long> {
     long countDoneBetween(@Param("zoneId") Long zoneId,
                           @Param("from") java.time.Instant from,
                           @Param("to") java.time.Instant to);
+
+    /**
+     * 발행하는 보고서의 근거가 된 검사가 <b>아직 있는가</b> — 잠그며 읽는다(PublicationService).
+     *
+     * <p>잠그며 읽어야 지금 커밋된 것을 본다. 보통 읽기는 그 트랜잭션이 처음 읽은 때의
+     * 모습을 보여 주어(REPEATABLE READ), 보고서를 계산하는 사이에 지워진 검사가 아직 있는
+     * 것으로 보인다. 빈 목록으로 부르지 않는다({@code IN ()} 은 SQL 이 아니다).
+     */
+    @Query(value = "SELECT id FROM scans WHERE id IN (:ids) FOR UPDATE", nativeQuery = true)
+    List<Number> lockExisting(@Param("ids") java.util.Collection<Long> ids);
 }

@@ -387,7 +387,8 @@ public class ZoneReportService {
                 .toList();
 
         if (comparable.isEmpty()) {
-            return new Movement(0, 0, 0, 0, current.size(), baseline.isEmpty() ? null : latest(baseline));
+            return new Movement(0, 0, 0, 0, current.size(), baseline.isEmpty() ? null : latest(baseline),
+                                List.of());
         }
 
         Set<Long> comparableAssets = comparable.stream().map(s -> s.getAsset().getId())
@@ -399,7 +400,8 @@ public class ZoneReportService {
         FindingMatch.Counts counts = FindingMatch.compare(keys(comparable), keys(baselineComparable));
 
         return new Movement(counts.added(), counts.resolved(), counts.kept(), comparable.size(),
-                            current.size() - comparable.size(), latest(baselineComparable));
+                            current.size() - comparable.size(), latest(baselineComparable),
+                            baselineComparable);
     }
 
     private List<FindingMatch.Key> keys(List<Scan> forScans) {
@@ -553,6 +555,18 @@ public class ZoneReportService {
     /** @param appendix 부록 — 실제 악용 · 심각 취약점(한 줄 = 취약점 하나, 자산 수와 함께) */
     public record ZoneReport(Scope scope, Aggregate aggregate, Judgement judgement, Action action,
                              List<Appendix.Row> appendix) {
+
+        /**
+         * 이 보고서의 수가 나온 완료 검사 — 3장의 자산마다 기준이 된 검사와 7장 대조에 쓴
+         * 기준선. 발행하면 이 검사들을 가리킨다(V20) — 하나씩 지우지 못한다.
+         */
+        public List<Scan> basisScans() {
+            Map<Long, Scan> basis = new LinkedHashMap<>();
+            aggregate.rows().stream().filter(AssetRow::scanned)
+                     .forEach(r -> basis.putIfAbsent(r.scan().getId(), r.scan()));
+            judgement.movement().baselineScans().forEach(s -> basis.putIfAbsent(s.getId(), s));
+            return List.copyOf(basis.values());
+        }
     }
 
     /** 기간 중 실패한 검사 — 한 자산의 횟수와 마지막 시각. */
@@ -791,9 +805,11 @@ public class ZoneReportService {
      *
      * @param assetsCompared     기준선이 있어 실제로 대조한 자산 수
      * @param assetsWithoutBase  기간 중 처음 검사되어 대조에서 뺀 자산 수
+     * @param baselineScans      대조에 쓴 기준선 검사 — 대조한 자산마다 하나
      */
     public record Movement(long added, long resolved, long kept,
-                           long assetsCompared, long assetsWithoutBase, Instant baselineAt) {
+                           long assetsCompared, long assetsWithoutBase, Instant baselineAt,
+                           List<Scan> baselineScans) {
 
         public boolean comparable() {
             return assetsCompared > 0;

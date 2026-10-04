@@ -47,6 +47,51 @@
     </div>
   </div>
 
+  <!--/*
+    **발행본** — 결재에 올린 문서(R11). 최근 몇 개만 싣고 나머지는 발행본 목록에서. 로그인한
+    뒤 지난 결재본을 다시 찾는 자리가 여기다 — 보고서를 다시 열면 지금 데이터로 계산된
+    초안이 뜬다.
+  */-->
+  <h2>발행본</h2>
+  <p class="footnote" th:if="${recentPublications.totalElements == 0}">
+    ※ 발행본 없음 — 보고서를 열고 머리의 <b>발행</b> 단추로 저장.
+  </p>
+  <div class="card" th:if="${recentPublications.totalElements > 0}">
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+        <tr>
+          <th class="tight">발행 번호</th>
+          <th class="tight">종류</th>
+          <th>대상</th>
+          <th class="tight">발행 시각</th>
+          <th class="tight">발행자</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="r : ${recentPublications.content}">
+          <td class="tight mono">
+            <a th:href="@{'/reports/publications/' + ${r.id}}" th:text="${r.number}">2026-0001</a>
+          </td>
+          <td class="tight" th:text="${r.kind.label()}">점검 결과 보고서</td>
+          <td>
+            <span th:text="${r.targetName}">web-01</span>
+            <span class="faint" th:if="${r.periodFrom != null}"
+                  th:text="${#temporals.format(r.periodFrom, 'yyyy-MM-dd')} + ' ~ '
+                           + ${#temporals.format(r.periodTo, 'yyyy-MM-dd')}">2026-09-01 ~ 2026-09-30</span>
+          </td>
+          <td class="tight mono" th:text="${#temporals.format(r.publishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td class="tight" th:text="${r.publishedBy}">admin</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer">
+      <a href="/reports/publications"
+         th:text="'발행본 전체 ' + ${#numbers.formatInteger(recentPublications.totalElements, 0, 'COMMA')} + '건'">발행본 전체 0건</a>
+    </div>
+  </div>
+
   <h2>자산</h2>
   <!--/* 같은 조건을 두 식으로 적지 않는다. 아래 카드가 이미
        `rows.totalElements > 0` 로 갈리고, 이 줄은 그 반대다 — 앞서는

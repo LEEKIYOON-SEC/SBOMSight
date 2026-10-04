@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: page(~{::main}, 'reports', '발행본')}">
+<body>
+<main>
+
+  <!--/*
+    발행본 전체 — 최근 것부터(R11). 보고서 화면에는 최근 몇 개만 싣고, 나머지는 여기서 찾는다.
+    문서는 읽지 않는다 — 한 줄에 문서가 통째로 들어 있어 칸만 읽는다(ReportPublicationRepository).
+
+    **대상은 발행 때의 이름이다.** 자산 · 구역을 지우거나 이름을 바꿔도 결재에 올린 이름 그대로
+    남는다(D6).
+  */-->
+  <div th:replace="~{fragments/ui :: pagehead('발행본', null, ~{}, ~{::where})}"></div>
+  <th:block th:remove="all">
+    <div th:fragment="where"><a href="/reports">보고서</a></div>
+  </th:block>
+
+  <div class="page-body">
+    <div class="container-xl">
+
+  <th:block th:if="${rows.totalElements == 0}">
+    <div th:replace="~{fragments/ui :: empty('발행본이 없습니다',
+                      '보고서를 열고 머리의 발행 단추로 저장', '/reports', '보고서 보기')}"></div>
+  </th:block>
+
+  <div class="card" th:if="${rows.totalElements > 0}">
+    <div th:replace="~{fragments/ui :: countline(${rows}, ${links}, '건')}"></div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+        <tr>
+          <th class="tight">발행 번호</th>
+          <th class="tight">종류</th>
+          <th>대상</th>
+          <th class="tight">발행 시각</th>
+          <th class="tight">발행자</th>
+          <th class="tight">결재 문서 번호</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="r : ${rows.content}">
+          <td class="tight mono">
+            <a th:href="@{'/reports/publications/' + ${r.id}}" th:text="${r.number}">2026-0001</a>
+          </td>
+          <td class="tight" th:text="${r.kind.label()}">점검 결과 보고서</td>
+          <td>
+            <span th:text="${r.targetName}">web-01</span>
+            <!--/* 구역 현황 보고서는 기간까지가 대상이다. */-->
+            <span class="faint" th:if="${r.periodFrom != null}"
+                  th:text="${#temporals.format(r.periodFrom, 'yyyy-MM-dd')} + ' ~ '
+                           + ${#temporals.format(r.periodTo, 'yyyy-MM-dd')}">2026-09-01 ~ 2026-09-30</span>
+          </td>
+          <td class="tight mono" th:text="${#temporals.format(r.publishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td class="tight" th:text="${r.publishedBy}">admin</td>
+          <td class="tight" th:text="${#strings.isEmpty(r.approvalDoc)} ? '—' : ${r.approvalDoc}">—</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+    <div th:replace="~{fragments/ui :: pager(${rows}, ${links})}"></div>
+  </div>
+
+  </div>
+    </div>
+
+</main>
+</body>
+</html>

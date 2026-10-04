@@ -25,6 +25,16 @@
         <div class="col-auto ms-auto">
           <div class="btn-list">
             <button type="button" class="btn" data-print>인쇄 · PDF</button>
+            <!--/*
+              **발행** — 지금 이 내용 그대로 발행본으로 저장한다(R11). 저장하는 것은 아래
+              `document` 조각이다(DocumentRenderer). 지울 수 없고, 가리키는 검사도 지울 수
+              없게 된다 — 그래서 한 번 묻는다.
+            */-->
+            <form method="post" th:action="@{'/reports/scan/' + ${report.scan.id} + '/publish'}"
+                  sec:authorize="hasRole('ADMIN')"
+                  data-confirm="지금 이 내용 그대로 발행본으로 저장합니다.\n발행본은 지울 수 없고, 이 보고서가 가리키는 검사도 지울 수 없게 됩니다.\n\n발행할까요?">
+              <button type="submit" class="btn btn-dark">발행</button>
+            </form>
           </div>
         </div>
       </div>
@@ -34,8 +44,24 @@
   <div class="page-body">
     <div class="container-xl">
 
+  <!--/*
+    **이 보고서의 발행본.** 같은 검사를 발행한 것 — 최근 것부터. 결재에 올린 것은 이쪽이다.
+    인쇄하지 않는다 — 초안을 인쇄한 종이에 발행본 목록이 붙으면 어느 것이 결재본인지 흐려진다.
+  */-->
+  <div th:replace="~{fragments/ui :: publications(${publications})}"></div>
+
+  <!--/*
+    ══ 문서 ═══════════════════════════════════════════════════════════
+    여기부터 끝까지가 **문서**다. 발행하면 이 조각만 그려 저장한다(DocumentRenderer) — 위의
+    머리 단추와 발행본 목록은 들지 않는다. `publication`(발행 정보)이 있으면 발행본으로
+    그린다: 문서 정보에 발행 번호 · 발행 시각 · 발행자, 초안 표시와 3장의 관리자 칸은 뺀다.
+  */-->
+  <div class="report-document" th:fragment="document">
+
   <div class="report-title">
     <h1 th:text="${report.overview.asset.name} + ' 취약점 점검 결과 보고'">web-01 취약점 점검 결과 보고</h1>
+    <!--/* 발행하지 않은 보고서 — 열 때마다 지금 데이터로 계산한다. 인쇄해도 찍힌다. */-->
+    <p class="draft-mark" th:if="${publication == null}">초안 (발행 전)</p>
   </div>
 
   <!--/*
@@ -97,11 +123,27 @@
       <td th:text="${#strings.isEmpty(report.overview.distroName)} ? '—'
                    : ${report.overview.distroName} + ' ' + ${report.overview.distroVersion}">—</td>
     </tr>
-    <tr>
-      <th>작성일</th>
-      <td th:text="${#temporals.format(report.printedAt, 'yyyy-MM-dd')}">—</td>
-      <th>작성자</th>
+    <!--/*
+      **문서를 낸 사람 · 시각.** 앞서 `작성일` · `작성자` 였는데 그 값은 보고서를 연 날 ·
+      연 계정이었다 — 결재 문서를 쓴 사람과 날처럼 읽혔다(R11). 초안은 그것을 이름대로
+      `출력 시각` · `출력자` 로, 발행본은 발행한 순간 · 계정을 적는다. 발행 정보는 문서
+      안이라 해시가 함께 묶는다. 결재 문서 번호는 나중에 적는 값이라 문서 밖(발행본 머리)이다.
+    */-->
+    <tr th:if="${publication == null}">
+      <th>출력 시각</th>
+      <td th:text="${#temporals.format(report.printedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+      <th>출력자</th>
       <td th:text="${#authentication.name}">admin</td>
+    </tr>
+    <tr th:if="${publication != null}">
+      <th>발행 번호</th>
+      <td class="mono" th:text="${publication.number}">2026-0001</td>
+      <th>발행 시각</th>
+      <td th:text="${#temporals.format(publication.publishedAt, 'yyyy-MM-dd HH:mm')}">—</td>
+    </tr>
+    <tr th:if="${publication != null}">
+      <th>발행자</th>
+      <td colspan="3" th:text="${publication.publisher}">admin</td>
     </tr>
     </tbody>
   </table>
@@ -408,7 +450,8 @@
           띄워서 인쇄 미리보기를 보고 찾았다.
         */-->
         <th>특이사항</th>
-        <th class="tight no-print" sec:authorize="hasRole('ADMIN')"></th>
+        <!--/* 관리자 칸(조치 보기 · 조치 등록)은 화면의 것이다 — 발행본에는 넣지 않는다. */-->
+        <th class="tight no-print" th:if="${publication == null}" sec:authorize="hasRole('ADMIN')"></th>
       </tr>
       </thead>
       <tbody>
@@ -468,7 +511,7 @@
           가지만(`RemediationService.open` 이 하나만 연다), 단추가 있으면
           "아직 안 했나" 로 읽힌다.
         */-->
-        <td class="tight no-print" sec:authorize="hasRole('ADMIN')">
+        <td class="tight no-print" th:if="${publication == null}" sec:authorize="hasRole('ADMIN')">
           <a th:if="${row.isTracked() and !row.opensNextRound()}" class="btn btn-sm"
              th:href="@{'/actions/' + ${row.remediation.id}}">조치 보기</a>
           <!--/* 완료 · 신규 탐지 — 새 조치(다음 회차)를 연다(D11). 이 검사에서 연다. */-->
@@ -489,7 +532,7 @@
         <td class="num tight"></td><td class="num tight"></td><td class="num tight"></td>
         <td class="tight"></td>
         <td></td>
-        <td class="tight no-print" sec:authorize="hasRole('ADMIN')"></td>
+        <td class="tight no-print" th:if="${publication == null}" sec:authorize="hasRole('ADMIN')"></td>
       </tr>
       </tbody>
     </table>
@@ -823,6 +866,9 @@
     ※ 탐지 · 심각도 · CVSS · 수정 버전은 검사 결과 그대로 · 재계산 없음 ·
     수정 버전이 여럿이면 전부 적음(글자 순)
   </p>
+
+  </div>
+  <!--/* ══ 문서 끝 ══ */-->
 
   </div>
     </div>
