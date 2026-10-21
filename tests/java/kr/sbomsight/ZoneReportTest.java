@@ -30,6 +30,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * 구역 · 기간 보고서.
@@ -300,6 +301,48 @@ class ZoneReportTest {
         assertThat(r.judgement().resolvableReach()).isEqualTo(6);
         // 상위 다섯 개는 다른 값이다. 같으면 이 시험이 헛돌고 있는 것이다.
         assertThat(r.judgement().topFiveCoverage()).isEqualTo(5);
+    }
+
+    /**
+     * <b>원격 접근은 그 줄의 것만 센다.</b>
+     *
+     * <p>4 · 5장의 한 줄은 (이름, 유형)인데 원격 접근은 이름으로만 모았다. 같은 이름이
+     * 배포판 패키지와 바이너리로 갈려 줄이 여럿 서면 이름 전체의 수가 줄마다 되풀이되어
+     * 찍혔고, 합계 줄은 그것을 다시 더해 부풀었다.
+     */
+    @Test
+    @DisplayName("원격 접근은 줄(이름 · 유형)마다 센다 — 합계가 부풀지 않는다")
+    void reachIsCountedPerRowNotPerName() {
+        Scan web = scan(asset("web"), LocalDate.of(2026, 9, 10));
+        finding(web, "CVE-1", "openssl", "3.0.2", "High", "fixed", "3.0.7", 7.5, REACHABLE);
+        finding(web, "CVE-2", "openssl", "3.0.2", "High", "fixed", "3.0.7", 7.5, REACHABLE);
+        Scan api = scan(asset("api"), LocalDate.of(2026, 9, 10));
+        Finding binary = finding(api, "CVE-3", "openssl", "3.0.2", "High", "fixed", "3.0.7", 7.5,
+                                 REACHABLE);
+        binary.setPackageType("binary");
+        findings.saveAndFlush(binary);
+        // 수정 버전이 없는 유형 — 5장에 선다.
+        Finding apk = finding(api, "CVE-4", "openssl", "3.0.2", "High", "not-fixed", "", 7.5,
+                              REACHABLE);
+        apk.setPackageType("apk");
+        findings.saveAndFlush(apk);
+
+        ZoneReport r = report();
+
+        assertThat(r.judgement().actions())
+                .extracting(ZonePackageAction::packageType, ZonePackageAction::reachableCount)
+                .containsExactlyInAnyOrder(tuple("rpm", 2L), tuple("binary", 1L));
+        assertThat(r.judgement().blocked())
+                .extracting(ZonePackageAction::packageType, ZonePackageAction::reachableCount)
+                .containsExactly(tuple("apk", 1L));
+        assertThat(r.judgement().resolvableReach())
+                .as("4장 합계가 유형마다 되풀이된 수를 다시 더했다")
+                .isEqualTo(3);
+        // 줄마다 센 것을 다 더하면 목록의 원격 접근 전부다 — 어긋나면 어느 줄이 남의 건을 셌다.
+        assertThat(java.util.stream.Stream.concat(r.judgement().actions().stream(),
+                                                  r.judgement().blocked().stream())
+                                          .mapToLong(ZonePackageAction::reachableCount).sum())
+                .isEqualTo(r.judgement().exposure().reachable());
     }
 
     /**

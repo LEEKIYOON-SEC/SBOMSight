@@ -144,10 +144,14 @@ public class ReportService {
      *
      * <p>벡터를 읽을 수 없는 건은 <b>세지 않고 따로 센다.</b> 아니오로 밀어
      * 넣으면 "원격에서 닿지 않습니다" 라는, 아무도 확인하지 않은 판정이 된다.
+     *
+     * <p>패키지마다의 수는 <b>3 · 4장의 줄과 같은 키(이름 · 버전 · 유형)</b>로 센다.
+     * 앞서 이름으로만 모아, 같은 패키지가 두 버전으로 깔린 자산에서 이름 전체의 수가
+     * 버전마다 되풀이되어 찍혔고 3장 합계는 그것을 다시 더했다.
      */
     private Exposure exposure(Scan scan, boolean includeReviewed) {
         long reachable = 0, reachableFixable = 0, scopeChanged = 0, unreadable = 0;
-        Map<String, Long> reachableByPackage = new HashMap<>();
+        Map<String, Long> reachableByRow = new HashMap<>();
 
         for (FindingRepository.ExposureRow row
                 : findings.exposureRows(scan.getId(), includeReviewed)) {
@@ -165,11 +169,12 @@ public class ReportService {
                 if ("fixed".equalsIgnoreCase(row.getFixState())) {
                     reachableFixable++;
                 }
-                reachableByPackage.merge(row.getPackageName(), 1L, Long::sum);
+                reachableByRow.merge(groupKey(row.getPackageName(), row.getPackageVersion(),
+                                              row.getPackageType()), 1L, Long::sum);
             }
         }
 
-        return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, reachableByPackage);
+        return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, reachableByRow);
     }
 
     // --- 1장: 점검 개요 ------------------------------------------------------
@@ -267,7 +272,8 @@ public class ReportService {
     private Targets targets(Scan scan, Exposure exposure) {
         // 목록이다 — 해당 없음 · 오탐은 뺀다. `원격 접근` 도 같은 규칙으로 센
         // 노출면(exposure)을 받는다. 한 줄 안에서 `해소 건수` 는 뺐는데
-        // `원격 접근` 은 넣으면 두 칸이 서로 다른 건을 센다.
+        // `원격 접근` 은 넣으면 두 칸이 서로 다른 건을 센다. 줄의 키(이름 · 버전 ·
+        // 유형)도 같아야 한다 — 이름으로 세면 같은 이름의 다른 줄 것이 섞인다.
         List<PackageGroup> groups = findings.groupByPackage(scan.getId(), false);
 
         // 수정 버전은 하나로 고르지 않는다 — 그 줄에 실린 탐지(해당 없음 ·
@@ -290,7 +296,7 @@ public class ReportService {
         // 건수도 심각도도 수정 상태도 grype 이 준 그대로다.
         List<PackageAction> actions = groups.stream()
                 .filter(g -> g.getFixable() > 0)
-                .map(g -> new PackageAction(g, exposure.reachableIn(g.getPackageName()),
+                .map(g -> new PackageAction(g, exposure.reachableIn(g),
                                             fixes.getOrDefault(groupKey(g.getPackageName(),
                                                     g.getPackageVersion(), g.getPackageType()),
                                                     List.of())))
@@ -301,7 +307,7 @@ public class ReportService {
         // 다른 통제(접근 제한·모니터링)가 필요한 자리다.
         List<PackageAction> blocked = groups.stream()
                 .filter(g -> g.getFixable() == 0)
-                .map(g -> new PackageAction(g, exposure.reachableIn(g.getPackageName()), List.of()))
+                .map(g -> new PackageAction(g, exposure.reachableIn(g), List.of()))
                 .sorted(BY_URGENCY)
                 .toList();
 
@@ -547,12 +553,15 @@ public class ReportService {
      *                         영향이 미치는 것. 권한 상승과는 다른 축이다
      * @param unreadable       벡터가 없거나 3.x 가 아니어서 <b>판단하지 못한</b> 것.
      *                         0 이 아니라 판단 불가다 — 아니오로 세지 않는다.
+     * @param reachableByRow   3 · 4장의 줄(이름 · 버전 · 유형)마다 원격 접근 건수
      */
     public record Exposure(long reachable, long reachableFixable, long scopeChanged,
-                           long unreadable, Map<String, Long> reachableByPackage) {
+                           long unreadable, Map<String, Long> reachableByRow) {
 
-        public long reachableIn(String packageName) {
-            return reachableByPackage.getOrDefault(packageName, 0L);
+        /** 그 줄의 원격 접근 건수 — 같은 이름의 다른 버전 · 유형 것은 넣지 않는다. */
+        public long reachableIn(PackageGroup row) {
+            return reachableByRow.getOrDefault(
+                    groupKey(row.getPackageName(), row.getPackageVersion(), row.getPackageType()), 0L);
         }
 
         /** 바로 닿는데 수정본이 없는 것. 가장 곤란한 자리다. */

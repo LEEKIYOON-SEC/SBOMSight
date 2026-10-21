@@ -106,14 +106,20 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      *
      * <p>벡터 해석을 SQL 로 흉내 내지 않는다({@code LIKE '%AV:N%'}). 그렇게 하면
      * {@link kr.sbomsight.domain.CvssVector} 와 규칙이 두 벌이 되고, 둘이
-     * 갈라지는 순간 화면과 보고서가 서로 다른 수를 말한다. 필요한 네 칸만
+     * 갈라지는 순간 화면과 보고서가 서로 다른 수를 말한다. 필요한 칸만
      * 꺼내 와서 해석은 한 곳에서 한다.
+     *
+     * <p><b>이름 · 버전 · 유형을 함께 준다</b> — 보고서 3 · 4장의 한 줄을 가리키는
+     * 키다({@link #groupByPackage}). 앞서 이름만 주어, 같은 이름의 다른 버전 · 유형의
+     * 원격 접근이 그 줄에 함께 세어졌다.
      */
     @Query("""
            SELECT f.cvssVector      AS vector,
                   f.fixState        AS fixState,
                   LOWER(f.severity) AS severity,
-                  f.packageName     AS packageName
+                  f.packageName     AS packageName,
+                  f.packageVersion  AS packageVersion,
+                  f.packageType     AS packageType
            FROM Finding f JOIN f.scan s WHERE s.id = :scanId
              AND (:includeReviewed = TRUE OR NOT EXISTS (
                     SELECT fa.id FROM FindingAnalysis fa
@@ -596,12 +602,17 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
            """)
     List<FixStateCount> countByFixStateIn(@Param("scanIds") Collection<Long> scanIds);
 
-    /** 노출면 원재료. 자산 id 가 붙어 있어 구역 합계와 자산별 수를 한 번에 낸다. */
+    /**
+     * 노출면 원재료. 자산 id 가 붙어 있어 구역 합계와 자산별 수를 한 번에 낸다.
+     * 구역 보고서 4 · 5장의 줄은 (이름, 유형)이다({@link #groupByPackageIn}).
+     */
     @Query("""
            SELECT f.cvssVector      AS vector,
                   f.fixState        AS fixState,
                   LOWER(f.severity) AS severity,
                   f.packageName     AS packageName,
+                  f.packageVersion  AS packageVersion,
+                  f.packageType     AS packageType,
                   s.asset.id        AS assetId
            FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds
              AND (:includeReviewed = TRUE OR NOT EXISTS (
@@ -879,7 +890,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
            """)
     List<AssetFindingKey> findFixableKeysIn(@Param("scanIds") Collection<Long> scanIds);
 
-    /** 노출면 계산에 쓰는 네 칸. */
+    /** 노출면 계산에 쓰는 칸 — 벡터 · 수정 상태 · 심각도와, 보고서의 줄을 가리키는 이름 · 버전 · 유형. */
     interface ExposureRow {
         String getVector();
 
@@ -888,6 +899,10 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         String getSeverity();
 
         String getPackageName();
+
+        String getPackageVersion();
+
+        String getPackageType();
     }
 
     /**

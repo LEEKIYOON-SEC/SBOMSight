@@ -29,6 +29,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -185,13 +186,17 @@ public class ZoneReportService {
      *
      * <p>읽지 못한 벡터는 세지 않고 따로 센다. "아니오" 로 밀어 넣으면
      * 아무도 확인하지 않은 판정이 보고서에 실린다.
+     *
+     * <p>패키지마다의 수는 <b>4 · 5장의 줄과 같은 키(이름 · 유형)</b>로 센다. 앞서
+     * 이름으로만 모아, 같은 이름이 유형으로 갈려 줄이 여럿 서면 이름 전체의 수가
+     * 줄마다 되풀이되어 찍혔고 4장 합계는 그것을 다시 더했다.
      */
     private Exposure exposure(List<Scan> current, boolean includeReviewed) {
         if (current.isEmpty()) {
             return new Exposure(0, 0, 0, 0, Map.of(), Map.of());
         }
         long reachable = 0, reachableFixable = 0, scopeChanged = 0, unreadable = 0;
-        Map<String, Long> byPackage = new HashMap<>();
+        Map<String, Long> byRow = new HashMap<>();
         Map<Long, Long> byAsset = new HashMap<>();
 
         for (FindingRepository.ZoneExposureRow row
@@ -210,11 +215,11 @@ public class ZoneReportService {
                 if ("fixed".equalsIgnoreCase(row.getFixState())) {
                     reachableFixable++;
                 }
-                byPackage.merge(row.getPackageName(), 1L, Long::sum);
+                byRow.merge(groupKey(row.getPackageName(), row.getPackageType()), 1L, Long::sum);
                 byAsset.merge(row.getAssetId(), 1L, Long::sum);
             }
         }
-        return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, byPackage, byAsset);
+        return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, byRow, byAsset);
     }
 
     // --- 2·3장: 점검 결과 요약과 자산별 현황 --------------------------------
@@ -324,7 +329,7 @@ public class ZoneReportService {
             Map<String, List<String>> fixes = findings
                     .fixVersionsIn(scanIds(current), null, false).stream()
                     .collect(java.util.stream.Collectors.groupingBy(
-                            r -> r.getPackageName() + '\u0000' + r.getPackageType(),
+                            r -> groupKey(r.getPackageName(), r.getPackageType()),
                             java.util.stream.Collectors.collectingAndThen(
                                     java.util.stream.Collectors.mapping(
                                             FindingRepository.FixVersionRow::getFixedVersion,
@@ -332,15 +337,14 @@ public class ZoneReportService {
                                     FixVersions::collect)));
             actions = groups.stream()
                     .filter(g -> g.getFixable() > 0)
-                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName()),
-                            fixes.getOrDefault(g.getPackageName() + '\u0000' + g.getPackageType(),
+                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g),
+                            fixes.getOrDefault(groupKey(g.getPackageName(), g.getPackageType()),
                                                List.of())))
                     .sorted(BY_URGENCY)
                     .toList();
             blocked = groups.stream()
                     .filter(g -> g.getFixable() == 0)
-                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName()),
-                                                    List.of()))
+                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g), List.of()))
                     .sorted(BY_URGENCY)
                     .toList();
         }
@@ -544,6 +548,11 @@ public class ZoneReportService {
         return list.stream().map(Scan::getId).toList();
     }
 
+    /** 4 · 5장 한 줄의 키 — 이름 · 유형. 둘 중 하나라도 null 이면 빈 값으로 친다. */
+    private static String groupKey(String name, String type) {
+        return Objects.toString(name, "") + '\u0000' + Objects.toString(type, "");
+    }
+
     private String key(String value) {
         return value == null || value.isBlank() ? "unknown" : value.toLowerCase();
     }
@@ -660,13 +669,18 @@ public class ZoneReportService {
         }
     }
 
-    /** 어떻게 닿을 수 있는가 — grype 이 준 CVSS 벡터를 풀어 센 것. */
+    /**
+     * 어떻게 닿을 수 있는가 — grype 이 준 CVSS 벡터를 풀어 센 것.
+     *
+     * @param reachableByRow 4 · 5장의 줄(이름 · 유형)마다 원격 접근 건수
+     */
     public record Exposure(long reachable, long reachableFixable, long scopeChanged,
-                           long unreadable, Map<String, Long> reachableByPackage,
+                           long unreadable, Map<String, Long> reachableByRow,
                            Map<Long, Long> reachableByAsset) {
 
-        public long reachableIn(String packageName) {
-            return reachableByPackage.getOrDefault(packageName, 0L);
+        /** 그 줄의 원격 접근 건수 — 같은 이름의 다른 유형 것은 넣지 않는다. */
+        public long reachableIn(ZonePackageGroup row) {
+            return reachableByRow.getOrDefault(groupKey(row.getPackageName(), row.getPackageType()), 0L);
         }
 
         public long reachableInAsset(Long assetId) {

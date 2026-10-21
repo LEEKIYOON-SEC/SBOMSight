@@ -15,8 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * 보고서 — 기승전결.
@@ -431,6 +433,62 @@ class ReportServiceTest {
                 .extracting(ReportService.PackageAction::reachableCount).isEqualTo(0L);
         // 3장 표가 덮는 원격 접근 건수 합계 — log4j-core 의 2건뿐이다.
         assertThat(ch.resolvableReach()).isEqualTo(2);
+    }
+
+    /** 버전 · 유형까지 지정해 밖에서 바로 닿는 건 하나를 만든다. */
+    private void reachableAt(Scan scan, String cve, String pkg, String version, String type,
+                             String fixState) {
+        Finding f = finding(scan, cve, pkg, version, "High", fixState,
+                            "fixed".equals(fixState) ? "9.9.9" : "", 9.8);
+        f.setPackageType(type);
+        f.setCvssVector("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H");
+        findings.save(f);
+    }
+
+    /**
+     * <b>원격 접근은 그 줄의 것만 센다.</b>
+     *
+     * <p>3 · 4장의 한 줄은 (이름, 버전, 유형)인데 원격 접근은 이름으로만 모았다. 한
+     * 자산에 같은 패키지가 두 버전으로 깔리면 — jar 가 두 곳에 풀린 것처럼 — 그 이름의
+     * 수가 버전마다 되풀이되어 찍혔고, 합계 줄은 그것을 다시 더해 부풀었다. 이름이
+     * 같고 유형이 다른 것(배포판 패키지와 바이너리)도 같았다.
+     */
+    @Test
+    @DisplayName("3 · 4장 — 원격 접근은 줄(이름 · 버전 · 유형)마다 센다 — 합계가 부풀지 않는다")
+    void reachIsCountedPerRowNotPerName() {
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scans.saveAndFlush(scan);
+        // 같은 이름 두 버전 — 2.9.8 에 바로 닿는 건 둘, 2.12.1 에 하나.
+        reachableAt(scan, "CVE-A", "jackson-databind", "2.9.8", "java-archive", "fixed");
+        reachableAt(scan, "CVE-B", "jackson-databind", "2.9.8", "java-archive", "fixed");
+        reachableAt(scan, "CVE-C", "jackson-databind", "2.12.1", "java-archive", "fixed");
+        // 같은 이름 · 같은 버전 · 다른 유형 — 바이너리 쪽은 수정 버전이 없어 4장에 선다.
+        reachableAt(scan, "CVE-E", "openssl", "3.0.2", "deb", "fixed");
+        reachableAt(scan, "CVE-F", "openssl", "3.0.2", "binary", "not-fixed");
+        scan.setMatchCount(5);
+        scan.setFindingCount(5);
+        scans.saveAndFlush(scan);
+
+        ReportService.Targets ch = reports.build(scan).targets();
+
+        assertThat(ch.fixTargets())
+                .extracting(a -> a.packageName() + "@" + a.currentVersion() + "/" + a.packageType(),
+                            ReportService.PackageAction::reachableCount)
+                .containsExactlyInAnyOrder(tuple("jackson-databind@2.9.8/java-archive", 2L),
+                                           tuple("jackson-databind@2.12.1/java-archive", 1L),
+                                           tuple("openssl@3.0.2/deb", 1L));
+        assertThat(ch.blocked())
+                .extracting(a -> a.packageName() + "@" + a.currentVersion() + "/" + a.packageType(),
+                            ReportService.PackageAction::reachableCount)
+                .containsExactly(tuple("openssl@3.0.2/binary", 1L));
+        assertThat(ch.resolvableReach())
+                .as("3장 합계가 버전마다 되풀이된 수를 다시 더했다")
+                .isEqualTo(4);
+        // 줄마다 센 것을 다 더하면 목록의 원격 접근 전부다 — 어긋나면 어느 줄이 남의 건을 셌다.
+        assertThat(Stream.concat(ch.fixTargets().stream(), ch.blocked().stream())
+                         .mapToLong(ReportService.PackageAction::reachableCount).sum())
+                .isEqualTo(ch.exposure().reachable());
     }
 
     @Test
