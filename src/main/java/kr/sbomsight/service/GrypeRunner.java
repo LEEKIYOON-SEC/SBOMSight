@@ -6,11 +6,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,6 +45,18 @@ public class GrypeRunner {
      */
     private static final Pattern DB_BUILT = Pattern.compile(
             "\"built\"\\s*:\\s*\"([^\"]+)\"|(?im)^\\s*built\\s*:\\s*(\\S.*?)\\s*$");
+
+    /**
+     * 상태를 묻는 짧은 명령({@code version} · {@code db status}) 하나가 기다리는 시간.
+     * 넘으면 끝내고 실패로 돌려준다({@link #ask}).
+     */
+    private static final Duration ASK_TIMEOUT = Duration.ofSeconds(30);
+
+    /**
+     * 끝난 뒤 남은 출력을 마저 받는 시간. 출력을 물려받은 자식이 남아 붙들고 있으면
+     * 출력이 닫히지 않으므로, 이만큼만 기다리고 끊긴 것으로 본다.
+     */
+    private static final Duration DRAIN_TIMEOUT = Duration.ofSeconds(5);
 
     private final SbomSightProperties properties;
 
@@ -133,19 +150,9 @@ public class GrypeRunner {
     }
 
     public Status status() {
+        Answer answer;
         try {
-            Process process = new ProcessBuilder(properties.grypePath(), "version", "-o", "json")
-                    .redirectErrorStream(true)
-                    .start();
-            String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-            if (!finished || process.exitValue() != 0) {
-                process.destroyForcibly();
-                return new Status(false, "", "", "grype를 실행했지만 정상 종료하지 않았습니다.");
-            }
-            // JSON 전체를 화면에 쏟지 않는다 — 필요한 것은 판 하나다.
-            Matcher m = VERSION.matcher(out);
-            return new Status(true, m.find() ? m.group(1) : "", dbBuilt(), "");
+            answer = ask(List.of(properties.grypePath(), "version", "-o", "json"), ASK_TIMEOUT);
         } catch (IOException e) {
             return new Status(false, "", "",
                     "grype를 찾을 수 없습니다 (" + properties.grypePath() + "). "
@@ -154,6 +161,16 @@ public class GrypeRunner {
             Thread.currentThread().interrupt();
             return new Status(false, "", "", "확인이 중단되었습니다.");
         }
+        if (answer.timedOut()) {
+            return new Status(false, "", "",
+                    "grype가 " + ASK_TIMEOUT.toSeconds() + "초 안에 끝나지 않았습니다.");
+        }
+        if (answer.exitCode() != 0) {
+            return new Status(false, "", "", "grype를 실행했지만 정상 종료하지 않았습니다.");
+        }
+        // JSON 전체를 화면에 쏟지 않는다 — 필요한 것은 판 하나다.
+        Matcher m = VERSION.matcher(answer.output());
+        return new Status(true, m.find() ? m.group(1) : "", dbBuilt(), "");
     }
 
     /**
@@ -170,27 +187,88 @@ public class GrypeRunner {
      * 틀린 날짜는 없는 것보다 나쁘다.
      */
     public String dbBuilt() {
+        Answer answer;
         try {
-            Process process = new ProcessBuilder(properties.grypePath(), "db", "status", "-o", "json")
-                    .redirectErrorStream(true)
-                    .start();
-            String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            if (!process.waitFor(30, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                return "";
-            }
-            Matcher m = DB_BUILT.matcher(out);
-            if (!m.find()) {
-                log.warn("grype db status 에서 기준일을 찾지 못했습니다.");
-                return "";
-            }
-            return m.group(1) != null ? m.group(1).trim() : m.group(2).trim();
+            answer = ask(List.of(properties.grypePath(), "db", "status", "-o", "json"), ASK_TIMEOUT);
         } catch (IOException e) {
             log.warn("grype db status 를 실행하지 못했습니다: {}", e.getMessage());
             return "";
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "";
+        }
+        if (answer.timedOut()) {
+            log.warn("grype db status 가 {}초 안에 끝나지 않았습니다.", ASK_TIMEOUT.toSeconds());
+            return "";
+        }
+        Matcher m = DB_BUILT.matcher(answer.output());
+        if (!m.find()) {
+            log.warn("grype db status 에서 기준일을 찾지 못했습니다.");
+            return "";
+        }
+        return m.group(1) != null ? m.group(1).trim() : m.group(2).trim();
+    }
+
+    /**
+     * 짧은 명령 하나의 답.
+     *
+     * @param timedOut 제한 시간 안에 끝나지 않아 끊었다 — 종료 코드와 출력은 없다
+     * @param exitCode 종료 코드
+     * @param output   표준출력과 표준오류를 합친 것
+     */
+    public record Answer(boolean timedOut, int exitCode, String output) {
+
+        private static final Answer TIMED_OUT = new Answer(true, -1, "");
+    }
+
+    /**
+     * 짧은 명령 하나를 돌려 답을 받는다 — <b>출력은 따로 읽으며, 제한 시간 안에 끝나기를
+     * 먼저 기다린다.</b> 넘으면 끝낸다.
+     *
+     * <p>앞서는 출력을 끝까지 읽은 다음에 기다렸다(readAllBytes → waitFor 30초). 출력 읽기는
+     * grype 이 출력을 닫을 때 — 대개 끝날 때 — 까지 돌아오지 않는다. grype 이 멈추면 30초
+     * 제한에 닿지도 못하고 읽기에서 그대로 멈췄다: 설정 화면 요청이, 검사 뒤에 DB 기준일을
+     * 묻는 자리({@link #dbBuilt})가 함께. 고치기 전 코드는 45초를 기다려도 돌아오지 않았다.
+     *
+     * <p>읽기를 기다림 <b>뒤로</b> 미루기만 하면 다른 데서 멈춘다 — 출력이 파이프(수십 KB)를
+     * 채우면 grype 이 쓰기에서 멈추고, 끝나지 않으니 제한 시간마다 끊긴다. 그래서 따로
+     * 읽는다(GrypeRunnerTest).
+     *
+     * @return 제한 시간을 넘기면 끝내고 {@link Answer#timedOut()}
+     * @throws IOException 실행하지 못했다 — 없거나, 실행 권한이 없거나
+     */
+    public static Answer ask(List<String> command, Duration timeout)
+            throws IOException, InterruptedException {
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        FutureTask<byte[]> output = new FutureTask<>(() -> {
+            try (InputStream in = process.getInputStream()) {
+                return in.readAllBytes();
+            }
+        });
+        Thread reader = new Thread(output, "grype-output");
+        reader.setDaemon(true);
+        reader.start();
+
+        boolean finished;
+        try {
+            finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            process.destroyForcibly();
+            throw e;
+        }
+        if (!finished) {
+            process.destroyForcibly();
+            return Answer.TIMED_OUT;
+        }
+        try {
+            byte[] bytes = output.get(DRAIN_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+            return new Answer(false, process.exitValue(), new String(bytes, StandardCharsets.UTF_8));
+        } catch (TimeoutException e) {
+            // 끝났는데 출력이 닫히지 않는다 — 출력을 물려받은 자식이 남아 붙들고 있다.
+            return Answer.TIMED_OUT;
+        } catch (ExecutionException e) {
+            // 출력을 읽다 실패했다. 끝은 났으니 종료 코드는 있다 — 출력은 지어내지 않는다.
+            return new Answer(false, process.exitValue(), "");
         }
     }
 
