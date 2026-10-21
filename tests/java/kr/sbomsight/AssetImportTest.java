@@ -9,7 +9,11 @@ import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.Charset;
@@ -17,6 +21,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 
 /**
  * 자산 일괄 등록.
@@ -28,11 +40,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 걸렸다(PowerShell 스크립트의 BOM).
  */
 @SpringBootTest
+@AutoConfigureMockMvc
 @Transactional
 class AssetImportTest {
 
     private static final Charset CP949 = Charset.forName("x-windows-949");
 
+    @Autowired MockMvc mvc;
     @Autowired AssetImportService imports;
     @Autowired AssetRepository assets;
     @Autowired ZoneRepository zones;
@@ -244,5 +258,72 @@ class AssetImportTest {
         assertThat(assets.findWithZone(assets.findByName(name).orElseThrow().getId())
                          .orElseThrow().getZone().getName())
                 .isEqualTo(kr.sbomsight.domain.Zone.UNASSIGNED);
+    }
+
+    // --- 줄 수 한도 ----------------------------------------------------------
+
+    /** 제목 줄 하나와 자산 {@code n} 줄. 이름은 겹치지 않는다. */
+    private byte[] assetRows(int n) {
+        String base = uniq("bulk");
+        StringBuilder csv = new StringBuilder("자산 이름,구역\n");
+        for (int i = 1; i <= n; i++) {
+            csv.append(base).append('-').append(i).append(",\n");
+        }
+        return utf8(csv.toString());
+    }
+
+    /**
+     * <b>한도를 넘는 파일은 받지 않는다.</b>
+     *
+     * <p>앞서는 앞 5,000줄만 남기고 나머지를 말없이 버렸다. 미리보기는 5,000줄을
+     * 보여 주고 `5000대 등록` 단추를 달았다 — 파일이 7,000줄이었다는 것은 화면
+     * 어디에도 없었고, 등록하면 2,000대가 빠진 채 끝났다.
+     */
+    @Test
+    @DisplayName("한도를 넘는 파일은 받지 않는다 — 앞 5,000줄만 등록하고 나머지를 버리지 않는다")
+    void refusesAFileOverTheRowLimit() {
+        byte[] csv = assetRows(5001);
+
+        assertThatThrownBy(() -> imports.preview(csv))
+                .as("5,001줄 파일을 미리보기가 그대로 받았다")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("최대 5,000줄")
+                .hasMessageContaining("이 파일 5,001줄");
+
+        long before = assets.count();
+        assertThatThrownBy(() -> imports.apply(csv, "tester"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(assets.count()).as("한도를 넘는 파일의 일부가 등록됐다").isEqualTo(before);
+    }
+
+    /**
+     * 화면에서 — 사유를 띄우고 돌려보낸다. <b>받지 않은 파일을 들고 있지 않는다.</b>
+     * 들고 있으면 이어서 `등록` 을 보냈을 때 무엇이 들어가는지 화면이 말한 적이 없다.
+     */
+    @Test
+    @DisplayName("화면 — 한도를 넘는 파일은 사유와 함께 돌려보내고 들고 있지 않는다")
+    void theScreenSaysWhyTheFileWasRefused() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+
+        mvc.perform(multipart("/assets/import/preview")
+                        .file(new MockMultipartFile("file", "assets.csv", "text/csv", assetRows(5001)))
+                        .session(session).with(user("tester").roles("ADMIN")).with(csrf()))
+           .andExpect(redirectedUrl("/assets/import"))
+           .andExpect(flash().attribute("error", containsString("이 파일 5,001줄")));
+
+        mvc.perform(post("/assets/import/apply")
+                        .session(session).with(user("tester").roles("ADMIN")).with(csrf()))
+           .andExpect(redirectedUrl("/assets/import"))
+           .andExpect(flash().attribute("error", containsString("업로드한 파일이 남아 있지 않습니다")));
+    }
+
+    @Test
+    @DisplayName("한도와 같은 줄 수는 받는다 — 제목 줄은 세지 않는다")
+    void acceptsExactlyTheRowLimit() {
+        AssetImportService.Preview preview = imports.preview(assetRows(5000));
+
+        assertThat(preview.headerSkipped()).isTrue();
+        assertThat(preview.rows()).hasSize(5000);
+        assertThat(preview.importable()).isEqualTo(5000);
     }
 }

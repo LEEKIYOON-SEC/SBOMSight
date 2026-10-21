@@ -31,6 +31,14 @@ public class AssetImportService {
     /** {@link Asset} 의 이름 규칙과 같아야 한다 — 여기서만 느슨하면 저장에서 터진다. */
     private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]*$");
 
+    /**
+     * 한 파일의 줄 수 한도 — 제목 줄은 세지 않는다. <b>넘으면 파일을 받지 않는다.</b>
+     *
+     * <p>앞서는 앞 5,000줄만 남기고 나머지를 말없이 버렸다. 미리보기는 5,000줄을
+     * 보여 주고 등록 단추를 달았고, 파일이 그보다 길었다는 것은 화면 어디에도
+     * 없었다 — 등록하면 뒤의 줄이 빠진 채 끝났다. 잘라서 받으면 나머지를 따로 떼어
+     * 다시 업로드해야 하는데, 어디서 잘렸는지는 미리보기에 없다.
+     */
     private static final int MAX_ROWS = 5000;
 
     private final AssetRepository assets;
@@ -96,6 +104,9 @@ public class AssetImportService {
 
     /**
      * 읽어서 줄마다 판정을 붙인다. 아무것도 저장하지 않는다.
+     *
+     * @throws IllegalArgumentException 줄 수가 한도({@link #MAX_ROWS})를 넘을 때 — 화면에
+     *                                  그대로 띄울 사유를 담는다
      */
     @Transactional(readOnly = true)
     public Preview preview(byte[] csv) {
@@ -108,7 +119,9 @@ public class AssetImportService {
             headerSkipped = true;
         }
         if (raw.size() > MAX_ROWS) {
-            raw = raw.subList(0, MAX_ROWS);
+            throw new IllegalArgumentException(String.format(
+                    "줄이 너무 많습니다 (최대 %,d줄 · 이 파일 %,d줄%s). 나눠서 업로드해 주세요.",
+                    MAX_ROWS, raw.size(), headerSkipped ? " — 제목 줄 제외" : ""));
         }
 
         Set<String> existing = new HashSet<>();
@@ -153,7 +166,8 @@ public class AssetImportService {
     }
 
     /**
-     * 미리보기에서 통과한 줄만 등록한다.
+     * 미리보기에서 통과한 줄만 등록한다. 미리보기가 받지 않는 파일은 여기서도 받지
+     * 않는다 — 같은 {@link #preview} 를 지나므로 한 줄도 넣기 전에 멈춘다.
      *
      * @return 실제로 등록된 수
      */

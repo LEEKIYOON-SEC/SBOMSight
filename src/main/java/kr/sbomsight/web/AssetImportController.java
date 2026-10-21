@@ -60,9 +60,19 @@ public class AssetImportController {
         }
 
         byte[] bytes = file.getBytes();
+        AssetImportService.Preview preview;
+        try {
+            preview = imports.preview(bytes);
+        } catch (IllegalArgumentException refused) {
+            // 줄 수 한도를 넘었다. 받지 않은 파일은 들고 있지 않는다 — 앞서 미리 본
+            // 파일이 세션에 남아 있으면 그것까지 버린다.
+            session.removeAttribute(SESSION_KEY);
+            flash.addFlashAttribute("error", refused.getMessage());
+            return "redirect:/assets/import";
+        }
         session.setAttribute(SESSION_KEY, bytes);
 
-        model.addAttribute("preview", imports.preview(bytes));
+        model.addAttribute("preview", preview);
         model.addAttribute("filename", file.getOriginalFilename());
         return "asset-import";
     }
