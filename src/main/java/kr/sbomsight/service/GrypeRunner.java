@@ -6,14 +6,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
@@ -53,10 +54,13 @@ public class GrypeRunner {
     private static final Duration ASK_TIMEOUT = Duration.ofSeconds(30);
 
     /**
-     * 끝난 뒤 남은 출력을 마저 받는 시간. 출력을 물려받은 자식이 남아 붙들고 있으면
-     * 출력이 닫히지 않으므로, 이만큼만 기다리고 끊긴 것으로 본다.
+     * 기다리는 동안 자식을 살피는 간격. 이 사이에 생긴 자식을 기억해 두었다가 끝날 때 함께
+     * 끝낸다({@link #ask}) — 부모가 끝나면 자식은 고아가 되어 다시 찾을 수 없다(리눅스).
      */
-    private static final Duration DRAIN_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration WATCH = Duration.ofMillis(100);
+
+    /** 끝내라고 한 프로세스가 실제로 사라지기를 기다리는 시간. */
+    private static final Duration KILL_WAIT = Duration.ofSeconds(5);
 
     private final SbomSightProperties properties;
 
@@ -222,53 +226,154 @@ public class GrypeRunner {
     }
 
     /**
-     * 짧은 명령 하나를 돌려 답을 받는다 — <b>출력은 따로 읽으며, 제한 시간 안에 끝나기를
-     * 먼저 기다린다.</b> 넘으면 끝낸다.
+     * 짧은 명령 하나를 돌려 답을 받는다 — <b>제한 시간 안에 끝나기를 기다리고, 넘으면 끝낸다.
+     * 무엇으로 끝나든 이 명령이 낳은 프로세스는 남기지 않는다.</b>
      *
-     * <p>앞서는 출력을 끝까지 읽은 다음에 기다렸다(readAllBytes → waitFor 30초). 출력 읽기는
-     * grype 이 출력을 닫을 때 — 대개 끝날 때 — 까지 돌아오지 않는다. grype 이 멈추면 30초
-     * 제한에 닿지도 못하고 읽기에서 그대로 멈췄다: 설정 화면 요청이, 검사 뒤에 DB 기준일을
-     * 묻는 자리({@link #dbBuilt})가 함께. 고치기 전 코드는 45초를 기다려도 돌아오지 않았다.
+     * <p>출력은 <b>파이프가 아니라 임시 파일</b>로 받는다. 앞서는 파이프를 따로 읽는 작업을
+     * 두었다(그 전에는 출력을 끝까지 읽은 다음에 기다려, 멈춘 grype 에 30초 제한이 닿지
+     * 않았다). 그런데 출력을 물려받은 자식이 남아 파이프를 붙들면 읽는 작업이 끝나지 않는다 —
+     * 자바는 막힌 파이프 읽기를 깨우지 못한다. 시간을 넘길 때마다 그 작업과 자식이 하나씩
+     * 쌓였다(GrypeRunnerTest). 파일이면 읽는 작업이 없고, 출력이 파이프를 채워 grype 이 쓰기에서
+     * 멈추는 일도 없다. 표준입력은 쓰지 않으므로 바로 닫는다.
      *
-     * <p>읽기를 기다림 <b>뒤로</b> 미루기만 하면 다른 데서 멈춘다 — 출력이 파이프(수십 KB)를
-     * 채우면 grype 이 쓰기에서 멈추고, 끝나지 않으니 제한 시간마다 끊긴다. 그래서 따로
-     * 읽는다(GrypeRunnerTest).
+     * <p>기다리는 동안 자식을 살펴 기억해 두고({@link #WATCH}), 끝날 때 <b>자식부터</b> 끝낸
+     * 뒤 그 명령을 끝내고 사라지기를 기다린다 — 제한 시간을 넘겼을 때 · 기다리다 끊겼을 때 ·
+     * 끝났는데 자식이 남았을 때 모두. 자식을 낳자마자 끝난 명령의 자식은 살피는 사이에 보이지
+     * 않고, 리눅스는 그 자식을 1번 프로세스에 넘겨 자식으로 다시 찾을 수 없다 — 출력을
+     * 물려받았으니 <b>출력 파일을 붙든 프로세스</b>로 찾는다({@link #holding}).
      *
      * @return 제한 시간을 넘기면 끝내고 {@link Answer#timedOut()}
      * @throws IOException 실행하지 못했다 — 없거나, 실행 권한이 없거나
      */
     public static Answer ask(List<String> command, Duration timeout)
             throws IOException, InterruptedException {
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        FutureTask<byte[]> output = new FutureTask<>(() -> {
-            try (InputStream in = process.getInputStream()) {
-                return in.readAllBytes();
+        Path out = Files.createTempFile("sbomsight-grype-", ".out");
+        try {
+            Process process = new ProcessBuilder(command)
+                    .redirectErrorStream(true)
+                    .redirectOutput(out.toFile())
+                    .start();
+            process.getOutputStream().close();
+            Set<ProcessHandle> seen = new LinkedHashSet<>();
+            boolean finished;
+            try {
+                finished = await(process, timeout, seen);
+            } finally {
+                end(process, seen, out);
             }
-        });
-        Thread reader = new Thread(output, "grype-output");
-        reader.setDaemon(true);
-        reader.start();
+            if (!finished) {
+                return Answer.TIMED_OUT;
+            }
+            return new Answer(false, process.exitValue(),
+                              new String(Files.readAllBytes(out), StandardCharsets.UTF_8));
+        } finally {
+            discard(out);
+        }
+    }
 
-        boolean finished;
+    /** 제한 시간 안에 끝나기를 기다린다. 그동안 보인 자식을 {@code seen} 에 모은다. */
+    private static boolean await(Process process, Duration timeout, Set<ProcessHandle> seen)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (true) {
+            process.descendants().forEach(seen::add);
+            long left = deadline - System.nanoTime();
+            if (left <= 0) {
+                return !process.isAlive();
+            }
+            if (process.waitFor(Math.min(left, WATCH.toNanos()), TimeUnit.NANOSECONDS)) {
+                return true;
+            }
+        }
+    }
+
+    /**
+     * 이 명령과 그것이 낳은 것을 끝내고 사라지기를 기다린다 — <b>자식부터.</b> 부모를 먼저
+     * 끝내면 자식은 고아가 되어 다시 찾을 수 없다. 그다음 출력 파일을 아직 붙든 것(살피는
+     * 사이에 보이지 않은 고아)과 그 자식을 끝낸다. 이미 끝난 것은 그대로 지나간다.
+     */
+    private static void end(Process process, Set<ProcessHandle> seen, Path out) {
+        process.descendants().forEach(seen::add);
+        seen.forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+        for (ProcessHandle holder : holding(out)) {
+            holder.descendants().forEach(seen::add);
+            seen.add(holder);
+        }
+        seen.forEach(ProcessHandle::destroyForcibly);
+        long deadline = System.nanoTime() + KILL_WAIT.toNanos();
+        for (ProcessHandle p : seen) {
+            gone(p, deadline);
+        }
+        gone(process.toHandle(), deadline);
+    }
+
+    /**
+     * 출력 파일을 연 프로세스 — 이 명령이 출력을 물려준 것이다. 리눅스의 {@code /proc} 에서
+     * 찾는다. {@code /proc} 이 없는 곳(윈도우)은 부모가 끝나도 자식이 부모 번호를 그대로 들고
+     * 있어 {@code descendants()} 가 찾는다. 남의 프로세스라 읽지 못하는 것 · 그사이 끝난 것은
+     * 지나간다 — 출력 파일은 이 물음만의 임시 파일이라 다른 것이 열 일은 없다.
+     */
+    private static List<ProcessHandle> holding(Path out) {
+        Path proc = Path.of("/proc");
+        List<ProcessHandle> holders = new ArrayList<>();
+        if (!Files.isDirectory(proc)) {
+            return holders;
+        }
+        Path target;
         try {
-            finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            target = out.toRealPath();
+        } catch (IOException e) {
+            return holders;
+        }
+        long self = ProcessHandle.current().pid();
+        try (var pids = Files.list(proc)) {
+            for (Path dir : (Iterable<Path>) pids::iterator) {
+                String name = dir.getFileName().toString();
+                if (name.isEmpty() || !name.chars().allMatch(Character::isDigit)
+                        || Long.parseLong(name) == self) {
+                    continue;
+                }
+                try (var fds = Files.list(dir.resolve("fd"))) {
+                    if (fds.anyMatch(fd -> opens(fd, target))) {
+                        ProcessHandle.of(Long.parseLong(name)).ifPresent(holders::add);
+                    }
+                } catch (IOException | SecurityException e) {
+                    // 남의 것 · 그사이 끝난 것
+                }
+            }
+        } catch (IOException | SecurityException e) {
+            log.warn("출력 파일을 붙든 프로세스를 찾지 못했습니다: {}", e.getMessage());
+        }
+        return holders;
+    }
+
+    private static boolean opens(Path fd, Path target) {
+        try {
+            return Files.readSymbolicLink(fd).equals(target);
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
+    }
+
+    private static void gone(ProcessHandle p, long deadline) {
+        long left = deadline - System.nanoTime();
+        try {
+            p.onExit().get(Math.max(left, 0), TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
-            process.destroyForcibly();
-            throw e;
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException | TimeoutException e) {
+            log.warn("끝내라고 한 프로세스 {} 가 {}초 안에 사라지지 않았습니다", p.pid(), KILL_WAIT.toSeconds());
         }
-        if (!finished) {
-            process.destroyForcibly();
-            return Answer.TIMED_OUT;
-        }
+    }
+
+    /** 출력을 받은 임시 파일을 지운다. 지우지 못하면 끝날 때 지우게 해 둔다 — 답을 막지 않는다. */
+    private static void discard(Path out) {
         try {
-            byte[] bytes = output.get(DRAIN_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-            return new Answer(false, process.exitValue(), new String(bytes, StandardCharsets.UTF_8));
-        } catch (TimeoutException e) {
-            // 끝났는데 출력이 닫히지 않는다 — 출력을 물려받은 자식이 남아 붙들고 있다.
-            return Answer.TIMED_OUT;
-        } catch (ExecutionException e) {
-            // 출력을 읽다 실패했다. 끝은 났으니 종료 코드는 있다 — 출력은 지어내지 않는다.
-            return new Answer(false, process.exitValue(), "");
+            Files.deleteIfExists(out);
+        } catch (IOException e) {
+            log.warn("grype 출력 임시 파일을 지우지 못했습니다({}): {}", out, e.getMessage());
+            out.toFile().deleteOnExit();
         }
     }
 
