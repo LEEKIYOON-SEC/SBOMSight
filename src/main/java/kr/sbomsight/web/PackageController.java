@@ -68,8 +68,12 @@ public class PackageController {
         boolean vulnerable = Boolean.TRUE.equals(vulnerableParam);
         boolean mixed = Boolean.TRUE.equals(mixedParam);
 
+        // 보던 쪽도 싣는다 — [자산 보기]/[접기] 는 목록을 바꾸지 않으니 그 쪽에서 펼쳐야 한다.
+        // 앞서 싣지 않아 2쪽의 줄을 펼치면 1쪽이 열리고 아무것도 펼쳐지지 않았다. 거르개 ·
+        // 쪽 크기 · 쪽 넘김 링크는 쪽 번호를 덮거나 빼므로(VulnQuery.Links) 그대로 첫 쪽으로 간다.
         VulnQuery.Links links = filters(new VulnQuery.Links("/packages", null),
-                                        zone, type, q, vulnerable, mixed).size(size);
+                                        zone, type, q, vulnerable, mixed).size(size)
+                .with("page", page > 0 ? page : null);
         String jumped = Paging.jump(links, jump);
         if (jumped != null) {
             return jumped;

@@ -290,6 +290,40 @@ class ListPagingTest {
                 .contains("zzz-buried");
     }
 
+    /**
+     * <b>펼치기는 보던 쪽에서 펼친다.</b>
+     *
+     * <p>2쪽의 [자산 보기] 가 쪽 번호 없이 링크돼, 누르면 1쪽이 열리고 그 줄은 1쪽에 없어
+     * 아무것도 펼쳐지지 않았다(띄운 앱에서 재현 — `?size=10&page=1` 의 첫 줄). 펼치기는
+     * 목록을 바꾸지 않으니 쪽을 지킨다. 거르개 · 쪽 크기를 바꾸는 링크는 그대로 첫 쪽으로 간다.
+     */
+    @Test
+    @DisplayName("2쪽에서 [자산 보기] 를 누르면 2쪽에서 펼친다")
+    void expandingKeepsThePage() throws Exception {
+        Asset asset = seedAsset("expand");
+        Scan scan = seedScan(asset);
+        for (int i = 0; i < 14; i++) {
+            seedComponent(asset, scan, "pgx-%02d".formatted(i), "1.0." + i);
+        }
+
+        String second = open("/packages?q=pgx-&size=10&page=1");
+        java.util.regex.Matcher link = java.util.regex.Pattern
+                .compile("href=\"([^\"]*open=pgx-1[0-3][^\"]*)\"").matcher(second);
+        assertThat(link.find()).as("2쪽에 2쪽 줄의 [자산 보기] 가 없다").isTrue();
+        String href = link.group(1).replace("&amp;", "&");
+        assertThat(href).as("[자산 보기] 가 보던 쪽을 잃었다").contains("page=1");
+
+        String opened = open(href);
+        assertThat(opened)
+                .as("눌렀더니 그 줄이 없는 쪽이 열려 아무것도 펼쳐지지 않았다")
+                .contains("class=\"zone-row\"")
+                .contains(asset.getName());
+        // 접기도 같은 쪽으로 돌아온다.
+        assertThat(opened).containsPattern("href=\"[^\"]*page=1[^\"]*\">접기<");
+        // 쪽 크기를 바꾸면 목록이 바뀐다 — 그 링크는 첫 쪽으로 간다(쪽 번호를 싣지 않는다).
+        assertThat(opened).doesNotContainPattern("href=\"[^\"]*size=30[^\"]*page=1");
+    }
+
     // --- 씨앗 --------------------------------------------------------------------
 
     private String open(String url) throws Exception {
