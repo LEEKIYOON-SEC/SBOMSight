@@ -284,8 +284,10 @@ public class ReportService {
                 .collect(Collectors.groupingBy(
                         r -> groupKey(r.getPackageName(), r.getPackageVersion(), r.getPackageType()),
                         Collectors.collectingAndThen(
-                                Collectors.mapping(FindingRepository.FixVersionRow::getFixedVersion,
-                                                   Collectors.toList()),
+                                // 한 건의 칸에 후보가 여럿 이어져 있다 — 펴서 모은다.
+                                Collectors.flatMapping(
+                                        r -> FixVersions.split(r.getFixedVersion()).stream(),
+                                        Collectors.toList()),
                                 FixVersions::collect)));
 
         // 조치 하나로 몇 건이 사라지는가. 이것이 보고서의 핵심 표다.

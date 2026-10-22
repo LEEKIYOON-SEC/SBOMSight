@@ -40,7 +40,8 @@ public class RemediationTarget {
     @Column(name = "package_version", nullable = false, length = 255)
     private String packageVersion = "";
 
-    @Column(name = "fixed_version", nullable = false, length = 255)
+    /** 탐지의 수정 버전 칸 그대로 — 후보가 여럿이면 빈칸으로 이어져 있다(V23). */
+    @Column(name = "fixed_version", nullable = false, length = 1000)
     private String fixedVersion = "";
 
     protected RemediationTarget() {
@@ -95,5 +96,10 @@ public class RemediationTarget {
 
     public String getFixedVersion() {
         return fixedVersion;
+    }
+
+    /** 수정 버전 후보 전부 — 글자 순. 화면은 이것을 그린다(fixversions). */
+    public List<String> getFixedVersions() {
+        return FixVersions.split(fixedVersion);
     }
 }

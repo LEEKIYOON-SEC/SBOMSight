@@ -181,7 +181,8 @@ public final class CsvWriter {
                     f.getCvssScore() == null ? "" : f.getCvssScore().toPlainString(),
                     f.getPackageName(),
                     f.getPackageVersion(),
-                    f.getFixedVersion(),
+                    // 후보가 여럿이면 `수정 버전 3가지: a · b · c` — 조치 CSV 와 같은 꼴.
+                    FixVersions.describe(f.getFixedVersions()),
                     fixWord(f),
                     WHEN.format(f.getScan().getCreatedAt()),
                     f.getSeverity(),

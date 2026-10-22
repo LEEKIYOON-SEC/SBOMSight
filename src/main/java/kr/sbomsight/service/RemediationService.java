@@ -100,7 +100,8 @@ public class RemediationService {
         // 10건이 남는다). 보고서 3장과 같은 건(해당 없음 · 오탐 제외)에서 모은다.
         remediation.setToVersions(findings
                 .fixVersionsIn(List.of(scan.getId()), packageName, false).stream()
-                .map(FindingRepository.FixVersionRow::getFixedVersion)
+                // 한 건의 칸에 후보가 여럿 이어져 있다 — 펴서 모은다.
+                .flatMap(r -> FixVersions.split(r.getFixedVersion()).stream())
                 .toList());
         remediation.setOpenedScanId(scan.getId());
         remediation.setOpenedCount(current.size());

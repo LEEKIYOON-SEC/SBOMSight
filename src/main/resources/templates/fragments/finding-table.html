@@ -147,9 +147,11 @@
              th:text="${f.installPath}" th:title="${f.installPath}">/opt/…</div>
       </td>
 
+      <!--/* 목표는 grype 이 준 후보 전부 — 여럿이면 `수정 버전 N가지` 와 그 목록(fixversions). */-->
       <td class="mono">
         <span th:text="${f.packageVersion}">1.0.0</span> →
-        <b th:if="${f.fixAvailable}" th:text="${f.fixedVersion}">2.0.0</b>
+        <th:block th:if="${f.fixAvailable}"><th:block
+            th:replace="~{fragments/ui :: fixversions(${f.fixedVersions}, '—')}"></th:block></th:block>
         <span th:if="${f.noFix}" class="tag nofix">수정 버전 없음</span>
         <span th:if="${!f.fixAvailable && !f.noFix}" class="faint">확인 필요</span>
       </td>

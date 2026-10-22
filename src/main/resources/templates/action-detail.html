@@ -156,13 +156,13 @@
     <div class="table-responsive" th:unless="${targets.isEmpty()}">
       <table class="table table-vcenter card-table">
         <thead><tr><th class="tight">취약점</th><th class="tight">설치 버전</th>
-                   <th class="tight">수정 버전</th><th class="tight">최신 검사</th></tr></thead>
+                   <th>수정 버전</th><th class="tight">최신 검사</th></tr></thead>
         <tbody>
         <tr th:each="t : ${targets}">
           <td class="tight"><span class="mono" th:text="${t.displayId}">CVE-2023-0001</span>
               <div class="faint mono" th:if="${!#strings.isEmpty(t.secondaryId)}" th:text="${t.secondaryId}">GHSA-…</div></td>
           <td class="tight mono" th:text="${#strings.isEmpty(t.packageVersion)} ? '—' : ${t.packageVersion}">1.0</td>
-          <td class="tight mono" th:text="${#strings.isEmpty(t.fixedVersion)} ? '—' : ${t.fixedVersion}">1.1</td>
+          <td class="mono"><th:block th:replace="~{fragments/ui :: fixversions(${t.fixedVersions}, '—')}"></th:block></td>
           <td th:text="${latest == null} ? '—'
                        : (${presentIds.contains(t.cve) or (!#strings.isEmpty(t.relatedCve) and presentIds.contains(t.relatedCve))}
                           ? '있음' : '없음')">있음</td>

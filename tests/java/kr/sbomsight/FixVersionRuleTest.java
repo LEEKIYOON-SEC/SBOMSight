@@ -145,6 +145,71 @@ class FixVersionRuleTest {
         }
     }
 
+    /**
+     * <b>한 건이 후보를 여럿 가질 때.</b> NVD(CPE)로 맞춘 건은 갈래마다 하나씩 준다 — 진짜
+     * grype(0.115.0)이 openssl 1.1.1k 에 낸 두 건의 후보가 아래와 같다. 탐지 칸에는 후보가
+     * 빈칸으로 이어져 있고(GrypeMapper), 모으는 곳마다 펴서 모아야 한다. 고치기 전 코드는
+     * 이은 글자를 버전 하나로 다뤘다 — 보고서 3장이 `수정 버전 2가지` 에 두 줄짜리 글자를
+     * 하나씩 적었다.
+     */
+    @Test
+    @DisplayName("한 건의 수정 버전 후보 전부 — 보고서 · 구역 보고서 · 조치 · 조치 대상 · 취약점 목록 · 상세 · CSV")
+    void everyCandidateOfAFindingIsKept() throws Exception {
+        Finding a = new Finding(scan, "CVE-2022-2068|openssl", "CVE-2022-2068", "openssl");
+        Finding b = new Finding(scan, "CVE-2022-1292|openssl", "CVE-2022-1292", "openssl");
+        for (Finding f : List.of(a, b)) {
+            f.setPackageVersion("1.1.1k");
+            f.setPackageType("binary");
+            f.setSeverity("Critical");
+            f.setFixState("fixed");
+            f.setCvssScore(new BigDecimal("9.8"));
+        }
+        a.setFixedVersion("1.0.2zf 1.1.1p 3.0.4");
+        b.setFixedVersion("1.0.2ze 1.1.1o 3.0.3");
+        findings.saveAndFlush(a);
+        findings.saveAndFlush(b);
+        List<String> both = List.of("1.0.2ze", "1.0.2zf", "1.1.1o", "1.1.1p", "3.0.3", "3.0.4");
+
+        ReportService.PackageAction row = reports.build(scan).targets().fixTargets().stream()
+                .filter(x -> x.packageName().equals("openssl")).findFirst().orElseThrow();
+        assertThat(row.fixVersions())
+                .as("보고서 3장이 한 건의 후보 목록을 버전 하나로 다뤘다")
+                .containsExactlyElementsOf(both);
+
+        LocalDate today = LocalDate.now();
+        assertThat(zoneReports.build(zone.getId(), today.minusDays(1), today.plusDays(1))
+                              .judgement().actions().stream()
+                              .filter(x -> x.packageName().equals("openssl")).findFirst().orElseThrow()
+                              .fixVersions())
+                .containsExactlyElementsOf(both);
+
+        mvc.perform(post("/assets/" + asset.getId() + "/remediations")
+                            .param("packageName", "openssl")
+                            .with(user("tester").roles("ADMIN")).with(csrf()));
+        Remediation opened = remediations.findLatest(asset.getId(), "openssl").orElseThrow();
+        assertThat(opened.getToVersion())
+                .as("조치의 목표가 글자 순 · 겹침 없는 꼴로 적히지 않았다")
+                .isEqualTo(String.join(" ", both));
+
+        // 조치 상세 — 목표(6가지)와 조치 대상마다의 후보(3가지).
+        String action = open("/actions/" + opened.getId());
+        assertThat(action).contains("수정 버전 6가지").contains("수정 버전 3가지")
+                          .doesNotContain(">1.0.2zf 1.1.1p 3.0.4<");
+
+        // 취약점 목록과 상세 — 그 건의 후보 전부.
+        for (String url : List.of("/vulns?zone=" + zone.getId() + "&q=openssl", "/vulns/CVE-2022-2068")) {
+            String html = open(url);
+            assertThat(html).as(url).contains("수정 버전 3가지")
+                            .contains("<span>1.0.2zf</span>").contains("<span>1.1.1p</span>")
+                            .contains("<span>3.0.4</span>")
+                            .doesNotContain(">1.0.2zf 1.1.1p 3.0.4<");
+        }
+
+        assertThat(open("/vulns/export.csv?zone=" + zone.getId() + "&q=openssl"))
+                .contains("수정 버전 3가지: 1.0.2zf · 1.1.1p · 3.0.4")
+                .contains("수정 버전 3가지: 1.0.2ze · 1.1.1o · 3.0.3");
+    }
+
     @Test
     @DisplayName("수정 버전이 하나면 그 버전 — 수정 버전 없는 건의 빈 값을 한 가지로 세지 않는다")
     void oneVersionIsTheVersion() throws Exception {

@@ -113,7 +113,13 @@ public class Finding {
     @Column(name = "fix_state", nullable = false, length = 32)
     private String fixState = "";
 
-    @Column(name = "fixed_version", nullable = false, length = 255)
+    /**
+     * 수정 버전 — grype 이 준 후보 <b>전부</b>({@code fix.versions}), 글자 순으로 빈칸 하나씩
+     * 띄워 잇는다({@link FixVersions}). 앞서 첫 번째 하나만 담았다 — NVD 로 맞춘 openssl
+     * 1.1.1k 의 CVE-2022-2068 은 {@code 1.0.2zf · 1.1.1p · 3.0.4} 셋을 주는데 화면 · 보고서는
+     * 다른 갈래인 {@code 1.0.2zf} 만 말했다. 하나로 고르지 않는다(V23).
+     */
+    @Column(name = "fixed_version", nullable = false, length = 1000)
     private String fixedVersion = "";
 
     @Column(name = "version_constraint", nullable = false, length = 512)
@@ -337,12 +343,37 @@ public class Finding {
         this.fixState = clip(fixState, 32);
     }
 
+    /** 저장된 꼴 그대로 — 후보가 여럿이면 빈칸으로 이어져 있다. 화면 · CSV 는 {@link #getFixedVersions()}. */
     public String getFixedVersion() {
         return fixedVersion;
     }
 
     public void setFixedVersion(String fixedVersion) {
-        this.fixedVersion = clip(fixedVersion, 255);
+        this.fixedVersion = clip(fixedVersion, 1000);
+    }
+
+    /** 수정 버전 후보 전부 — 글자 순. 하나만 적힌 옛 행도 그대로 읽힌다. */
+    public java.util.List<String> getFixedVersions() {
+        return FixVersions.split(fixedVersion);
+    }
+
+    /**
+     * grype 이 준 후보를 전부 적는다 — 빈 것을 빼고, 겹친 것을 하나로, 글자 순으로.
+     *
+     * <p>칸(1,000자)을 넘으면 넘는 것부터 빼고 그 사실을 기록에 남긴다 — 버전 중간에서
+     * 자르면 없는 버전이 생긴다. 후보 전부는 상세({@code detail_json})에 그대로 있다.
+     */
+    public void setFixedVersions(java.util.List<String> versions) {
+        java.util.List<String> kept = new java.util.ArrayList<>(
+                FixVersions.collect(versions == null ? java.util.List.of() : versions));
+        int all = kept.size();
+        while (!kept.isEmpty() && FixVersions.join(kept).length() > 1000) {
+            kept.remove(kept.size() - 1);
+        }
+        if (kept.size() < all) {
+            log.warn("수정 버전 후보 {}개 중 {}개만 칸(1,000자)에 담았습니다: {}", all, kept.size(), cve);
+        }
+        this.fixedVersion = FixVersions.join(kept);
     }
 
     public String getVersionConstraint() {

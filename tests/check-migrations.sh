@@ -340,6 +340,64 @@ for f in $MIGRATIONS; do
         echo "  └ 패키지 10행을 넣었다 (purl 없는 syft 이름 넷 · purl 아닌 purl 둘 · purl 있는 것 둘 · 그대로 둘 것 셋)" ;;
     esac
 
+    # V23 이 탐지의 수정 버전을 상세(fixVersions)의 후보 전부로 다시 모으고, 조치 대상과
+    # 조치의 목표 버전에 나머지 후보를 더한다. 모을 것이 있는 상태에서 태워야 한다.
+    # 탐지 (패키지 v23-ssl 1.1.1k — 칸에는 지금처럼 첫 번째만 적혀 있다):
+    #   2068  후보 셋                              → 전부
+    #   1292  GHSA · 함께 온 CVE, 뒤섞이고 겹치고 빈 것 · 앞뒤 빈칸 → 전부(글자 순)
+    #         검토 결과는 GHSA 쪽 해당 없음(옛) · CVE 쪽 해당됨(나중) — 나중 것이 이긴다
+    #   3711  후보 하나 · 2301 상세 없음 · 2302 읽을 수 없는 상세 · 2303 fixVersions 가 null
+    #   2304  후보 백 개(1,000자를 넘는다)          → 그대로
+    #   2305  첫 번째가 2068 과 같다 · 해당 없음으로 적힘 → 탐지는 전부, 목표에는 안 더함
+    #   2307  RC1 · rc1                           → 둘 다
+    # 조치: v23-ssl(목표 = 지금 규칙의 첫 번째들) · 목표에 따옴표가 든 것 · 역슬래시가 든 것 ·
+    #       등록한 검사가 없는 것 — 뒤의 셋은 그대로여야 하고 마이그레이션은 멈추지 않아야 한다.
+    # 검사는 api-02(자산 2)에 넣는다 — 자산 3 은 V17, 자산 5 는 V20 확인이 쓴다.
+    case "$(basename "$f")" in V22__*)
+        LONGFIX=$(for i in $(seq 1 100); do printf '"v%04d-long-version",' "$i"; done | sed 's/,$//')
+        run "$DB" <<SQL
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (2, 'DONE', NOW(6), 'v23check', 'v23-a2', NOW(6));
+        SET @s = LAST_INSERT_ID();
+        INSERT INTO findings (scan_id, finding_key, cve, related_cve, package_name, package_version,
+                              fix_state, fixed_version, detail_json) VALUES
+         (@s, 'k2068', 'CVE-2022-2068', '', 'v23-ssl', '1.1.1k', 'fixed', '1.0.2zf',
+          '{"urls":[],"fixVersions":["1.0.2zf","1.1.1p","3.0.4"],"cpes":["cpe:2.3:a:openssl:openssl:1.1.1k:*:*:*:*:*:*:*"]}'),
+         (@s, 'k1292', 'GHSA-v23a-v23a-v23a', 'CVE-2022-1292', 'v23-ssl', '1.1.1k', 'fixed', '3.0.3',
+          '{"fixVersions":["3.0.3","1.1.1o"," 1.0.2ze ","1.1.1o",""]}'),
+         (@s, 'k3711', 'CVE-2021-3711', '', 'v23-ssl', '1.1.1k', 'fixed', '1.1.1l', '{"fixVersions":["1.1.1l"]}'),
+         (@s, 'k2301', 'CVE-2099-2301', '', 'v23-ssl', '1.1.1k', 'fixed', '9.9', NULL),
+         (@s, 'k2302', 'CVE-2099-2302', '', 'v23-ssl', '1.1.1k', 'fixed', '8.8', '{not json'),
+         (@s, 'k2303', 'CVE-2099-2303', '', 'v23-ssl', '1.1.1k', 'not-fixed', '', '{"fixVersions":null}'),
+         (@s, 'k2304', 'CVE-2099-2304', '', 'v23-ssl', '1.1.1k', 'fixed', 'v0001-long-version',
+          '{"fixVersions":[$LONGFIX]}'),
+         (@s, 'k2305', 'CVE-2099-2305', '', 'v23-ssl', '1.1.1k', 'fixed', '1.0.2zf', '{"fixVersions":["1.0.2zf","7.7.7"]}'),
+         (@s, 'k2307', 'CVE-2099-2307', '', 'v23-ssl', '1.1.1k', 'fixed', '6.0-rc1', '{"fixVersions":["6.0-rc1","6.0-RC1"]}'),
+         (@s, 'k2306', 'CVE-2099-2306', '', 'other-v23', '1.0', 'fixed', '1.0', '{"fixVersions":["1.0","2.0"]}'),
+         (@s, 'k2308', 'CVE-2099-2308', '', 'v23-quote', '1.0', 'fixed', '1.0.2zf', '{"fixVersions":["1.0.2zf","5.5.5"]}'),
+         (@s, 'k2309', 'CVE-2099-2309', '', 'v23-bslash', '1.0', 'fixed', '1.0.2zf', '{"fixVersions":["1.0.2zf","4.4.4"]}');
+        INSERT INTO finding_analysis (asset_id, cve, package_name, state, created_at, updated_at) VALUES
+         (2, 'CVE-2099-2305', 'v23-ssl', 'NOT_AFFECTED', '2026-08-01 09:00:00', '2026-08-01 09:00:00'),
+         (2, 'GHSA-v23a-v23a-v23a', 'v23-ssl', 'NOT_AFFECTED', '2026-08-01 09:00:00', '2026-08-01 09:00:00'),
+         (2, 'CVE-2022-1292', 'v23-ssl', 'EXPLOITABLE', '2026-09-01 09:00:00', '2026-09-01 09:00:00');
+        INSERT INTO remediations
+          (asset_id, package_name, from_version, to_version, status, owner, opened_scan_id,
+           opened_count, note, created_at, created_by, updated_at, updated_by)
+        VALUES
+         (2, 'v23-ssl', '1.1.1k', '1.0.2zf 1.1.1l 3.0.3 6.0-rc1 8.8 9.9 v0001-long-version', 'OPEN', '', @s,
+          9, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (2, 'v23-quote', '1.0', 'x"y 1.0.2zf', 'OPEN', '', @s, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (2, 'v23-bslash', '1.0', CONCAT('a', CHAR(92 USING utf8mb4), 'b 1.0.2zf'), 'OPEN', '', @s,
+          1, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (2, 'other-v23', '1.0', '1.0', 'OPEN', '', 999998, 1, '', NOW(6), 'admin', NOW(6), 'admin');
+        INSERT INTO remediation_targets (remediation_id, cve, related_cve, package_version, fixed_version)
+        SELECT r.id, f.cve, f.related_cve, f.package_version, f.fixed_version
+        FROM remediations r JOIN findings f ON f.scan_id = r.opened_scan_id AND f.package_name = r.package_name
+        WHERE r.package_name = 'v23-ssl';
+SQL
+        echo "  └ 탐지 12건 · 검토 결과 3행 · 조치 4행 · 조치 대상 9행을 넣었다 (후보 여럿 · 하나 · 없음 · 못 읽음 · 너무 긺 · 해당 없음 · 대소문자)" ;;
+    esac
+
     case "$(basename "$f")" in V9__*)
         run "$DB" -e "
         INSERT INTO risk_acceptances
@@ -887,6 +945,53 @@ WANT="busybox=binary jackson-databind=maven log4j-core=maven mystery= numpy=cond
 [ "$TYPES" = "$WANT" ] || { echo "  유형이 '$TYPES' 입니다"; echo "  기대 '$WANT'"; exit 1; }
 echo "  purl 없는 syft 이름(java-archive · python · go-module · UnknownPackage)을 purl 의 이름으로"
 echo "  purl 이 있는 행(conda · maven) · 표에 없는 유형(binary) · 이름이 같은 유형(rpm) · 대소문자 다른 것은 그대로"
+
+# --- V23: 탐지의 수정 버전 — 후보 전부 -------------------------------------------
+#
+# 탐지는 상세(fixVersions)의 후보 전부를 글자 순으로. 조치 대상은 짝지은 탐지의 것으로.
+# 조치의 목표는 적혀 있던 것을 지우지 않고 세던 탐지의 나머지 후보를 더한다 — 해당 없음으로
+# 적힌 탐지(2305)의 7.7.7 은 더하지 않는다. 읽을 수 없는 것은 그대로, 멈추지 않는다.
+
+FIXW=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(CONCAT(TABLE_NAME, '=', CHARACTER_MAXIMUM_LENGTH) ORDER BY TABLE_NAME SEPARATOR ' ')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = '$DB' AND COLUMN_NAME = 'fixed_version'
+      AND TABLE_NAME IN ('findings', 'remediation_targets');")
+[ "$FIXW" = "findings=1000 remediation_targets=1000" ] || { echo "  수정 버전 칸이 '$FIXW' 입니다"; exit 1; }
+
+V23SCAN=$(run "$DB" -N -e "SELECT id FROM scans WHERE created_by = 'v23check';")
+GOT=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(CONCAT(cve, '=', fixed_version) ORDER BY cve SEPARATOR ' / ')
+    FROM findings WHERE scan_id = $V23SCAN;")
+WANT="CVE-2021-3711=1.1.1l / CVE-2022-2068=1.0.2zf 1.1.1p 3.0.4 / CVE-2099-2301=9.9 / CVE-2099-2302=8.8 / CVE-2099-2303= / CVE-2099-2304=v0001-long-version / CVE-2099-2305=1.0.2zf 7.7.7 / CVE-2099-2306=1.0 2.0 / CVE-2099-2307=6.0-RC1 6.0-rc1 / CVE-2099-2308=1.0.2zf 5.5.5 / CVE-2099-2309=1.0.2zf 4.4.4 / GHSA-v23a-v23a-v23a=1.0.2ze 1.1.1o 3.0.3"
+[ "$GOT" = "$WANT" ] || { echo "  탐지의 수정 버전이"; echo "    '$GOT'"; echo "  기대"; echo "    '$WANT'"; exit 1; }
+echo "  탐지 — 후보 전부를 글자 순으로 (겹친 것 · 빈 것 · 앞뒤 빈칸은 빼고 · RC1 과 rc1 은 둘)"
+echo "  상세 없음 · 못 읽음 · null · 후보 하나 · 1,000자를 넘는 것은 그대로"
+
+GOT=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(CONCAT(t.cve, '=', t.fixed_version) ORDER BY t.cve SEPARATOR ' / ')
+    FROM remediation_targets t JOIN remediations r ON r.id = t.remediation_id
+    WHERE r.package_name = 'v23-ssl';")
+WANT="CVE-2021-3711=1.1.1l / CVE-2022-2068=1.0.2zf 1.1.1p 3.0.4 / CVE-2099-2301=9.9 / CVE-2099-2302=8.8 / CVE-2099-2303= / CVE-2099-2304=v0001-long-version / CVE-2099-2305=1.0.2zf 7.7.7 / CVE-2099-2307=6.0-RC1 6.0-rc1 / GHSA-v23a-v23a-v23a=1.0.2ze 1.1.1o 3.0.3"
+[ "$GOT" = "$WANT" ] || { echo "  조치 대상의 수정 버전이"; echo "    '$GOT'"; echo "  기대"; echo "    '$WANT'"; exit 1; }
+echo "  조치 대상 — 짝지은 탐지와 같은 목록 (첫 번째가 같아도 번호가 다르면 제 것)"
+
+GOT=$(run "$DB" -N -e "SELECT to_version FROM remediations WHERE package_name = 'v23-ssl';")
+WANT="1.0.2ze 1.0.2zf 1.1.1l 1.1.1o 1.1.1p 3.0.3 3.0.4 6.0-RC1 6.0-rc1 8.8 9.9 v0001-long-version"
+[ "$GOT" = "$WANT" ] || { echo "  목표 버전이 '$GOT' 입니다"; echo "  기대 '$WANT'"; exit 1; }
+echo "  조치의 목표 — 적혀 있던 것은 그대로 두고 세던 탐지의 나머지 후보를 더함"
+echo "    (해당 없음으로 적힌 탐지의 7.7.7 은 안 더함 · 나중에 해당됨으로 고친 GHSA/CVE 짝은 더함)"
+
+for want in "v23-quote|x\"y 1.0.2zf" "v23-bslash|a\\b 1.0.2zf" "other-v23|1.0"; do
+    pkg=${want%%|*}; tv=${want#*|}
+    got=$(run "$DB" -N -r -e "SELECT to_version FROM remediations WHERE package_name = '$pkg';")
+    [ "$got" = "$tv" ] || { echo "  $pkg 의 목표가 '$got' 로 바뀌었습니다 (기대 '$tv')"; exit 1; }
+done
+echo "  따옴표 · 역슬래시가 든 목표와 등록한 검사가 없는 조치는 그대로 (마이그레이션은 멈추지 않음)"
+
+run "$DB" -N -e "SHOW TABLES LIKE '%v23';" | grep -q . \
+    && { echo "  이관에 쓴 표가 남아 있습니다"; exit 1; }
+echo "  이관에 쓴 표는 지움"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

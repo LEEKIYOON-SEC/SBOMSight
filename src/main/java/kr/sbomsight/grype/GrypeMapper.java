@@ -311,9 +311,10 @@ public class GrypeMapper {
         }
         finding.setFixState(trim(fix.state()));
         if (fix.versions() != null && !fix.versions().isEmpty()) {
-            // 여러 개면 첫 번째를 쓰고 나머지는 상세에 남긴다. 어느 것이 우리
-            // 환경에 맞는지 고르는 것은 우리가 할 판단이 아니다.
-            finding.setFixedVersion(trim(fix.versions().get(0)));
+            // 여러 개면 전부 적는다. 어느 것이 우리 환경에 맞는지 고르는 것은 우리가 할
+            // 판단이 아니다 — 앞서 첫 번째만 적어, 그 판단을 grype 이 늘어놓은 순서에
+            // 맡긴 셈이었다(openssl 1.1.1k 에 다른 갈래의 1.0.2zf). FixVersions 규칙으로.
+            finding.setFixedVersions(fix.versions());
         }
     }
 

@@ -331,8 +331,9 @@ public class ZoneReportService {
                     .collect(java.util.stream.Collectors.groupingBy(
                             r -> groupKey(r.getPackageName(), r.getPackageType()),
                             java.util.stream.Collectors.collectingAndThen(
-                                    java.util.stream.Collectors.mapping(
-                                            FindingRepository.FixVersionRow::getFixedVersion,
+                                    // 한 건의 칸에 후보가 여럿 이어져 있다 — 펴서 모은다.
+                                    java.util.stream.Collectors.flatMapping(
+                                            r -> FixVersions.split(r.getFixedVersion()).stream(),
                                             java.util.stream.Collectors.toList()),
                                     FixVersions::collect)));
             actions = groups.stream()

@@ -803,6 +803,9 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      *
      * <p>해당 없음 · 오탐을 빼는 규칙은 묶음 질의와 같다 — 표의 `해소 건수` 를
      * 센 바로 그 건에서 모은다. {@code packageName} 이 {@code null} 이면 전부.
+     *
+     * <p><b>한 건의 칸에 후보가 여럿일 수 있다</b>(빈칸으로 이어져 있다 — V23). 부르는 쪽이
+     * {@link kr.sbomsight.domain.FixVersions#split} 으로 펴서 모은다.
      */
     @Query("""
            SELECT DISTINCT s.asset.id AS assetId, f.packageName AS packageName,
