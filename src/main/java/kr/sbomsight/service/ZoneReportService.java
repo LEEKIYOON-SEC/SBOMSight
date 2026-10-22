@@ -506,11 +506,14 @@ public class ZoneReportService {
     }
 
     /**
-     * 패키지마다 <b>몇 건에 답이 있나</b> — 구역 전체에서.
+     * 줄마다 <b>몇 건에 답이 있나</b> — 구역 전체에서.
      *
      * <p>3장(검토 결과 분포)과 <b>같은 걸음으로 센다.</b> 자산으로 한 번
      * 갈라 맞춘다 — 구역은 자산이 섞여 있어서 {@code (CVE, 패키지명)} 으로만
      * 맞추면 web-01 의 검토 결과가 api-01 의 탐지에 붙는다.
+     *
+     * <p><b>5장의 줄(이름 · 유형)마다</b> 모은다. 앞서 이름으로 모아, 같은 이름이 유형으로
+     * 갈리면 한 줄의 답이 다른 줄에도 세어졌다 — 아무도 답하지 않은 줄에 `1대` 가 붙었다.
      */
     private Map<String, Reviewed> reviewByPackage(List<Asset> inScope, List<Long> scanIds,
                                                  Map<String, Set<Long>> answeredAssets) {
@@ -529,16 +532,16 @@ public class ZoneReportService {
             if (!state.isOpen()) {
                 continue;
             }
-            long[] cell = counts.computeIfAbsent(row.getPackageName(), name -> new long[2]);
+            String key = groupKey(row.getPackageName(), row.getPackageType());
+            long[] cell = counts.computeIfAbsent(key, k -> new long[2]);
             cell[1]++;
             if (state != AnalysisState.NOT_SET) {
                 cell[0]++;
-                answeredAssets.computeIfAbsent(row.getPackageName(), name -> new HashSet<>())
-                              .add(row.getAssetId());
+                answeredAssets.computeIfAbsent(key, k -> new HashSet<>()).add(row.getAssetId());
             }
         }
         Map<String, Reviewed> out = new LinkedHashMap<>();
-        counts.forEach((name, cell) -> out.put(name, new Reviewed(cell[0], cell[1])));
+        counts.forEach((key, cell) -> out.put(key, new Reviewed(cell[0], cell[1])));
         return out;
     }
 
@@ -863,36 +866,37 @@ public class ZoneReportService {
                          Map<String, Reviewed> reviewed, Map<String, Set<Long>> answeredAssets) {
 
         /**
-         * 이 패키지의 <b>모든 건</b>에 답이 있는가.
+         * 이 줄의 <b>모든 건</b>에 답이 있는가.
          *
          * <p>앞서 {@code explained} 에 그 이름이 한 번이라도 있으면 참이었다.
          * 자산 수는 {@link #explainedAssets} 가 이미 가려 주고 있었지만, 한
          * 자산 안에서 <b>탐지 열 건 중 한 건만</b> 적어 둔 것은 여전히 전부
-         * 설명된 것으로 세어졌다.
+         * 설명된 것으로 세어졌다. 묻는 키는 5장의 줄(이름 · 유형)이다.
          */
-        public boolean isExplained(String packageName) {
-            Reviewed r = reviewed.get(packageName);
+        public boolean isExplained(ZonePackageAction row) {
+            Reviewed r = reviewed.get(groupKey(row.packageName(), row.packageType()));
             return r != null && r.all();
         }
 
-        /** 그 패키지의 검토 진행 — 표의 `검토 결과` 칸이 이것을 그린다. */
-        public Reviewed reviewedIn(String packageName) {
-            return reviewed.get(packageName);
+        /** 그 줄의 검토 진행 — 표의 `검토 결과` 칸이 이것을 그린다. */
+        public Reviewed reviewedIn(ZonePackageAction row) {
+            return reviewed.get(groupKey(row.packageName(), row.packageType()));
         }
 
         /**
-         * 그 패키지에 검토 결과가 적힌 <b>자산이 몇 대인가.</b>
+         * 그 줄에 검토 결과가 적힌 <b>자산이 몇 대인가.</b>
          *
-         * <p>구역 보고서에서 {@link #isExplained(String)} 하나로 "검토함" 이라고
+         * <p>구역 보고서에서 {@link #isExplained} 하나로 "검토함" 이라고
          * 쓰면, 열두 대에 걸린 패키지를 한 대에서만 검토해 놓고도 전부 검토한
          * 것처럼 읽힌다. 걸린 자산 수와 나란히 놓아야 그 차이가 보인다.
          */
-        public long explainedAssets(String packageName) {
+        public long explainedAssets(ZonePackageAction row) {
             // 그 줄에 실린 탐지(해당 없음 · 오탐을 뺀 것) 가운데 답이 있는 자산만
             // 센다. 앞서는 그 구역의 검토 결과 전부에서 셌다 — 목록에서 빠진
             // 해당 없음과 이미 사라진 탐지의 검토까지 들어가, `1대` 짜리 줄에
             // `2대 검토` 가 붙을 수 있었다.
-            return answeredAssets.getOrDefault(packageName, Set.of()).size();
+            return answeredAssets.getOrDefault(groupKey(row.packageName(), row.packageType()),
+                                               Set.of()).size();
         }
 
         public long reviewOverdue() {
@@ -904,9 +908,9 @@ public class ZoneReportService {
             return residual.stream().mapToLong(ZonePackageAction::total).sum();
         }
 
-        /** 손댈 수 없는데 <b>답이 없는 건이 남은</b> 패키지 — 설명이 빈 자리다. */
+        /** 손댈 수 없는데 <b>답이 없는 건이 남은</b> 줄 — 설명이 빈 자리다. */
         public long unexplained() {
-            return residual.stream().filter(r -> !isExplained(r.packageName())).count();
+            return residual.stream().filter(r -> !isExplained(r)).count();
         }
     }
 }

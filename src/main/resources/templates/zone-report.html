@@ -640,8 +640,8 @@
           `검토함` 한 마디로 쓰지 않는다. 세 대에 걸린 패키지를 한 대에서만
           검토해 놓고도 전부 검토한 것으로 읽혔다 — 띄워 보고 찾았다.
         */-->
-        <td class="tight" th:with="n=${report.action.explainedAssets(b.packageName)},
-                                   r=${report.action.reviewedIn(b.packageName)}">
+        <td class="tight" th:with="n=${report.action.explainedAssets(b)},
+                                   r=${report.action.reviewedIn(b)}">
           <div th:replace="~{fragments/ui :: reviewmark(${r})}"></div>
           <div class="faint" th:if="${n > 0}" th:text="${n} + '대'">1대</div>
         </td>

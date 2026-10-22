@@ -230,8 +230,10 @@ class ReportReviewCoverageTest {
         reviewOne();
 
         ReportService.Progress progress = reports.build(scan).progress();
+        ReportService.PackageAction row = progress.residual().stream()
+                .filter(r -> r.packageName().equals(pkg)).findFirst().orElseThrow();
 
-        assertThat(progress.isExplained(pkg))
+        assertThat(progress.isExplained(row))
                 .as("세 건 중 한 건만 적어 둔 패키지입니다")
                 .isFalse();
         assertThat(progress.unexplained())
@@ -251,13 +253,15 @@ class ReportReviewCoverageTest {
         java.time.LocalDate today = java.time.LocalDate.now();
         ZoneReportService.Action action = zoneReports
                 .build(zone.getId(), today.minusDays(1), today.plusDays(1)).action();
+        ZoneReportService.ZonePackageAction row = action.residual().stream()
+                .filter(r -> r.packageName().equals(pkg)).findFirst().orElseThrow();
 
-        assertThat(action.explainedAssets(pkg))
+        assertThat(action.explainedAssets(row))
                 .as("적어 둔 자산은 한 대입니다 — 이 수는 그대로여야 합니다")
                 .isEqualTo(1);
-        assertThat(action.reviewedIn(pkg).done()).isEqualTo(1);
-        assertThat(action.reviewedIn(pkg).total()).isEqualTo(3);
-        assertThat(action.isExplained(pkg))
+        assertThat(action.reviewedIn(row).done()).isEqualTo(1);
+        assertThat(action.reviewedIn(row).total()).isEqualTo(3);
+        assertThat(action.isExplained(row))
                 .as("그 한 대 안에서도 세 건 중 한 건만 적어 두었습니다")
                 .isFalse();
         assertThat(action.unexplained()).isEqualTo(1);

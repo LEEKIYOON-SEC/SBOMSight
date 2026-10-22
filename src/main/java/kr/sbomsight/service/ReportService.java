@@ -318,11 +318,13 @@ public class ReportService {
         // 패키지)에 하나씩이고 이 표는 패키지로 한 줄이다. 앞서 그중 **아무
         // 한 건**을 골라 상태 · 근거 · 재검토일을 찍었다(띄운 앱에서 nginx
         // 네 건이 `오탐 · — · —` — 위험 수용과 그 재검토일이 사라졌다). 이제
-        // 그 줄에 실린 탐지들의 것을 **모은다**(reviewSummaries).
+        // 그 줄에 실린 탐지들의 것을 **모은다**(reviewSummaries). 그 줄의 키(이름 ·
+        // 버전 · 유형)로 모은다 — 이름으로 모으면 같은 이름의 다른 줄 것이 섞인다.
         Map<String, NoFixReview> reviews = reviewSummaries(scan);
         List<NoFixRow> noFixRows = blocked.stream()
                 .map(b -> {
-                    NoFixReview r = reviews.get(b.packageName());
+                    NoFixReview r = reviews.get(groupKey(b.packageName(), b.currentVersion(),
+                                                         b.packageType()));
                     return r == null
                             ? new NoFixRow(b, new Reviewed(0, b.total()), Map.of(), null)
                             : new NoFixRow(b, r.reviewed(), r.responses(), r.earliestReview());
@@ -337,6 +339,11 @@ public class ReportService {
                 + '\u0000' + Objects.toString(type, "");
     }
 
+    /** 3 · 4장 한 줄의 키 — {@link #groupKey} 와 같은 식. */
+    private static String rowKey(PackageAction row) {
+        return groupKey(row.packageName(), row.currentVersion(), row.packageType());
+    }
+
     /**
      * 패키지마다 <b>몇 건에 답이 있나 · 대응 방안은 무엇 무엇인가 · 가장 먼저
      * 오는 재검토일은 언제인가.</b>
@@ -344,6 +351,10 @@ public class ReportService {
      * <p>2.4 와 <b>같은 걸음으로 센다</b> — 같은 탐지 목록을 훑고 같은
      * {@link FindingAnalysisService#analysisOf} 로 맞춘다. 규칙이 갈리면 한
      * 보고서 안에서 2.4 의 `미검토 30건` 과 4장이 서로를 부정한다.
+     *
+     * <p><b>4장의 줄(이름 · 버전 · 유형)마다</b> 모은다. 앞서 이름으로 모아, 같은 이름의
+     * 다른 버전 · 유형 것(3장에 선 것까지)이 그 줄의 분모 · 대응 방안 · 재검토일에
+     * 섞였다 — 건수 2인 줄에 `2 / 4건` 이 찍혔다.
      */
     private Map<String, NoFixReview> reviewSummaries(Scan scan) {
         Map<String, FindingAnalysis> byKey = analyses.byKey(scan.getAsset().getId());
@@ -360,27 +371,28 @@ public class ReportService {
             if (!state.isOpen()) {
                 continue;
             }
-            String name = row.getPackageName();
-            long[] cell = counts.computeIfAbsent(name, n -> new long[2]);
+            String key = groupKey(row.getPackageName(), row.getPackageVersion(),
+                                  row.getPackageType());
+            long[] cell = counts.computeIfAbsent(key, k -> new long[2]);
             cell[1]++;
             if (state == AnalysisState.NOT_SET) {
                 continue;
             }
             cell[0]++;
             if (found.getResponse() != null) {
-                responses.computeIfAbsent(name, n -> new java.util.EnumMap<>(AnalysisResponse.class))
+                responses.computeIfAbsent(key, k -> new java.util.EnumMap<>(AnalysisResponse.class))
                          .merge(found.getResponse(), 1L, Long::sum);
             }
             if (found.getReviewBy() != null) {
-                earliest.merge(name, found.getReviewBy(),
+                earliest.merge(key, found.getReviewBy(),
                                (a, b) -> a.isBefore(b) ? a : b);
             }
         }
         Map<String, NoFixReview> out = new LinkedHashMap<>();
-        counts.forEach((name, cell) -> out.put(name, new NoFixReview(
+        counts.forEach((key, cell) -> out.put(key, new NoFixReview(
                 new Reviewed(cell[0], cell[1]),
-                responses.getOrDefault(name, Map.of()),
-                earliest.get(name))));
+                responses.getOrDefault(key, Map.of()),
+                earliest.get(key))));
         return out;
     }
 
@@ -432,9 +444,9 @@ public class ReportService {
 
     private Progress progress(Scan scan, Targets targets) {
         // 4장이 센 것을 그대로 쓴다 — 5장의 `검토 결과 없음` 과 4장의 표가
-        // 다른 규칙으로 세면 같은 패키지를 두 장이 다르게 말한다.
+        // 다른 규칙으로 세면 같은 패키지를 두 장이 다르게 말한다. 키도 4장의 줄이다.
         Map<String, Reviewed> reviewed = targets.noFixRows().stream()
-                .collect(Collectors.toMap(r -> r.action().packageName(), NoFixRow::reviewed,
+                .collect(Collectors.toMap(r -> rowKey(r.action()), NoFixRow::reviewed,
                                           (a, b) -> a, LinkedHashMap::new));
         List<Remediation> registered = remediations
                 .findByAssetIdOrderByStatusAscPackageNameAsc(scan.getAsset().getId());
@@ -768,15 +780,16 @@ public class ReportService {
         }
 
         /**
-         * 이 패키지의 <b>모든 건</b>에 답이 있는가.
+         * 이 줄의 <b>모든 건</b>에 답이 있는가.
          *
          * <p>앞서 {@code explained} 에 그 패키지 이름이 한 번이라도 있으면
          * 참이었다. 그러면 세 건 중 한 건만 적어 둔 패키지가 설명된 것으로
          * 세어지고, 아래 {@code unexplained()} 가 보고서에 찍는 수가 실제보다
-         * 작아진다 — <b>실제보다 안전해 보이는 숫자</b>다.
+         * 작아진다 — <b>실제보다 안전해 보이는 숫자</b>다. 그 뒤에도 이름으로 물어,
+         * 같은 이름의 4장 줄들이 한 줄의 답을 나눠 가졌다 — 줄(이름 · 버전 · 유형)로 묻는다.
          */
-        public boolean isExplained(String packageName) {
-            Reviewed r = reviewed.get(packageName);
+        public boolean isExplained(PackageAction row) {
+            Reviewed r = reviewed.get(rowKey(row));
             return r != null && r.all();
         }
 
@@ -785,9 +798,9 @@ public class ReportService {
             return explained.stream().filter(FindingAnalysis::isReviewOverdue).count();
         }
 
-        /** 손댈 수 없는데 <b>답이 없는 건이 남은</b> 패키지 — 설명이 빈 자리다. */
+        /** 손댈 수 없는데 <b>답이 없는 건이 남은</b> 줄 — 설명이 빈 자리다. */
         public long unexplained() {
-            return residual.stream().filter(r -> !isExplained(r.packageName())).count();
+            return residual.stream().filter(r -> !isExplained(r)).count();
         }
     }
 

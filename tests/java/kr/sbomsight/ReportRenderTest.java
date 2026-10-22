@@ -2,6 +2,7 @@ package kr.sbomsight;
 
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
+import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,7 @@ class ReportRenderTest {
     @Autowired ScanRepository scans;
     @Autowired FindingRepository findings;
     @Autowired ZoneService zoneService;
+    @Autowired FindingAnalysisService analyses;
 
     private Scan seed(boolean withVectors) {
         Asset asset = new Asset();
@@ -418,5 +420,62 @@ class ReportRenderTest {
         // 말없이 빈 보고서를 내면 "이 구역은 깨끗하다" 로 읽힌다.
         assertThat(html).contains("두 날짜를 바꿨습니다");
         assertThat(html).contains("2026년 9월 1일");
+    }
+
+    /**
+     * <b>구역 보고서 5장의 `검토 결과` 칸은 그 줄의 것을 그린다.</b>
+     *
+     * <p>5장 줄을 그리는 렌더 시험이 없었다. 그 칸은 이름으로 물어, 같은 이름이 유형으로
+     * 갈리면 한 줄의 검토가 다른 줄에도 찍혔다 — 아무도 답하지 않은 apk 줄에 rpm 줄의
+     * `1대` 가 붙었다.
+     */
+    @Test
+    @DisplayName("구역 보고서 5장 — 검토 결과 칸은 그 줄(이름 · 유형)의 것을 그린다")
+    void zoneResidualReviewCellIsPerRow() throws Exception {
+        Zone zone = zoneService.create("검토-" + System.nanoTime(), "#123456", "");
+        Asset web = assetIn(zone, "web");
+        noFixToday(web, "CVE-2026-1001", "openssl", "rpm");
+        noFixToday(assetIn(zone, "api"), "CVE-2026-1002", "openssl", "apk");
+        analyses.record(web, "CVE-2026-1001", "openssl", AnalysisState.IN_TRIAGE,
+                        null, null, "", "", "", null, "tester");
+
+        String html = mvc.perform(get("/reports/zone").param("zone", zone.getId().toString())
+                                                     .with(user("tester").roles("ADMIN")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+        String chapter5 = html.substring(html.indexOf("5. 수정 버전 없는 항목"),
+                                         html.indexOf("6. 조치 진행 현황"));
+        String rpm = rowOf(chapter5, ">rpm<");
+        String apk = rowOf(chapter5, ">apk<");
+
+        assertThat(rpm).contains("전부 1건").contains("class=\"faint\">1대</div>");
+        assertThat(apk).as("답한 적 없는 줄").contains("미검토");
+        assertThat(apk).as("답한 적 없는 줄에 남의 `1대` 가 붙었다")
+                       .doesNotContain("class=\"faint\">1대</div>");
+    }
+
+    /** 표에서 {@code marker} 가 든 줄({@code <tr>…</tr>}) 하나. */
+    private static String rowOf(String table, String marker) {
+        int at = table.indexOf(marker);
+        assertThat(at).as("표에 %s 가 든 줄이 없다", marker).isNotNegative();
+        return table.substring(table.lastIndexOf("<tr", at), table.indexOf("</tr>", at));
+    }
+
+    /** 오늘 날짜로 검사 하나 — 수정 버전 없는 탐지 한 건. */
+    private void noFixToday(Asset asset, String cve, String pkg, String type) {
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scan.setGrypeVersion("0.87.0");
+        scans.saveAndFlush(scan);
+        Finding f = new Finding(scan, cve + "|" + pkg, cve, pkg);
+        f.setPackageVersion("3.0.2");
+        f.setPackageType(type);
+        f.setSeverity("High");
+        f.setFixState("not-fixed");
+        f.setCvssScore(BigDecimal.valueOf(7.5));
+        findings.saveAndFlush(f);
+        scan.setFindingCount(1);
+        scan.setMatchCount(1);
+        scans.saveAndFlush(scan);
     }
 }

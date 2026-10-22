@@ -566,9 +566,13 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      * <p>{@code relatedCve} 까지 함께 준다. grype 이 GHSA 를 주 식별자로 낸
      * 건은 사람이 적을 때 CVE 번호를 쓰므로, 둘 중 어느 쪽으로 적혔든 찾아야
      * 한다 — 한쪽만 보면 적어 둔 검토 결과가 보고서에서 사라진다.
+     *
+     * <p>버전 · 유형도 준다 — 보고서 4장의 한 줄(이름 · 버전 · 유형)로 검토를 셀 때
+     * 쓴다. 검토 결과를 맞추는 키는 그대로 (번호, 패키지명)이다.
      */
     @Query("""
-           SELECT f.cve AS cve, f.relatedCve AS relatedCve, f.packageName AS packageName
+           SELECT f.cve AS cve, f.relatedCve AS relatedCve, f.packageName AS packageName,
+                  f.packageVersion AS packageVersion, f.packageType AS packageType
            FROM Finding f WHERE f.scan.id = :scanId
            """)
     List<FindingKey> findKeyRows(@Param("scanId") Long scanId);
@@ -579,6 +583,10 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         String getRelatedCve();
 
         String getPackageName();
+
+        String getPackageVersion();
+
+        String getPackageType();
     }
 
     List<Finding> findByScanIdAndPackageNameOrderByCvssScoreDesc(Long scanId, String packageName);
@@ -830,7 +838,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      */
     @Query("""
            SELECT s.asset.id AS assetId, f.cve AS cve, f.relatedCve AS relatedCve,
-                  f.packageName AS packageName
+                  f.packageName AS packageName, f.packageType AS packageType
            FROM Finding f JOIN f.scan s
            WHERE s.id IN :scanIds
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
@@ -867,10 +875,12 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      * <p>문자열로 이어 붙여 돌려주지 않는다 — {@code CAST(id AS string)} 은
      * DB 마다 다르게 굴고, 시험은 H2 로 도는데 운영은 MariaDB 나 MySQL 이다.
      * 이어 붙이는 일은 자바에서 한다.
+     *
+     * <p>유형도 준다 — 구역 보고서 5장의 한 줄(이름 · 유형)로 검토를 셀 때 쓴다.
      */
     @Query("""
            SELECT s.asset.id AS assetId, f.cve AS cve, f.relatedCve AS relatedCve,
-                  f.packageName AS packageName
+                  f.packageName AS packageName, f.packageType AS packageType
            FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds
            """)
     List<AssetFindingKey> findKeysIn(@Param("scanIds") Collection<Long> scanIds);
@@ -885,7 +895,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      */
     @Query("""
            SELECT s.asset.id AS assetId, f.cve AS cve, f.relatedCve AS relatedCve,
-                  f.packageName AS packageName
+                  f.packageName AS packageName, f.packageType AS packageType
            FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds AND f.fixState = 'fixed'
            """)
     List<AssetFindingKey> findFixableKeysIn(@Param("scanIds") Collection<Long> scanIds);
@@ -1030,6 +1040,9 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         String getRelatedCve();
 
         String getPackageName();
+
+        /** 구역 보고서 5장의 한 줄(이름 · 유형)로 셀 때. 이 키를 내는 질의는 전부 이 칸을 싣는다. */
+        String getPackageType();
     }
 
     /**

@@ -128,6 +128,15 @@ class ZoneReportTest {
                         "조치 대상에 " + packageName + " 이 없습니다: " + r.judgement().actions()));
     }
 
+    /** 5장의 한 줄 — 이름 · 유형으로 찾는다. */
+    private ZonePackageAction residual(ZoneReportService.Action action, String packageName,
+                                       String packageType) {
+        return action.residual().stream()
+                .filter(b -> b.packageName().equals(packageName) && b.packageType().equals(packageType))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "5장에 " + packageName + "/" + packageType + " 이 없습니다: " + action.residual()));
+    }
+
     // --- 기간 ------------------------------------------------------------------
 
     @Test
@@ -375,10 +384,10 @@ class ZoneReportTest {
         ZoneReportService.Action action = report().action();
 
         // 세 대에 걸려 있고 그중 두 대를 검토했다. 나머지 한 대가 묻히면 안 된다.
-        assertThat(action.residual()).extracting(ZonePackageAction::assetCount)
-                .containsExactly(3L);
-        assertThat(action.explainedAssets("glibc")).isEqualTo(2);
-        assertThat(action.explainedAssets("openssl")).isZero();
+        assertThat(action.residual()).extracting(ZonePackageAction::packageName,
+                                                 ZonePackageAction::assetCount)
+                .containsExactly(tuple("glibc", 3L));
+        assertThat(action.explainedAssets(residual(action, "glibc", "rpm"))).isEqualTo(2);
     }
 
     /**
@@ -411,7 +420,7 @@ class ZoneReportTest {
         assertThat(r.action().residual()).extracting(ZonePackageAction::assetCount)
                 .as("해당 없음으로 적은 두 대가 5장에 남았다")
                 .containsExactly(1L);
-        assertThat(r.action().explainedAssets("glibc"))
+        assertThat(r.action().explainedAssets(residual(r.action(), "glibc", "rpm")))
                 .as("5장에 남은 한 대는 아무도 검토하지 않았다")
                 .isZero();
         assertThat(r.judgement().resolvableFindings())
@@ -420,6 +429,52 @@ class ZoneReportTest {
         assertThat(r.action().untrackedFindings())
                 .as("6장의 건수는 4장의 해소 건수와 같은 축이다")
                 .isEqualTo(2);
+    }
+
+    /**
+     * <b>5장의 검토 결과는 그 줄의 건만 센다.</b>
+     *
+     * <p>5장의 한 줄은 (이름, 유형)인데 검토 결과는 이름으로만 모았다. 같은 이름이 유형으로
+     * 갈리면 한 줄의 검토가 다른 줄에도 세어졌다 — 아무도 답하지 않은 apk 줄에 rpm 줄의
+     * `1대` 가 붙었고, 4장에 선 바이너리 줄의 건까지 분모에 들어갔다.
+     */
+    @Test
+    @DisplayName("5장 — 검토 결과는 그 줄(이름 · 유형)의 건만 센다")
+    void residualReviewIsCountedPerRow() {
+        Asset web = asset("web");
+        Scan s1 = scan(web, LocalDate.of(2026, 9, 10));
+        finding(s1, "CVE-1", "openssl", "3.0.2", "High", "not-fixed", "", 7.5, NEEDS_LOGIN);
+        Scan s2 = scan(asset("api"), LocalDate.of(2026, 9, 10));
+        Finding apk = finding(s2, "CVE-2", "openssl", "3.0.2", "High", "not-fixed", "", 7.5,
+                              NEEDS_LOGIN);
+        apk.setPackageType("apk");
+        findings.saveAndFlush(apk);
+        // 수정 버전이 있는 유형 — 4장에 선다.
+        Finding binary = finding(s2, "CVE-3", "openssl", "3.0.2", "High", "fixed", "3.0.7", 7.5,
+                                 NEEDS_LOGIN);
+        binary.setPackageType("binary");
+        findings.saveAndFlush(binary);
+        analyses.record(web, "CVE-1", "openssl", AnalysisState.IN_TRIAGE,
+                        null, null, "", "", "", null, "tester");
+
+        ZoneReportService.Action action = report().action();
+
+        assertThat(action.residual()).extracting(ZonePackageAction::packageType)
+                .containsExactlyInAnyOrder("rpm", "apk");
+        ZonePackageAction rpm = residual(action, "openssl", "rpm");
+        ZonePackageAction other = residual(action, "openssl", "apk");
+        assertThat(action.reviewedIn(rpm).done()).isEqualTo(1);
+        assertThat(action.reviewedIn(rpm).total())
+                .as("검토 결과의 분모가 그 줄의 건수가 아니다")
+                .isEqualTo(rpm.total()).isEqualTo(1);
+        assertThat(action.explainedAssets(rpm)).isEqualTo(1);
+        assertThat(action.isExplained(rpm)).isTrue();
+        assertThat(action.reviewedIn(other).done()).as("답한 적 없는 줄에 남의 검토가 세어졌다").isZero();
+        assertThat(action.reviewedIn(other).total()).isEqualTo(other.total()).isEqualTo(1);
+        assertThat(action.explainedAssets(other)).as("답한 적 없는 줄에 `1대` 가 붙었다").isZero();
+        assertThat(action.unexplained())
+                .as("답 없는 건이 남은 줄은 apk 하나다")
+                .isEqualTo(1);
     }
 
     @Test

@@ -491,6 +491,61 @@ class ReportServiceTest {
                 .isEqualTo(ch.exposure().reachable());
     }
 
+    /**
+     * <b>4장의 검토는 그 줄의 건만 센다.</b>
+     *
+     * <p>4장의 한 줄은 (이름, 버전, 유형)인데 검토 결과는 이름으로만 모았다. 같은 이름의
+     * 다른 버전 · 유형 것(3장에 선 것까지)이 그 줄의 `검토` · `대응 방안` · `재검토일` 에
+     * 섞였다 — 건수 2인 줄에 `2 / 4건` 이 찍혔고, 한 건도 답하지 않은 줄에 남의 위험 수용과
+     * 그 재검토일이 붙었다.
+     */
+    @Test
+    @DisplayName("4장 — 검토 · 대응 방안 · 재검토일은 그 줄(이름 · 버전 · 유형)의 건만 센다")
+    void chapter4ReviewIsCountedPerRow() {
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scans.saveAndFlush(scan);
+        // 4장 두 줄 — 같은 이름 · 같은 버전 · 다른 유형
+        finding(scan, "CVE-1", "openssl", "1.0.0", "High", "not-fixed", "", 7.5);
+        finding(scan, "CVE-2", "openssl", "1.0.0", "High", "not-fixed", "", 7.5);
+        Finding binary = finding(scan, "CVE-6", "openssl", "1.0.0", "High", "not-fixed", "", 7.5);
+        binary.setPackageType("binary");
+        findings.save(binary);
+        // 3장 한 줄 — 같은 이름 · 다른 버전
+        finding(scan, "CVE-3", "openssl", "1.1.0", "High", "fixed", "1.1.9", 7.5);
+        scan.setMatchCount(4);
+        scan.setFindingCount(4);
+        scans.saveAndFlush(scan);
+
+        java.time.LocalDate reviewBy = java.time.LocalDate.now().plusDays(30);
+        analyses.record(asset, "CVE-1", "openssl", AnalysisState.IN_TRIAGE,
+                        null, null, "", "", "", null, "tester");
+        analyses.record(asset, "CVE-2", "openssl", AnalysisState.EXPLOITABLE,
+                        null, AnalysisResponse.WILL_NOT_FIX, "", "", "", reviewBy, "tester");
+
+        ReportService.Report report = reports.build(scan);
+        ReportService.NoFixRow rpm = report.targets().noFixRows().stream()
+                .filter(r -> r.action().packageType().equals("rpm")).findFirst().orElseThrow();
+        ReportService.NoFixRow other = report.targets().noFixRows().stream()
+                .filter(r -> r.action().packageType().equals("binary")).findFirst().orElseThrow();
+
+        assertThat(rpm.reviewed().done()).isEqualTo(2);
+        assertThat(rpm.reviewed().total())
+                .as("검토의 분모가 그 줄의 건수가 아니다")
+                .isEqualTo(rpm.action().total()).isEqualTo(2);
+        assertThat(rpm.responses()).containsEntry(AnalysisResponse.WILL_NOT_FIX, 1L);
+        assertThat(rpm.earliestReview()).isEqualTo(reviewBy);
+
+        assertThat(other.reviewed().done()).as("답한 적 없는 줄에 남의 검토가 세어졌다").isZero();
+        assertThat(other.reviewed().total()).isEqualTo(other.action().total()).isEqualTo(1);
+        assertThat(other.responses()).as("답한 적 없는 줄에 남의 대응 방안이 붙었다").isEmpty();
+        assertThat(other.earliestReview()).isNull();
+
+        assertThat(report.progress().unexplained())
+                .as("답 없는 건이 남은 줄은 바이너리 하나다")
+                .isEqualTo(1);
+    }
+
     @Test
     @DisplayName("벡터가 하나도 없으면 노출면을 0 이라 말하지 않는다")
     void doesNotClaimZeroWhenNothingWasReadable() {
