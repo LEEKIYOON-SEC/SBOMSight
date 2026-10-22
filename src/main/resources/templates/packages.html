@@ -132,7 +132,13 @@
           </tr>
           </thead>
           <tbody>
-          <th:block th:each="p : ${listing.rows().content}">
+          <!--/*
+            한 줄은 (이름, 유형)이다 — 같은 이름도 유형이 다르면 다른 줄이다. 펼친 줄도
+            이름과 유형으로 가린다(`open` · `openType`). 유형 없이 이름만 든 옛 주소로 열면
+            그 이름의 줄이 전부 펼쳐지고, 줄마다 제 유형의 자산만 그린다.
+          */-->
+          <th:block th:each="p : ${listing.rows().content}"
+                    th:with="isOpen=${open == p.name() and (openType == null or openType == p.type())}">
           <tr>
             <td>
               <b th:text="${p.name()}">openssl-libs</b>
@@ -171,8 +177,9 @@
 
             <td class="tight actions">
               <a class="btn btn-sm"
-                 th:href="@{${links.change('open', open == p.name() ? null : p.name())}}"
-                 th:text="${open == p.name()} ? '접기' : '자산 보기'">자산 보기</a>
+                 th:href="@{${isOpen ? links.copy().with('open', null).with('openType', null).here()
+                                     : links.copy().with('open', p.name()).with('openType', p.type()).here()}}"
+                 th:text="${isOpen} ? '접기' : '자산 보기'">자산 보기</a>
               <a class="btn btn-sm" th:href="@{${vulnLinks.change('q', p.name())}}"
                  th:if="${p.findingCount() > 0}">취약점</a>
             </td>
@@ -186,7 +193,7 @@
             있어서 표의 맨 끝에 붙었다 — 이름이 200개인 화면에서 가운데 줄을
             펼치면 답이 화면 밖에 나타났다.
           */-->
-          <tr th:if="${open == p.name() and openRows != null and !openRows.isEmpty()}" class="zone-row">
+          <tr th:if="${isOpen and openRows != null and !openRows.isEmpty()}" class="zone-row">
             <td colspan="6">
               <div class="table-responsive">
                 <table class="table table-vcenter card-table">
@@ -198,7 +205,7 @@
                   </tr>
                   </thead>
                   <tbody>
-                  <tr th:each="c : ${openRows}">
+                  <tr th:each="c : ${openRows}" th:if="${c.type == p.type()}">
                     <td class="tight">
                       <a th:href="@{'/assets/' + ${c.asset.id}(tab='packages')}"
                          th:text="${c.asset.name}">web-01</a></td>
@@ -235,13 +242,17 @@
     */-->
     <!--/*
       **무엇을 세는지 적는다.** 이 화면과 자산의 패키지 탭, 취약점의
-      패키지별은 셋 다 `패키지` 를 세는데 단위가 다르다 — 여기는 이름,
+      패키지별은 셋 다 `패키지` 를 세는데 단위가 다르다 — 여기는 이름 · 유형,
       자산 탭은 설치 줄, 취약점은 탐지가 난 이름이다. 셋 다 맞는 수인데
       무엇을 세는지 안 적으면 어느 쪽이 맞는지 물어볼 자리가 없고, 그러면
       세 수가 다 못 미덥게 된다.
+
+      **유형이 단위에 든다.** 앞서 이름만이라 같은 이름의 npm 과 pypi 패키지가 한 줄로
+      합쳐져, 버전 분포와 취약점 수에 남의 것이 섞였다.
     */-->
     <p class="footnote" th:if="${listing.rows().totalElements > 0}">
-      ※ 세는 단위 — <b>패키지 이름</b> · 여러 버전·여러 자산이어도 한 줄.
+      ※ 세는 단위 — <b>패키지 이름 · 유형</b> · 여러 버전·여러 자산이어도 한 줄.
+      같은 이름도 유형이 다르면 다른 줄.
     </p>
     <p class="footnote" th:if="${listing.rows().totalElements > 0}">
       ※ 깔린 것 전부 · 탐지 난 것만은

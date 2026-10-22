@@ -313,6 +313,33 @@ for f in $MIGRATIONS; do
         echo "  └ 조치 1행과 등록한 검사(같은 탐지 둘 · 대소문자만 다른 버전 · 95자 번호)를 넣었다" ;;
     esac
 
+    # V22 가 purl 없이 syft 의 이름으로 담긴 패키지 유형을 purl 의 이름으로 옮긴다. 옮길 것이
+    # 있는 상태에서 태워야 한다. 경계 사례:
+    #   purl 이 없는 java-archive · python · go-module · UnknownPackage (옮김)
+    #   purl 이 있는 conda — purl 의 유형이다. syft 의 conda(→ generic)로 읽으면 안 된다
+    #   purl 이 아닌 purl(`pkg://…` · 대문자 `PKG:`) — 앱이 purl 로 안 읽으니 옮김
+    #   표에 없는 유형(binary) · 이름이 같은 유형(rpm) · 대소문자만 다른 것(Python) — 그대로
+    # 검사는 db-01(자산 3)에 넣지 않는다 — V17 확인이 그 자산의 최신 검사를 본다.
+    case "$(basename "$f")" in V21__*)
+        run "$DB" -e "
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (1, 'DONE', NOW(6), 'v22check', 'v22-a1', NOW(6));
+        SET @s = LAST_INSERT_ID();
+        INSERT INTO component (asset_id, scan_id, name, version, type, purl) VALUES
+         (1, @s, 'jackson-databind', '2.9.8', 'java-archive', ''),
+         (1, @s, 'requests', '2.25.0', 'python', ''),
+         (1, @s, 'mystery', '1.0', 'UnknownPackage', ''),
+         (1, @s, 'weird', '0.1', 'go-module', 'pkg://weird@0.1'),
+         (1, @s, 'upper', '1.0', 'python', 'PKG:pypi/upper@1.0'),
+         (1, @s, 'numpy', '1.26.0', 'conda', 'pkg:conda/numpy@1.26.0'),
+         (1, @s, 'log4j-core', '2.14.1', 'maven',
+          'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1'),
+         (1, @s, 'busybox', '1.36.1', 'binary', ''),
+         (1, @s, 'openssl', '3.0.7', 'rpm', ''),
+         (1, @s, 'pycase', '1.0', 'Python', '');"
+        echo "  └ 패키지 10행을 넣었다 (purl 없는 syft 이름 넷 · purl 아닌 purl 둘 · purl 있는 것 둘 · 그대로 둘 것 셋)" ;;
+    esac
+
     case "$(basename "$f")" in V9__*)
         run "$DB" -e "
         INSERT INTO risk_acceptances
@@ -459,11 +486,12 @@ INSERT INTO component (asset_id, scan_id, name, version, type, purl, location) V
  ($ASSET_ID, $SCAN_ID, 'openssl-libs', '3.0.7-24', 'rpm',
   'pkg:rpm/rocky/openssl-libs@3.0.7-24', '/usr/lib64/libssl.so.3'),
  ($ASSET_ID, $SCAN_ID, 'glibc', '2.34-83', 'rpm', 'pkg:rpm/rocky/glibc@2.34-83', '');"
-BEFORE=$(run "$DB" -N -e "SELECT COUNT(*) FROM component;")
+# 이 검사의 행만 센다 — V22 확인에 쓸 행이 다른 검사에 함께 담겨 있다.
+BEFORE=$(run "$DB" -N -e "SELECT COUNT(*) FROM component WHERE scan_id=$SCAN_ID;")
 [ "$BEFORE" = "2" ] || { echo "  인벤토리 2행이 안 들어갔습니다 ($BEFORE)"; exit 1; }
 
 run "$DB" -e "DELETE FROM scans WHERE id=$SCAN_ID;"
-AFTER=$(run "$DB" -N -e "SELECT COUNT(*) FROM component;")
+AFTER=$(run "$DB" -N -e "SELECT COUNT(*) FROM component WHERE scan_id=$SCAN_ID;")
 [ "$AFTER" = "0" ] || {
     echo "  스캔을 지웠는데 인벤토리 $AFTER 행이 남았습니다"; exit 1; }
 echo "  스캔을 지우면 그 스캔에서 온 인벤토리도 사라짐"
@@ -844,6 +872,21 @@ run "$DB" -e "
 GOT=$(run "$DB" -N -e "SELECT CHAR_LENGTH(cve) FROM finding_analysis WHERE package_name = 'v21check';")
 [ "$GOT" = "95" ] || { echo "  95자 번호의 검토 결과가 '$GOT' 자로 들어갔습니다"; exit 1; }
 echo "  번호 칸 — 탐지 · 검토 결과 · 조치 대상 모두 128자 · 95자 번호의 검토 결과가 그대로 들어감"
+
+# --- V22: 패키지 유형을 purl 의 이름으로 -----------------------------------------
+#
+# purl 없이 syft 의 이름으로 담긴 행만 옮긴다(앱의 PackageTypes 와 같은 표). purl 이 있는
+# 행의 유형은 purl 의 것이라 그대로다 — `pkg:conda/…` 의 conda 를 syft 의 conda 로 읽어
+# generic 으로 바꾸면 남의 이름이 된다.
+
+V22SCAN=$(run "$DB" -N -e "SELECT id FROM scans WHERE created_by = 'v22check';")
+TYPES=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(CONCAT(name, '=', type) ORDER BY name SEPARATOR ' ')
+    FROM component WHERE scan_id = $V22SCAN;")
+WANT="busybox=binary jackson-databind=maven log4j-core=maven mystery= numpy=conda openssl=rpm pycase=Python requests=pypi upper=pypi weird=golang"
+[ "$TYPES" = "$WANT" ] || { echo "  유형이 '$TYPES' 입니다"; echo "  기대 '$WANT'"; exit 1; }
+echo "  purl 없는 syft 이름(java-archive · python · go-module · UnknownPackage)을 purl 의 이름으로"
+echo "  purl 이 있는 행(conda · maven) · 표에 없는 유형(binary) · 이름이 같은 유형(rpm) · 대소문자 다른 것은 그대로"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

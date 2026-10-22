@@ -65,7 +65,10 @@ public class Component {
     @Column(nullable = false, length = 255)
     private String version = "";
 
-    /** {@code rpm} · {@code deb} · {@code java-archive} … purl 에서 딴다. */
+    /**
+     * {@code rpm} · {@code deb} · {@code maven} … purl 의 유형. purl 이 없으면 syft 의 유형을 purl 의
+     * 이름으로 옮긴 것({@link PackageTypes}) — 탐지와 같은 규칙으로 맞춰야 이어진다.
+     */
     @Column(nullable = false, length = 64)
     private String type = "";
 

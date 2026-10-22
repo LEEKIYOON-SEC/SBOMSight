@@ -184,7 +184,7 @@ class ListPagingTest {
      * 패키지탭은 왜 별도로 있는거야? 근데 왜 서로 개수가 달라?"
      *
      * <pre>
-     *   /packages                  인벤토리의 **이름** 수
+     *   /packages                  인벤토리의 **이름 · 유형** 수
      *   /assets/{id}?tab=packages  그 자산의 **설치 줄** 수 (이름+버전+경로)
      *   /vulns?group=package       grype 이 **탐지를 낸 이름** 수
      * </pre>
@@ -201,7 +201,7 @@ class ListPagingTest {
         seedFinding(scan, "CVE-2024-22222", "openssl");
 
         assertThat(open("/packages"))
-                .as("패키지 화면이 이름을 센다는 말이 없다").contains("패키지 이름")
+                .as("패키지 화면이 이름 · 유형을 센다는 말이 없다").contains("패키지 이름 · 유형")
                 .as("탐지가 없는 것도 여기 있다는 말이 없다").contains("깔린 것 전부");
         assertThat(open("/vulns?group=package"))
                 .as("탐지가 난 것만 센다는 말이 없다").contains("탐지가 난 패키지 이름");

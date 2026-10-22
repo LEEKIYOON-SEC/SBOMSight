@@ -60,6 +60,7 @@ public class PackageController {
                        @RequestParam(name = "vulnerable", required = false) Boolean vulnerableParam,
                        @RequestParam(name = "mixed", required = false) Boolean mixedParam,
                        @RequestParam(required = false) String open,
+                       @RequestParam(name = "openType", required = false) String openType,
                        @RequestParam(defaultValue = "0") int page,
                        @RequestParam(required = false) Integer size,
                        @RequestParam(required = false) Integer jump,
@@ -105,9 +106,16 @@ public class PackageController {
                 .with("zone", zone).with("group", "package").with("includeDone", "true"));
 
         // 펼친 줄. 주소에 남는다 — 새로고침하면 접히는 화면은 공유할 수 없다.
+        //
+        // 줄이 (이름, 유형)이라 유형도 주소에 싣는다(`openType`). 유형 없이 이름만 든 옛
+        // 주소(`?open=openssl`)는 그 이름의 줄을 전부 펼친다 — 적어 둔 주소가 죽지 않게.
+        // 빈 유형(SBOM 이 안 담은 것)도 하나의 유형이라 `openType=` 으로는 가리킬 수 없다 —
+        // 그 줄은 유형 없이 열린다.
+        String openKind = openType == null || openType.isBlank() ? null : openType;
         model.addAttribute("open", open);
+        model.addAttribute("openType", openKind);
         if (open != null && !open.isBlank()) {
-            model.addAttribute("openRows", packages.assetsOf(open, zone));
+            model.addAttribute("openRows", packages.assetsOf(open, openKind, zone));
         }
 
         // 인벤토리 자체가 비어 있는가. "거르개에 걸리는 것이 없다" 와

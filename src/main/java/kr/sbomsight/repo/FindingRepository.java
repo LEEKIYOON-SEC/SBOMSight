@@ -925,13 +925,21 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      *
      * <p>목록에 뜬 이름만 물어 본다. 전부 가져오면 자산 백 대 × 12만 개에서
      * 수백만 행이 된다.
+     *
+     * <p><b>유형과 purl 을 함께 준다</b> — 패키지 화면의 줄은 (이름, 유형)이다. 탐지의 유형은
+     * grype 의 이름({@code java-archive})이고 인벤토리는 purl 의 이름({@code maven})이라,
+     * 부르는 쪽이 같은 규칙({@link kr.sbomsight.domain.PackageTypes#of})으로 맞춰 잇는다.
+     * 앞서 {@code (이름, 버전)} 으로만 이어, 같은 이름 · 버전이 다른 생태계에 있으면 남의
+     * 탐지가 그 버전에 붙었다.
      */
     @Query("""
            SELECT f.packageName AS packageName, f.packageVersion AS packageVersion,
+                  f.packageType AS packageType, f.packagePurl AS packagePurl,
                   LOWER(f.severity) AS severity, COUNT(f) AS total
            FROM Finding f
            WHERE f.scan.id IN :scanIds AND f.packageName IN :names
-           GROUP BY f.packageName, f.packageVersion, LOWER(f.severity)
+           GROUP BY f.packageName, f.packageVersion, f.packageType, f.packagePurl,
+                    LOWER(f.severity)
            """)
     List<PackageVersionSeverity> severityByPackageVersion(
             @Param("scanIds") Collection<Long> scanIds, @Param("names") Collection<String> names);
@@ -946,10 +954,12 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      */
     @Query("""
            SELECT f.packageName AS packageName, f.packageVersion AS packageVersion,
+                  f.packageType AS packageType, f.packagePurl AS packagePurl,
                   LOWER(f.severity) AS severity, COUNT(f) AS total
            FROM Finding f
            WHERE f.scan.id IN :scanIds
-           GROUP BY f.packageName, f.packageVersion, LOWER(f.severity)
+           GROUP BY f.packageName, f.packageVersion, f.packageType, f.packagePurl,
+                    LOWER(f.severity)
            """)
     List<PackageVersionSeverity> severityByPackageVersion(
             @Param("scanIds") Collection<Long> scanIds);
@@ -958,6 +968,11 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
         String getPackageName();
 
         String getPackageVersion();
+
+        /** grype 의 유형 이름({@code java-archive}). 패키지 화면과 이으려면 purl 과 함께 맞춘다. */
+        String getPackageType();
+
+        String getPackagePurl();
 
         String getSeverity();
 

@@ -2,6 +2,7 @@ package kr.sbomsight.service;
 
 import com.fasterxml.jackson.core.TreeNode;
 import com.fasterxml.jackson.databind.JsonNode;
+import kr.sbomsight.domain.PackageTypes;
 import kr.sbomsight.service.SbomStorage.ParsedComponent;
 
 /**
@@ -22,8 +23,12 @@ import kr.sbomsight.service.SbomStorage.ParsedComponent;
  * rpm 과 deb 를 가르지 못한다 — 그것을 유형이라고 찍으면 패키지 화면의
  * 유형 거르개가 전부 {@code library} 가 된다.
  *
- * <p>purl 이 없으면 형식이 준 값을 그대로 쓴다. <b>없는 것을 지어내지
- * 않는다</b> — 빈 칸은 SBOM 이 안 담았다는 뜻이고, 그 사실이 화면에 그대로
+ * <p>purl 이 없으면 syft 가 적은 유형(syft-json 의 {@code type}, CycloneDX 의
+ * {@code syft:package:type} 속성)을 <b>purl 의 이름으로 옮겨</b> 쓴다
+ * ({@link PackageTypes}) — {@code java-archive} 는 {@code maven}.
+ * 옮기지 않으면 purl 이 있는 원소(maven)와 없는 원소(java-archive)가 같은 것인데 두 줄로
+ * 갈리고, 같은 이름으로 오는 탐지와 이을 수 없다. 그것도 없으면 빈 칸이다. <b>없는 것을
+ * 지어내지 않는다</b> — 빈 칸은 SBOM 이 안 담았다는 뜻이고, 그 사실이 화면에 그대로
  * 보여야 한다.
  */
 final class ComponentReader {
@@ -75,21 +80,30 @@ final class ComponentReader {
     // --- 유형 -----------------------------------------------------------------
 
     /**
-     * {@code pkg:rpm/rocky/openssl-libs@3.0.7-24?arch=x86_64} → {@code rpm}
-     *
-     * <p>purl 규격이 {@code pkg:<type>/<namespace>/<name>@<version>} 이라
-     * 첫 구획이 유형이다.
+     * {@code pkg:rpm/rocky/openssl-libs@3.0.7-24?arch=x86_64} → {@code rpm}. purl 이 없으면
+     * syft 가 적은 유형을 purl 의 이름으로({@link PackageTypes#of}).
      */
     private static String type(JsonNode node, String field, String purl) {
-        if (purl.startsWith("pkg:")) {
-            String rest = purl.substring("pkg:".length());
-            int slash = rest.indexOf('/');
-            if (slash > 0) {
-                return rest.substring(0, slash);
+        // CycloneDX 의 type 은 library/application 뿐이라 유형으로 못 쓴다 — syft 가
+        // 속성으로 남긴 것을 본다. grype 도 같은 속성으로 탐지의 유형을 정한다.
+        String syftType = "components".equals(field)
+                ? property(node, "syft:package:type")
+                : text(node, "type");
+        return PackageTypes.of(purl, syftType);
+    }
+
+    /** CycloneDX 의 {@code properties} 에서 이름이 같은 첫 값. 없으면 빈 칸. */
+    private static String property(JsonNode node, String name) {
+        JsonNode properties = node.get("properties");
+        if (properties == null || !properties.isArray()) {
+            return "";
+        }
+        for (JsonNode property : properties) {
+            if (name.equals(text(property, "name"))) {
+                return text(property, "value");
             }
         }
-        // CycloneDX 의 type 은 library/application 뿐이라 유형으로 못 쓴다.
-        return "components".equals(field) ? "" : text(node, "type");
+        return "";
     }
 
     // --- 설치 경로 -------------------------------------------------------------

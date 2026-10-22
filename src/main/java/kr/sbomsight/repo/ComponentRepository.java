@@ -106,13 +106,15 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
                                 Pageable pageable);
 
     /**
-     * 패키지 이름으로 묶은 한 줄 — {@code /packages} 의 표.
+     * 패키지 이름 · 유형으로 묶은 한 줄 — {@code /packages} 의 표.
      *
-     * <p>유형을 {@code MIN} 으로 집는다. 같은 이름이 두 유형으로 깔린 일은
-     * 실제로 드물고, 있으면 버전 분포에서 갈려 보인다.
+     * <p><b>유형도 묶음 키다.</b> 앞서 이름으로만 묶고 유형을 {@code MIN} 으로 집었다. 같은
+     * 이름이 두 생태계에 있으면(npm 의 {@code semver} 와 pypi 의 {@code semver}) 한 줄로
+     * 합쳐져, 유형 칸은 그중 하나만 말하고 버전 분포 · 취약점 수에는 남의 것이 섞였다.
+     * 유형은 담을 때 purl 의 이름으로 맞춰 두었다(ComponentReader · V22).
      */
     @Query("""
-           SELECT c.name AS name, MIN(c.type) AS type,
+           SELECT c.name AS name, c.type AS type,
                   COUNT(DISTINCT c.asset.id) AS assetCount,
                   COUNT(DISTINCT c.version) AS versionCount
            FROM Component c
@@ -122,12 +124,12 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
              AND (:type IS NULL OR c.type = :type)
              AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
-           GROUP BY c.name
-           ORDER BY COUNT(DISTINCT c.asset.id) DESC, c.name ASC
+           GROUP BY c.name, c.type
+           ORDER BY COUNT(DISTINCT c.asset.id) DESC, c.name ASC, c.type ASC
            """)
-    List<PackageRow> groupByName(@Param("zoneId") Long zoneId,
-                                 @Param("type") String type,
-                                 @Param("q") String q);
+    List<PackageRow> groupByNameAndType(@Param("zoneId") Long zoneId,
+                                        @Param("type") String type,
+                                        @Param("q") String q);
 
     interface PackageRow {
         String getName();
@@ -140,13 +142,15 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
     }
 
     /**
-     * 버전 분포 — {@code (이름, 버전)} 마다 몇 대인가.
+     * 버전 분포 — {@code (이름, 유형, 버전)} 마다 몇 대인가.
      *
      * <p>목록에 뜬 이름만 물어 본다. 전부 가져오면 12만 개짜리 자산 백 대에서
-     * 수백만 행이 된다.
+     * 수백만 행이 된다. 그 이름의 다른 유형 줄도 함께 오므로 부르는 쪽이 줄(이름 ·
+     * 유형)로 가른다 — 앞서 유형을 보지 않아, 유형 거르개를 걸어도 같은 이름의 다른
+     * 유형 버전이 그 줄의 버전 분포에 끼었다.
      */
     @Query("""
-           SELECT c.name AS name, c.version AS version,
+           SELECT c.name AS name, c.type AS type, c.version AS version,
                   COUNT(DISTINCT c.asset.id) AS assetCount
            FROM Component c
            JOIN c.asset a
@@ -154,14 +158,17 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
            WHERE a.archivedAt IS NULL AND s.status = 'DONE'
              AND c.name IN :names
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
-           GROUP BY c.name, c.version
+           GROUP BY c.name, c.type, c.version
            ORDER BY COUNT(DISTINCT c.asset.id) DESC, c.version ASC
            """)
     List<VersionRow> versionSpread(@Param("names") List<String> names,
                                    @Param("zoneId") Long zoneId);
 
+    /** 버전 분포 한 조각 — {@code (이름, 유형, 버전)} 하나. */
     interface VersionRow {
         String getName();
+
+        String getType();
 
         String getVersion();
 
@@ -173,10 +180,12 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
      *
      * <p>화면은 앞 200개 이름만 싣는다. 내보내기가 거기서 잘리면 <b>잘린 파일이
      * 결재 문서에 붙는다</b> — 그래서 여기서는 이름으로 자르지 않고 거르개만
-     * 건다. 행 수는 {@code (이름, 버전)} 쌍만큼이라 인벤토리 전체보다 작다.
+     * 건다. 행 수는 {@code (이름, 유형, 버전)} 만큼이라 인벤토리 전체보다 작다.
+     * 앞서 {@code (이름, 버전)} 으로 묶고 유형을 {@code MIN} 으로 집어, 같은 이름 · 버전이
+     * 두 유형에 있으면 한 줄로 합쳐졌다.
      */
     @Query("""
-           SELECT c.name AS name, c.version AS version, MIN(c.type) AS type,
+           SELECT c.name AS name, c.type AS type, c.version AS version,
                   COUNT(DISTINCT c.asset.id) AS assetCount
            FROM Component c
            JOIN c.asset a
@@ -185,22 +194,12 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
              AND (:type IS NULL OR c.type = :type)
              AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
-           GROUP BY c.name, c.version
-           ORDER BY c.name ASC, c.version ASC
+           GROUP BY c.name, c.type, c.version
+           ORDER BY c.name ASC, c.type ASC, c.version ASC
            """)
-    List<TypedVersionRow> versionSpreadAll(@Param("zoneId") Long zoneId,
-                                           @Param("type") String type,
-                                           @Param("q") String q);
-
-    interface TypedVersionRow {
-        String getName();
-
-        String getVersion();
-
-        String getType();
-
-        long getAssetCount();
-    }
+    List<VersionRow> versionSpreadAll(@Param("zoneId") Long zoneId,
+                                      @Param("type") String type,
+                                      @Param("q") String q);
 
     /** 유형 거르개에 채울 값. SBOM 이 실제로 담아 온 것만 보여 준다. */
     @Query("""
@@ -210,15 +209,22 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
            """)
     List<String> types();
 
-    /** 펼쳤을 때의 자산별 줄. 한 패키지만 물어 본다. */
+    /**
+     * 펼쳤을 때의 자산별 줄. 한 패키지만 물어 본다.
+     *
+     * <p>유형이 {@code null} 이면 그 이름의 유형 전부 — 유형이 붙기 전의 주소
+     * ({@code ?open=이름})로 열어도 펼쳐지게. 화면은 줄마다 제 유형 것만 그린다.
+     */
     @Query("""
            SELECT c FROM Component c
              JOIN FETCH c.asset a
              JOIN FETCH a.zone
              JOIN FETCH c.scan s
            WHERE c.name = :name AND a.archivedAt IS NULL AND s.status = 'DONE'
+             AND (:type IS NULL OR c.type = :type)
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
            ORDER BY c.version ASC, a.name ASC
            """)
-    List<Component> findByName(@Param("name") String name, @Param("zoneId") Long zoneId);
+    List<Component> findByNameAndType(@Param("name") String name, @Param("type") String type,
+                                      @Param("zoneId") Long zoneId);
 }
