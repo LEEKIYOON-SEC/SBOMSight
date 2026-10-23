@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -92,6 +93,53 @@ class GrypeMapperTest {
 
         assertThat(result.findings().get(0).isFixAvailable()).isTrue();
         assertThat(result.findings().get(0).getFixedVersion()).isEqualTo("1.0.0");
+    }
+
+    /**
+     * <b>수정 버전 후보는 전부 담는다.</b> NVD(CPE)로 맞춘 건은 갈래마다 하나씩 여럿을 준다 —
+     * 진짜 grype(0.115.0)이 openssl 1.1.1k 의 CVE-2022-2068 에 낸 것이 이 셋이다. 앞서 첫
+     * 번째(1.0.2zf — 1.1.1k 와 다른 갈래)만 담았다. 고르지 않고, 글자 순으로(FixVersions).
+     */
+    @Test
+    @DisplayName("수정 버전 후보가 여럿이면 전부 담는다 — 첫 번째 하나를 고르지 않는다")
+    void keepsEveryFixCandidate() throws Exception {
+        GrypeMapper.Result result = map("""
+            {"matches":[{
+              "vulnerability":{"id":"CVE-2022-2068","severity":"Critical",
+                "fix":{"versions":["1.0.2zf","1.1.1p","3.0.4"],"state":"fixed"}},
+              "artifact":{"name":"openssl","version":"1.1.1k","type":"binary"}},
+             {"vulnerability":{"id":"CVE-2022-1292","severity":"Critical",
+                "fix":{"versions":["3.0.3"," 1.1.1o","1.0.2ze","1.1.1o",""],"state":"fixed"}},
+              "artifact":{"name":"openssl","version":"1.1.1k","type":"binary"}}]}
+            """);
+
+        Map<String, String> fixed = result.findings().stream()
+                .collect(Collectors.toMap(Finding::getCve, Finding::getFixedVersion));
+        assertThat(fixed.get("CVE-2022-2068"))
+                .as("후보 셋 중 첫 번째만 담았다")
+                .isEqualTo("1.0.2zf 1.1.1p 3.0.4");
+        // 글자 순 · 겹친 것은 하나로 · 빈 것과 앞뒤 빈칸은 뺀다.
+        assertThat(fixed.get("CVE-2022-1292")).isEqualTo("1.0.2ze 1.1.1o 3.0.3");
+        assertThat(result.findings().get(0).getFixedVersions())
+                .containsExactly("1.0.2zf", "1.1.1p", "3.0.4");
+        assertThat(result.findings().get(0).isFixAvailable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("후보가 칸(1,000자)을 넘으면 버전 중간에서 자르지 않고 넘는 것부터 뺀다")
+    void tooManyCandidatesAreDroppedWhole() {
+        Finding finding = new Finding(scan(), "k", "CVE-2099-1", "pkg");
+        List<String> many = IntStream.rangeClosed(1, 120)
+                .mapToObj(i -> "%03d.0.0-long".formatted(i)).toList();
+
+        finding.setFixedVersions(many);
+
+        assertThat(finding.getFixedVersion().length()).isLessThanOrEqualTo(1000);
+        assertThat(finding.getFixedVersions())
+                .as("버전 하나가 잘려 없는 버전이 생겼다")
+                .allMatch(many::contains)
+                .startsWith("001.0.0-long", "002.0.0-long")
+                .hasSize(77);   // 12자 × 77 + 빈칸 76 = 1,000자
     }
 
     @Test

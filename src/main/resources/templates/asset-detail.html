@@ -23,11 +23,17 @@
             <span class="tag ms-2" th:if="${asset.archivedAt != null}">운영 종료</span>
           </h2>
           <div class="page-subtitle text-secondary mt-1">
-      <span th:text="${#strings.isEmpty(asset.osName)} ? '운영체제 미상' : ${asset.osName}">Rocky Linux 9.3</span>
+      <span th:text="${#strings.isEmpty(asset.osName)} ? '운영체제 —' : ${asset.osName}">Rocky Linux 9.3</span>
       <th:block th:if="${!#strings.isEmpty(asset.note)}">
         · <span th:text="${asset.note}">대외 웹</span></th:block>
+      <!--/*
+        시각이 둘이다 — SBOM 생성 시각은 서버의 상태가 언제 것인지, 검사 시각은 그것을
+        언제 취약점 DB 와 대조했는지. 앞서 `마지막 검사` 하나였고, 옛 SBOM 을 다시
+        검사하면 오늘 날짜가 찍혀 서버를 오늘 본 것처럼 읽혔다.
+      */-->
       <th:block th:if="${latest != null}">
-        · 마지막 검사 <span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</span></th:block>
+        · SBOM 생성 시각 <span th:replace="~{fragments/ui :: sbomtime(${latest}, false)}"></span>
+        · 검사 시각 <span class="mono" th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')}">—</span></th:block>
           <th:block th:if="${latest == null}"> · 검사 없음</th:block>
           </div>
           <div class="mt-2" style="max-width:340px" th:if="${latest != null and latest.findingCount > 0}">
@@ -47,7 +53,7 @@
         <li th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id}, '개요', null, ${tab} == 'overview')}"></li>
         <li th:if="${latest != null}"
            th:replace="~{fragments/ui :: tab('/assets/' + ${asset.id} + '?tab=vulns', '취약점',
-                       ${latest != null} ? ${latest.findingCount} : 0, ${tab} == 'vulns')}"></li>
+                       ${vulnTabCount}, ${tab} == 'vulns')}"></li>
       <!--/*
         패키지 탭. 취약점 탭은 grype 이 매치를 낸 것만 보여 주므로 "이 서버에
         openssl 이 몇 버전으로 깔려 있나" 를 물을 자리가 없었다.
@@ -83,6 +89,64 @@
       <div class="steps" data-role="steps"></div>
     </div>
 
+    <!--/*
+      가장 최근 검사가 실패했으면 여기서 말한다. 진행 표시는 실패를 잠깐 띄운 뒤
+      화면을 새로 그리며 사라지고, 앞서는 그 뒤로 실패의 흔적이 검사 이력 탭에만
+      남았다 — 머리의 `마지막 검사` 는 그 전 완료 검사를 가리킨 채였다. 그래서
+      지금 보이는 숫자가 어느 검사 것인지도 함께 말한다.
+
+      SBOM 은 올린 순간 보관되므로 다시 올릴 것 없이 `다시 검사` 로 돌린다.
+      단추는 관리자에게만 — 실패 사실과 사유는 조회 계정에게도 보인다.
+    */-->
+    <div class="alert alert-danger d-flex align-items-start gap-3 flex-wrap" id="last-failed"
+         th:if="${lastFailed != null}">
+      <div style="flex:1; min-width:16rem">
+        <b th:text="'검사 실패 · ' + ${#temporals.format(lastFailed.createdAt, 'yyyy-MM-dd HH:mm')}">검사 실패 · 2026-09-25 11:52</b>
+        <div th:text="${lastFailed.errorMessage}">grype를 실행하지 못했습니다.</div>
+        <div class="mt-1" th:if="${latest != null}"
+             th:text="'보이는 결과는 그 전 완료 검사(' + ${#temporals.format(latest.createdAt, 'yyyy-MM-dd HH:mm')} + ')의 것입니다.'">보이는 결과는 그 전 완료 검사(2026-09-25 11:45)의 것입니다.</div>
+      </div>
+      <form method="post" th:action="@{'/scans/' + ${lastFailed.id} + '/rescan'}" class="inline"
+            th:if="${running == null and !#strings.isEmpty(lastFailed.sbomPath)}" sec:authorize="hasRole('ADMIN')">
+        <button type="submit" class="btn btn-sm" title="보관된 SBOM을 다시 검사">다시 검사</button>
+      </form>
+    </div>
+
+    <!--/*
+      가장 최근에 돈 검사가 완료됐는데 최신 검사가 아니다 — 예전에 떠 둔 SBOM 을 늦게
+      올렸다(또는 업그레이드 전에 옛 줄을 다시 검사했다). 최신 검사는 SBOM 생성 시각으로
+      고르므로(D1) 그 결과는 화면 · 보고서의 기준이 되지 않는다. 말하지 않으면 방금
+      올린 것이 반영되지 않은 고장으로 읽힌다. 그 검사는 이력에 남는다 — 엉뚱한 것을
+      올렸으면 지운다.
+
+      안을 `div` 하나로 감싼다 — Tabler 의 알림은 가로 줄(flex)이라 제목 · 문장 · 시각이
+      옆으로 늘어선다(위 `last-failed` 와 같은 까닭).
+    */-->
+    <div class="alert alert-warning" id="older-sbom" th:if="${olderSbom != null}">
+      <div>
+        <b>최신 검사를 바꾸지 않음</b>
+        <div>마지막으로 검사한 SBOM이 최신 검사의 SBOM보다 먼저 생성되었습니다. 화면과 보고서는 최신 검사를 기준으로 합니다.</div>
+        <div class="mt-1">마지막으로 검사한 SBOM · 생성 시각
+          <span th:replace="~{fragments/ui :: sbomtime(${olderSbom}, false)}"></span></div>
+        <div>최신 검사의 SBOM · 생성 시각
+          <span th:replace="~{fragments/ui :: sbomtime(${latest}, false)}"></span></div>
+      </div>
+    </div>
+
+    <!--/*
+      가장 최근에 돈 검사의 SBOM 대상이 자산 이름과 다르다. 엉뚱한 자산에 올린 SBOM 일 수
+      있다 — 그대로 두면 다른 서버의 패키지 · 취약점이 이 자산의 것으로 쌓인다. 막지는
+      않는다(이미지 이름을 그대로 쓰는 곳도 있다). 경로로 뜬 SBOM(dir:/)은 가를 수 없다.
+    */-->
+    <div class="alert alert-warning" id="target-mismatch" th:if="${targetMismatch != null}">
+      <div>
+        <b>SBOM 대상이 자산 이름과 다름</b>
+        <div>다른 자산의 SBOM이면 검사 이력에서 그 검사를 지우세요.</div>
+        <div class="mt-1">SBOM 대상 · <code th:text="${targetMismatch.sbomTarget}">web-02</code>
+          · 자산 이름 · <code th:text="${asset.name}">web-01</code></div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-header"><h2 class="card-title">기본 정보</h2></div>
       <div class="card-body">
@@ -116,13 +180,26 @@
       <div class="card-body">
         <form method="post" th:action="@{'/assets/' + ${asset.id} + '/sbom'}"
               enctype="multipart/form-data" class="d-flex align-items-end gap-2 flex-wrap">
+          <!--/*
+            **JSON 셋만 받는다.** 패키지 목록을 JSON 에서만 읽기 때문이다. 앞서
+            `.xml`·`.spdx` 까지 받았는데, CycloneDX XML 을 올리면 grype 검사는
+            되고 패키지 탭이 비었다(그 자산의 이전 목록까지 지워졌다). 가르는
+            것은 확장자가 아니라 내용이다(ScanService.submit) — accept 는 고르는
+            창의 힌트일 뿐이다.
+          */-->
           <div>
-            <label class="form-label" for="sbom-file">syft 로 만든 SBOM 파일</label>
+            <label class="form-label" for="sbom-file">syft로 만든 SBOM 파일 (JSON)</label>
             <input type="file" class="form-control" id="sbom-file" name="file"
-                   accept=".json,.xml,.spdx,.cdx" required>
+                   accept=".json" required th:disabled="${running != null}">
           </div>
-          <button class="btn btn-dark" type="submit">검사 시작</button>
+          <button class="btn btn-dark" type="submit" th:disabled="${running != null}">검사 시작</button>
         </form>
+        <!--/*
+          **검사가 도는 동안에는 받지 않는다**(ScanService — 서버도 거절한다). 같은
+          자산의 검사 둘이 겹치면 끝날 때 서로가 담은 패키지 목록을 지웠다. 눌러도
+          거절될 단추를 열어 두면 고장으로 읽히므로 닫고 까닭을 적는다.
+        */-->
+        <p class="faint mt-2 mb-0" th:if="${running != null}">검사가 진행 중이라 지금은 업로드할 수 없습니다 — 끝나면 열립니다.</p>
         <!--/*
           대상 자산에서 도는 명령이다. 이 서버가 아니다.
 
@@ -131,13 +208,22 @@
           의 `>` 는 UTF-16 으로 적어서 grype 이 읽지 못한다. 파일 이름을
           syft 에 넘기면 syft 가 UTF-8 로 쓴다.)
         */-->
+        <!--/*
+          **`--source-name <자산 이름>` 을 넣는다.** 넣지 않으면 SBOM 대상이 모든 서버에서
+          `/` 라서 SBOM 이 무엇을 떴는지 말하지 않는다. 넣으면 SBOM 안에 이 자산의 이름이
+          남고(syft 1.52.0 으로 확인), 다른 자산에 올렸을 때 경고가 뜬다(target-mismatch).
+          파일 이름에도 자산 이름을 넣는다 — 여러 대를 받으면 파일이 섞인다.
+        */-->
         <details class="help">
           <summary>SBOM 생성 가이드</summary>
           <div class="inner">
             <div><b>Linux</b>
-              <div><code>syft dir:/ -o cyclonedx-json &gt; sbom.json</code></div></div>
+              <div><code th:inline="text">syft dir:/ --source-name [[${asset.name}]] -o cyclonedx-json &gt; [[${asset.name}]].sbom.json</code></div></div>
             <div class="mt-2"><b>Windows</b>
-              <div><code>syft dir:C:\ -o cyclonedx-json=sbom.json</code></div></div>
+              <div><code th:inline="text">syft dir:C:\ --source-name [[${asset.name}]] -o cyclonedx-json=[[${asset.name}]].sbom.json</code></div></div>
+            <div class="mt-2"><code>--source-name</code> — SBOM 안에 자산 이름을 남깁니다. 다른 자산에 업로드하면 검사 뒤에 경고가 뜹니다.</div>
+            <div class="mt-2" th:text="'받는 형식 — ' + ${T(kr.sbomsight.service.SbomStorage).ACCEPTED_FORMATS}">
+              받는 형식 — CycloneDX JSON · SPDX JSON · syft JSON</div>
           </div>
         </details>
       </div>
@@ -234,6 +320,7 @@
         <option value="true" th:selected="${fixable != null and fixable}">있음</option>
         <option value="false" th:selected="${fixable != null and !fixable}">없음</option>
       </select>
+      <div th:replace="~{fragments/ui :: reviewedout(${includeDone}, ${reviewedOut})}"></div>
       <!--/*
         `넓게 보기` 를 뗐다. 같은 검사를 `/vulns` 에서 여는 단추였는데, 이제
         이 탭이 그 화면과 **같은 표·같은 정렬·같은 페이지 넘김**을 쓴다 —
@@ -293,7 +380,7 @@
     <div class="container-xl">
     <th:block th:if="${assetPackages == null or assetPackages.totalElements == 0}">
       <div th:replace="~{fragments/ui :: empty('아직 담긴 패키지가 없습니다',
-                        '검사할 때 SBOM 에서 담김 · 이 자산을 다시 검사하면 채워짐',
+                        '검사할 때 SBOM에서 담김 · 이 자산을 다시 검사하면 채워짐',
                         '/assets/' + ${asset.id} + '?tab=history', '검사 이력')}"></div>
     </th:block>
 
@@ -318,15 +405,18 @@
           </thead>
           <tbody>
           <tr th:each="c : ${assetPackages.content}">
+            <!--/* 패키지 화면의 그 줄로 — 줄은 패키지 식별자라 식별자로 펼친다(V24). 이름 아래에
+                 식별자를 적는다 — groupId 만 다른 같은 이름이 이 표에서 같은 줄처럼 보이지 않게. */-->
             <td>
-              <a th:href="@{/packages(q=${c.name}, open=${c.name})}" th:text="${c.name}">openssl-libs</a>
+              <a th:href="@{/packages(q=${c.name}, open=${c.packageKey})}" th:text="${c.name}">openssl-libs</a>
+              <div th:replace="~{fragments/ui :: pkgkey(${c.packageKey})}"></div>
             </td>
             <td class="tight faint" th:text="${#strings.isEmpty(c.type)} ? '—' : ${c.type}">rpm</td>
             <td class="tight mono" th:text="${c.versionOrDash()}">3.0.7-24</td>
             <!--/* 비어 있는 것은 "경로가 없는 패키지" 가 아니라 SBOM 이 안
                  담은 것이다. 그렇게 말한다. */-->
             <td class="mono faint"
-                th:text="${#strings.isEmpty(c.location)} ? 'SBOM 에 없음' : ${c.location}">/usr/…</td>
+                th:text="${#strings.isEmpty(c.location)} ? 'SBOM에 없음' : ${c.location}">/usr/…</td>
           </tr>
           </tbody>
         </table>
@@ -352,7 +442,7 @@
     <div class="card">
     <th:block th:if="${history.isEmpty()}">
       <div th:replace="~{fragments/ui :: empty('아직 검사가 없습니다',
-                        'SBOM 을 업로드하면 검사가 돌고 결과가 여기에 쌓임',
+                        'SBOM을 업로드하면 검사가 돌고 결과가 여기에 쌓임',
                         '/assets/' + ${asset.id}, 'SBOM 업로드')}"></div>
     </th:block>
 
@@ -362,8 +452,18 @@
       <table class="table table-vcenter card-table">
         <thead>
         <tr>
-          <th class="tight">시각</th><th class="tight">검사 상태</th>
-          <th class="num tight">탐지</th><th class="num tight">이전 대비</th>
+          <!--/*
+            **시각이 둘이다.** 검사 시각은 검사가 돈 때, SBOM 생성 시각은 그 SBOM 이
+            서버를 읽은 때다. 다시 검사는 검사 시각만 새것이다 — 옛 SBOM 을 새 DB 로
+            돌렸을 뿐 서버를 새로 본 것이 아니다. 앞서 첫 열의 이름이 `시각` 하나였다.
+          */-->
+          <th class="tight">검사 시각</th><th class="tight">SBOM 생성 시각</th><th class="tight">검사 상태</th>
+          <!--/*
+            `이전 대비` 머리만 `tight` 를 뺀다 — 두 줄로 접힌다(app.css 의 `tight 가 아닌
+            머리`). 값(`+3`)보다 칸 이름이 넓어 그 이름이 칸 폭을 정하고 있었다.
+            `SBOM 생성 시각` 칸을 더하자 표가 1366px 에서 넘쳤고, 그 폭을 여기서 일부 낸다.
+          */-->
+          <th class="num tight">탐지</th><th class="num">이전 대비</th>
           <th class="num tight">패키지</th>
           <!--/*
             `DB 기준일` 이라고만 적혀 있어 무엇의 기준일인지 읽히지 않았다.
@@ -371,7 +471,7 @@
             공개된 취약점은 이 검사에 없다 — 그것이 이 칸을 보는 이유다.
           */-->
           <th class="tight">grype</th>
-          <th class="tight" title="이 검사에 쓴 취약점 DB 가 만들어진 날 · 그 뒤에 공개된 취약점은 이 검사에 없음">취약점 DB</th>
+          <th class="tight" title="이 검사에 쓴 취약점 DB가 만들어진 날 · 그 뒤에 공개된 취약점은 이 검사에 없음">취약점 DB</th>
           <th>SBOM</th><th class="tight"></th>
         </tr>
         </thead>
@@ -386,16 +486,30 @@
               원본을 **스캔 번호가 아니라 시각으로** 가리킨다. `원본 1` 은
               내부 번호라 사람이 아는 값이 아니었고, 이력이 쌓이면 그 번호로
               어느 줄인지 찾을 수도 없다. 원본이 지워졌으면 그렇게 적는다.
+
+              두 줄로 접는다(`note-line`). 한 줄이면 이 말이 첫 칸을 160px 에서 249px 로
+              벌려, `SBOM 생성 시각` 칸을 더한 뒤로는 표가 화면 폭을 넘는다.
             */-->
-            <div class="faint" th:if="${s.isRescan()}" th:with="src=${origins.get(s.rescanOf)}">
+            <div class="faint note-line" th:if="${s.isRescan()}" th:with="src=${origins.get(s.rescanOf)}">
               <th:block th:if="${src != null}">다시 검사 · 원본
                 <span class="mono"
                       th:text="${#temporals.format(src.createdAt, 'yyyy-MM-dd HH:mm')}">—</span></th:block>
               <th:block th:if="${src == null}">다시 검사 · 원본 삭제됨</th:block>
             </div>
           </td>
+          <td class="tight"><span th:replace="~{fragments/ui :: sbomtime(${s}, true)}"></span></td>
           <td class="tight">
             <span class="status" th:classappend="${s.status}" th:text="${s.status.label()}">완료</span>
+            <!--/* 화면 · 보고서의 기준이 되는 줄. `다시 검사` 단추가 이 줄에만 있는 까닭이다.
+                 상태 아래 줄에 둔다 — 옆에 두면 이 한 줄 때문에 칸이 73px 에서 136px 로 는다. */-->
+            <div class="mt-1" th:if="${latest != null and s.id == latest.id}"><span class="tag">최신 검사</span></div>
+            <!--/* 발행본이 가리키는 검사 — 지우지 못한다(D6). 그래서 이 줄에는 `삭제` 단추가 없다.
+                 여럿이 가리키면 최근 것으로 간다. 단추 칸이 아니라 여기 둔다 — 그 검사에 대한
+                 사실이고, 단추 칸에 두면 표가 1280px 에서 더 넘친다(재 보고 옮겼다). */-->
+            <div class="mt-1" th:if="${published.get(s.id) != null}">
+              <a class="tag" th:href="@{'/reports/publications/' + ${published.get(s.id).id}}"
+                 th:title="'발행본(' + ${published.get(s.id).number} + ')이 가리키는 검사 · 지울 수 없음'">발행본</a>
+            </div>
           </td>
           <td class="num tight" th:text="${s.status.name() == 'DONE'} ? ${#numbers.formatInteger(s.findingCount, 0, 'COMMA')} : '—'">—</td>
           <!--/*
@@ -414,7 +528,13 @@
           <td class="tight faint"
               th:text="${s.grypeDbBuilt != null} ? ${#temporals.format(s.grypeDbBuilt, 'yyyy-MM-dd')} : '—'">—</td>
           <td class="faint">
-            <span th:text="${s.sbomFilename}">sbom.json</span>
+            <!--/* 이 표에서 폭이 남는 칸은 여기 하나다. 이름이 좁은 화면에서 접히게(longname)
+                 두지 않으면 빈칸 없는 파일 이름 하나가 표를 넘긴다. */-->
+            <span class="longname" th:text="${s.sbomFilename}">sbom.json</span>
+            <!--/* SBOM 대상이 자산 이름과 다른 줄 — 어느 검사를 지울지 고를 때 본다. 대상은
+                 이미지 이름처럼 길 수 있다(`docker.io/library/nginx:1.27`). */-->
+            <span class="tag nofix longname" th:if="${s.sbomTargetDiffersFrom(asset.name)}"
+                  th:text="'SBOM 대상 ' + ${s.sbomTarget}">SBOM 대상 web-02</span>
             <span th:if="${s.status.name() == 'FAILED'}" class="tag nofix"
                   th:text="${s.errorMessage}">오류</span>
           </td>
@@ -425,16 +545,26 @@
           <td class="tight actions">
             <a class="btn btn-sm" th:if="${s.status.name() == 'DONE'}"
                th:href="@{/vulns(scan=${s.id})}">열기</a>
+            <!--/* 실패한 검사도 다시 검사한다 — SBOM 은 올린 순간 보관된다. 보관된
+                 것이 없는 실패(파일을 손으로 지운 경우 등)에는 단추를 두지 않는다. */-->
+            <!--/* 검사가 도는 동안에는 두지 않는다 — 겹쳐 돌면 패키지 목록이 지워져
+                 서버가 거절한다(ScanService). 끝나면 다시 생긴다. */-->
+            <!--/* **완료된 줄은 최신 검사에만 둔다**(D2). 앞서 모든 줄에 있었고, 옛 줄에서
+                 누르면 옛 SBOM 이 최신이 됐다(재현 시험 P4). 옛 SBOM 을 새 DB 로 돌릴 까닭이
+                 없다 — 서버도 거절한다. */-->
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/rescan'}" class="inline"
-                  th:if="${s.status.name() == 'DONE'}" sec:authorize="hasRole('ADMIN')">
+                  th:if="${running == null and ((s.status.name() == 'DONE' and latest != null and s.id == latest.id) or (s.status.name() == 'FAILED' and !#strings.isEmpty(s.sbomPath)))}"
+                  sec:authorize="hasRole('ADMIN')">
               <button type="submit" class="btn btn-sm"
-                      title="보관된 SBOM 을 최신 취약점 DB 로 다시 검사">다시 검사</button>
+                      title="보관된 SBOM을 최신 취약점 DB로 다시 검사">다시 검사</button>
             </form>
             <a class="btn btn-sm" th:if="${!#strings.isEmpty(s.sbomPath)}"
                th:href="@{'/scans/' + ${s.id} + '/sbom'}"
                title="업로드한 SBOM 원본 내려받기">SBOM</a>
+            <!--/* 발행본이 가리키는 검사는 지우지 못한다(D6) — 단추를 두지 않는다(검사 상태 칸의
+                 `발행본` 표시가 까닭을 말한다). 서버도 거절한다(ScanService.PublishedScanException). */-->
             <form method="post" th:action="@{'/scans/' + ${s.id} + '/delete'}" class="inline"
-                  sec:authorize="hasRole('ADMIN')"
+                  th:if="${published.get(s.id) == null}" sec:authorize="hasRole('ADMIN')"
                   data-confirm="이 검사와 보관된 SBOM·검사 결과를 지웁니다.\n되돌릴 수 없습니다.\n\n계속할까요?">
               <button type="submit" class="btn btn-sm btn-outline-danger">삭제</button>
             </form>
@@ -471,16 +601,24 @@
         <table class="table table-vcenter card-table">
           <thead>
           <tr>
-            <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
+            <!--/* 숫자 칸의 머리는 접는다 — 조치 목록과 같은 까닭(actions.html). */-->
+            <th class="tight">패키지</th><th class="num">조치 회차</th><th>현재 → 목표</th>
             <th class="tight">조치 상태</th><th class="tight">담당</th>
             <th class="tight">기한</th><th>설명</th>
           </tr>
           </thead>
           <tbody>
-          <tr th:each="r : ${remediations}">
-            <td class="tight"><a th:href="@{'/actions/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td>
-            <td class="tight faint mono" th:text="${r.fromVersion} + ' → ' + ${r.toVersion}">—</td>
-            <td class="tight" th:text="${r.status.label()}">대기</td>
+          <tr th:each="r : ${remediations}" th:with="left=${afterDone.get(r.id)}">
+            <td class="tight"><a th:href="@{'/actions/' + ${r.id}}" th:text="${r.packageName}">openssl</a>
+              <div th:replace="~{fragments/ui :: pkgkey(${r.packageKey})}"></div></td><td class="num tight" th:text="${r.roundNo}">1</td>
+            <td class="faint mono">
+              <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
+              <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
+            </td>
+            <!--/* 완료인데 지금 검사에 해소 건수가 남았으면 세 갈래(AfterDone) — 보고서 5장과 같은 말로.
+                 검증 대기는 붉게 그리지 않는다 — 고친 뒤의 SBOM 이 아직 없는 것이다. */-->
+            <td class="tight" th:classappend="${left != null and !left.isPending()} ? 'danger-text' : ''"
+                th:text="${left != null} ? ${left.label()} : ${r.status.label()}">대기</td>
             <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
             <td class="tight" th:classappend="${r.overdue} ? 'overdue' : ''"
                 th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
@@ -509,11 +647,10 @@
           <tr th:each="a : ${assetAnalyses}" th:style="${a.open} ? '' : 'opacity:.6'">
             <td class="tight mono"><a th:href="@{'/vulns/' + ${a.cve}}"
                                       th:text="${a.cve}">CVE-0000-0000</a></td>
-            <td class="tight" th:text="${a.packageName}">openssl</td>
+            <td class="tight"><span th:text="${a.packageName}">openssl</span>
+              <div th:replace="~{fragments/ui :: pkgkey(${a.packageKey})}"></div></td>
             <td class="tight">
-              <span class="sev" th:classappend="${a.state.name() == 'EXPLOITABLE'} ? 'high'
-                                : (${a.open} ? 'medium' : 'low')"><i></i>
-                <span th:text="${a.state.label()}">해당됨</span></span>
+              <a th:replace="~{fragments/ui :: reviewstate(${a})}"></a>
             </td>
             <td class="tight">
               <span th:if="${a.response != null}" th:text="${a.response.label()}">조치 안 함</span>

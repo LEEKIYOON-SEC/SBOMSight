@@ -20,7 +20,7 @@ public enum ScanStage {
     READING("SBOM 읽기", "형식 판별 · 패키지 수 계수"),
 
     /** grype 이 도는 중. 대개 여기가 가장 길다. */
-    SCANNING("grype 검사", "취약점 매칭"),
+    SCANNING("grype 검사", "취약점 대조"),
 
     /** grype 출력을 읽어 저장한다. */
     SAVING("결과 정리", "탐지 저장"),

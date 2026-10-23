@@ -5,10 +5,11 @@ import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
 import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.service.AssetService;
-import kr.sbomsight.service.CsvWriter;
+import kr.sbomsight.service.ComponentInventoryService;
 import kr.sbomsight.service.SbomStorage;
 import kr.sbomsight.service.PackageService;
 import kr.sbomsight.service.Paging;
+import kr.sbomsight.service.RemediationService;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ScanService;
 import kr.sbomsight.service.ZoneService;
@@ -17,8 +18,6 @@ import kr.sbomsight.service.FindingAnalysisService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -54,13 +53,16 @@ public class AssetController {
     private final VulnQuery vulns;
     private final ComponentRepository components;
     private final PackageService packages;
+    private final RemediationService remediationService;
+    private final ReportPublicationRepository publications;
 
     public AssetController(AssetRepository assets, ScanRepository scans, FindingRepository findings,
                            RemediationRepository remediations, ScanService scanService,
                            AssetService assetService, ZoneService zoneService, AuditService audit,
                            FindingAnalysisService analyses, SbomStorage storage,
                            VulnQuery vulns, ComponentRepository components,
-                           PackageService packages) {
+                           PackageService packages, RemediationService remediationService,
+                           ReportPublicationRepository publications) {
         this.assets = assets;
         this.scans = scans;
         this.findings = findings;
@@ -74,9 +76,17 @@ public class AssetController {
         this.vulns = vulns;
         this.components = components;
         this.packages = packages;
+        this.remediationService = remediationService;
+        this.publications = publications;
     }
 
-    /** 마지막 검사가 이보다 오래되면 "오래됐다" 고 센다. */
+    /**
+     * 최신 검사의 <b>SBOM 생성 시각</b>이 이보다 오래되면 "오래됐다" 고 센다(R4).
+     *
+     * <p>검사가 돈 시각이 아니다 — 앞서는 그것으로 세어, 40일 전에 뜬 SBOM 을 오늘 다시
+     * 검사하면 `30일 넘은 자산` 에서 빠졌다(재현 시험 P5). 서버를 다시 본 것이 아니라
+     * 옛 SBOM 을 새 취약점 DB 로 돌렸을 뿐이다.
+     */
     private static final int STALE_DAYS = 30;
 
     /**
@@ -126,18 +136,39 @@ public class AssetController {
                           .collect(Collectors.toMap(FindingRepository.AssetCount::getAssetId,
                                                     FindingRepository.AssetCount::getTotal));
 
+        // 심각도 분포와 열린 조치 수도 한 번씩에 센다. 앞서 자산마다 둘을 따로
+        // 물었다 — 요약 줄이 거르기 전 전체를 세므로 쪽에 안 보이는 자산까지,
+        // 자산 스무 대를 더하면 질의가 서른아홉 번 늘었다(AssetListQueryTest).
+        Map<Long, Map<String, Long>> severities = new HashMap<>();
+        if (!latestIds.isEmpty()) {
+            findings.countBySeverityPerAsset(latestIds)
+                    .forEach(row -> severities.computeIfAbsent(row.getAssetId(), id -> new LinkedHashMap<>())
+                                              .put(row.getSeverity() == null ? "" : row.getSeverity(),
+                                                   row.getTotal()));
+        }
+        Map<Long, Long> open = remediations
+                .countPerAsset(List.of(RemediationStatus.OPEN, RemediationStatus.IN_PROGRESS)).stream()
+                .collect(Collectors.toMap(FindingRepository.AssetCount::getAssetId,
+                                          FindingRepository.AssetCount::getTotal));
+
         List<AssetRow> all = list.stream().map(asset -> {
             Scan scan = latest.get(asset.getId());
-            Map<String, Long> severity = scan == null ? Map.of() : severityMap(scan.getId());
-            long open = remediations.countByAssetIdAndStatusIn(
-                    asset.getId(), List.of(RemediationStatus.OPEN, RemediationStatus.IN_PROGRESS));
-            return new AssetRow(asset, scan, severity, open,
+            Map<String, Long> severity = scan == null ? Map.of()
+                    : severities.getOrDefault(asset.getId(), Map.of());
+            return new AssetRow(asset, scan, severity, open.getOrDefault(asset.getId(), 0L),
                                 kev.getOrDefault(asset.getId(), 0L));
         }).toList();
 
         // 요약 줄은 **거르기 전** 전체를 센다. 거른 뒤 세면 "검사 안 한 자산 3"
         // 을 눌렀을 때 숫자가 3 에서 다른 값으로 바뀐다.
-        model.addAttribute("summary", summarize(all));
+        //
+        // **운영 중인 자산만 센다 — 운영 종료 자산 포함을 켜도.** 요약 줄은
+        // 현황이고, 숫자를 누르면 가는 화면(취약점 · 거른 목록 · 대응)은 운영
+        // 종료 자산을 뺀다. 앞서 켜면 요약 줄도 함께 세게 했더니 누른 숫자와
+        // 뜬 건수가 달랐다(RetiredAssetActionsTest). 체크는 목록에 줄을 보여
+        // 줄 뿐이다 — 켰을 때는 그렇다고 요약 줄이 말한다.
+        model.addAttribute("summary", summarize(all.stream()
+                .filter(r -> r.asset().getArchivedAt() == null).toList()));
 
         // **구역 칩도 거르개다.** 앞서 이 줄 목록은 구역을 보지 않았고, 구역을
         // 좁히는 일은 화면을 그리는 `groups` 에서만 했다. 세는 자리가 없을
@@ -224,16 +255,17 @@ public class AssetController {
      * 다른 축이다. {@code critical}·{@code high} 는 grype 이 준 단계를 그대로
      * 센다(다시 나누지 않는다).
      */
-    public record Summary(long noScan, long stale, long actionOverdue,
+    public record Summary(long noScan, long stale, long actionOverdue, long reviewOverdue,
                           long kev, long critical, long high, long noFix) {
     }
 
+    /** @param rows 운영 중인 자산 전부(거르기 전) */
     private Summary summarize(List<AssetRow> rows) {
         java.time.Instant cut = java.time.Instant.now()
                 .minus(STALE_DAYS, java.time.temporal.ChronoUnit.DAYS);
         long noScan = rows.stream().filter(r -> !r.hasScan()).count();
         long stale = rows.stream()
-                .filter(r -> r.hasScan() && r.latest().getCreatedAt().isBefore(cut)).count();
+                .filter(r -> r.hasScan() && r.latest().getSbomCreatedAt().isBefore(cut)).count();
         long critical = rows.stream().mapToLong(r -> r.severityCount("critical")).sum();
         long high = rows.stream().mapToLong(r -> r.severityCount("high")).sum();
         long kev = rows.stream().mapToLong(AssetRow::kevCount).sum();
@@ -246,11 +278,16 @@ public class AssetController {
                 .filter(c -> "wont-fix".equals(c.getFixState()) || "not-fixed".equals(c.getFixState()))
                 .mapToLong(FindingRepository.FixStateCount::getTotal).sum();
 
-        // 기한이 지난 것 = 조치 기한 + 검토 결과의 재검토일. 기둥의 배지와
-        // 같은 수를 쓴다 — 두 곳이 다른 수를 보이면 어느 쪽을 믿을지 모른다.
-        long overdue = remediations.countOverdue(java.time.LocalDate.now())
-                + analyses.reviewOverdue().size();
-        return new Summary(noScan, stale, overdue, kev, critical, high, noFix);
+        // **조치 기한과 재검토일을 따로 센다.** 앞서 둘을 합쳐 `기한 지난 조치`
+        // 로 찍었는데, 누르면 가는 조치 탭에는 재검토일 지난 것이 없다 — 띄운
+        // 앱에서 `1 기한 지난 조치` 를 눌렀더니 기한 지난 조치가 0건이었다.
+        // 둘의 합은 기둥의 `대응` 배지와 같다(그 배지는 두 탭을 함께 센다).
+        //
+        // **운영 중인 자산 것만 센다.** 앞서 운영 종료한 자산의 것까지 세어,
+        // 목록에서 사라진 자산의 건이 이 줄에 남았다(RetiredAssetActionsTest).
+        long actionOverdue = remediations.countOverdue(java.time.LocalDate.now(), false);
+        long reviewOverdue = analyses.reviewOverdue(false).size();
+        return new Summary(noScan, stale, actionOverdue, reviewOverdue, kev, critical, high, noFix);
     }
 
     private boolean matches(AssetRow row, String filter) {
@@ -261,7 +298,7 @@ public class AssetController {
                 .minus(STALE_DAYS, java.time.temporal.ChronoUnit.DAYS);
         return switch (filter) {
             case "noscan" -> !row.hasScan();
-            case "stale" -> row.hasScan() && row.latest().getCreatedAt().isBefore(cut);
+            case "stale" -> row.hasScan() && row.latest().getSbomCreatedAt().isBefore(cut);
             default -> true;
         };
     }
@@ -271,11 +308,14 @@ public class AssetController {
      *
      * <p><b>검사가 없는 자산은 방향과 무관하게 언제나 뒤로.</b> 탐지 0건으로
      * 놓고 줄 세우면 "안전하다" 는, 아무도 확인하지 않은 판정이 된다.
+     *
+     * <p>{@code scanned} 는 SBOM 생성 시각으로 줄 세운다 — 그 열이 그것이다(주소의 이름은
+     * 그대로 둔다. 붙여 둔 링크가 있다).
      */
     private Comparator<AssetRow> comparator(String sort, String dir) {
         Comparator<AssetRow> base = switch (sort) {
             case "scanned" -> Comparator.comparing(
-                    r -> r.hasScan() ? r.latest().getCreatedAt() : null,
+                    r -> r.hasScan() ? r.latest().getSbomCreatedAt() : null,
                     Comparator.nullsLast(Comparator.naturalOrder()));
             case "findings" -> Comparator.comparingLong(
                     (AssetRow r) -> r.hasScan() ? r.latest().getFindingCount() : -1).reversed();
@@ -302,7 +342,13 @@ public class AssetController {
             return "redirect:/";
         }
         // 구역을 고르지 않았으면 미분류로. 어디에도 속하지 않는 자산은 만들지 않는다.
-        asset.setZone(zoneId == null ? zoneService.unassigned() : zoneService.require(zoneId));
+        // 고른 구역이 그 사이 지워졌으면 등록하지 않고 알린다 — 앞서 500 이었다.
+        try {
+            asset.setZone(zoneId == null ? zoneService.unassigned() : zoneService.require(zoneId));
+        } catch (ZoneService.NoSuchZoneException e) {
+            flash.addFlashAttribute("error", e.getMessage() + " 목록을 새로 고친 뒤 다시 골라 주세요.");
+            return "redirect:/";
+        }
         assets.save(asset);
         audit.record(AuditEvent.ASSET_CREATED, asset.getName(),
                      "구역 " + asset.getZone().getName());
@@ -316,13 +362,20 @@ public class AssetController {
     public String moveZone(@PathVariable Long id, @RequestParam Long zoneId,
                            RedirectAttributes flash) {
         Asset asset = asset(id);
-        Zone target = zoneService.require(zoneId);
+        Zone target;
+        try {
+            target = zoneService.require(zoneId);
+        } catch (ZoneService.NoSuchZoneException e) {
+            // 다른 창에서 지운 구역을 골랐다. 자산은 그대로 두고 알린다 — 앞서 500 이었다.
+            flash.addFlashAttribute("error", e.getMessage() + " 화면을 새로 고친 뒤 다시 골라 주세요.");
+            return "redirect:/assets/" + id;
+        }
         String before = asset.getZone().getName();
         asset.setZone(target);
         assets.save(asset);
         audit.record(AuditEvent.ASSET_ZONE_CHANGED, asset.getName(),
                      before + " → " + target.getName());
-        flash.addFlashAttribute("message", asset.getName() + " 을 " + target.getName() + " 으로 옮겼습니다.");
+        flash.addFlashAttribute("message", asset.getName() + " 자산을 " + target.getName() + " 구역으로 옮겼습니다.");
         return "redirect:/assets/" + id;
     }
 
@@ -343,6 +396,7 @@ public class AssetController {
                          @RequestParam(name = "severity", required = false) String severityFilter,
                          @RequestParam(required = false) Boolean fixable,
                          @RequestParam(required = false) Boolean kev,
+                         @RequestParam(defaultValue = "false") boolean includeDone,
                          @RequestParam(defaultValue = "0") int page,
                          @RequestParam(required = false) Integer size,
                          @RequestParam(required = false) Integer jump,
@@ -359,7 +413,7 @@ public class AssetController {
         // 자산 상세와 `/vulns` 가 같은 표·같은 쪽 넘김을 쓰므로 여기도 같다.
         String jumped = "vulns".equals(tab) || "packages".equals(tab) || "history".equals(tab)
                 ? Paging.jump(tabLinks(id, tab, group, q, severityFilter, fixable, kev,
-                                       size, sort, dir), jump)
+                                       includeDone, size, sort, dir), jump)
                 : null;
         if (jumped != null) {
             return jumped;
@@ -367,12 +421,33 @@ public class AssetController {
         model.addAttribute("tab", tab);
         Asset asset = asset(id);
         List<Scan> history = scans.findByAssetIdOrderByCreatedAtDesc(id);
-        Scan latest = history.stream()
-                .filter(s -> s.getStatus() == ScanStatus.DONE)
-                .findFirst().orElse(null);
+        // 최신 검사 — SBOM 생성 시각으로 고른다(ScanRepository.currentOf). 이력은 검사가
+        // 돈 차례로 서므로 그 첫 완료 줄이 아니다: 예전에 떠 둔 SBOM 을 늦게 올리면 이력의
+        // 맨 위에 서지만 최신 검사는 아니다.
+        Scan latest = scans.currentOf(id).orElse(null);
 
         // 아직 도는 중인 검사. 있으면 화면이 진행 카드를 띄우고 물어본다.
         Scan running = history.stream().filter(Scan::isInFlight).findFirst().orElse(null);
+
+        // 가장 최근 검사가 실패했는가. 진행 표시는 실패를 잠깐 띄운 뒤 화면을
+        // 새로 그리며 사라진다 — 개요가 말하지 않으면 실패는 검사 이력 탭에만
+        // 남고, 머리의 `마지막 검사` 는 그 전 완료 검사를 가리킨 채다. 그 뒤에
+        // 검사가 완료되면(다시 검사 포함) 알릴 것이 없어진다.
+        Scan newest = history.isEmpty() ? null : history.get(0);
+        model.addAttribute("lastFailed",
+                newest != null && newest.getStatus() == ScanStatus.FAILED ? newest : null);
+        // 가장 최근에 돈 검사가 완료됐는데 최신 검사가 아니다 — 그 SBOM 이 최신 검사의
+        // SBOM 보다 먼저 생성됐다. 화면 · 보고서가 그 결과를 쓰지 않는다는 것을 말하지
+        // 않으면 방금 올린 것이 반영되지 않은 고장으로 읽힌다.
+        model.addAttribute("olderSbom",
+                newest != null && newest.getStatus() == ScanStatus.DONE && latest != null
+                        && !newest.getId().equals(latest.getId()) ? newest : null);
+        // 가장 최근에 돈 검사의 SBOM 대상이 이 자산의 이름과 다르다 — 엉뚱한 자산에 올렸을
+        // 수 있다. 막지 않고 알린다(이미지 이름을 그대로 쓰는 곳도 있다). 경로로 뜬 SBOM 은
+        // 가를 수 없어 말하지 않는다(Scan.sbomTargetDiffersFrom).
+        model.addAttribute("targetMismatch",
+                newest != null && newest.getStatus() == ScanStatus.DONE
+                        && newest.sbomTargetDiffersFrom(asset.getName()) ? newest : null);
 
         model.addAttribute("asset", asset);
         model.addAttribute("zones", zoneService.all());
@@ -386,9 +461,28 @@ public class AssetController {
         // 것이다** — `원본 1` 은 내부 번호라 사람이 아는 값이 아니다.
         model.addAttribute("origins", history.stream()
                 .collect(Collectors.toMap(Scan::getId, s -> s, (a, b) -> a)));
+        // 발행본이 가리키는 검사 — 이력 탭이 그 줄의 검사 상태 칸에 `발행본` 을 붙이고 `삭제`
+        // 단추를 두지 않는다. 서버가 거절할 단추를 두지 않는다(ScanService.PublishedScanException).
+        // 여럿이 가리키면 최근 것으로 간다.
+        Map<Long, ReportPublicationRepository.ScanReference> published = new HashMap<>();
+        if ("history".equals(tab) && !history.isEmpty()) {
+            publications.findReferences(history.stream().map(Scan::getId).toList())
+                        .forEach(r -> published.putIfAbsent(r.getScanId(), r));
+        }
+        model.addAttribute("published", published);
         model.addAttribute("severity", latest == null ? Map.of() : severityMap(latest.getId()));
-        model.addAttribute("remediations",
-                remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id));
+        // 취약점 탭의 숫자는 **그 탭이 처음 열었을 때 보여 주는 줄 수**다 —
+        // 해당 없음 · 오탐은 기본에서 빠진다. 탐지 건수(개요 · 이력 · 자산
+        // 목록)와 다를 수 있고, 그 차이는 탭 안의 `해당 없음·오탐 포함 (n건)` 이
+        // 말한다.
+        model.addAttribute("vulnTabCount", latest == null ? 0
+                : findings.countByScanId(latest.getId()) - findings.countReviewedOut(
+                        List.of(latest.getId()), null, null, null, null, null, null));
+        List<Remediation> assetRemediations = remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id);
+        model.addAttribute("remediations", assetRemediations);
+        // 완료인데 지금 검사에 해소 건수가 남은 조치 — 세 갈래(AfterDone), 조치 화면 ·
+        // 보고서 5장과 같은 말. 회차가 여럿이면 지난 회차는 그냥 완료다.
+        model.addAttribute("afterDone", remediationService.afterDone(assetRemediations));
         // 이 자산에 대해 내린 결정 둘을 한 탭에서 본다. 검토 결과를 대응
         // 화면에서만 볼 수 있으면 "이 서버 것만" 을 물을 자리가 없다.
         model.addAttribute("assetAnalyses", analyses.forAsset(id));
@@ -407,10 +501,10 @@ public class AssetController {
             // `scope` 는 넘기지 않는다 — 전체 취약점 화면은 머리에
             // `scope.label()` 을 찍지만 자산 상세는 자기 제목을 따로 그린다.
             // `ofScan` 을 두 번 부르던 것도 한 번으로 줄인다.
-            vulns.fill(model, vulns.ofScan(latest.getId()), group, q, severityFilter,
-                       fixable, kev, page, size, sort, dir);
+            vulns.fill(model, vulns.ofScan(latest.getId()), group, q, null, severityFilter,
+                       fixable, kev, includeDone, page, size, sort, dir);
             model.addAttribute("links", tabLinks(id, tab, group, q, severityFilter, fixable,
-                                                 kev, size, sort, dir));
+                                                 kev, includeDone, size, sort, dir));
             model.addAttribute("group", group);
             model.addAttribute("q", q);
             model.addAttribute("fixable", fixable);
@@ -423,7 +517,7 @@ public class AssetController {
         // 패키지 탭. 그 자산에 깔린 것 전부 — 취약점이 없는 것도 있다.
         // **빈 것과 안 본 것을 구분해서 말한다**: V13 은 이미 쌓인 SBOM 을
         // 되읽지 않으므로, 다시 검사하기 전에는 인벤토리가 비어 있다.
-        model.addAttribute("packageCount", components.countByAssetId(id));
+        model.addAttribute("packageCount", components.countCurrentByAssetId(id));
         if ("packages".equals(tab)) {
             // **한 쪽씩 읽는다.** 앞서는 그 자산에 깔린 것을 전부 한 번에
             // 읽어 한 화면에 그렸다 — 4천 줄짜리 서버에서 표가 끝나지 않았다.
@@ -432,7 +526,7 @@ public class AssetController {
         }
         if ("packages".equals(tab) || "history".equals(tab)) {
             model.addAttribute("links", tabLinks(id, tab, group, q, severityFilter, fixable,
-                                                 kev, size, sort, dir));
+                                                 kev, includeDone, size, sort, dir));
         }
         return "asset-detail";
     }
@@ -449,7 +543,8 @@ public class AssetController {
      */
     private VulnQuery.Links tabLinks(Long id, String tab, String group, String q,
                                      String severity, Boolean fixable, Boolean kev,
-                                     Integer size, String sort, String dir) {
+                                     boolean includeDone, Integer size, String sort,
+                                     String dir) {
         // 취약점 탭 말고도 쪽을 넘기는 탭이 있다(패키지 · 검사 이력). 그 탭들은
         // 취약점 탭의 거르개를 달고 다니지 않는다 — 붙여 두면 패키지 탭 주소에
         // `severity=Critical` 이 따라다니며 아무 일도 안 하고 남는다.
@@ -462,6 +557,7 @@ public class AssetController {
         return links.with("group", group)
                 .with("severity", severity)
                 .with("fixable", fixable).with("kev", kev)
+                .with("includeDone", includeDone ? "true" : null)
                 .with("sort", "severity".equals(sort) ? null : sort)
                 .with("dir", "desc".equals(dir) ? null : dir);
     }
@@ -514,7 +610,7 @@ public class AssetController {
         assets.save(asset);
         audit.record(AuditEvent.ASSET_ARCHIVED, asset.getName(), "");
         flash.addFlashAttribute("message",
-                asset.getName() + " 을 운영 종료로 처리했습니다. 목록과 현황 숫자에서 빠집니다.");
+                asset.getName() + " 자산을 운영 종료로 처리했습니다. 목록과 현황 숫자에서 빠집니다.");
         return "redirect:/assets/" + id;
     }
 
@@ -525,7 +621,7 @@ public class AssetController {
         asset.setArchivedAt(null);
         assets.save(asset);
         audit.record(AuditEvent.ASSET_UNARCHIVED, asset.getName(), "");
-        flash.addFlashAttribute("message", asset.getName() + " 을 운영 재개로 되돌렸습니다.");
+        flash.addFlashAttribute("message", asset.getName() + " 자산을 운영 재개로 되돌렸습니다.");
         return "redirect:/assets/" + id;
     }
 
@@ -542,7 +638,7 @@ public class AssetController {
         Scan scan = scans.findById(scanId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
         if (scan.getSbomPath() == null || scan.getSbomPath().isBlank()) {
-            throw new ResponseStatusException(NOT_FOUND, "보관된 SBOM 이 없습니다.");
+            throw new ResponseStatusException(NOT_FOUND, "보관된 SBOM이 없습니다.");
         }
         java.nio.file.Path stored = java.nio.file.Path.of(scan.getSbomPath());
         if (!java.nio.file.Files.exists(stored)) {
@@ -583,32 +679,43 @@ public class AssetController {
         // **검토 결과 건수를 빼지 않는다.** 누르기 전 확인 상자는 이것을
         // 세어 보여 주는데, 감사 로그와 완료 안내에는 빠져 있었다 — 지운
         // 기록이 실제보다 적게 남는다는 뜻이고, 점검에서 답이 어긋난다.
-        String counted = "스캔 " + impact.scanCount() + "건 · 탐지 " + impact.findingCount()
+        String counted = "검사 " + impact.scanCount() + "건 · 탐지 " + impact.findingCount()
                          + "건 · 조치 " + impact.remediationCount()
                          + "건 · 검토 결과 " + impact.analysisCount() + "건";
         audit.record(AuditEvent.ASSET_DELETED, name,
                      "구역 " + zoneName + " · " + counted + " 함께 삭제");
         flash.addFlashAttribute("message",
                 name + " 자산을 지웠습니다 — " + counted
-                + "과 보관된 SBOM·검사 결과가 함께 삭제되었습니다.");
+                + ", 보관된 SBOM · 검사 결과 파일까지 함께 삭제했습니다.");
         return "redirect:/";
     }
 
-    /** 보관된 SBOM 을 갱신된 grype DB 로 다시 돌린다. */
+    /**
+     * 보관된 SBOM 을 갱신된 grype DB 로 다시 돌린다. 실패한 검사도 된다 — SBOM 은
+     * 올린 순간 보관된다(ScanService.rescan).
+     */
     @PostMapping("scans/{scanId}/rescan")
     @PreAuthorize("hasRole('ADMIN')")
     public String rescan(@PathVariable Long scanId, Principal principal,
                          RedirectAttributes flash) {
         Scan source = scans.findWithAsset(scanId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
         Long assetId = source.getAsset().getId();
         try {
             Scan copy = scanService.rescan(source, principal.getName());
             audit.record(AuditEvent.SCAN_RESCANNED, source.getAsset().getName(),
-                         source.getSbomFilename() + " (원본 스캔 " + scanId + ")");
+                         source.getSbomFilename() + " (원본 검사 " + scanId + ")");
             scanService.runAsync(copy.getId());
+            // 돌아가는 곳은 개요 탭이다(진행 표시가 거기 뜬다) — 이력은 그 아래가
+            // 아니라 옆 탭이다.
             flash.addFlashAttribute("message",
-                    "같은 SBOM 을 다시 검사합니다. 끝나면 아래 이력에 새 줄로 나타납니다.");
+                    "같은 SBOM을 다시 검사합니다. 끝나면 검사 이력에 새 줄로 나타납니다.");
+        } catch (ScanService.UnsupportedSbomException | ScanService.ScanInFlightException
+                 | ScanService.NotLatestScanException e) {
+            // 고장이 아니다 — 보관된 파일이 받는 형식이 아니거나(예전에 받은 XML),
+            // 그 자산의 검사가 아직 돌고 있거나(겹치면 서로의 패키지 목록을 지운다),
+            // 최신 검사가 아닌 옛 검사다(D2). 업로드와 같이 오류 로그에 스택을 남기지 않는다.
+            flash.addFlashAttribute("error", "다시 검사하지 못했습니다: " + e.getMessage());
         } catch (Exception e) {
             log.error("재검사 실패 scan={}", scanId, e);
             flash.addFlashAttribute("error", "다시 검사하지 못했습니다: " + e.getMessage());
@@ -620,49 +727,43 @@ public class AssetController {
     @PreAuthorize("hasRole('ADMIN')")
     public String deleteScan(@PathVariable Long scanId, RedirectAttributes flash) {
         Scan scan = scans.findWithAsset(scanId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
         Long assetId = scan.getAsset().getId();
         String detail = scan.getSbomFilename() + " · 탐지 " + scan.getFindingCount() + "건";
         String assetName = scan.getAsset().getName();
-        scanService.delete(scan);
+        ComponentInventoryService.Restored restored;
+        try {
+            restored = scanService.delete(scan);
+        } catch (ScanService.PublishedScanException e) {
+            // 고장이 아니다 — 발행본의 근거라 지우지 않는다(D6). 지운 것이 없으니 감사 로그도 없다.
+            flash.addFlashAttribute("error", e.getMessage());
+            return "redirect:/assets/" + assetId;
+        }
+        // 지운 것이 지금 검사였으면 그 전 검사의 SBOM에서 패키지 목록을 다시
+        // 담았다. 무엇을 했는지 말한다 — 패키지 수가 바뀐 까닭이 화면에 없으면
+        // 다음 사람이 찾지 못한다. 못 담았으면 그 까닭을 오류로.
+        String message = "검사를 지웠습니다. 보관된 파일도 함께 삭제되었습니다.";
+        if (restored.happened()) {
+            // 수는 진행 표시와 같은 꼴로(ScanStatusController) — 12만 개가 예사다.
+            String again = "그 전 검사(" + WHEN.format(restored.from().getCreatedAt())
+                           + String.format(")의 SBOM에서 패키지 %,d개를 다시 담았습니다.", restored.rows());
+            message += " " + again;
+            detail += " · " + again;
+        }
+        if (restored.failed()) {
+            flash.addFlashAttribute("error", "패키지 목록을 그 전 검사에서 다시 담지 못했습니다: "
+                                             + restored.problem());
+            detail += " · 패키지 목록을 다시 담지 못함";
+        }
         audit.record(AuditEvent.SCAN_DELETED, assetName, detail);
-        flash.addFlashAttribute("message", "스캔을 지웠습니다. 보관된 파일도 함께 삭제되었습니다.");
+        flash.addFlashAttribute("message", message);
         return "redirect:/assets/" + assetId;
     }
 
-    /**
-     * 지금 화면의 필터가 그대로 적용된 결과를 CSV 로.
-     *
-     * <p>화면에서 걸러 놓고 내려받으면 전체가 나오는 것이 가장 흔한 불만이다.
-     * 같은 조건을 같은 질의에 넘긴다.
-     */
-    @GetMapping("scans/{scanId}/export.csv")
-    public void exportFindings(@PathVariable Long scanId,
-                               @RequestParam(required = false) String severity,
-                               @RequestParam(required = false) Boolean fixable,
-                               @RequestParam(required = false) Boolean kev,
-                               @RequestParam(required = false) String q,
-                               @RequestParam(defaultValue = "cvss") String sort,
-                               HttpServletResponse response) throws java.io.IOException {
-        Scan scan = scans.findWithAsset(scanId)
-                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "스캔을 찾을 수 없습니다."));
-
-        // 내려받기는 화면과 달리 전부 담는다. 5만 건이면 파일이 크지만, 잘린
-        // 파일로 결재를 올리는 것보다 낫다.
-        List<Finding> all = findings.search(scanId, blankToNull(severity), fixable, kev,
-                                            blankToNull(q),
-                                            PageRequest.of(0, 200_000, order(sort))).getContent();
-
-        String name = scan.getAsset().getName() + "-"
-                + scan.getCreatedAt().atZone(java.time.ZoneId.systemDefault())
-                      .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
-                + ".csv";
-        response.setContentType("text/csv; charset=UTF-8");
-        response.setHeader("Content-Disposition",
-                "attachment; filename*=UTF-8''" + java.net.URLEncoder.encode(
-                        name, java.nio.charset.StandardCharsets.UTF_8));
-        CsvWriter.writeFindings(response.getOutputStream(), all);
-    }
+    /** 안내 글의 시각 — 검사 이력 화면과 같은 꼴. */
+    private static final java.time.format.DateTimeFormatter WHEN =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                                             .withZone(java.time.ZoneId.systemDefault());
 
     /** SBOM 업로드. 저장까지만 하고 grype 은 뒤에서 돌린다. */
     @PostMapping("assets/{id}/sbom")
@@ -681,39 +782,15 @@ public class AssetController {
             scanService.runAsync(scan.getId());
             flash.addFlashAttribute("message",
                     "SBOM 업로드 완료. grype 검사가 진행 중이며, 끝나면 검사 이력에 나타납니다.");
+        } catch (ScanService.UnsupportedSbomException | ScanService.ScanInFlightException e) {
+            // 고장이 아니다 — 고른 파일이 다른 것이거나, 그 자산의 검사가 아직
+            // 돌고 있다. 오류 로그에 스택을 남기지 않는다.
+            flash.addFlashAttribute("error", "업로드하지 못했습니다: " + e.getMessage());
         } catch (Exception e) {
             log.error("업로드 실패 asset={}", id, e);
             flash.addFlashAttribute("error", "업로드하지 못했습니다: " + e.getMessage());
         }
         return "redirect:/assets/" + id;
-    }
-
-    /** 취약점 목록. 정렬·필터·페이징은 전부 SQL 에서 끝난다. */
-    /**
-     * 검사 하나의 취약점 — 이제 통합 화면이 그린다.
-     *
-     * <p>적어 둔 주소와 즐겨찾기가 죽지 않게 넘겨 준다.
-     */
-    @GetMapping("scans/{scanId}")
-    public String scan(@PathVariable Long scanId) {
-        return "redirect:/vulns?scan=" + scanId;
-    }
-
-    /**
-     * 정렬 기준.
-     *
-     * <p>어느 축으로 정렬하든 <b>값이 없는 건은 항상 뒤로</b> 보낸다. CVSS 가
-     * 없는 건을 0 점으로 줄 세우면 "안전하다"는, 아무도 내리지 않은 판정이 된다.
-     */
-    private Sort order(String sort) {
-        return switch (sort) {
-            case "epss" -> Sort.by(Sort.Order.desc("epss").nullsLast(),
-                                   Sort.Order.desc("cvssScore").nullsLast());
-            case "package" -> Sort.by(Sort.Order.asc("packageName"), Sort.Order.asc("cve"));
-            case "cve" -> Sort.by(Sort.Order.asc("cve"));
-            default -> Sort.by(Sort.Order.desc("cvssScore").nullsLast(),
-                               Sort.Order.asc("packageName"));
-        };
     }
 
     private Map<String, Long> severityMap(Long scanId) {
@@ -729,10 +806,6 @@ public class AssetController {
         // 을 읽는 순간 세션이 없으면 LazyInitializationException 이 난다.
         return assets.findWithZone(id)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "자산을 찾을 수 없습니다."));
-    }
-
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**
@@ -751,9 +824,8 @@ public class AssetController {
         }
     }
 
-    /** 구역 하나와 그 안의 자산들. 머리줄에 쓸 합계를 함께 낸다. */
     /**
-     * 구역 한 덩이.
+     * 구역 한 덩이 — 그 안의 자산들과, 머리줄에 쓸 합계.
      *
      * @param rows  <b>구역 전체</b>(거른 뒤). 머리줄의 수가 이것을 센다 —
      *              쪽에 실린 것만 세면 `DMZ 5대` 가 쪽을 넘길 때마다 달라진다
@@ -807,10 +879,13 @@ public class AssetController {
             return rows.stream().filter(r -> !r.hasScan()).count();
         }
 
-        /** 이 구역에서 가장 오래된 마지막 검사. 없으면 {@code null}. */
-        public java.time.Instant oldestScan() {
+        /**
+         * 이 구역 자산들의 최신 검사 가운데 가장 오래된 SBOM 생성 시각. 없으면 {@code null}.
+         * `30일 넘은 자산` 과 같은 기준이다 — 다시 검사는 이 값을 새로 만들지 않는다.
+         */
+        public java.time.Instant oldestSbom() {
             return rows.stream().filter(AssetRow::hasScan)
-                       .map(r -> r.latest().getCreatedAt())
+                       .map(r -> r.latest().getSbomCreatedAt())
                        .min(java.time.Instant::compareTo).orElse(null);
         }
     }

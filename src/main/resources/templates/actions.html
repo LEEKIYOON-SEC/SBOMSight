@@ -41,9 +41,10 @@
   <div class="page-header d-print-none pt-0">
     <div class="container-xl">
       <ul class="nav nav-tabs">
-        <li th:replace="~{fragments/ui :: tab('/actions', '조치',
+        <!--/* 탭 주소는 `운영 종료 자산 포함` 을 이어 간다 — 탭 숫자가 그 범위로 센다. */-->
+        <li th:replace="~{fragments/ui :: tab(${remediationTab}, '조치',
                          ${remediationCount}, ${tab} != 'analyses')}"></li>
-        <li th:replace="~{fragments/ui :: tab('/actions?tab=analyses', '검토 결과',
+        <li th:replace="~{fragments/ui :: tab(${analysisTab}, '검토 결과',
                          ${analysisCount}, ${tab} == 'analyses')}"></li>
       </ul>
     </div>
@@ -64,7 +65,7 @@
     </select>
 
     <!--/* 조치 탭의 거르개 */-->
-    <label class="form-label mb-0" for="action-status" th:if="${tab} != 'analyses'">상태</label>
+    <label class="form-label mb-0" for="action-status" th:if="${tab} != 'analyses'">조치 상태</label>
     <select class="form-select form-select-sm w-auto" id="action-status" name="status"
             th:if="${tab} != 'analyses'" data-autosubmit>
       <option value="">전체</option>
@@ -82,10 +83,24 @@
       목록의 `운영 종료 자산 포함` 과 같은 자리). 글자는 `form-check-label`
       로 감싼다 — 맨 글자로 두면 Tabler 가 이름표로 보지 않는다.
     */-->
-    <label class="form-check form-check-inline mb-0" th:if="${tab} == 'analyses'">
-      <input class="form-check-input" type="checkbox" name="includeDone" value="true"
-             th:checked="${includeDone}" data-autosubmit>
-      <span class="form-check-label">검토 끝난 것 포함</span>
+    <!--/* 탐지 목록과 같은 조각·같은 이름이다 — 빠지는 것이 같은 두 상태다.
+         `th:replace` 는 같은 태그의 `th:if` 보다 먼저 돌아 조건을 지우므로
+         감싸서 건다. */-->
+    <th:block th:if="${tab} == 'analyses'">
+      <div th:replace="~{fragments/ui :: reviewedout(${includeDone}, ${reviewedOut})}"></div>
+    </th:block>
+
+    <!--/*
+      운영 종료한 자산의 조치 · 검토 결과도 보기. **자산 목록과 같은 이름 ·
+      같은 주소 값**(`archived=true`)이다. 끈 상태가 기둥의 `대응` 배지와 같은
+      범위다 — 앞서 이 화면은 운영 종료한 자산의 것까지 늘 보여 주어, 자산
+      목록에서 사라진 자산의 기한 지난 조치가 여기와 배지에 남았다.
+    */-->
+    <label class="form-check form-check-inline mb-0"
+           title="운영에서 내린 자산의 조치 · 검토 결과도 함께 보기">
+      <input class="form-check-input" type="checkbox" name="archived" value="true"
+             th:checked="${archived}" data-autosubmit>
+      <span class="form-check-label">운영 종료 자산 포함</span>
     </label>
 
     <button class="btn btn-sm btn-dark" type="submit">적용</button>
@@ -103,6 +118,11 @@
         </span>
       </div>
 
+      <!--/* 어느 패키지의 것인지 가르지 못한 옛 조치가 있으면 그렇다고 말한다 — 표의 줄에는
+           `패키지 확인 필요` 가 붙지만, 몇 건인지 · 무엇을 해야 하는지는 여기서. */-->
+      <p class="footnote" th:if="${unresolved > 0}"
+         th:text="'※ 패키지 확인 필요 ' + ${unresolved} + '건 — 패키지 식별자를 붙이기 전의 조치 중 어느 패키지의 것인지 가를 근거가 없던 것. 어느 탐지에도 붙지 않음.'">※ 패키지 확인 필요</p>
+
       <th:block th:if="${remediations.totalElements == 0}">
         <div th:replace="~{fragments/ui :: empty('조치 내역이 없습니다',
                           '취약점 화면의 표에서 조치 칸의 [조치 등록]',
@@ -116,15 +136,27 @@
           <thead>
           <tr>
             <th class="tight">자산</th><th class="tight">구역</th>
-            <th class="tight">패키지</th><th class="tight">현재 → 목표</th>
+            <!--/* 숫자 칸의 머리는 접는다(app.css — `tight` 가 아닌 머리). 값은 한 자리인데 머리를
+                 한 줄로 두면 `조치 회차` · `등록 당시 건수` 글자 폭이 칸 폭이 된다 — 조치 회차 칸을
+                 더하자 1280px 에서 표가 카드를 80px 넘었다(앞서 8px). 값 칸은 그대로 한 줄이다. */-->
+            <th class="tight">패키지</th><th class="num">조치 회차</th><th>현재 → 목표</th>
             <th class="tight">조치 상태</th><th class="tight">담당</th>
-            <th class="tight">기한</th><th class="num tight">등록 당시 건수</th>
+            <th class="tight">기한</th><th class="num">등록 당시 건수</th>
             <th>설명</th>
           </tr>
           </thead>
           <tbody>
+          <!--/*
+            **완료했는데 남은 것은 흐리게 그리지 않는다** — 완료 · 탐지 남음 · 신규 탐지 ·
+            검증 대기(AfterDone, 보고서 5장과 같은 규칙 · 같은 말). 앞서 `완료` 로 적고
+            흐리게 그려, 보고서가 "탐지 남음" 이라고 한 조치가 여기서는 끝난 일로 보였다.
+
+            **조치 회차**를 패키지 바로 뒤에 적는다(D11) — 같은 패키지의 지난 회차와 지금
+            회차가 나란히 오면 그 칸으로 가른다. 지난 회차는 그냥 완료다.
+          */-->
           <tr th:each="r : ${remediations.content}"
-              th:style="${r.status.isClosed()} ? 'opacity:.6' : ''">
+              th:with="left=${afterDone.get(r.id)}"
+              th:style="${r.status.isClosed() and left == null} ? 'opacity:.6' : ''">
             <td class="tight"><a th:href="@{'/assets/' + ${r.asset.id}}"
                                  th:text="${r.asset.name}">web-01</a></td>
             <td class="tight faint">
@@ -132,10 +164,17 @@
                                          ? '#6f7e8d' : ${r.asset.zone.color})"></i>
               <span th:text="${r.asset.zone.name}">DMZ</span></td>
             <td class="tight"><a th:href="@{'/actions/' + ${r.id}}"
-                                 th:text="${r.packageName}">openssl</a></td>
-            <td class="tight faint mono"
-                th:text="${r.fromVersion} + ' → ' + ${r.toVersion}">—</td>
-            <td class="tight" th:text="${r.status.label()}">대기</td>
+                                 th:text="${r.packageName}">openssl</a>
+              <div th:replace="~{fragments/ui :: pkgkey(${r.packageKey})}"></div></td><td class="num tight" th:text="${r.roundNo}">1</td>
+            <!--/* 목표를 하나로 고르지 않는다 — 보고서 3장과 같은 규칙(fixversions).
+                 현재 버전도 같다(curversions, V16).
+                 줄바꿈을 막지 않는다: 스물다섯 가지를 한 줄로 두면 표가 화면을 넘는다. */-->
+            <td class="faint mono">
+              <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
+              <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
+            </td>
+            <td class="tight" th:classappend="${left != null and !left.isPending()} ? 'danger-text' : ''"
+                th:text="${left != null} ? ${left.label()} : ${r.status.label()}">대기</td>
             <td class="tight" th:text="${#strings.isEmpty(r.owner)} ? '—' : ${r.owner}">—</td>
             <td class="tight num" th:classappend="${r.overdue} ? 'overdue' : ''"
                 th:text="${r.dueDate != null} ? ${#temporals.format(r.dueDate, 'yyyy-MM-dd')} : '—'">—</td>
@@ -158,6 +197,9 @@
             th:if="${!i.last && i.index < 4}"> · </th:block>
         </span>
       </div>
+
+      <p class="footnote" th:if="${unresolved > 0}"
+         th:text="'※ 패키지 확인 필요 ' + ${unresolved} + '건 — 패키지 식별자를 붙이기 전의 검토 결과 중 어느 패키지의 것인지 가를 근거가 없던 것. 어느 탐지에도 적용되지 않음 · 그 패키지의 탐지에서 다시 작성.'">※ 패키지 확인 필요</p>
 
       <th:block th:if="${analyses.totalElements == 0}">
         <div th:replace="~{fragments/ui :: empty('검토 결과가 없습니다',
@@ -190,7 +232,8 @@
               조치는 `(자산, 패키지)` 하나에 하나이고 검토 결과는
               `(자산, CVE, 패키지)` 하나에 하나다 — 같은 패키지의 검토 세 건이
               <b>같은 조치 하나</b>를 가리킨다. 이미 열려 있으면 `조치 등록`
-              대신 그 조치의 상태를 찍는다.
+              대신 그 조치의 상태를 찍는다. 패키지는 식별자다(V24) — 식별자가 빈 옛
+              검토 결과는 어느 패키지에 조치를 열지 모르므로 `조치 등록` 을 두지 않는다.
             */-->
             <th class="tight">조치</th>
           </tr>
@@ -205,12 +248,11 @@
               <span th:text="${a.asset.zone.name}">DMZ</span></td>
             <td class="tight mono"><a th:href="@{'/vulns/' + ${a.cve}}"
                                       th:text="${a.cve}">CVE-0000-0000</a></td>
-            <td class="tight" th:text="${a.packageName}">openssl</td>
+            <td class="tight"><span th:text="${a.packageName}">openssl</span>
+              <div th:replace="~{fragments/ui :: pkgkey(${a.packageKey})}"></div></td>
 
             <td class="tight">
-              <span class="sev" th:classappend="${a.state.name() == 'EXPLOITABLE'} ? 'high'
-                                : (${a.open} ? 'medium' : 'low')"><i></i>
-                <span th:text="${a.state.label()}">해당됨</span></span>
+              <a th:replace="~{fragments/ui :: reviewstate(${a})}"></a>
             </td>
             <!--/* 대응 이름 중 긴 것("우회 조치 (패치 미적용)")이 줄바꿈 없이
                  들어가면 표가 칸을 넘는다. 여기도 `tight` 를 주지 않는다. */-->
@@ -245,15 +287,22 @@
               <span class="faint" th:if="${a.reviewBy == null}">—</span>
             </td>
 
-            <td class="tight" th:with="r=${actions.get(a.asset.id + '|' + a.packageName)}">
+            <!--/* 그 (자산, 패키지)의 지금 조치(최신 회차). 완료 · 신규 탐지면 새 조치(다음
+                 회차)를 여는 `조치 등록` 을 옆에 둔다(D11). */-->
+            <td class="tight" th:with="r=${a.packageUnresolved} ? null : ${actions.get(a.asset.id + '|' + a.packageKey)},
+                                       left=${r != null} ? ${afterDone.get(r.id)} : null">
               <a th:if="${r != null}" th:href="@{'/actions/' + ${r.id}}"
-                 th:text="${r.status.label()}">대기</a>
-              <form th:if="${r == null}" method="post" sec:authorize="hasRole('ADMIN')"
+                 th:text="${left != null} ? ${left.label()} : ${r.status.label()}">대기</a>
+              <form th:if="${!a.packageUnresolved and (r == null or (left != null and left.isNew()))}"
+                    method="post" sec:authorize="hasRole('ADMIN')"
                     th:action="@{'/assets/' + ${a.asset.id} + '/remediations'}">
+                <input type="hidden" name="packageKey" th:value="${a.packageKey}">
                 <input type="hidden" name="packageName" th:value="${a.packageName}">
                 <button type="submit" class="btn btn-sm">조치 등록</button>
               </form>
-              <span class="faint" th:if="${r == null}" sec:authorize="!hasRole('ADMIN')">미등록</span>
+              <span class="faint" th:if="${a.packageUnresolved}">—</span>
+              <span class="faint" th:if="${r == null and !a.packageUnresolved}"
+                    sec:authorize="!hasRole('ADMIN')">미등록</span>
             </td>
           </tr>
           </tbody>

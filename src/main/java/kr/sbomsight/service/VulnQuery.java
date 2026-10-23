@@ -2,6 +2,7 @@ package kr.sbomsight.service;
 
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.FindingAnalysis;
+import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.repo.FindingRepository;
@@ -177,8 +178,10 @@ public class VulnQuery {
          * 지금 고른 것에서 <b>한 가지만 바꾼 주소.</b> {@code null} 을 주면
          * 그 값을 뺀다 — 펼친 것을 접는 링크가 그렇게 만들어진다.
          *
-         * <p>패키지 화면의 `자산 보기`/`접기` 와 `취약점` 링크가 쓴다. 같은
-         * 일을 하는 링크 만들기를 두 벌로 두면 한쪽만 고치는 날이 온다.
+         * <p>패키지 화면의 `취약점` 링크가 쓴다. 같은 일을 하는 링크 만들기를 두 벌로
+         * 두면 한쪽만 고치는 날이 온다. `자산 보기`/`접기` 는 두 값(이름 · 유형)을 함께
+         * 바꾸므로 {@link #copy()} 에 얹어 {@link #here()} 로 만든다 — 펼치기는 목록을 바꾸지
+         * 않으니 쪽을 뺄 까닭도 없다.
          */
         public String change(String name, Object value) {
             return build(name, value);
@@ -198,9 +201,13 @@ public class VulnQuery {
             download.with("zone", current.get("zone"))
                     .with("scan", current.get("scan"))
                     .with("q", current.get("q"))
+                    .with("pkg", current.get("pkg"))
                     .with("severity", current.get("severity"))
                     .with("fixable", current.get("fixable"))
-                    .with("kev", current.get("kev"));
+                    .with("kev", current.get("kev"))
+                    // 내려받은 파일이 화면과 같은 것을 담아야 한다 — 화면은
+                    // 해당 없음·오탐을 뺐는데 파일은 넣었으면 두 수가 다르다.
+                    .with("includeDone", current.get("includeDone"));
             return download.here();
         }
 
@@ -267,11 +274,7 @@ public class VulnQuery {
      */
     @Transactional(readOnly = true)
     public Scope ofZone(Long zoneId) {
-        List<Scan> latest = scans.findLatestDonePerAsset().stream()
-                .filter(s -> s.getStatus() == ScanStatus.DONE)
-                .filter(s -> s.getAsset().getArchivedAt() == null)
-                .filter(s -> zoneId == null || s.getAsset().getZone().getId().equals(zoneId))
-                .toList();
+        List<Scan> latest = latestIn(zoneId);
 
         // **`전체 5대` 라고만 쓰면 자산이 다섯 대인 줄 읽힌다.** 여섯 대 중
         // 검사된 것이 다섯일 뿐이다 — 검사 안 한 자산이 빠졌다는 사실이
@@ -283,13 +286,41 @@ public class VulnQuery {
                          latest.stream().map(s -> s.getAsset().getId()).toList());
     }
 
-    /** 목록을 모델에 담는다. 묶는 방식에 따라 담기는 값이 다르다. */
+    /**
+     * {@link #ofZone} 과 같은 검사들 — 이름표 없이 번호만.
+     *
+     * <p>패키지 화면이 버전마다 붙는 취약점 수를 여기서 센다. 앞서 그 화면은
+     * 모든 자산의 최신 검사를 따로 불러 세서, 구역을 골라도 다른 구역과 운영
+     * 종료한 자산의 탐지가 합쳐졌다. <b>범위를 정하는 자리는 여기 하나다.</b>
+     */
     @Transactional(readOnly = true)
-    public void fill(Model model, Scope scope, String group, String q, String severity,
-                     Boolean fixable, Boolean kev, int page, Integer size,
-                     String sort, String dir) {
+    public List<Long> latestScanIds(Long zoneId) {
+        return latestIn(zoneId).stream().map(Scan::getId).toList();
+    }
+
+    private List<Scan> latestIn(Long zoneId) {
+        return scans.findLatestDonePerAsset().stream()
+                .filter(s -> s.getStatus() == ScanStatus.DONE)
+                .filter(s -> s.getAsset().getArchivedAt() == null)
+                .filter(s -> zoneId == null || s.getAsset().getZone().getId().equals(zoneId))
+                .toList();
+    }
+
+    /**
+     * 목록을 모델에 담는다. 묶는 방식에 따라 담기는 값이 다르다.
+     *
+     * @param pkg 패키지 하나(식별자)로 좁힌다 — 묶은 줄 · 패키지 화면에서 그 패키지의 탐지로
+     *            오는 링크가 싣는다. 검색어({@code q})는 이름의 일부라 같은 이름의 다른 패키지도
+     *            함께 걸린다
+     */
+    @Transactional(readOnly = true)
+    public void fill(Model model, Scope scope, String group, String q, String pkg, String severity,
+                     Boolean fixable, Boolean kev, boolean includeReviewed, int page,
+                     Integer size, String sort, String dir) {
         String term = blankToNull(q);
+        String one = blankToNull(pkg);
         String sev = blankToNull(severity);
+        model.addAttribute("includeDone", includeReviewed);
 
         model.addAttribute("cvePage", Page.<FindingRepository.CveGroup>empty());
         model.addAttribute("packagePage",
@@ -299,9 +330,16 @@ public class VulnQuery {
         if (scope.scanIds().isEmpty()) {
             model.addAttribute("analyses", Map.of());
             model.addAttribute("actions", Map.of());
+            model.addAttribute("afterDone", Map.of());
             model.addAttribute("reviewed", Map.of());
+            model.addAttribute("reviewedOut", 0L);
             return;
         }
+
+        // 해당 없음 · 오탐으로 빠진 건수. 체크박스가 `(n건)` 으로 말한다 —
+        // 빠진 것이 있다는 사실을 목록이 말하지 않으면 숫자가 조용히 줄어든다.
+        model.addAttribute("reviewedOut",
+                findings.countReviewedOut(scope.scanIds(), null, term, one, sev, fixable, kev));
 
         switch (group == null ? "item" : group) {
             // 묶어 세는 둘은 DB 에서 자르지 않는다 — `GROUP BY` 를 쪽으로
@@ -309,21 +347,25 @@ public class VulnQuery {
             // 갈리는 날 화면의 수와 쪽 수가 어긋난다. 읽는 양은 그대로 두고
             // 그린 뒤에 자른다.
             case "cve" -> model.addAttribute("cvePage", Paging.slice(
-                    findings.groupByCveIn(scope.scanIds(), term, sev, fixable, kev),
+                    findings.groupByCveIn(scope.scanIds(), term, one, sev, fixable, kev,
+                                          includeReviewed),
                     page, size));
             // 거르개를 **넷 다** 넘긴다. 앞서는 `scanIds` 만 넘겼고, 화면에는
             // 고른 값이 그대로 남아 있는데 목록이 한 줄도 바뀌지 않았다.
             case "package" -> model.addAttribute("packagePage", Paging.slice(
-                    findings.groupByPackageIn(scope.scanIds(), term, sev, fixable, kev),
+                    findings.groupByPackageIn(scope.scanIds(), term, one, sev, fixable, kev,
+                                              includeReviewed),
                     page, size));
             default -> {
                 boolean asc = "asc".equals(dir);
                 model.addAttribute("page", "severity".equals(sort) || sort == null
                         // 심각도는 글자다. Critical 이 High 보다 앞이라는 것은
                         // 알파벳 순서가 아니라 뜻이고, ORDER BY CASE 로만 낸다.
-                        ? findings.findInBySeverity(scope.scanIds(), term, sev, fixable, kev,
-                                                    asc, Paging.request(page, size))
-                        : findings.findIn(scope.scanIds(), term, sev, fixable, kev,
+                        ? findings.findInBySeverity(scope.scanIds(), term, one, sev, fixable, kev,
+                                                    includeReviewed, asc,
+                                                    Paging.request(page, size))
+                        : findings.findIn(scope.scanIds(), term, one, sev, fixable, kev,
+                                          includeReviewed,
                                           Paging.request(page, size, order(sort, dir))));
             }
         }
@@ -332,7 +374,7 @@ public class VulnQuery {
         // 수백 번 왕복한다.
         //
         // 키에 **자산 id 를 넣는다.** 구역·전체 범위는 자산이 섞여 있어서,
-        // (CVE, 패키지명) 으로만 맞추면 web-01 의 검토 결과가 api-01 행에
+        // (CVE, 패키지 식별자) 로만 맞추면 web-01 의 검토 결과가 api-01 행에
         // 붙는다. 자산 하나짜리 범위에서는 눈에 띄지 않다가 범위를 넓히는
         // 순간 틀리는 종류의 버그다.
         Map<String, FindingAnalysis> byAssetKey = analyses.byAssetKey(scope.assetIds());
@@ -340,15 +382,32 @@ public class VulnQuery {
 
         // 줄마다 **조치가 걸렸는지.** 검토 결과를 적은 다음 그것을 조치로
         // 올리려면 앞서는 보고서를 새로 만들어 3장까지 내려가야 했다.
-        // 조치는 `(자산, 패키지)` 하나에 하나라, 같은 패키지의 여러 건이
-        // 같은 조치를 가리킨다 — 화면은 그것을 숨기지 않는다.
-        model.addAttribute("actions", remediations.byAssetPackage(scope.assetIds()));
+        // 같은 패키지의 여러 건이 그 (자산, 패키지)의 지금 조치(최신 회차)를
+        // 가리킨다 — 화면은 그것을 숨기지 않는다.
+        Map<String, Remediation> actions = remediations.byAssetPackage(scope.assetIds());
+        model.addAttribute("actions", actions);
+        // 완료로 닫았는데 지금 검사에 해소 건수가 남은 조치 — 세 갈래(AfterDone).
+        // `완료` 라고만 적으면 끝난 일로 읽힌다 — 보고서 5장과 같은 규칙 · 같은 말.
+        model.addAttribute("afterDone", remediations.afterDone(actions.values()));
 
         // 묶어 보는 두 화면에서 **그 줄이 얼마나 검토됐는지.**
         boolean byCve = "cve".equals(group);
         model.addAttribute("reviewed", byCve || "package".equals(group)
-                ? reviewedCounts(scope, byCve, term, sev, fixable, kev, byAssetKey)
+                ? reviewedCounts(scope, byCve, term, one, sev, fixable, kev, includeReviewed,
+                                 byAssetKey)
                 : Map.of());
+    }
+
+    /**
+     * 묶은 줄의 키 — 화면이 {@code reviewed} 에서 그 줄의 수를 찾는 열쇠. CVE별은 (번호, 심각도),
+     * 패키지별은 패키지 식별자 — 각 묶음 질의의 {@code GROUP BY} 와 같은 축이다.
+     *
+     * <p>앞서 둘 다 줄보다 넓었다. CVE별은 번호만이라 같은 번호가 심각도로 두 줄로 갈리면 두
+     * 줄이 서로의 수를 합쳐 말했고, 패키지별은 이름만이라 (이름, 유형)으로 갈린 npm 과 PyPI 의
+     * semver 두 줄이 같은 `n/N` 을 말했다.
+     */
+    public static String rowKey(String display, String severity) {
+        return display + "\u0000" + (severity == null ? "" : severity);
     }
 
     /**
@@ -363,36 +422,35 @@ public class VulnQuery {
      * <p><b>거르개를 그대로 건다.</b> 세는 쪽이 안 걸면 `7건 중 2건 검토`
      * 의 7 이 같은 화면의 건수와 달라진다.
      *
-     * <p>검토됐는지 맞추는 규칙은 목록의 행과 <b>같아야 한다</b> — 번호를
-     * 둘 다 보고(GHSA 가 주 식별자인 건), 손대지 않은 행
-     * ({@code untouched})은 세지 않는다. 한쪽만 고치면 같은 건이 표에서는
-     * `작성` 인데 묶은 줄에서는 `검토됨` 으로 센다.
+     * <p>검토됐는지 맞추는 규칙은 목록의 행과 <b>같아야 한다</b> — 같은 함수
+     * ({@link FindingAnalysisService#analysisOf})로 그 줄의 행을 고르고, 손대지 않은
+     * 행({@code untouched})은 세지 않는다. 앞서 여기는 두 번호 중 <i>어느 쪽이든</i>
+     * 손댄 행이 있으면 셌다 — 둘로 갈린 건에서 표가 고른 나중 행이 `작성` 인데 묶은
+     * 줄은 `검토됨` 으로 셌다.
      */
-    private Map<String, Reviewed> reviewedCounts(Scope scope, boolean byCve, String q,
+    private Map<String, Reviewed> reviewedCounts(Scope scope, boolean byCve, String q, String pkg,
                                                  String severity, Boolean fixable, Boolean kev,
+                                                 boolean includeReviewed,
                                                  Map<String, FindingAnalysis> byAssetKey) {
         Map<String, long[]> counts = new LinkedHashMap<>();
         for (FindingRepository.AssetFindingKey key
-                : findings.findKeysFiltered(scope.scanIds(), q, severity, fixable, kev)) {
+                : findings.findKeysFiltered(scope.scanIds(), q, pkg, severity, fixable, kev,
+                                            includeReviewed)) {
             String related = key.getRelatedCve();
             String display = related != null && !related.isBlank() ? related : key.getCve();
-            long[] row = counts.computeIfAbsent(byCve ? display : key.getPackageName(),
-                                                name -> new long[2]);
+            long[] row = counts.computeIfAbsent(
+                    byCve ? rowKey(display, key.getSeverity()) : key.getPackageKey(),
+                    name -> new long[2]);
             row[1]++;
-            if (touched(byAssetKey, key.getAssetId(), display, key.getPackageName())
-                    || touched(byAssetKey, key.getAssetId(), key.getCve(), key.getPackageName())) {
+            FindingAnalysis found = FindingAnalysisService.analysisOf(
+                    byAssetKey, key.getAssetId(), key.getCve(), related, key.getPackageKey());
+            if (found != null && !found.isUntouched()) {
                 row[0]++;
             }
         }
         Map<String, Reviewed> out = new LinkedHashMap<>();
         counts.forEach((name, row) -> out.put(name, new Reviewed(row[0], row[1])));
         return out;
-    }
-
-    private static boolean touched(Map<String, FindingAnalysis> byAssetKey, Long assetId,
-                                   String cve, String packageName) {
-        FindingAnalysis found = byAssetKey.get(assetId + "|" + cve + "|" + packageName);
-        return found != null && !found.isUntouched();
     }
 
     /**
@@ -417,10 +475,15 @@ public class VulnQuery {
      *
      * <p>그래서 정렬 축 앞에 <b>"값이 없는가" 한 칸을 직접 붙인다.</b>
      * 이것만이 두 방향·두 DB 에서 같게 돈다.
+     *
+     * <p><b>끝은 언제나 {@code id} 다.</b> 앞의 축이 같은 줄(같은 CVE 가 여러
+     * 자산에)은 DB 가 아무 순서로 내도 되고, 쪽마다 따로 묻는 목록은 그 순서가
+     * 요청마다 달라질 수 있다 — 그러면 쪽 경계에서 줄이 빠지거나 두 번 나온다.
+     * 심각도 순 질의(FindingRepository 의 BY_SEVERITY)와 같은 규칙이다(ListOrderTest).
      */
     public static Sort order(String sort, String dir) {
         Sort.Direction d = "asc".equals(dir) ? Sort.Direction.ASC : Sort.Direction.DESC;
-        return switch (sort == null ? "" : sort) {
+        Sort axes = switch (sort == null ? "" : sort) {
             case "epss" -> nullsLast("f.epss")
                     .and(Sort.by(Sort.Order.by("epss").with(d)))
                     .and(nullsLast("f.cvssScore"))
@@ -433,6 +496,7 @@ public class VulnQuery {
                     .and(Sort.by(Sort.Order.by("cvssScore").with(d),
                                  Sort.Order.asc("packageName")));
         };
+        return axes.and(Sort.by(Sort.Order.asc("id")));
     }
 
     /**

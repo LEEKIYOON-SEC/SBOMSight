@@ -59,6 +59,17 @@
     <input class="form-control form-control-sm" type="search" name="q" th:value="${q}"
            style="flex:1; min-width:14rem" autocomplete="off"
            aria-label="CVE 번호 · 패키지 이름" placeholder="CVE 번호 · 패키지 이름">
+    <!--/*
+      패키지 하나로 좁혀 왔다(`pkg` — 패키지 식별자). 묶은 줄 · 패키지 화면의 링크가
+      싣는다. 검색어와 따로 둔다 — 검색어는 이름의 일부라 같은 이름의 다른 패키지도
+      걸린다. 걸려 있다는 것을 보여 주고 풀 길을 둔다 — 안 보이는 거르개는 값이 틀린
+      것과 같다. 다른 거르개를 바꿔도 이어 간다(숨은 칸).
+    */-->
+    <th:block th:if="${pkg != null}">
+      <input type="hidden" name="pkg" th:value="${pkg}">
+      <span class="tag" th:title="${pkg}">패키지 <span class="mono" th:text="${pkg}">pkg:npm/semver</span></span>
+      <a class="faint" style="font-size:12px" th:href="@{${links.change('pkg', null)}}">패키지 필터 지우기</a>
+    </th:block>
     <select class="form-select form-select-sm w-auto" name="severity" aria-label="심각도">
       <option value="">심각도 전체</option>
       <option value="Critical" th:selected="${severity} == 'Critical'">심각</option>
@@ -76,6 +87,7 @@
       <option value="true" th:selected="${fixable != null and fixable}">있음</option>
       <option value="false" th:selected="${fixable != null and !fixable}">없음</option>
     </select>
+    <div th:replace="~{fragments/ui :: reviewedout(${includeDone}, ${reviewedOut})}"></div>
     <button class="btn btn-sm btn-dark" type="submit">찾기</button>
   </form>
 
@@ -143,14 +155,7 @@
             <tr th:each="g : ${cvePage.content}">
               <td class="tight mono"><a th:href="@{'/vulns/' + ${g.cve}}" th:text="${g.cve}">CVE-0000-0000</a></td>
               <td class="tight">
-                <span class="sev" th:classappend="${#strings.toLowerCase(g.severity)}"><i></i>
-                  <span th:switch="${#strings.toLowerCase(g.severity)}">
-                    <th:block th:case="'critical'">심각</th:block>
-                    <th:block th:case="'high'">높음</th:block>
-                    <th:block th:case="'medium'">보통</th:block>
-                    <th:block th:case="'low'">낮음</th:block>
-                    <th:block th:case="*" th:text="${#strings.isEmpty(g.severity)} ? '미확인' : ${g.severity}">미확인</th:block>
-                  </span></span>
+                <span th:replace="~{fragments/ui :: sev(${g.severity})}"></span>
                 <span th:if="${g.kevCount > 0}" class="tag kev">실제 악용</span>
               </td>
               <td class="num tight" th:text="${g.maxCvss != null} ? ${g.maxCvss} : '—'">—</td>
@@ -169,7 +174,9 @@
                 <span class="faint" th:if="${g.fixable > 0 and g.fixable < g.total}"
                       th:text="${g.fixable} + ' / ' + ${g.total}">0 / 0</span>
               </td>
-              <td class="tight" th:with="r=${reviewed.get(g.cve)}">
+              <!--/* 줄의 키 — (번호, 심각도). 번호만으로 찾으면 심각도로 갈린 두 줄이 서로의 수를
+                   합쳐 말한다(groupByCveIn 의 GROUP BY 와 같은 축 — VulnQuery.rowKey). */-->
+              <td class="tight" th:with="r=${reviewed.get(T(kr.sbomsight.service.VulnQuery).rowKey(g.cve, g.severity))}">
                 <div th:replace="~{fragments/ui :: reviewmark(${r})}"></div>
                 <!--/* 진행과 링크를 한 줄에 두면 `미검토 항목별로 보기` 가 한
                      구절로 읽힌다. 아래 줄로 내린다 — 패키지 칸의 유형·경로와
@@ -204,13 +211,16 @@
               <th class="tight">패키지</th><th class="tight">유형</th>
               <th class="num tight">영향 자산</th><th class="num tight">탐지</th>
               <th class="num tight">해소 가능</th><th class="tight">최고 심각도</th>
-              <th class="tight">목표 버전</th>
+              <th class="tight">현재 버전</th>
               <!--/* CVE별과 같은 이유로 세기만 한다 — 위 주석. */-->
               <th class="tight">검토</th>
             </tr></thead>
             <tbody>
             <tr th:each="g : ${packagePage.content}">
-              <td class="tight"><b th:text="${g.packageName}">openssl</b></td>
+              <!--/* 한 줄은 패키지 식별자다(V24) — 같은 이름의 npm · PyPI, groupId 만 다른
+                   Maven 은 다른 줄이다. 식별자를 이름 아래에 적는다. */-->
+              <td class="tight"><b th:text="${g.packageName}">openssl</b>
+                <div th:replace="~{fragments/ui :: pkgkey(${g.packageKey})}"></div></td>
               <td class="tight faint" th:text="${g.packageType}">rpm</td>
               <td class="num tight"><b th:text="${g.assetCount}">0</b>대</td>
               <td class="num tight" th:text="${g.total}">0</td>
@@ -225,18 +235,23 @@
                 <span th:if="${g.kevCount > 0}" class="tag kev">실제 악용</span>
               </td>
               <!--/*
-                설치된 판이 자산마다 다르면 목표 버전을 단정하지 않는다.
-                하나로 적으면 그 버전으로 올려도 안 되는 자산이 생긴다.
+                **설치된 버전이다.** 열 이름이 `목표 버전` 이었는데 찍는 것은 설치된
+                버전이었다(띄운 앱에서 curl 줄에 7.64.0-4+deb10u1). 자산마다
+                다르면 하나를 골라 적지 않는다. 수정 버전은 항목별 목록과 보고서가
+                말한다.
               */-->
               <td class="tight mono">
                 <span th:if="${g.versionCount == 1}" th:text="${g.anyVersion}">3.0.7</span>
                 <span class="faint" th:if="${g.versionCount != 1}"
-                      th:text="'설치 판 ' + ${g.versionCount} + '가지'">설치 판 2가지</span>
+                      th:text="${g.versionCount} + '가지'">2가지</span>
               </td>
-              <td class="tight" th:with="r=${reviewed.get(g.packageName)}">
+              <!--/* 줄의 키 — 패키지 식별자. 이름으로 찾으면 같은 이름의 두 줄이 같은 수를 말한다.
+                   항목별로도 그 패키지 하나로 보낸다(`pkg`) — 이름(검색어)으로 보내면 같은
+                   이름의 다른 패키지 · 이름에 그 글자가 든 패키지까지 걸린다. */-->
+              <td class="tight" th:with="r=${reviewed.get(g.packageKey)}">
                 <div th:replace="~{fragments/ui :: reviewmark(${r})}"></div>
                 <div><a class="faint" style="font-size:12px"
-                   th:href="@{${links.copy().with('group','item').with('q', g.packageName).here()}}"
+                   th:href="@{${links.copy().with('group','item').with('pkg', g.packageKey).here()}}"
                    sec:authorize="hasRole('ADMIN')">항목별로 보기</a></div>
               </td>
             </tr>
@@ -247,7 +262,7 @@
         <!--/* 패키지 화면과 세는 것이 다르다. 적어 두지 않으면 두 화면의
              수가 다른 것이 오류로 읽힌다. */-->
         <p class="footnote">
-          ※ 세는 단위 — <b>탐지가 난 패키지 이름</b> · 최신 검사 기준.
+          ※ 세는 단위 — <b>탐지가 난 패키지</b>(패키지 식별자 하나가 한 줄) · 최신 검사 기준.
         </p>
         <p class="footnote">
           ※ 깔린 것 전부는 <a th:href="@{/packages}">패키지 화면</a>.

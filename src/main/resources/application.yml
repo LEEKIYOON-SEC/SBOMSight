@@ -142,7 +142,6 @@ sbomsight:
   # SBOM 원본과 grype 결과를 보관하는 곳. gzip 으로 저장한다.
   data-dir: ${SBOMSIGHT_DATA_DIR:./data}
   grype-path: ${SBOMSIGHT_GRYPE:grype}
-  syft-path: ${SBOMSIGHT_SYFT:syft}
   # grype 한 번이 오래 걸릴 수 있다. 넉넉히 두고, 넘으면 실패로 남긴다.
   grype-timeout-minutes: ${SBOMSIGHT_GRYPE_TIMEOUT:60}
   # 최초 관리자. 계정이 하나도 없을 때만 만들어진다.

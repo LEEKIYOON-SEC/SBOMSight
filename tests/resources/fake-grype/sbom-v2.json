@@ -1,0 +1,29 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "CVE-2024-0002", "dataSource": "fake", "namespace": "debian:distro:debian:11",
+        "severity": "Critical",
+        "cvss": [{"type":"Primary","version":"3.1","vector":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H","metrics":{"baseScore":9.8}}],
+        "fix": {"versions": ["1.1.1w"], "state": "fixed"}
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [{"type":"exact-direct-match","matcher":"dpkg-matcher","searchedBy":{"namespace":"debian:distro:debian:11"},"found":{"vulnerabilityID":"CVE-2024-0002","versionConstraint":"< 1.1.1w"}}],
+      "artifact": {"name":"openssl","version":"1.1.1n","type":"deb","purl":"pkg:deb/debian/openssl@1.1.1n","locations":[{"path":"/var/lib/dpkg/status"}]}
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-aaaa-bbbb-cccc", "dataSource": "fake", "namespace": "github:language:javascript",
+        "severity": "Medium",
+        "cvss": [{"type":"Primary","version":"3.1","vector":"CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N","metrics":{"baseScore":5.4}}],
+        "fix": {"versions": [], "state": "not-fixed"}
+      },
+      "relatedVulnerabilities": [{"id": "CVE-2025-9999", "dataSource": "nvd", "namespace": "nvd:cpe"}],
+      "matchDetails": [{"type":"exact-direct-match","matcher":"javascript-matcher","searchedBy":{"namespace":"github:language:javascript"},"found":{"vulnerabilityID":"GHSA-aaaa-bbbb-cccc","versionConstraint":"<= 4.17.0"}}],
+      "artifact": {"name":"lodash","version":"4.17.0","type":"npm","purl":"pkg:npm/lodash@4.17.0","locations":[{"path":"/opt/app/node_modules/lodash/package.json"}]}
+    }
+  ],
+  "source": {"type": "sbom"},
+  "distro": {"name": "debian", "version": "11"},
+  "descriptor": {"version": "0.0.0-fake", "db": {"built": "2026-09-15T00:00:00Z"}}
+}

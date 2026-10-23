@@ -24,8 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 새는 것을 아무도 모른다. 새 화면을 만들 때 옛 화면에서 표를 복사해 오면
  * 그 말도 함께 따라온다 — 실제로 {@code vulns.html} 이 그렇게 만들어졌다.
  *
- * <p>지어낸 말과 흐려진 줄임말이다. 근거는 {@code docs/rework-plan.md} §4.1.
- * 여기에 걸리면 그 표를 보고 고친다. 새 말을 만들지 않는다.
+ * <p>지어낸 말과 흐려진 줄임말이다. <b>이 파일이 어휘표다</b> — 낱말마다 왜
+ * 바꿨는지를 옆에 적어 둔다. 여기에 걸리면 오른쪽 말로 고친다. 새 말을 만들지
+ * 않는다. (앞서 근거가 개편 계획서 §4.1 에 있었고, 운영 전에 그 문서를 지웠다.)
  */
 class VocabularyTest {
 
@@ -46,7 +47,22 @@ class VocabularyTest {
             // 순우리말로 지어낸 말이다. 그 팀이 실제로 쓰는 말은 `필터` 다.
             // 화면 전체가 일관되게 쓰고 있었을 뿐, 아무도 그렇게 부르지 않는다.
             entry("거르개", "필터"),
-            entry("묶기", "묶는 방식 또는 탭 이름(항목별 · CVE별 · 패키지별)"));
+            entry("묶기", "묶는 방식 또는 탭 이름(항목별 · CVE별 · 패키지별)"),
+            // 외래어. 보고서의 `대조 축` · 취약점 상세의 `대조 방식` 과 같은 말을
+            // 쓴다(§4.1). 검사 진행 단계의 설명에 남아 있었다.
+            entry("매칭", "대조"),
+            // 같은 수(그 패키지에 걸린 가장 높은 심각도)를 패키지 화면 · 그 CSV 는
+            // `최고 등급`, 취약점 화면은 `최고 심각도` 로 불렀다.
+            entry("최고 등급", "최고 심각도"),
+            // 취약점 상세는 같은 칸을 `별칭` 이라 부른다. 도구 이름을 주어로
+            // 세우지 않는다는 규칙과도 맞춘다.
+            entry("grype 식별자", "별칭"),
+            // `올리` 를 `업로드` 로 바꾸면서(N17 · N20) 자바 문자열 둘이 남아 있었다.
+            entry("다시 올려", "다시 업로드"),
+            // 모르는 값은 `확인되지 않음` 이다 — 취약점 상세 · 설정이 그렇게 쓴다.
+            // 보고서만 `판 미상` · `정보 없음` 이었다.
+            entry("미상", "확인되지 않음"),
+            entry("정보 없음", "확인되지 않음"));
 
     /**
      * <b>열 머리에서만</b> 쓰지 않는 말.
@@ -159,7 +175,7 @@ class VocabularyTest {
         }
 
         assertThat(hits)
-                .as("docs/rework-plan.md §4.1 의 어휘표대로 고칩니다. 새 말을 짓지 않습니다.")
+                .as("VocabularyTest 의 어휘표대로 고칩니다. 새 말을 짓지 않습니다.")
                 .isEmpty();
     }
 
@@ -199,6 +215,179 @@ class VocabularyTest {
     }
 
     /**
+     * <b>자바에서 만드는 글도 화면에 나간다.</b>
+     *
+     * <p>위 시험들은 템플릿만 읽는다. 그래서 자산 삭제 안내(`스캔 3건 · 탐지 …`),
+     * 검사를 지운 뒤의 안내, 404 사유(`스캔을 찾을 수 없습니다`)가 자바 문자열
+     * 이라 그대로 남아 있었다 — 여덟 곳. 로그({@code log.info} 등)는 화면에
+     * 나가지 않으므로 넘긴다. 주석도 넘긴다.
+     */
+    @Test
+    @DisplayName("자바에서 만드는 안내 · 오류 글도 쓰지 않기로 한 말을 쓰지 않는다")
+    void javaMessagesFollowTheVocabulary() throws IOException {
+        List<String> hits = new ArrayList<>();
+        for (JavaLiteral lit : javaLiterals()) {
+            for (var banned : BANNED.entrySet()) {
+                if (lit.text().contains(banned.getKey())) {
+                    hits.add("%s  '%s' → '%s'  (%s)".formatted(
+                            lit.where(), banned.getKey(), banned.getValue(), lit.text()));
+                }
+            }
+        }
+        assertThat(hits)
+                .as("VocabularyTest 의 어휘표대로 고칩니다. 자바 문자열도 화면에 나갑니다.")
+                .isEmpty();
+    }
+
+    /**
+     * <b>이름 뒤에 조사를 박아 두지 않는다.</b>
+     *
+     * <p>`을/를` · `이/가` · `은/는` · `으로/로` · `과/와` 는 앞말의 받침에 따라
+     * 갈린다. 이름 뒤에 하나를 박아 두면 이름에 따라 틀린다 — 띄운 앱에서
+     * "was-01 을 내부업무 으로 옮겼습니다". 대신 고정된 말을 사이에 둔다:
+     * "was-01 자산을 내부업무 구역으로". `의` · `에` 는 받침과 상관없어 둔다.
+     */
+    @Test
+    @DisplayName("값 뒤에 받침 따라 갈리는 조사를 붙이지 않는다")
+    void noFixedParticleAfterAValue() throws IOException {
+        Pattern java = Pattern.compile("\\+\\s*\"\\s?(을|를|이|가|은|는|으로|로|과|와)(\\s|\\.|$)");
+        Pattern template = Pattern.compile("\\+\\s*'\\s?(을|를|이|가|은|는|으로|로|과|와)(\\s|\\.|')");
+        List<String> hits = new ArrayList<>();
+
+        for (Path file : javaFiles()) {
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (isCommentOrLog(line)) {
+                    continue;
+                }
+                if (java.matcher(line).find()) {
+                    hits.add("%s:%d  %s".formatted(file.getFileName(), i + 1, line.strip()));
+                }
+            }
+        }
+        Path templates = Path.of("src/main/resources/templates");
+        try (Stream<Path> files = Files.walk(templates)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".html")).sorted().toList()) {
+                List<String> lines = visibleLines(file);
+                for (int i = 0; i < lines.size(); i++) {
+                    if (template.matcher(lines.get(i)).find()) {
+                        hits.add("%s:%d  %s".formatted(templates.relativize(file), i + 1,
+                                                       lines.get(i).strip()));
+                    }
+                }
+            }
+        }
+
+        assertThat(hits)
+                .as("이름 뒤에는 고정된 말(자산 · 구역 · 종료 코드 …)을 두고 조사는 그 말에 붙입니다.")
+                .isEmpty();
+    }
+
+    /**
+     * <b>조사는 앞말에 붙여 쓴다 — 영문 · 숫자 뒤에서도.</b>
+     *
+     * <p>화면 글자가 {@code SBOM 을} · {@code grype 이} · {@code 2.2 의} 처럼 영문 ·
+     * 숫자 뒤의 조사만 띄어 썼다. 같은 화면의 한글 낱말 뒤에서는 붙여 써서, 한
+     * 화면 안에서 두 가지로 적혔다. 조사는 읽는 소리의 받침으로 고른다 —
+     * {@code SBOM을}(에스봄) · {@code grype가}(그라이프) · {@code DB로}(디비).
+     *
+     * <p>화면에 나가는 글자만 본다. 주석 · 문서 · 기록(로그)은 고치지 않기로
+     * 했다. 이름 같은 <b>값</b> 뒤에서 받침을 타는 조사(을 · 이 …)는 위 시험이
+     * 막는다 — 받침을 모르니 고정된 말을 사이에 둔다. 받침과 상관없는 것(의 · 에 ·
+     * 도 · 만)은 여기서 붙였는지 본다: {@code cve + "의 검토 결과"}.
+     */
+    @Test
+    @DisplayName("영문 · 숫자 뒤의 조사를 띄어 쓰지 않는다")
+    void particlesAttachToLatinWordsToo() throws IOException {
+        Pattern spaced = Pattern.compile("[A-Za-z0-9)\\]>'}]\\s"
+                + "(을|를|이|가|은|는|으로|로|과|와|의|에|에서|에는|에도|으로는|로는|도)"
+                + "(?=[\\s.,·)'\"<]|$)");
+        List<String> hits = new ArrayList<>();
+
+        Path templates = Path.of("src/main/resources/templates");
+        try (Stream<Path> files = Files.walk(templates)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".html")).sorted().toList()) {
+                List<String> lines = visibleLines(file);
+                for (int i = 0; i < lines.size(); i++) {
+                    Matcher m = spaced.matcher(lines.get(i));
+                    while (m.find()) {
+                        hits.add("%s:%d  …%s…".formatted(templates.relativize(file), i + 1,
+                                lines.get(i).substring(Math.max(0, m.start() - 20),
+                                                       Math.min(lines.get(i).length(), m.end() + 10))));
+                    }
+                }
+            }
+        }
+        for (JavaLiteral lit : javaLiterals()) {
+            if (spaced.matcher(lit.text()).find()) {
+                hits.add("%s  \"%s\"".formatted(lit.where(), lit.text()));
+            }
+        }
+        // 값 뒤 — `cve + " 의 검토 결과"`. 받침을 타는 조사는 위 시험이 막으므로
+        // 여기서는 받침과 상관없는 것(의 · 에 · 도 · 만)이 떨어져 있는지만 본다.
+        Pattern afterValue = Pattern.compile("\\+\\s*\"\\s(의|에|에서|에는|에도|도|만)(?=[\\s.,·)\"]|$)");
+        for (Path file : javaFiles()) {
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                if (!isCommentOrLog(lines.get(i)) && afterValue.matcher(lines.get(i)).find()) {
+                    hits.add("%s:%d  %s".formatted(file.getFileName(), i + 1, lines.get(i).strip()));
+                }
+            }
+        }
+
+        assertThat(hits)
+                .as("조사는 앞말에 붙입니다 — SBOM을 · grype가 · DB로 (소리의 받침으로 고릅니다).")
+                .isEmpty();
+    }
+
+    private record JavaLiteral(String where, String text) {
+    }
+
+    private static List<Path> javaFiles() throws IOException {
+        try (Stream<Path> files = Files.walk(Path.of("src/main/java"))) {
+            return files.filter(p -> p.toString().endsWith(".java")).sorted().toList();
+        }
+    }
+
+    /** 주석 줄이거나 로그를 남기는 줄 — 화면에 나가지 않는다. */
+    private static boolean isCommentOrLog(String line) {
+        String s = line.stripLeading();
+        return s.startsWith("*") || s.startsWith("//") || s.startsWith("/*")
+                || Pattern.compile("\\blog\\.(info|warn|error|debug|trace)\\(").matcher(line).find();
+    }
+
+    /** 주석과 로그를 뺀 자바 문자열 조각. 여러 줄에 걸친 블록 주석은 통째로 넘긴다. */
+    private static List<JavaLiteral> javaLiterals() throws IOException {
+        Pattern literal = Pattern.compile("\"((?:[^\"\\\\]|\\\\.)*)\"");
+        List<JavaLiteral> out = new ArrayList<>();
+        for (Path file : javaFiles()) {
+            List<String> lines = Files.readAllLines(file);
+            boolean inBlock = false;
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i);
+                String s = line.strip();
+                if (inBlock) {
+                    inBlock = !s.contains("*/");
+                    continue;
+                }
+                if (s.startsWith("/*") && !s.contains("*/")) {
+                    inBlock = true;
+                    continue;
+                }
+                if (isCommentOrLog(line)) {
+                    continue;
+                }
+                Matcher m = literal.matcher(line);
+                while (m.find()) {
+                    out.add(new JavaLiteral(file.getFileName() + ":" + (i + 1), m.group(1)));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
      * 표의 열 이름.
      *
      * <p>한 가지를 두 이름으로 부르는 일은 거의 언제나 여기서 생긴다 — 새
@@ -207,10 +396,13 @@ class VocabularyTest {
      * 가리킨 채로 둘 다 살아 있었다.
      */
     @Test
-    @DisplayName("표의 열 이름이 어휘표를 따른다")
+    @DisplayName("표의 열 이름과 입력칸 이름이 어휘표를 따른다")
     void columnHeadersFollowTheVocabulary() throws IOException {
         Path templates = Path.of("src/main/resources/templates");
-        Pattern header = Pattern.compile("<th[^>]*>\\s*([^<]*?)\\s*</th>");
+        // **입력칸의 이름도 본다.** 열 이름만 보았더니 조치 필터의 `상태` 와
+        // 검토 결과 창의 `상태` 가 그대로 남아 있었다 — 같은 화면(대응)의 두
+        // 탭이 각자 `상태` 를 쓰면 어느 상태인지 모른다.
+        Pattern header = Pattern.compile("<(?:th|label)[^>]*>\\s*([^<]*?)\\s*</(?:th|label)>");
         List<String> hits = new ArrayList<>();
 
         try (Stream<Path> files = Files.walk(templates)) {
@@ -231,7 +423,7 @@ class VocabularyTest {
         }
 
         assertThat(hits)
-                .as("docs/rework-plan.md §4.1. 같은 것을 두 이름으로 부르지 않습니다.")
+                .as("VocabularyTest 의 어휘표. 같은 것을 두 이름으로 부르지 않습니다.")
                 .isEmpty();
     }
 

@@ -32,15 +32,22 @@ public class FindingAnalysisEvent {
     @Column(nullable = false, length = 64)
     private String actor = "";
 
-    /** 무엇이 바뀌었나 — {@code 상태} · {@code 근거} · {@code 대응} · {@code 재검토일} … */
+    /**
+     * 무엇이 바뀌었나 — {@code 상태} · {@code 근거} · {@code 대응} · {@code 재검토일}, 그리고
+     * (V19 부터) {@code 설명} · {@code 추가 보안 통제} · {@code 결재 문서 번호}.
+     */
     @Column(name = "field_name", nullable = false, length = 32)
     private String field = "";
 
-    /** 바뀌기 전 값. 화면에 찍는 말로 담는다 — 이력은 사람이 읽는 것이다. */
-    @Column(name = "before_value", nullable = false, length = 255)
+    /**
+     * 바뀌기 전 값. 화면에 찍는 말로 담는다 — 이력은 사람이 읽는 것이다.
+     *
+     * <p>설명(2,000자)까지 담는다(V19). 앞서 255자라 적는 칸은 이력에 넣을 수 없었다.
+     */
+    @Column(name = "before_value", nullable = false, length = 2000)
     private String before = "";
 
-    @Column(name = "after_value", nullable = false, length = 255)
+    @Column(name = "after_value", nullable = false, length = 2000)
     private String after = "";
 
     protected FindingAnalysisEvent() {
@@ -57,7 +64,7 @@ public class FindingAnalysisEvent {
 
     private static String clip(String value) {
         String text = value == null ? "" : value.trim();
-        return text.length() > 255 ? text.substring(0, 255) : text;
+        return text.length() > 2000 ? text.substring(0, 2000) : text;
     }
 
     public Long getId() {
@@ -79,6 +86,20 @@ public class FindingAnalysisEvent {
 
     public String getField() {
         return field;
+    }
+
+    /**
+     * 화면에 찍는 칸 이름. 이력은 {@code 상태} · {@code 대응} 으로 적어 왔는데
+     * (V11 이 옮겨 온 줄도 그렇다) 화면은 같은 칸을 {@code 검토 상태} ·
+     * {@code 대응 방안} 이라 부른다 — 한 가지를 두 말로 부르지 않는다. 쌓인
+     * 줄을 고치지 않고 읽을 때 옮긴다.
+     */
+    public String getFieldLabel() {
+        return switch (field) {
+            case "상태" -> "검토 상태";
+            case "대응" -> "대응 방안";
+            default -> field;
+        };
     }
 
     public String getBefore() {

@@ -2,26 +2,31 @@ package kr.sbomsight.web;
 
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.AssetRepository;
+import kr.sbomsight.repo.FindingRepository;
+import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.FindingAnalysisService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.security.Principal;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
- * 검토 결과를 <b>적는</b> 자리.
+ * 검토 결과를 <b>적는</b> 자리와 <b>한 건을 보는</b> 자리.
  *
- * <p>목록은 {@link ActionController}(`/actions?tab=analyses`)로 옮겼다. 여기
- * 남은 것은 취약점 화면에서 건을 보면서 적는 길 하나다 — <b>목록이 아니라
- * 건을 보면서 적는다.</b> 무엇이 해당 없는지는 그 탐지를 봐야 알 수 있다.
+ * <p>목록은 {@link ActionController}(`/actions?tab=analyses`)로 옮겼다. 적는
+ * 것은 취약점 화면에서 건을 보면서 한다 — <b>목록이 아니라 건을 보면서
+ * 적는다.</b> 무엇이 해당 없는지는 그 탐지를 봐야 알 수 있다.
  *
- * <p>적는 것은 관리자만 한다. 조회 권한으로 남의 결정을 적을 수는 없다.
+ * <p>적는 것은 관리자만 한다. 조회 권한으로 남의 결정을 적을 수는 없다. 보는
+ * 것은 누구나 — 조치 상세와 같다.
  */
 @Controller
 @RequestMapping("/analyses")
@@ -32,10 +37,50 @@ public class FindingAnalysisController {
 
     private final FindingAnalysisService analyses;
     private final AssetRepository assets;
+    private final ScanRepository scans;
+    private final FindingRepository findings;
+    private final kr.sbomsight.service.SettingsService settings;
 
-    public FindingAnalysisController(FindingAnalysisService analyses, AssetRepository assets) {
+    public FindingAnalysisController(FindingAnalysisService analyses, AssetRepository assets,
+                                     ScanRepository scans, FindingRepository findings,
+                                     kr.sbomsight.service.SettingsService settings) {
         this.analyses = analyses;
         this.assets = assets;
+        this.scans = scans;
+        this.findings = findings;
+        this.settings = settings;
+    }
+
+    /**
+     * 검토 결과 한 건 — 지금의 결정과 <b>거기까지 온 길</b>.
+     *
+     * <p>앞서 변경 이력은 쌓이기만 하고 볼 자리가 없었다(FindingAnalysisEvent).
+     * "언제부터 해당 없음이었나" · "결재 문서 번호는 누가 바꿨나" 를 물으면 DB 를
+     * 열어야 했다. 조치 상세(`/actions/{id}`)와 같은 꼴이다.
+     */
+    @GetMapping("/{id}")
+    public String detail(@PathVariable Long id, Model model) {
+        FindingAnalysis analysis = analyses.detail(id)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검토 결과를 찾을 수 없습니다."));
+        model.addAttribute("analysis", analysis);
+
+        // 최신 검사에서 이 탐지가 아직 있는가 — 조치 상세와 같다. 검토 결과를
+        // 저절로 바꾸지는 않는다. 사라진 까닭(올렸는지 · 검사 대상이
+        // 바뀌었는지)은 도구가 알 수 없다. 번호는 둘 다 본다 — 적어 둔 번호가
+        // 함께 온 CVE 쪽일 수 있다(findByCveIn 이 두 칸을 다 본다). 패키지는 식별자로
+        // 견준다(V24) — 이름으로 견주어 같은 이름의 다른 패키지 탐지가 `이 탐지` 로 셌다.
+        // 식별자가 빈 옛 기록은 어느 탐지와도 같지 않다 — 화면이 그렇다고 말한다.
+        Scan latest = scans.currentOf(analysis.getAsset().getId()).orElse(null);
+        model.addAttribute("latest", latest);
+        model.addAttribute("present", latest == null || analysis.isPackageUnresolved()
+                ? List.<Finding>of()
+                : findings.findByCveIn(List.of(latest.getId()), analysis.getCve(), true).stream()
+                          .filter(f -> f.getPackageKey().equals(analysis.getPackageKey()))
+                          .toList());
+        // 이력이 적는 칸까지 남기 시작한 시각 — 그보다 먼저 만든 것에만 각주로(V19).
+        model.addAttribute("historySince", settings.historyFieldsSince()
+                .filter(since -> analysis.getCreatedAt().isBefore(since)).orElse(null));
+        return "analysis-detail";
     }
 
     /**
@@ -43,12 +88,20 @@ public class FindingAnalysisController {
      *
      * <p>빈 문자열을 {@code null} 로 받는다. 화면의 고르개는 "고르지 않음" 을
      * 빈 값으로 보내는데, 스프링이 그대로 enum 으로 바꾸려 하면 400 이 난다.
+     *
+     * <p><b>표 · CVE 상세는 탐지 번호({@code findingId})를 함께 보낸다</b> — 서버가 그
+     * 탐지의 두 번호로 있던 행을 먼저 찾는다(FindingAnalysisService.recordForFinding).
+     * 검토 결과 상세는 그 행 자신을 고치므로 보내지 않는다 — 그 행의 번호로 찾는다.
+     *
+     * <p><b>패키지는 식별자로 받는다</b>({@code packageKey} — V24). 앞서 이름으로 받아, npm 의
+     * semver 줄에서 적은 `해당 없음` 이 같은 자산 PyPI semver 의 같은 번호 탐지에도 붙었다.
      */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public String record(@RequestParam Long assetId,
+                         @RequestParam(required = false) Long findingId,
                          @RequestParam String cve,
-                         @RequestParam String packageName,
+                         @RequestParam(required = false) String packageKey,
                          @RequestParam(required = false) String state,
                          @RequestParam(required = false) String justification,
                          @RequestParam(required = false) String response,
@@ -67,15 +120,23 @@ public class FindingAnalysisController {
                     enumOf(AnalysisJustification.class, justification);
             AnalysisResponse newResponse = enumOf(AnalysisResponse.class, response);
             java.time.LocalDate newReviewBy = date(reviewBy);
+            AnalysisState chosen = newState == null ? AnalysisState.NOT_SET : newState;
+            Runnable write = () -> {
+                if (findingId == null) {
+                    // 있던 것만 고친다 — 이름은 그 행의 것이다(null).
+                    analyses.record(asset, cve, null, packageKey, chosen, newJustification, newResponse,
+                                    note, otherControl, approvalDoc, newReviewBy, principal.getName());
+                } else {
+                    analyses.recordForFinding(asset, findingId, packageKey, chosen, newJustification,
+                                              newResponse, note, otherControl, approvalDoc, newReviewBy,
+                                              principal.getName());
+                }
+            };
             try {
-                analyses.record(asset, cve, packageName,
-                                newState == null ? AnalysisState.NOT_SET : newState,
-                                newJustification, newResponse,
-                                note, otherControl, approvalDoc, newReviewBy,
-                                principal.getName());
+                write.run();
             } catch (org.springframework.dao.DataIntegrityViolationException race) {
                 // **동시에 두 번 눌렸다.** `record` 는 `없으면 만든다` 인데 그
-                // 사이에 다른 요청이 같은 `(자산, CVE, 패키지)` 를 만들 수 있다.
+                // 사이에 다른 요청이 같은 `(자산, CVE, 패키지 식별자)` 를 만들 수 있다.
                 // DB 의 유일 제약(`ux_analysis_key`)이 막아 데이터는 갈라지지
                 // 않지만, 예외가 그대로 올라가면 화면이 500 이 되어 적은 것이
                 // 들어갔는지 알 수 없다.
@@ -83,14 +144,10 @@ public class FindingAnalysisController {
                 // 한 번 더 부른다 — 이제 그 줄이 있으므로 `고치는 길` 로 가고,
                 // 바뀐 칸만 이력에 남는다. 두 번째도 겹치면 그때는 올린다.
                 log.info("검토 결과를 적는 요청이 겹쳤습니다 — 다시 한 번 적습니다: {} · {}",
-                         cve, packageName);
-                analyses.record(asset, cve, packageName,
-                                newState == null ? AnalysisState.NOT_SET : newState,
-                                newJustification, newResponse,
-                                note, otherControl, approvalDoc, newReviewBy,
-                                principal.getName());
+                         cve, packageKey);
+                write.run();
             }
-            flash.addFlashAttribute("message", cve + " 의 검토 결과를 적었습니다.");
+            flash.addFlashAttribute("message", cve + "의 검토 결과를 적었습니다.");
         } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
             flash.addFlashAttribute("error", message(e));
         }

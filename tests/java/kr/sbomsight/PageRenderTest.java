@@ -2,6 +2,7 @@ package kr.sbomsight;
 
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
@@ -58,13 +59,17 @@ class PageRenderTest {
     @Autowired FindingAnalysisService analyses;
     @Autowired ZoneService zoneService;
     @Autowired kr.sbomsight.repo.AppUserRepository appUsers;
+    @Autowired kr.sbomsight.repo.FindingAnalysisRepository analysisRepository;
+    @Autowired kr.sbomsight.repo.ComponentRepository components;
 
     private Asset asset;
     private Scan scan;
     private Remediation remediation;
+    private kr.sbomsight.domain.FindingAnalysis analysis;
+    private long publicationId;
 
     @BeforeEach
-    void seed() {
+    void seed() throws Exception {
         // `.with(user("tester"))` 는 인증된 주체를 꽂을 뿐 계정을 만들지 않는다.
         // 내 계정 화면은 진짜 계정을 찾으므로 여기 하나 둔다.
         if (!appUsers.existsByUsername("tester")) {
@@ -108,7 +113,7 @@ class PageRenderTest {
         scan.setFindingCount(1);
         scans.saveAndFlush(scan);
 
-        remediation = new Remediation(asset, "xz", "tester");
+        remediation = new Remediation(asset, "xz", PackageKey.of(null, "rpm", "xz"), "tester");
         remediation.setFromVersion("5.6.0");
         remediation.setToVersion("5.6.2");
         remediation.setOwner("인프라운영팀");
@@ -116,12 +121,19 @@ class PageRenderTest {
         remediations.saveAndFlush(remediation);
 
         // 앞서의 '위험 수용' 에 해당하는 조합 — 해당됨 · 조치 안 함.
-        analyses.record(asset, "CVE-2024-2961", "glibc",
+        analysis = analyses.record(asset, "CVE-2024-2961", "glibc", PackageKey.of(null, "rpm", "glibc"),
                         kr.sbomsight.domain.AnalysisState.EXPLOITABLE, null,
                         kr.sbomsight.domain.AnalysisResponse.WILL_NOT_FIX,
                         "업스트림에 수정 버전이 없고 해당 기능은 외부에 노출되지 않습니다",
                         "WAF 에서 해당 경로 차단", "보안-2026-0143",
                         LocalDate.now().plusDays(30), "tester");
+
+        // 발행본 하나 — 발행 단추와 같은 길로(R11). 발행본 화면 둘이 전 화면 걸음에 든다.
+        String published = mvc.perform(post("/reports/scan/" + scan.getId() + "/publish")
+                                                .with(user("tester").roles("ADMIN")).with(csrf()))
+                               .andExpect(status().is3xxRedirection())
+                               .andReturn().getResponse().getRedirectedUrl();
+        publicationId = Long.parseLong(published.substring(published.lastIndexOf('/') + 1));
     }
 
     private String open(String url) throws Exception {
@@ -193,7 +205,11 @@ class PageRenderTest {
         fresh.setZone(asset.getZone());
         assets.saveAndFlush(fresh);
 
-        String table = open("/");
+        // **이 시험의 구역만 본다.** 전체 목록(`/`)을 세면 앞서 돈 시험 클래스가
+        // 남긴 자산까지 막대를 세어, 시험 순서에 따라 붙고 떨어진다 — 진짜 DB
+        // (Flyway 스키마, 클래스 사이에 지우지 않는다)에서 CI 의 순서로 돌 때
+        // 1 이 아니라 7 이 나왔다. 조각이 그려지는 표는 같다.
+        String table = open("/?zone=" + asset.getZone().getId());
         assertThat(table)
                 .as("자산이 있는데 빈 화면 문구가 함께 뜨면 th:if 가 안 먹은 것이다")
                 .doesNotContain("등록된 자산이 없습니다");
@@ -229,6 +245,38 @@ class PageRenderTest {
         open("/?filter=stale");
         open("/vulns");
         open("/actions");
+    }
+
+    /**
+     * <b>기한 지난 조치와 재검토일 지난 검토 결과를 따로 센다.</b>
+     *
+     * <p>요약 줄의 `기한 지난 조치` 가 두 가지를 합친 수였다 — 조치 기한이 지난
+     * 것과 검토 결과의 재검토일이 지난 것. 누르면 조치 탭으로 가는데 그 탭에는
+     * 재검토일 지난 것이 없다. 띄운 앱에서 `1 기한 지난 조치` 를 눌렀더니 기한
+     * 지난 조치는 0건이었다.
+     */
+    @Test
+    @DisplayName("요약 줄은 기한 지난 조치와 재검토일 지난 검토 결과를 따로 세고 각자의 탭으로 보낸다")
+    void overdueActionsAndOverdueReviewsAreSeparate() throws Exception {
+        // 씨앗의 위험 수용(재검토일 30일 뒤)을 지난 것으로 만든다. 화면으로는
+        // 지난 날짜를 적을 수 없다 — 날이 지나서 그렇게 되는 것이다.
+        var accepted = analyses.byKey(asset.getId()).get("CVE-2024-2961|pkg:rpm/glibc");
+        accepted.setReviewBy(LocalDate.now().minusDays(1));
+        analysisRepository.saveAndFlush(accepted);
+
+        long overdueActions = remediations.countOverdue(LocalDate.now(), false);
+        long overdueReviews = analyses.reviewOverdue(false).size();
+        assertThat(overdueActions).isPositive();
+        assertThat(overdueReviews).isPositive();
+
+        String html = open("/").replaceAll("\\s+", " ");
+        assertThat(html)
+                .as("조치 기한이 지난 것만 `기한 지난 조치` 로 세야 한다")
+                .contains("href=\"/actions\"> <b>" + overdueActions + "</b> 기한 지난 조치");
+        assertThat(html)
+                .as("재검토일 지난 검토 결과가 따로 없거나 검토 결과 탭으로 가지 않는다")
+                .contains("href=\"/actions?tab=analyses\"> <b>" + overdueReviews
+                          + "</b> 재검토일 지난 검토 결과");
     }
 
     /**
@@ -434,39 +482,16 @@ class PageRenderTest {
     }
 
     /**
-     * 옛 주소와, 아직 안 만든 화면의 새 주소.
+     * 한 자산짜리 취약점 범위는 자산 상세로, 보고서 주소는 제 화면으로.
      *
-     * <p>기둥에는 최종 주소를 먼저 걸어 두고 그 화면은 뒤 단계에서 만든다.
-     * 그동안 <b>새 주소가 어디로도 가지 않으면 기둥이 고장 난 것</b>이므로,
-     * 지금은 옛 화면으로 이어 둔다. 진짜 화면이 생기면 방향이 뒤집힌다.
+     * <p>옛 주소(/lookup · /remediations · /report/… · /audit · /scans/{id})를 새
+     * 화면으로 잇던 다리는 운영 전에 걷었다 — 옛 주소를 적어 둔 설치가 없다.
+     * 템플릿이 거는 주소가 전부 열리는지는 {@code everyLiteralLinkInTheTemplatesOpens}
+     * 가 본다.
      */
     @Test
-    @DisplayName("기둥의 주소가 전부 어딘가로 이어진다")
+    @DisplayName("한 자산짜리 범위는 자산 상세로, /reports 는 제 화면으로 간다")
     void navLinksAllGoSomewhere() throws Exception {
-        // 영구 — 화면이 자리를 옮겼다. 적어 둔 주소가 죽지 않아야 한다.
-        for (String[] pair : new String[][] {
-                { "/audit", "/settings/audit" },
-                { "/lookup", "/vulns" },
-                { "/lookup?q=xz", "/vulns?q=xz" },
-                { "/lookup/export.csv?q=xz", "/vulns/export.csv?q=xz" },
-                { "/scans/" + scan.getId(), "/vulns?scan=" + scan.getId() },
-                // N5 — 조치와 검토 결과가 대응 화면의 두 탭이 됐다.
-                { "/remediations", "/actions" },
-                { "/remediations/" + remediation.getId(), "/actions/" + remediation.getId() },
-                { "/remediations/export.csv", "/actions/export.csv" },
-                { "/analyses", "/actions?tab=analyses" },
-                { "/acceptances", "/actions?tab=analyses" },
-                // N7 — 보고서 주소가 /reports/ 아래로 모였다. 한 글자 차이로
-                // 갈라진 두 접두사(/report 와 /reports)를 아무도 기억 못 한다.
-                { "/report/" + scan.getId(), "/reports/scan/" + scan.getId() },
-                { "/report/zone", "/reports/zone" },
-                { "/report/zone?zone=" + asset.getZone().getId(),
-                  "/reports/zone?zone=" + asset.getZone().getId() } }) {
-            mvc.perform(get(pair[0]).with(user("tester").roles("ADMIN")))
-               .andExpect(status().is3xxRedirection())
-               .andExpect(redirectedUrl(pair[1]));
-        }
-
         // 한 자산짜리 범위는 통합 화면에 없다 — 그 자산 안에서 끝난다.
         mvc.perform(get("/vulns?asset=" + asset.getId()).with(user("tester").roles("ADMIN")))
            .andExpect(redirectedUrl("/assets/" + asset.getId() + "?tab=vulns"));
@@ -487,6 +512,11 @@ class PageRenderTest {
     @Test
     @DisplayName("인벤토리가 비면 '없다' 가 아니라 '아직 안 담겼다' 고 말한다")
     void emptyInventorySaysNotYetRead() throws Exception {
+        // **인벤토리를 비운 상태를 만든다.** 이 문구는 인벤토리 전체가 비었을 때만
+        // 뜬다(PackageController — countCurrent). 앞서 돈 시험 클래스가 담아 둔
+        // 패키지가 있으면 시험 순서에 따라 떨어졌다 — 진짜 DB 에서 CI 의 순서로
+        // 돌 때 그랬다. 이 시험은 트랜잭션 안이라 끝나면 지운 것이 되돌아온다.
+        components.deleteAllInBatch();
         String html = open("/packages");
         assertThat(html).contains("아직 담긴 패키지가 없습니다");
         assertThat(html)
@@ -555,12 +585,61 @@ class PageRenderTest {
         assertThat(me).contains("계정 정보").contains("마지막 로그인").contains("그 전 로그인");
     }
 
+    /**
+     * 템플릿에 <b>글자 그대로 적힌 내부 링크</b>가 전부 열리는가.
+     *
+     * <p>빈 화면 조각은 단추 주소를 인자로 받는다({@code empty(…, '/assets', …)}).
+     * 그 화면이 빈 상태로 그려질 때만 보이는 단추라, 자료가 있는 시험에서는
+     * 한 번도 눌리지 않는다. 보고서 화면의 빈 화면 단추가 {@code GET /assets}
+     * 로 가서 405(영문 오류 화면)를 냈다 — 자산 목록은 {@code /} 다.
+     *
+     * <p>자리값이 들어간 주소({@code ${…}})는 여기서 보지 않는다. 그것은
+     * 화면마다의 시험이 실제 값으로 연다.
+     */
+    @Test
+    @DisplayName("템플릿에 적힌 내부 링크가 전부 열린다")
+    void everyLiteralLinkInTheTemplatesOpens() throws Exception {
+        java.util.regex.Pattern[] patterns = {
+                // th:href="@{/reports/zone(from=…)}" → /reports/zone
+                java.util.regex.Pattern.compile("th:href=\"@\\{(/[^(}'\"$]*)"),
+                // href="/password"
+                java.util.regex.Pattern.compile("[^:]href=\"(/[^\"#?$]*)\""),
+                // empty('제목', '설명', '/', '단추') — 인자 전체가 글자일 때만.
+                // '/assets/' + ${asset.id} 처럼 이어 붙인 것은 자리값이 있다.
+                java.util.regex.Pattern.compile("::\\s*empty\\([^)]*?'(/[^']*)'\\s*,")
+        };
+        java.util.Set<String> paths = new java.util.TreeSet<>();
+        try (var files = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/resources/templates"))) {
+            for (java.nio.file.Path file : files.filter(p -> p.toString().endsWith(".html")).toList()) {
+                // 개발자 주석(<!--/* … */-->) 안의 예시는 링크가 아니다.
+                String html = java.nio.file.Files.readString(file)
+                        .replaceAll("(?s)<!--.*?-->", "");
+                for (java.util.regex.Pattern pattern : patterns) {
+                    java.util.regex.Matcher m = pattern.matcher(html);
+                    while (m.find()) {
+                        paths.add(m.group(1));
+                    }
+                }
+            }
+        }
+        assertThat(paths).as("템플릿에서 링크를 하나도 못 찾았다 — 정규식이 틀렸다")
+                         .contains("/password", "/reports/zone");
+
+        for (String path : paths) {
+            int code = mvc.perform(get(path).with(user("tester").roles("ADMIN")))
+                          .andReturn().getResponse().getStatus();
+            assertThat(code).as("템플릿의 링크 %s 가 %d 를 낸다", path, code).isLessThan(400);
+        }
+    }
+
     // --- 내려받기 -------------------------------------------------------------
 
     @Test
     @DisplayName("CSV 내려받기는 화면이 아니라 파일로 나온다")
     void downloads() throws Exception {
-        mvc.perform(get("/scans/" + scan.getId() + "/export.csv").with(user("tester").roles("ADMIN")))
+        // 검사 하나의 탐지 — 화면(취약점 · 자산 상세의 취약점 탭)이 거는 주소다.
+        // 앞서 따로 있던 /scans/{id}/export.csv 는 어느 화면도 걸지 않아 지웠다.
+        mvc.perform(get("/vulns/export.csv?scan=" + scan.getId()).with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
         mvc.perform(get("/actions/export.csv").with(user("tester").roles("ADMIN")))
            .andExpect(status().isOk());
@@ -654,9 +733,12 @@ class PageRenderTest {
                 "/actions",
                 "/actions/" + remediation.getId(),
                 "/actions?tab=analyses",
+                "/analyses/" + analysis.getId(),
                 "/reports",
                 "/reports/scan/" + scan.getId(),
                 "/reports/zone",
+                "/reports/publications",
+                "/reports/publications/" + publicationId,
                 "/password",
                 "/me");
     }

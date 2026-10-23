@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.sbomsight.service.SettingsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.security.SecurityProperties;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -23,9 +24,16 @@ import java.io.IOException;
  * <p>판단은 <b>소켓 상대 주소로만</b> 한다. {@code X-Forwarded-For} 같은 헤더는
  * 누구든 채워 보낼 수 있어서, 그것을 믿으면 목록이 헤더 한 줄로 우회된다.
  * 이 도구는 프록시 뒤가 아니라 내부망에 직접 서는 것을 전제로 한다.
+ *
+ * <p><b>자리는 시큐리티 체인의 바로 앞이다</b>({@link SecurityProperties#DEFAULT_FILTER_ORDER}
+ * 보다 하나 작게). 앞서 {@code @Order(1)} 을 달고 "시큐리티 체인보다 앞" 이라고 적었는데,
+ * 시큐리티 체인은 -100 에 서므로 이 필터는 뒤였다. 로그인 · 로그아웃은 시큐리티 체인
+ * 안에서 처리되고 끝나 여기 닿지도 않았다. 토큰이 없는 요청은 CSRF 가 먼저 막았을
+ * 뿐이고, 허용망에서 받은 세션 · 토큰을 들고 목록 밖 주소에서 보내면 인증까지 가서
+ * 틀린 비밀번호 다섯 번에 계정이 잠겼다(IpAllowlistFilterTest · 띄운 앱에서 확인).
  */
 @Component
-@Order(1)   // 스프링 시큐리티 체인보다 앞
+@Order(SecurityProperties.DEFAULT_FILTER_ORDER - 1)
 public class IpAllowlistFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(IpAllowlistFilter.class);

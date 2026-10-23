@@ -114,10 +114,12 @@
   </aside>
 
   <div class="page-wrapper">
-    <div th:if="${message}" class="container-xl mt-3">
+    <!--/* 안내 띠는 화면의 것이다 — 종이에 찍지 않는다. 발행하자마자 인쇄하면 `발행했습니다`
+         가 발행본 맨 위에 찍혔다(띄워서 인쇄해 보고 찾았다). */-->
+    <div th:if="${message}" class="container-xl mt-3 no-print">
       <div class="alert alert-success mb-0" th:text="${message}"></div>
     </div>
-    <div th:if="${error}" class="container-xl mt-3">
+    <div th:if="${error}" class="container-xl mt-3 no-print">
       <div class="alert alert-danger mb-0" th:text="${error}"></div>
     </div>
     <th:block th:replace="${content}"></th:block>

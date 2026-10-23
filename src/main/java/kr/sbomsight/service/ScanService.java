@@ -5,13 +5,17 @@ import kr.sbomsight.config.SbomSightProperties;
 import kr.sbomsight.domain.*;
 import kr.sbomsight.grype.GrypeMapper;
 import kr.sbomsight.grype.GrypeReport;
+import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.FindingRepository;
+import kr.sbomsight.repo.ReportPublicationRepository;
 import kr.sbomsight.repo.ScanRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -34,6 +38,7 @@ public class ScanService {
     private static final Logger log = LoggerFactory.getLogger(ScanService.class);
 
     private final ScanRepository scans;
+    private final AssetRepository assets;
     private final FindingRepository findings;
     private final SbomStorage storage;
     private final GrypeRunner grype;
@@ -41,11 +46,16 @@ public class ScanService {
     private final ObjectMapper json;
     private final SbomSightProperties properties;
     private final ComponentInventoryService inventory;
+    private final ReportPublicationRepository publications;
+    private final TransactionTemplate transactions;
 
-    public ScanService(ScanRepository scans, FindingRepository findings, SbomStorage storage,
-                       GrypeRunner grype, GrypeMapper mapper, ObjectMapper json,
-                       SbomSightProperties properties, ComponentInventoryService inventory) {
+    public ScanService(ScanRepository scans, AssetRepository assets, FindingRepository findings,
+                       SbomStorage storage, GrypeRunner grype, GrypeMapper mapper, ObjectMapper json,
+                       SbomSightProperties properties, ComponentInventoryService inventory,
+                       ReportPublicationRepository publications,
+                       PlatformTransactionManager transactionManager) {
         this.scans = scans;
+        this.assets = assets;
         this.findings = findings;
         this.storage = storage;
         this.grype = grype;
@@ -53,22 +63,107 @@ public class ScanService {
         this.json = json;
         this.properties = properties;
         this.inventory = inventory;
+        this.publications = publications;
+        this.transactions = new TransactionTemplate(transactionManager);
+    }
+
+    /**
+     * 읽을 수 없는 SBOM — 올리는 자리와 다시 검사하는 자리에서 돌려보낸다.
+     * 메시지는 화면에 그대로 나간다.
+     */
+    public static class UnsupportedSbomException extends IllegalArgumentException {
+        public UnsupportedSbomException() {
+            super("JSON 형식의 SBOM이 아닙니다. " + SbomStorage.ACCEPTED_FORMATS + "만 받습니다.");
+        }
+    }
+
+    /**
+     * 같은 자산에 검사가 이미 돌고 있다 — 올리는 자리와 다시 검사하는 자리에서
+     * 돌려보낸다. 메시지는 화면에 그대로 나간다.
+     */
+    public static class ScanInFlightException extends IllegalStateException {
+        public ScanInFlightException() {
+            super("이 자산의 검사가 아직 진행 중입니다. 끝난 뒤에 다시 하세요.");
+        }
+    }
+
+    /**
+     * 최신 검사가 아닌 완료 검사를 다시 검사하려 했다(D2) — 메시지는 화면에 그대로 나간다.
+     *
+     * <p>옛 SBOM 을 새 취약점 DB 로 다시 돌릴 까닭이 없다. 앞서 단추가 모든 줄에 있었고,
+     * 옛 줄에서 누르면 옛 SBOM 이 최신 검사가 됐다(재현 시험 P4). 지금은 그렇게 되지는
+     * 않지만(SBOM 생성 시각으로 고른다) 누를 수 있으면 누른다 — 화면은 단추를 두지 않고,
+     * 주소로 직접 와도 여기서 막는다.
+     */
+    public static class NotLatestScanException extends IllegalStateException {
+        public NotLatestScanException() {
+            super("최신 검사와 실패한 검사만 다시 검사할 수 있습니다.");
+        }
+    }
+
+    /**
+     * 발행본이 가리키는 검사를 지우려 했다(D6) — 메시지는 화면에 그대로 나간다.
+     *
+     * <p>그 검사는 발행본의 수가 나온 근거다. 지우면 발행본은 남아도 "이 수가 어디서
+     * 나왔나" 를 확인할 검사가 없다. 자산을 통째로 지우는 것은 막지 않는다(D6 — 발행본은
+     * 남는다). 번호 뒤에 조사를 붙이지 않는다 — 번호의 끝 글자에 따라 조사가 갈린다.
+     */
+    public static class PublishedScanException extends IllegalStateException {
+        public PublishedScanException(List<String> numbers) {
+            super("이 검사는 발행본(" + String.join(" · ", numbers)
+                  + ")이 가리키고 있어 지울 수 없습니다.");
+        }
+    }
+
+    /** 대기 · 검사 중 — 아직 끝나지 않은 검사. */
+    private static final List<ScanStatus> IN_FLIGHT = List.of(ScanStatus.QUEUED, ScanStatus.RUNNING);
+
+    /**
+     * <b>같은 자산에 검사 둘을 돌리지 않는다.</b>
+     *
+     * <p>검사는 SBOM 을 읽으며 패키지를 담고, 끝나면 그 자산의 지금 패키지 목록을
+     * 제 것으로 바꾼다. 둘이 겹치면 서로가 담아 둔 것을 지워 — `다시 검사` 를 연달아
+     * 두 번 눌렀더니 검사 셋이 다 완료인데 패키지가 0행이었다(ScanOverlapTest).
+     *
+     * <p>자산 행을 잠그고 본다. 잠그지 않으면 동시에 들어온 두 요청이 둘 다
+     * "도는 것이 없다" 를 보고 둘 다 만든다. 잠금은 새 검사가 들어간 트랜잭션이
+     * 끝날 때 풀린다 — 그때는 이미 대기 상태의 검사가 보인다.
+     *
+     * @throws ScanInFlightException 대기 · 검사 중인 검사가 있을 때
+     */
+    private void refuseIfScanInFlight(Long assetId) {
+        assets.lockById(assetId);
+        if (scans.existsByAssetIdAndStatusIn(assetId, IN_FLIGHT)) {
+            throw new ScanInFlightException();
+        }
     }
 
     /**
      * 업로드를 받아 스캔을 만들고 큐에 넣는다. 파일 저장까지만 하고 곧장 돌아온다.
      *
+     * <p><b>형식부터 본다.</b> 패키지 목록을 읽지 못하는 SBOM 은 스캔을 만들기
+     * 전에 돌려보낸다({@link SbomStorage#detectFormat}).
+     *
      * @return 만들어진 스캔. 상태는 QUEUED 다.
+     * @throws UnsupportedSbomException 받는 형식(JSON 셋)이 아닐 때
+     * @throws ScanInFlightException    그 자산의 검사가 아직 돌고 있을 때
      */
     @Transactional
     public Scan submit(Asset asset, MultipartFile file, String actor) throws IOException {
+        try (InputStream head = file.getInputStream()) {
+            if (storage.detectFormat(head).isEmpty()) {
+                throw new UnsupportedSbomException();
+            }
+        }
+        refuseIfScanInFlight(asset.getId());
         Scan scan = new Scan(asset, actor);
         scan.setSbomFilename(originalName(file));
         scan.setSbomBytes(file.getSize());
         scans.saveAndFlush(scan);   // 파일 경로에 스캔 번호가 필요하다
 
-        Path stored = storage.storeSbom(asset.getId(), scan.getId(), file);
-        scan.setSbomPath(stored.toString());
+        SbomStorage.Stored stored = storage.storeSbom(asset.getId(), scan.getId(), file);
+        scan.setSbomPath(stored.path().toString());
+        scan.setSbomSha256(stored.sha256());
         return scans.save(scan);
     }
 
@@ -85,22 +180,51 @@ public class ScanService {
      * 올라갔을 수도 있다. 새 스캔으로 쌓으면 이력 비교가 그대로 돌아가
      * "같은 SBOM 인데 무엇이 늘었나" 를 바로 읽을 수 있다.
      *
+     * <p><b>실패한 검사도 된다.</b> SBOM 은 올린 순간 보관되므로, grype 이
+     * 없었거나 서버가 다시 시작되어 멈춘 검사도 같은 SBOM 으로 다시 돌릴 수 있다.
+     * 실패한 검사는 그대로 남는다 — 실패했다는 사실도 이력이다.
+     *
+     * <p><b>최신 검사와 실패한 검사만 받는다</b>(D2). 완료된 옛 검사는 거절한다 —
+     * {@link NotLatestScanException}. 최신 검사인지는 자산 행을 잠근 뒤에 본다.
+     *
+     * <p><b>올릴 때와 같은 형식 검사를 거친다</b>({@link SbomStorage#detectFormat}).
+     * 올리는 자리가 JSON 만 받기 전에 들어온 XML 을 다시 돌리면, 패키지 목록을
+     * 읽지 못한 채 grype 만 돌아 완료되고 그 자산의 패키지 목록이 지워진다
+     * (완료할 때 이전 검사 것을 걷는다 — ComponentInventoryService.makeCurrent).
+     *
      * @return 새로 만들어진 스캔. 상태는 QUEUED 다.
+     * @throws UnsupportedSbomException 보관된 SBOM 이 받는 형식(JSON 셋)이 아닐 때
+     * @throws ScanInFlightException    그 자산의 검사가 아직 돌고 있을 때
+     * @throws NotLatestScanException   완료됐지만 그 자산의 최신 검사가 아닐 때
      */
     @Transactional
     public Scan rescan(Scan source, String actor) throws IOException {
         if (source.getSbomPath() == null || source.getSbomPath().isBlank()) {
-            throw new IllegalStateException("이 스캔에는 보관된 SBOM 이 없어 다시 돌릴 수 없습니다.");
+            throw new IllegalStateException("이 검사에는 보관된 SBOM이 없어 다시 검사할 수 없습니다.");
         }
         Path stored = Path.of(source.getSbomPath());
         if (!Files.exists(stored)) {
             throw new IllegalStateException("보관된 SBOM 파일을 찾을 수 없습니다: " + stored);
+        }
+        try (InputStream head = storage.openGzip(stored)) {
+            if (storage.detectFormat(head).isEmpty()) {
+                throw new UnsupportedSbomException();
+            }
+        }
+        refuseIfScanInFlight(source.getAsset().getId());
+        if (source.getStatus() == ScanStatus.DONE
+                && scans.currentOf(source.getAsset().getId()).map(Scan::getId)
+                        .filter(source.getId()::equals).isEmpty()) {
+            throw new NotLatestScanException();
         }
 
         Scan copy = new Scan(source.getAsset(), actor);
         copy.setSbomFilename(source.getSbomFilename());
         copy.setSbomBytes(source.getSbomBytes());
         copy.setSbomFormat(source.getSbomFormat());
+        // 같은 SBOM 이다 — 생성 시각 · 해시 · 도구 · 대상은 원본 것. 검사 시각만 새것이라,
+        // 옛 SBOM 을 다시 검사해도 그 자산의 최신 검사가 되지 않는다(ScanRepository.currentOf).
+        copy.inheritSbomFrom(source);
         copy.setRescanOf(source.getId());
         scans.saveAndFlush(copy);   // 파일 경로에 스캔 번호가 필요하다
 
@@ -125,13 +249,12 @@ public class ScanService {
             log.error("스캔 {} 실패", scanId, e);
             markFailed(scanId, e.getMessage());
             // **담다가 실패한 인벤토리를 버린다.** 담기는 쓰는 대로 커밋되고
-            // `makeCurrent` 는 다 담은 뒤에 부르므로, 중간에 터지면 새 검사
-            // 것과 이전 검사 것이 그 자산에 함께 남는다 — 패키지 화면이 한
-            // 패키지를 두 버전으로 보여 주고, 그것이 "두 대에 다르게 깔렸다"
-            // 와 구분되지 않는다.
+            // `makeCurrent` 는 검사가 끝난 뒤에 부르므로, 중간에 터지면 새 검사
+            // 것이 이전 검사 것 옆에 남는다. 화면은 완료된 검사의 행만 읽어
+            // 보이지는 않지만, 쌓아 둘 까닭이 없다.
             //
-            // 실제로 그랬다. 판정 트랜잭션 문제로 검사가 READING 에서 실패한
-            // 뒤 79행이 남아 화면에 떠 있었고, 손으로 지웠다.
+            // 앞서 여기서 버리는 것이 없어 READING 에서 실패한 뒤 79행이 화면에
+            // 떠 있었고, 손으로 지웠다.
             inventory.discard(scanId);
         }
     }
@@ -181,17 +304,29 @@ public class ScanService {
             // 취약점이 붙은 패키지만 알 수 있었다 — log4j 가 어디 깔려 있는지는
             // CVE 가 터진 다음에야 찾게 됐다.
             //
-            // 넣은 뒤에 이전 것을 지운다. 읽다가 터지면 이전 인벤토리가 그대로
-            // 남아 있어야 한다.
+            // **이전 것은 검사가 끝난 뒤에 지운다**(아래). 앞서는 담자마자
+            // 지웠고, 그 뒤 grype 이 실패하면 담은 것도 버려져 그 자산의 패키지
+            // 목록이 통째로 사라졌다. 담은 행은 검사가 끝날 때까지 보이지 않는다
+            // (ComponentRepository 가 완료된 검사의 행만 읽는다).
             SbomStorage.SbomInfo info;
             try (ComponentInventoryService.Sink sink =
                          inventory.open(scan.getAsset().getId(), scan.getId())) {
                 info = storage.inspect(plainSbom, sink);
             }
-            inventory.makeCurrent(scan.getAsset().getId(), scan.getId());
 
             scan.setSbomFormat(info.format());
             scan.setComponentCount(info.componentCount());
+
+            // SBOM 이 제 자신에 대해 적어 온 것. 업로드한 검사만 여기서 읽는다 — 다시
+            // 검사는 원본 것을 이미 물려받았다(rescan). 바로 남긴다: 이 뒤에 grype 이
+            // 실패해도 어떤 SBOM 이었는지는 검사 이력에 남아야 한다.
+            if (scan.getSbomTime() == SbomTime.PENDING) {
+                SbomStorage.SbomMetadata about = info.metadata();
+                scan.resolveSbomTime(about.createdAt());
+                scan.setSbomTool(about.tool());
+                scan.setSbomTarget(about.target());
+                scans.save(scan);
+            }
 
             // 여기가 대개 가장 길다. 단계를 먼저 커밋해야 도는 동안 화면에 뜬다.
             scan.setStage(ScanStage.SCANNING);
@@ -212,7 +347,8 @@ public class ScanService {
             mapper.applyMetadata(scan, report, grype.dbBuilt());
             GrypeMapper.Result result = mapper.map(scan, report);
 
-            findings.deleteByScanId(scan.getId());   // 다시 돌린 경우
+            // 같은 검사를 두 번 돌리는 길은 없다 — `다시 검사` 는 새 검사를
+            // 만든다(rescan). 앞서 여기서 이 검사의 탐지를 먼저 지웠는데 늘 0건이었다.
             findings.saveAll(result.findings());
 
             scan.setMatchCount(result.matches());
@@ -231,7 +367,19 @@ public class ScanService {
             scan.setStatus(ScanStatus.DONE);
             scan.setStage(ScanStage.DONE);
             scan.setFinishedAt(Instant.now());
-            scans.save(scan);
+            // 끝났다고 적는 것과 인벤토리를 새 검사 것으로 바꾸는 것을 **한 번에**
+            // 한다. 따로 하면 그 사이에 두 검사의 패키지가 함께 보이거나(끝낸
+            // 뒤 지우기 전) 아무것도 안 보인다(지운 뒤 끝내기 전).
+            //
+            // 자산 행을 먼저 잠근다 — 같은 자산을 건드리는 쓰기는 모두 자산 → 검사 →
+            // 패키지 행 차례다(ComponentInventoryService.restoreCurrent). 지금도 검사
+            // 행 갱신은 Hibernate 가 makeCurrent 의 질의 직전에야 내보내 자산이 먼저
+            // 잠기지만, 내보내는 시점에 기대지 않는다.
+            transactions.executeWithoutResult(tx -> {
+                assets.lockById(scan.getAsset().getId());
+                scans.save(scan);
+                inventory.makeCurrent(scan.getAsset().getId(), scan.getId());
+            });
 
             log.info("스캔 {} 완료: {}건 (match {} · 병합 {} · 제외 {})",
                     scan.getId(), result.findings().size(), result.matches(),
@@ -259,13 +407,56 @@ public class ScanService {
      *
      * <p>DB 행만 지우면 디스크에 SBOM 이 남아 용량은 그대로이고, 그 안에는
      * 설치 패키지 목록이라는 내부 정보가 들어 있다.
+     *
+     * <p><b>지운 것이 그 자산의 지금 검사였으면</b> 그 전 검사의 보관 SBOM 에서
+     * 패키지 목록을 다시 담는다 — 지운 검사의 행은 함께 사라지고 그 전 검사의
+     * 행은 이미 없다(ComponentInventoryService.restoreCurrent). 지금 검사가 아닌
+     * 것을 지웠으면 패키지 목록을 건드리지 않는다.
+     *
+     * <p><b>트랜잭션을 둘로 나눈다.</b> 지우기를 먼저 커밋하고, 다시 담기는 그 뒤에
+     * 제 트랜잭션에서 한다. 앞서 한 트랜잭션이었을 때 다시 담다가 터지면 지운 것까지
+     * 되돌려졌는데, 보관 파일은 그때 이미 지운 뒤였다 — 행만 있고 파일은 없는 검사가
+     * 남고, 화면은 500 이었고, 감사 기록도 남지 않았다(ScanDeleteInventoryTest). 다시
+     * 담지 못해도 지운 것은 지운 것이다 — 까닭을 돌려준다.
+     *
+     * <p>지울 때도 자산 행을 먼저 잠근다. 같은 자산의 검사가 끝나며 끝난 검사들의
+     * 패키지 행을 지우는 자리와 잠그는 차례가 엇갈리면 서로를 기다린다. 지금
+     * 검사였는지도 잠근 뒤에 본다.
+     *
+     * <p><b>발행본이 가리키는 검사는 지우지 않는다(D6).</b> 그것도 잠근 뒤에 본다 —
+     * 발행도 같은 자산 행을 잠그고 가리킬 검사를 적으므로(PublicationService), 겹치면
+     * 어느 한쪽이 먼저 끝난 것을 보고 판단한다.
+     *
+     * @return 패키지 목록을 다시 담았는지, 못 담았으면 그 까닭
+     * @throws PublishedScanException 발행본이 이 검사를 가리킨다
      */
-    @Transactional
-    public void delete(Scan scan) {
+    public ComponentInventoryService.Restored delete(Scan scan) {
         long assetId = scan.getAsset().getId();
         long scanId = scan.getId();
-        scans.delete(scan);      // findings 는 FK ON DELETE CASCADE
+        boolean wasCurrent = Boolean.TRUE.equals(transactions.execute(tx -> {
+            assets.lockById(assetId);
+            List<String> published = publications.findNumbersReferring(scanId).stream()
+                    .map(ReportPublicationRepository.NumberRow::getNumber)
+                    .toList();
+            if (!published.isEmpty()) {
+                throw new PublishedScanException(published);
+            }
+            boolean current = scans.currentOf(assetId).map(Scan::getId)
+                                   .filter(id -> id == scanId).isPresent();
+            scans.delete(scan);      // findings 는 FK ON DELETE CASCADE
+            return current;
+        }));
         storage.deleteScanDir(assetId, scanId);
+        if (!wasCurrent) {
+            return ComponentInventoryService.Restored.NOTHING;
+        }
+        try {
+            return inventory.restoreCurrent(assetId);
+        } catch (RuntimeException e) {
+            log.error("자산 {} 의 패키지 목록을 다시 담지 못했습니다", assetId, e);
+            return new ComponentInventoryService.Restored(null, 0,
+                    e.getMessage() == null ? "알 수 없는 오류" : e.getMessage());
+        }
     }
 
     /**
@@ -285,7 +476,8 @@ public class ScanService {
         List<Scan> stuck = scans.findByStatusIn(List.of(ScanStatus.QUEUED, ScanStatus.RUNNING));
         stuck.forEach(scan -> {
             scan.setStatus(ScanStatus.FAILED);
-            scan.setErrorMessage("서버가 다시 시작되어 중단되었습니다. 다시 올려 주세요.");
+            // SBOM 은 이미 보관되어 있다 — 다시 받아 올 것이 아니라 다시 돌리면 된다.
+            scan.setErrorMessage("서버가 다시 시작되어 중단되었습니다. 보관된 SBOM으로 다시 검사할 수 있습니다.");
             scan.setFinishedAt(Instant.now());
             inventory.discard(scan.getId());
         });

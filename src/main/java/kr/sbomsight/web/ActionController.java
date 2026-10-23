@@ -9,6 +9,7 @@ import kr.sbomsight.service.CsvWriter;
 import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.RemediationService;
+import kr.sbomsight.service.SettingsService;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -51,23 +52,32 @@ public class ActionController {
     private final ScanRepository scans;
     private final ZoneService zones;
     private final AuditService audit;
+    private final SettingsService settings;
 
     public ActionController(RemediationRepository remediations, RemediationService service,
                             FindingAnalysisService analyses, ScanRepository scans,
-                            ZoneService zones, AuditService audit) {
+                            ZoneService zones, AuditService audit, SettingsService settings) {
         this.remediations = remediations;
         this.service = service;
         this.analyses = analyses;
         this.scans = scans;
         this.zones = zones;
         this.audit = audit;
+        this.settings = settings;
     }
 
+    /**
+     * @param archived 운영 종료한 자산의 것도 보는가 — 자산 목록의
+     *                 {@code 운영 종료 자산 포함} 과 같은 이름 · 같은 주소 값이다.
+     *                 끄면 목록 · 탭 숫자 · 기한 지난 알림 · CSV 가 모두 뺀다
+     *                 (기둥의 배지와 같은 범위)
+     */
     @GetMapping
     public String index(@RequestParam(defaultValue = "remediations") String tab,
                         @RequestParam(required = false) Long zone,
                         @RequestParam(required = false) RemediationStatus status,
                         @RequestParam(defaultValue = "false") boolean includeDone,
+                        @RequestParam(defaultValue = "false") boolean archived,
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(required = false) Integer size,
                         @RequestParam(required = false) Integer jump,
@@ -79,6 +89,7 @@ public class ActionController {
                 .with("zone", zone)
                 .with("status", "analyses".equals(tab) ? null : status)
                 .with("includeDone", includeDone ? "true" : null)
+                .with("archived", archived ? "true" : null)
                 .size(size);
         String jumped = Paging.jump(links, jump);
         if (jumped != null) {
@@ -87,8 +98,15 @@ public class ActionController {
         model.addAttribute("links", links);
         // 탭 숫자는 **거르기 전** 전체를 센다. 거른 뒤 세면 구역을 고르는
         // 순간 탭의 수가 함께 줄어, 다른 탭에 무엇이 있는지 알 수 없게 된다.
-        model.addAttribute("remediationCount", service.all().size());
-        model.addAttribute("analysisCount", analyses.list(false, null).size());
+        // 운영 종료 포함만은 따른다 — 무엇을 전체로 볼지를 정하는 값이고,
+        // 탭 링크가 그 값을 이어 간다. 안 이어 가면 켠 채로 다른 탭을 눌렀을
+        // 때 탭 숫자와 뜬 목록의 범위가 달라진다.
+        model.addAttribute("remediationCount", service.all(archived).size());
+        model.addAttribute("analysisCount", analyses.list(false, null, archived).size());
+        model.addAttribute("remediationTab", new VulnQuery.Links("/actions", null)
+                .with("archived", archived ? "true" : null).here());
+        model.addAttribute("analysisTab", new VulnQuery.Links("/actions", "tab=analyses")
+                .with("archived", archived ? "true" : null).here());
 
         model.addAttribute("tab", tab);
         model.addAttribute("zones", zones.all());
@@ -96,6 +114,7 @@ public class ActionController {
         model.addAttribute("status", status);
         model.addAttribute("statuses", RemediationStatus.values());
         model.addAttribute("includeDone", includeDone);
+        model.addAttribute("archived", archived);
 
         // CSV 링크를 자바에서 만든다. `@{/actions/export.csv(zone=${zone}, …)}`
         // 는 값이 없어도 이름을 적어서 `?zone=&status=&includeDone=false` 가
@@ -105,42 +124,68 @@ public class ActionController {
                 .with("tab", "analyses".equals(tab) ? "analyses" : null)
                 .with("zone", zone)
                 .with("status", status)
-                .with("includeDone", includeDone ? "true" : null));
+                .with("includeDone", includeDone ? "true" : null)
+                .with("archived", archived ? "true" : null));
 
         if ("analyses".equals(tab)) {
-            List<FindingAnalysis> rows = analyses.list(includeDone, zone);
+            List<FindingAnalysis> rows = analyses.list(includeDone, zone, archived);
             model.addAttribute("analyses", Paging.slice(rows, page, size));
-            model.addAttribute("overdue", analyses.reviewOverdue());
-            // 검토 결과 줄에서 조치로 넘어가는 길. 조치는 `(자산, 패키지)`
-            // 하나에 하나라 검토 여러 건이 조치 하나를 가리킨다 — 이미
-            // 열려 있으면 `조치 등록` 이 아니라 `조치 보기` 다.
-            model.addAttribute("actions", service.byAssetPackage(
-                    rows.stream().map(a -> a.getAsset().getId()).distinct().toList()));
+            // 어느 패키지의 것인지 가르지 못한 옛 검토 결과(V24) — 몇 건인지 탭 머리가 말한다.
+            model.addAttribute("unresolved", rows.stream().filter(FindingAnalysis::isPackageUnresolved).count());
+            // 해당 없음 · 오탐으로 닫혀 빠진 줄 수 — 체크박스가 `(n건)` 으로 말한다.
+            model.addAttribute("reviewedOut", includeDone
+                    ? rows.stream().filter(a -> !a.isOpen()).count()
+                    : analyses.list(true, zone, archived).size() - rows.size());
+            model.addAttribute("overdue", analyses.reviewOverdue(archived));
+            // 검토 결과 줄에서 조치로 넘어가는 길. 검토 여러 건이 그 (자산, 패키지)의
+            // 지금 조치(최신 회차) 하나를 가리킨다 — 이미 있으면 `조치 등록` 이 아니라
+            // 그 조치다. 완료 · 신규 탐지면 옆에 `조치 등록`(다음 회차)을 둔다(D11).
+            java.util.Map<String, Remediation> actions = service.byAssetPackage(
+                    rows.stream().map(a -> a.getAsset().getId()).distinct().toList());
+            model.addAttribute("actions", actions);
+            model.addAttribute("afterDone", service.afterDone(actions.values()));
         } else {
-            model.addAttribute("remediations",
-                               Paging.slice(service.list(zone, status), page, size));
-            model.addAttribute("overdue", remediations.findOverdue(LocalDate.now()));
+            List<Remediation> listed = service.list(zone, status, archived);
+            org.springframework.data.domain.Page<Remediation> shown = Paging.slice(listed, page, size);
+            model.addAttribute("remediations", shown);
+            // 어느 패키지의 것인지 가르지 못한 옛 조치(V24) — 몇 건인지 탭 머리가 말한다.
+            model.addAttribute("unresolved", listed.stream().filter(Remediation::isPackageUnresolved).count());
+            // 완료인데 지금 검사에 해소 건수가 남은 조치 — 세 갈래(AfterDone), 보고서 5장과
+            // 같은 규칙 · 같은 말로 적는다.
+            model.addAttribute("afterDone", service.afterDone(shown.getContent()));
+            model.addAttribute("overdue", remediations.findOverdue(LocalDate.now(), archived));
         }
         return "actions";
     }
 
-    /** 조치 하나 — 상태·담당·기한과 그동안의 발자취. */
+    /** 조치 하나 — 상태·담당·기한, 조치 회차 · 조치 대상, 그동안의 발자취. */
     @GetMapping("/{id}")
     public String detail(@PathVariable Long id, Model model) {
         Remediation remediation = remediation(id);
         model.addAttribute("remediation", remediation);
         model.addAttribute("statuses", RemediationStatus.values());
+        // 회차 — 이전 조치, 그리고 이 조치가 지난 회차면 최신 회차(D5 · D11).
+        model.addAttribute("previous", service.previous(remediation).orElse(null));
+        model.addAttribute("latestRound", service.latestOf(remediation).orElse(null));
+        // 이력이 적는 칸까지 남기 시작한 시각 — 그보다 먼저 만든 조치에만 각주로(V19).
+        model.addAttribute("historySince", settings.historyFieldsSince()
+                .filter(since -> remediation.getCreatedAt().isBefore(since)).orElse(null));
 
         // 최신 검사에서 이 패키지가 아직 몇 건인가. **상태를 자동으로 바꾸지는
         // 않는다** — 대상이 바뀌어 사라진 것인지 정말 올린 것인지 우리가
         // 판단할 수 없다. 숫자만 보여 주고 판단은 담당자가 한다.
-        Scan latest = scans.findFirstByAssetIdAndStatusOrderByCreatedAtDesc(
-                remediation.getAsset().getId(), ScanStatus.DONE).orElse(null);
+        Scan latest = scans.currentOf(remediation.getAsset().getId()).orElse(null);
         model.addAttribute("latest", latest);
         model.addAttribute("remaining",
                 latest == null ? -1L
                         : service.remainingCounts(remediation.getAsset().getId(), latest)
                                  .getOrDefault(remediation.getId(), 0L));
+        // 완료로 닫았는데 해소 건수가 남았는가 — 세 갈래(AfterDone), 보고서 5장과 같은 말.
+        // 위의 `탐지` 는 해당 없음 · 오탐까지 센 수라 축이 다르다(둘 다 보여 준다).
+        model.addAttribute("afterDone", service.afterDone(List.of(remediation)).get(remediation.getId()));
+        // 조치 대상 — 등록 당시의 탐지. 지금 검사에 아직 있는지 번호로 맞댄다(R9).
+        model.addAttribute("targets", service.targets(remediation));
+        model.addAttribute("presentIds", service.idsIn(latest, remediation.getPackageKey()));
         return "action-detail";
     }
 
@@ -157,7 +202,13 @@ public class ActionController {
         Remediation remediation = remediation(id);
         // **고치기 전에 읽는다.** `service.update` 가 같은 객체를 바꾼다.
         String changed = changes(remediation, status, owner, dueDate, note);
-        service.update(remediation, status, owner, dueDate, note, principal.getName(), comment);
+        try {
+            service.update(remediation, status, owner, dueDate, note, principal.getName(), comment);
+        } catch (IllegalArgumentException refused) {
+            // 다음 회차가 이은 조치를 다시 열려 했다 — 열린 조치가 둘이 된다(D5).
+            flash.addFlashAttribute("error", refused.getMessage());
+            return "redirect:/actions/" + id;
+        }
         if (!changed.isEmpty()) {
             audit.record(AuditEvent.REMEDIATION_UPDATED,
                          remediation.getAsset().getName() + " · "
@@ -170,10 +221,9 @@ public class ActionController {
     /**
      * 무엇이 바뀌었는가 — <b>바뀐 칸만</b> 적는다.
      *
-     * <p>상태를 그대로 두고 담당·기한만 고치면 조치 발자취에는 한 줄도 남지
-     * 않는다({@link Remediation#moveTo} 는 상태가 바뀔 때만 부른다). 그러면
-     * "누가 기한을 밀었나" 에 답할 것이 {@code updated_by} 하나뿐이고 그것은
-     * 다음 수정이 덮어쓴다.
+     * <p>앞서 조치 발자취는 상태가 바뀔 때만 남아, 담당·기한만 고치면 "누가 기한을
+     * 밀었나" 에 답할 것이 이 줄뿐이었다. 이제 발자취에도 칸마다 남지만(V19 —
+     * {@link Remediation#edit}), 조치를 지우면 발자취는 함께 사라진다 — 이 줄은 남는다.
      *
      * <p>바뀐 것이 없으면 빈 글자다 — <b>누른 적만 있는 것을 기록하지
      * 않는다.</b> 손대지 않은 칸까지 쌓으면 감사 로그가 읽히지 않는다.
@@ -218,7 +268,13 @@ public class ActionController {
     public String delete(@PathVariable Long id, RedirectAttributes flash) {
         Remediation remediation = remediation(id);
         String target = remediation.getAsset().getName() + " · " + remediation.getPackageName();
-        service.delete(remediation);
+        try {
+            service.delete(remediation);
+        } catch (IllegalArgumentException refused) {
+            // 다음 회차가 이은 조치 — 지우면 회차가 끊긴다.
+            flash.addFlashAttribute("error", refused.getMessage());
+            return "redirect:/actions/" + id;
+        }
         audit.record(AuditEvent.REMEDIATION_DELETED, target,
                      "등록 당시 " + remediation.getOpenedCount() + "건 · "
                      + remediation.getStatus().label());
@@ -226,12 +282,16 @@ public class ActionController {
         return "redirect:/actions";
     }
 
-    /** 내려받기는 보고 있는 탭의 것이다. 다른 탭의 것이 섞여 나오면 대조를 못 한다. */
+    /**
+     * 내려받기는 보고 있는 탭의 것이다. 다른 탭의 것이 섞여 나오면 대조를 못 한다.
+     * 운영 종료 포함도 화면과 같다.
+     */
     @GetMapping("/export.csv")
     public void export(@RequestParam(defaultValue = "remediations") String tab,
                        @RequestParam(required = false) Long zone,
                        @RequestParam(required = false) RemediationStatus status,
                        @RequestParam(defaultValue = "false") boolean includeDone,
+                       @RequestParam(defaultValue = "false") boolean archived,
                        HttpServletResponse response) throws java.io.IOException {
         boolean isAnalyses = "analyses".equals(tab);
         response.setContentType("text/csv; charset=UTF-8");
@@ -240,9 +300,12 @@ public class ActionController {
                 + "-" + LocalDate.now() + ".csv\"");
 
         if (isAnalyses) {
-            CsvWriter.writeAnalyses(response.getOutputStream(), analyses.list(includeDone, zone));
+            CsvWriter.writeAnalyses(response.getOutputStream(),
+                                    analyses.list(includeDone, zone, archived));
         } else {
-            CsvWriter.writeRemediations(response.getOutputStream(), service.list(zone, status));
+            List<Remediation> rows = service.list(zone, status, archived);
+            CsvWriter.writeRemediations(response.getOutputStream(), rows,
+                                        service.afterDone(rows));
         }
     }
 

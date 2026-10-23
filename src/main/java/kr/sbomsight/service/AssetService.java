@@ -57,9 +57,15 @@ public class AssetService {
      * <p><b>디스크에 보관한 SBOM 과 grype 원본도 함께 지운다.</b> DB 행만 지우면
      * 용량은 그대로이고, 그 파일 안에는 그 서버에 설치된 패키지 목록이 통째로
      * 들어 있다 — 자산을 지웠는데 가장 민감한 것이 남는 셈이다.
+     *
+     * <p><b>자산 행을 먼저 잠근다</b> — 검사 삭제 · 업로드 · 조치 등록 · 발행과 같은
+     * 차례다. 앞서 검사를 먼저 지우고(검사 행이 잠긴다) 자산을 나중에 지웠는데, 발행은
+     * 자산을 쥔 뒤 검사를 잠그며 읽는다 — 같은 자산에서 겹치면 서로를 기다려 DB 가 한쪽을
+     * 끊었다(AssetDeleteLockOrderTest). 지울 검사 목록도 잠근 뒤에 읽는다.
      */
     @Transactional
     public Impact delete(Asset asset, String actor) {
+        assets.lockById(asset.getId());
         Impact impact = impactOf(asset);
         Long assetId = asset.getId();
 

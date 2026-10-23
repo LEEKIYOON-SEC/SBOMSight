@@ -2,6 +2,7 @@ package kr.sbomsight;
 
 import kr.sbomsight.domain.*;
 import kr.sbomsight.repo.*;
+import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.ZoneService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,7 @@ class ReportRenderTest {
     @Autowired ScanRepository scans;
     @Autowired FindingRepository findings;
     @Autowired ZoneService zoneService;
+    @Autowired FindingAnalysisService analyses;
 
     private Scan seed(boolean withVectors) {
         Asset asset = new Asset();
@@ -102,7 +104,7 @@ class ReportRenderTest {
      * {@code white-space: nowrap} 을 걸고, 값마다 {@code <div>} 로 쌓는다.
      *
      * <p>여기서 잴 수 있는 것은 <b>markup</b> 까지다. 실제 픽셀은
-     * {@code tests/check-rows.py} 와 화면에서 본다.
+     * 띄운 화면에서 눈으로 본다.
      */
     @Test
     @DisplayName("조치 대상의 비고는 줄로 쌓는다")
@@ -226,10 +228,14 @@ class ReportRenderTest {
      * <p>등록된 조치만 싣기로 하면서 조건을 {@code rows.isEmpty()} 에
      * 걸었는데, 그 목록은 <b>미등록까지 들고 있어서 거의 비지 않는다.</b>
      * 그래서 등록이 하나도 없을 때 열 머리만 있고 줄이 없는 표가 남았다 —
-     * 띄워서 보고 찾았다. 가르는 것은 <b>등록된 것이 있는가</b>다.
+     * 띄워서 보고 찾았다. 가르는 것은 <b>실을 조치가 있는가</b>다.
+     *
+     * <p>미등록이 몇 개 · 몇 건인지는 세 갈래 표(대기 · 진행 / 완료 · 탐지
+     * 남음 / 미등록)가 말한다. 앞서는 `※ 해당 없음 — 등록된 조치 없음 ·
+     * 미등록 2개 패키지` 각주 한 줄이었다.
      */
     @Test
-    @DisplayName("등록된 조치가 없으면 표 대신 한 줄")
+    @DisplayName("등록된 조치가 없으면 조치 표를 그리지 않는다")
     void progressShowsNoEmptyTable() throws Exception {
         // 조치 대상은 있고(고칠 수 있는 패키지) 등록된 조치는 없는 상태.
         Scan scan = seedPackages("openssl", "fixed", "curl", "fixed");
@@ -237,18 +243,16 @@ class ReportRenderTest {
         String html = report(scan);
 
         assertThat(html).contains("<h2>5. 조치 진행 현황</h2>");
-        assertThat(html)
-                .as("등록이 없으면 표를 그리지 않는다 — 머리만 남는다")
-                .contains("※ 해당 없음 — 등록된 조치 없음");
-        assertThat(html)
-                .as("몇 개가 미등록인지는 남긴다")
-                .contains("미등록");
-        // 5장 안에 `<th>담당</th>` 이 있으면 표가 그려진 것이다.
         String chapter5 = html.substring(html.indexOf("<h2>5. 조치 진행 현황</h2>"),
                                          html.indexOf("<h2>6."));
+        // 5장 안에 `<th>담당</th>` 이 있으면 조치 표가 그려진 것이다.
         assertThat(chapter5)
                 .as("빈 표가 남아 있다")
                 .doesNotContain("<th class=\"tight\">담당</th>");
+        assertThat(chapter5.replaceAll("\\s+", " "))
+                .as("몇 개 · 몇 건이 미등록인지는 남긴다")
+                .contains("<td class=\"tight\">미등록</td> <td class=\"num tight\">2개</td>")
+                .contains("2건");
     }
 
     /**
@@ -416,5 +420,62 @@ class ReportRenderTest {
         // 말없이 빈 보고서를 내면 "이 구역은 깨끗하다" 로 읽힌다.
         assertThat(html).contains("두 날짜를 바꿨습니다");
         assertThat(html).contains("2026년 9월 1일");
+    }
+
+    /**
+     * <b>구역 보고서 5장의 `검토 결과` 칸은 그 줄의 것을 그린다.</b>
+     *
+     * <p>5장 줄을 그리는 렌더 시험이 없었다. 그 칸은 이름으로 물어, 같은 이름이 유형으로
+     * 갈리면 한 줄의 검토가 다른 줄에도 찍혔다 — 아무도 답하지 않은 apk 줄에 rpm 줄의
+     * `1대` 가 붙었다.
+     */
+    @Test
+    @DisplayName("구역 보고서 5장 — 검토 결과 칸은 그 줄(이름 · 유형)의 것을 그린다")
+    void zoneResidualReviewCellIsPerRow() throws Exception {
+        Zone zone = zoneService.create("검토-" + System.nanoTime(), "#123456", "");
+        Asset web = assetIn(zone, "web");
+        noFixToday(web, "CVE-2026-1001", "openssl", "rpm");
+        noFixToday(assetIn(zone, "api"), "CVE-2026-1002", "openssl", "apk");
+        analyses.record(web, "CVE-2026-1001", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.IN_TRIAGE,
+                        null, null, "", "", "", null, "tester");
+
+        String html = mvc.perform(get("/reports/zone").param("zone", zone.getId().toString())
+                                                     .with(user("tester").roles("ADMIN")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+        String chapter5 = html.substring(html.indexOf("5. 수정 버전 없는 항목"),
+                                         html.indexOf("6. 조치 진행 현황"));
+        String rpm = rowOf(chapter5, ">pkg:rpm/openssl<");
+        String apk = rowOf(chapter5, ">pkg:apk/openssl<");
+
+        assertThat(rpm).contains("전부 1건").contains("class=\"faint\">1대</div>");
+        assertThat(apk).as("답한 적 없는 줄").contains("미검토");
+        assertThat(apk).as("답한 적 없는 줄에 남의 `1대` 가 붙었다")
+                       .doesNotContain("class=\"faint\">1대</div>");
+    }
+
+    /** 표에서 {@code marker} 가 든 줄({@code <tr>…</tr>}) 하나. */
+    private static String rowOf(String table, String marker) {
+        int at = table.indexOf(marker);
+        assertThat(at).as("표에 %s 가 든 줄이 없다", marker).isNotNegative();
+        return table.substring(table.lastIndexOf("<tr", at), table.indexOf("</tr>", at));
+    }
+
+    /** 오늘 날짜로 검사 하나 — 수정 버전 없는 탐지 한 건. */
+    private void noFixToday(Asset asset, String cve, String pkg, String type) {
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scan.setGrypeVersion("0.87.0");
+        scans.saveAndFlush(scan);
+        Finding f = new Finding(scan, cve + "|" + pkg, cve, pkg);
+        f.setPackageVersion("3.0.2");
+        f.setPackageType(type);
+        f.setSeverity("High");
+        f.setFixState("not-fixed");
+        f.setCvssScore(BigDecimal.valueOf(7.5));
+        findings.saveAndFlush(f);
+        scan.setFindingCount(1);
+        scan.setMatchCount(1);
+        scans.saveAndFlush(scan);
     }
 }

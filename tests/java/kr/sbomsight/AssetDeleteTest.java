@@ -5,6 +5,7 @@ import kr.sbomsight.domain.AnalysisResponse;
 import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
@@ -94,16 +95,16 @@ class AssetDeleteTest {
         scan.setFindingCount(1);
         scans.saveAndFlush(scan);
 
-        Remediation remediation = new Remediation(asset, "xz", "tester");
+        Remediation remediation = new Remediation(asset, "xz", PackageKey.of(null, null, "xz"), "tester");
         remediation.setFromVersion("5.6.0");
         remediation.setToVersion("5.6.2");
         remediations.saveAndFlush(remediation);
 
         // 검토 결과 — 이력(event)까지 함께 생긴다. 두 번 적어 이력을 두 줄로.
-        analysisService.record(asset, "CVE-2024-3094", "xz",
+        analysisService.record(asset, "CVE-2024-3094", "xz", PackageKey.of(null, null, "xz"),
                                AnalysisState.IN_TRIAGE, null, null,
                                "확인 중", null, null, null, "tester");
-        analysisService.record(asset, "CVE-2024-3094", "xz",
+        analysisService.record(asset, "CVE-2024-3094", "xz", PackageKey.of(null, null, "xz"),
                                AnalysisState.NOT_AFFECTED,
                                AnalysisJustification.CODE_NOT_REACHABLE,
                                AnalysisResponse.WILL_NOT_FIX,
@@ -152,7 +153,7 @@ class AssetDeleteTest {
         asset.setZone(zoneService.unassigned());
         assets.saveAndFlush(asset);
 
-        analysisService.record(asset, "CVE-2024-3094", "xz",
+        analysisService.record(asset, "CVE-2024-3094", "xz", PackageKey.of(null, null, "xz"),
                                AnalysisState.IN_TRIAGE, null, null,
                                "확인 중", null, null, null, "tester");
 

@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
  *   3. 조치 대상        패키지를 올리면 해소되는 것
  *   4. 수정 버전 없는 항목
  *   5. 조치 진행 현황
- *   6. 이전 검사 대비
+ *   6. 이전 검사 대비   + 최근 검사 추이(완료 검사 여섯 번까지)
  * </pre>
  *
  * <p>AI 는 쓰지 않는다. <b>grype 이 준 데이터만으로</b> 만든다.
@@ -46,25 +46,90 @@ public class ReportService {
     private final ScanRepository scans;
     private final RemediationRepository remediations;
     private final FindingAnalysisService analyses;
+    private final RemediationService remediationService;
 
     public ReportService(FindingRepository findings, ScanRepository scans,
                          RemediationRepository remediations,
-                         FindingAnalysisService analyses) {
+                         FindingAnalysisService analyses, RemediationService remediationService) {
         this.findings = findings;
         this.scans = scans;
         this.remediations = remediations;
         this.analyses = analyses;
+        this.remediationService = remediationService;
     }
 
     @Transactional(readOnly = true)
     public Report build(Scan scan) {
-        Exposure exposure = exposure(scan);
-        Overview overview = overview(scan);
-        Summary summary = summary(scan, exposure);
-        Targets targets = targets(scan, exposure);
+        // **1·2장은 탐지 전부, 3·4장(과 그것을 잇는 5장)은 목록이다.** 목록은
+        // 검토 결과가 해당 없음 · 오탐인 건을 뺀다 — 취약점 화면과 같은 규칙
+        // (FindingRepository 의 includeReviewed). 뺀 건수는 1장이 말한다.
+        // 앞서 1장은 "목록에서 제외" 라고 적으면서 어느 장도 빼지 않았다.
+        Map<AnalysisState, Long> review = reviewCounts(scan);
+        Exposure exposure = exposure(scan, true);
+        Overview overview = overview(scan, review);
+        Summary summary = summary(scan, exposure, review);
+        Targets targets = targets(scan, exposure(scan, false));
         Progress progress = progress(scan, targets);
-        return new Report(scan, overview, summary, targets, progress,
+        // 부록 — 실제 악용 · 심각과 그 설명 첫 문장(Appendix). 목록이다: 해당
+        // 없음 · 오탐은 3 · 4장처럼 뺀다.
+        List<Appendix.Row> appendix = Appendix.of(findings.findUrgentIn(List.of(scan.getId()), false));
+        return new Report(scan, overview, summary, targets, progress, trend(scan), appendix,
                           java.time.Instant.now());
+    }
+
+    /** 6장 아래 표에 싣는 완료 검사 수 — 이 검사까지. */
+    private static final int TREND = 6;
+
+    /**
+     * <b>최근 검사 추이</b> — 이 검사까지 완료 검사 여섯 번, 오래된 것부터.
+     *
+     * <p>6장은 바로 앞 검사 하나와만 댄다. 그것만으로는 줄고 있는지 늘고 있는지
+     * 알 수 없다 — 한 번 줄었다가 다시 느는 것이 보이지 않는다. 검사 결과가 낸
+     * 수를 그대로 늘어놓는다(다시 세지 않는다). 같은 SBOM 을 새 DB 로 다시 검사한
+     * 것은 화면이 표시한다 — 자산이 아니라 취약점 DB 가 움직인 것이다.
+     *
+     * <p>앞 검사는 6장 위 표({@link #diff})와 <b>같은 규칙</b>으로 고른다 — 최신 검사를
+     * 고르는 순서({@link Scan#BY_SBOM_TIME})에서 이 검사 앞에 오는 완료 검사. 그래야 이
+     * 표의 끝에서 둘째 줄이 위 표의 `이전 검사` 와 같은 검사다. 실패한 검사는 넣지
+     * 않는다 — 0건이 아니라 모르는 것이다.
+     *
+     * <p>앞 검사가 없으면 비운다 — 한 줄짜리 추이는 없다.
+     */
+    private List<TrendRow> trend(Scan scan) {
+        List<Scan> recent = new ArrayList<>(earlier(scan).stream()
+                .limit(TREND - 1)
+                .toList());
+        if (recent.isEmpty()) {
+            return List.of();
+        }
+        Collections.reverse(recent);    // 오래된 것부터
+        recent.add(scan);
+        Map<Long, Map<String, Long>> bySeverity = new HashMap<>();
+        findings.countBySeverityPerScan(recent.stream().map(Scan::getId).toList())
+                .forEach(r -> bySeverity.computeIfAbsent(r.getScanId(), id -> new HashMap<>())
+                                        .merge(key(r.getSeverity()), r.getTotal(), Long::sum));
+        List<TrendRow> rows = new ArrayList<>();
+        for (Scan s : recent) {
+            Map<String, Long> sev = bySeverity.getOrDefault(s.getId(), Map.of());
+            rows.add(new TrendRow(s, sev.getOrDefault("critical", 0L), sev.getOrDefault("high", 0L),
+                                  s.getId().equals(scan.getId())));
+        }
+        return rows;
+    }
+
+    /**
+     * 이 검사 <b>앞</b>의 완료 검사 — 최신 검사를 고르는 순서({@link Scan#BY_SBOM_TIME})로,
+     * 바로 앞의 것부터.
+     *
+     * <p>같은 SBOM 을 다시 검사한 것은 원본 뒤에 온다(SBOM 생성 시각이 같고 검사 시각이
+     * 늦다) — 그 보고서의 "지난 검사 대비" 는 취약점 DB 가 움직인 몫이다.
+     */
+    private List<Scan> earlier(Scan scan) {
+        return scans.findByAssetIdAndStatusOrderBySbomCreatedAtDescCreatedAtDescIdDesc(
+                        scan.getAsset().getId(), ScanStatus.DONE)
+                .stream()
+                .filter(s -> Scan.BY_SBOM_TIME.compare(s, scan) < 0)
+                .toList();
     }
 
     // --- 노출면 --------------------------------------------------------------
@@ -79,12 +144,17 @@ public class ReportService {
      *
      * <p>벡터를 읽을 수 없는 건은 <b>세지 않고 따로 센다.</b> 아니오로 밀어
      * 넣으면 "원격에서 닿지 않습니다" 라는, 아무도 확인하지 않은 판정이 된다.
+     *
+     * <p>패키지마다의 수는 <b>3 · 4장의 줄과 같은 키(패키지 식별자 · 버전)</b>로 센다.
+     * 앞서 이름으로만 모아, 같은 패키지가 두 버전으로 깔린 자산에서 이름 전체의 수가
+     * 버전마다 되풀이되어 찍혔고 3장 합계는 그것을 다시 더했다.
      */
-    private Exposure exposure(Scan scan) {
+    private Exposure exposure(Scan scan, boolean includeReviewed) {
         long reachable = 0, reachableFixable = 0, scopeChanged = 0, unreadable = 0;
-        Map<String, Long> reachableByPackage = new HashMap<>();
+        Map<String, Long> reachableByRow = new HashMap<>();
 
-        for (FindingRepository.ExposureRow row : findings.exposureRows(scan.getId())) {
+        for (FindingRepository.ExposureRow row
+                : findings.exposureRows(scan.getId(), includeReviewed)) {
             Optional<CvssVector> parsed = CvssVector.parse(row.getVector());
             if (parsed.isEmpty()) {
                 unreadable++;
@@ -99,16 +169,17 @@ public class ReportService {
                 if ("fixed".equalsIgnoreCase(row.getFixState())) {
                     reachableFixable++;
                 }
-                reachableByPackage.merge(row.getPackageName(), 1L, Long::sum);
+                reachableByRow.merge(groupKey(row.getPackageKey(), row.getPackageVersion()),
+                                     1L, Long::sum);
             }
         }
 
-        return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, reachableByPackage);
+        return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, reachableByRow);
     }
 
     // --- 1장: 점검 개요 ------------------------------------------------------
 
-    private Overview overview(Scan scan) {
+    private Overview overview(Scan scan, Map<AnalysisState, Long> review) {
         return new Overview(
                 scan.getAsset(),
                 scan.getSbomFilename(),
@@ -123,43 +194,18 @@ public class ReportService {
                 scan.getDroppedCount(),
                 scan.accountsBalance(),
                 distinctVulnerabilities(scan),
-                findings.groupByPackage(scan.getId()).size(),
-                excludedByAnalysis(scan));
+                findings.groupByPackage(scan.getId(), true).size(),
+                review.get(AnalysisState.NOT_AFFECTED) + review.get(AnalysisState.FALSE_POSITIVE));
     }
 
-    /** 고유 취약점 수 — 같은 CVE 가 여러 패키지에 걸리면 한 가지로 센다. */
+    /** 고유 취약점 수 — 같은 CVE 가 여러 패키지에 걸리면 한 가지로 센다. 1장은 탐지 전부를 센다. */
     private long distinctVulnerabilities(Scan scan) {
-        return findings.groupByCveIn(List.of(scan.getId()), null, null, null, null).size();
-    }
-
-    /**
-     * <b>검토를 마쳐 목록에서 빠지는 건수.</b>
-     *
-     * <p>보고서는 이 수를 반드시 찍는다. 검토 결과로 목록에서 빠진 건이 있는데
-     * 그 사실을 안 적으면, 숫자가 조용히 줄어든 보고서가 된다 — 점검에서
-     * 문제가 되는 것이 정확히 그것이다. <b>탐지 건수 자체는 줄지 않는다.</b>
-     *
-     * <p>적어 둔 번호가 grype 의 주 식별자일 수도, 함께 온 CVE 번호일 수도
-     * 있다. 둘 다 본다 — 한쪽만 보면 적어 둔 것이 보고서에서 사라진다.
-     */
-    private long excludedByAnalysis(Scan scan) {
-        Set<String> done = analyses.forAsset(scan.getAsset().getId()).stream()
-                .filter(a -> !a.isOpen())
-                .map(FindingAnalysis::key)
-                .collect(Collectors.toSet());
-        if (done.isEmpty()) {
-            return 0;
-        }
-        return findings.findKeyRows(scan.getId()).stream()
-                .filter(row -> done.contains(row.getCve() + "|" + row.getPackageName())
-                            || (row.getRelatedCve() != null && !row.getRelatedCve().isBlank()
-                                && done.contains(row.getRelatedCve() + "|" + row.getPackageName())))
-                .count();
+        return findings.groupByCveIn(List.of(scan.getId()), null, null, null, null, null, true).size();
     }
 
     // --- 2장: 점검 결과 요약 -------------------------------------------------
 
-    private Summary summary(Scan scan, Exposure exposure) {
+    private Summary summary(Scan scan, Exposure exposure, Map<AnalysisState, Long> review) {
         Map<String, Long> severity = new LinkedHashMap<>();
         // 순서는 Severity 한곳에 있다. 여기 다시 적으면 곧 갈라진다.
         for (String key : Severity.KEYS) {
@@ -176,7 +222,7 @@ public class ReportService {
         long noFix = fixState.getOrDefault("wont-fix", 0L) + fixState.getOrDefault("not-fixed", 0L);
         long unknownFix = scan.getFindingCount() - fixable - noFix;
 
-        List<PackageGroup> groups = findings.groupByPackage(scan.getId());
+        List<PackageGroup> groups = findings.groupByPackage(scan.getId(), true);
         long kev = groups.stream().mapToLong(PackageGroup::getKevCount).sum();
         // grype 이 KEV 를 확인했는지 자체를 모를 수 있다(옛 판은 주지 않는다).
         boolean kevKnown = groups.stream().anyMatch(g -> g.getKevCount() > 0)
@@ -184,7 +230,7 @@ public class ReportService {
 
         return new Summary(severity, fixState, fixable, noFix, unknownFix,
                            groups.size(), kev, kevKnown, exposure, scan.getFindingCount(),
-                           reviewCounts(scan));
+                           review);
     }
 
     /**
@@ -208,7 +254,7 @@ public class ReportService {
         Map<AnalysisState, Long> counts = FindingAnalysisService.emptyStateCounts();
         for (FindingRepository.FindingKey row : findings.findKeyRows(scan.getId())) {
             AnalysisState state = FindingAnalysisService.stateOf(
-                    byKey, row.getCve(), row.getRelatedCve(), row.getPackageName());
+                    byKey, row.getCve(), row.getRelatedCve(), row.getPackageKey());
             counts.merge(state, 1L, Long::sum);
         }
         return counts;
@@ -224,7 +270,25 @@ public class ReportService {
     // --- 3·4장: 조치 대상과 수정 버전 없는 항목 -------------------------------
 
     private Targets targets(Scan scan, Exposure exposure) {
-        List<PackageGroup> groups = findings.groupByPackage(scan.getId());
+        // 목록이다 — 해당 없음 · 오탐은 뺀다. `원격 접근` 도 같은 규칙으로 센
+        // 노출면(exposure)을 받는다. 한 줄 안에서 `해소 건수` 는 뺐는데
+        // `원격 접근` 은 넣으면 두 칸이 서로 다른 건을 센다. 줄의 키(패키지 식별자 ·
+        // 버전)도 같아야 한다 — 이름으로 세면 같은 이름의 다른 줄 것이 섞인다.
+        List<PackageGroup> groups = findings.groupByPackage(scan.getId(), false);
+
+        // 수정 버전은 하나로 고르지 않는다 — 그 줄에 실린 탐지(해당 없음 ·
+        // 오탐을 뺀 것)의 수정 버전 전부(FixVersions). 묶음 키와 같은
+        // (식별자, 버전)으로 모은다.
+        Map<String, List<String>> fixes = findings
+                .fixVersionsIn(List.of(scan.getId()), null, false).stream()
+                .collect(Collectors.groupingBy(
+                        r -> groupKey(r.getPackageKey(), r.getPackageVersion()),
+                        Collectors.collectingAndThen(
+                                // 한 건의 칸에 후보가 여럿 이어져 있다 — 펴서 모은다.
+                                Collectors.flatMapping(
+                                        r -> FixVersions.split(r.getFixedVersion()).stream(),
+                                        Collectors.toList()),
+                                FixVersions::collect)));
 
         // 조치 하나로 몇 건이 사라지는가. 이것이 보고서의 핵심 표다.
         //
@@ -234,7 +298,9 @@ public class ReportService {
         // 건수도 심각도도 수정 상태도 grype 이 준 그대로다.
         List<PackageAction> actions = groups.stream()
                 .filter(g -> g.getFixable() > 0)
-                .map(g -> new PackageAction(g, exposure.reachableIn(g.getPackageName())))
+                .map(g -> new PackageAction(g, exposure.reachableIn(g),
+                                            fixes.getOrDefault(groupKey(g.getPackageKey(),
+                                                    g.getPackageVersion()), List.of())))
                 .sorted(BY_URGENCY)
                 .toList();
 
@@ -242,7 +308,7 @@ public class ReportService {
         // 다른 통제(접근 제한·모니터링)가 필요한 자리다.
         List<PackageAction> blocked = groups.stream()
                 .filter(g -> g.getFixable() == 0)
-                .map(g -> new PackageAction(g, exposure.reachableIn(g.getPackageName())))
+                .map(g -> new PackageAction(g, exposure.reachableIn(g), List.of()))
                 .sorted(BY_URGENCY)
                 .toList();
 
@@ -250,42 +316,90 @@ public class ReportService {
         // 4장은 '손댈 수 없는 것' 에 우리가 적어 둔 검토 결과를 붙여 낸다.
         //
         // **패키지 하나에 검토 결과가 여럿 달린다** — 검토는 (자산, CVE,
-        // 패키지)에 하나씩이고 이 표는 패키지로 한 줄이다. 그중 하나를 골라
-        // 붙이는 것은 그 줄의 `근거` 를 채우기 위한 것이고, <b>그 패키지가
-        // 검토됐는지는 건 수로 센다</b>(`reviewByPackage`).
-        Map<String, FindingAnalysis> byPackage = analyses.forAsset(scan.getAsset().getId())
-                .stream()
-                .collect(Collectors.toMap(FindingAnalysis::getPackageName, a -> a, (a, b) -> a));
-        Map<String, Reviewed> reviewed = reviewByPackage(scan);
+        // 패키지)에 하나씩이고 이 표는 패키지로 한 줄이다. 앞서 그중 **아무
+        // 한 건**을 골라 상태 · 근거 · 재검토일을 찍었다(띄운 앱에서 nginx
+        // 네 건이 `오탐 · — · —` — 위험 수용과 그 재검토일이 사라졌다). 이제
+        // 그 줄에 실린 탐지들의 것을 **모은다**(reviewSummaries). 그 줄의 키(식별자 ·
+        // 버전)로 모은다 — 이름으로 모으면 같은 이름의 다른 줄 것이 섞인다.
+        Map<String, NoFixReview> reviews = reviewSummaries(scan);
         List<NoFixRow> noFixRows = blocked.stream()
-                .map(b -> new NoFixRow(b, byPackage.get(b.packageName()),
-                                       reviewed.getOrDefault(b.packageName(),
-                                                             new Reviewed(0, b.total()))))
+                .map(b -> {
+                    NoFixReview r = reviews.get(rowKey(b));
+                    return r == null
+                            ? new NoFixRow(b, new Reviewed(0, b.total()), Map.of(), null)
+                            : new NoFixRow(b, r.reviewed(), r.responses(), r.earliestReview());
+                })
                 .toList();
         return new Targets(actions, blocked, noFixRows, diff, exposure);
     }
 
     /**
-     * 패키지마다 <b>몇 건에 답이 있나.</b>
+     * 묶음 질의의 키 — 패키지 식별자 · 버전(V24). 앞서 이름 · 버전 · 유형이라 groupId 만 다른
+     * 두 jackson-databind 의 같은 버전이 한 줄이었다. 둘 중 하나라도 null 이면 빈 값으로 친다.
+     */
+    private static String groupKey(String packageKey, String version) {
+        return Objects.toString(packageKey, "") + '\u0000' + Objects.toString(version, "");
+    }
+
+    /** 3 · 4장 한 줄의 키 — {@link #groupKey} 와 같은 식. */
+    private static String rowKey(PackageAction row) {
+        return groupKey(row.packageKey(), row.currentVersion());
+    }
+
+    /**
+     * 패키지마다 <b>몇 건에 답이 있나 · 대응 방안은 무엇 무엇인가 · 가장 먼저
+     * 오는 재검토일은 언제인가.</b>
      *
      * <p>2.4 와 <b>같은 걸음으로 센다</b> — 같은 탐지 목록을 훑고 같은
-     * {@link FindingAnalysisService#stateOf} 로 맞춘다. 규칙이 갈리면 한 보고서
-     * 안에서 2.4 의 `미검토 30건` 과 4장의 `해당 없음` 이 서로를 부정한다.
+     * {@link FindingAnalysisService#analysisOf} 로 맞춘다. 규칙이 갈리면 한
+     * 보고서 안에서 2.4 의 `미검토 30건` 과 4장이 서로를 부정한다.
+     *
+     * <p><b>4장의 줄(식별자 · 버전)마다</b> 모은다. 앞서 이름으로 모아, 같은 이름의
+     * 다른 버전 · 유형 것(3장에 선 것까지)이 그 줄의 분모 · 대응 방안 · 재검토일에
+     * 섞였다 — 건수 2인 줄에 `2 / 4건` 이 찍혔다.
      */
-    private Map<String, Reviewed> reviewByPackage(Scan scan) {
+    private Map<String, NoFixReview> reviewSummaries(Scan scan) {
         Map<String, FindingAnalysis> byKey = analyses.byKey(scan.getAsset().getId());
         Map<String, long[]> counts = new LinkedHashMap<>();
+        Map<String, Map<AnalysisResponse, Long>> responses = new HashMap<>();
+        Map<String, java.time.LocalDate> earliest = new HashMap<>();
         for (FindingRepository.FindingKey row : findings.findKeyRows(scan.getId())) {
-            long[] cell = counts.computeIfAbsent(row.getPackageName(), name -> new long[2]);
+            FindingAnalysis found = FindingAnalysisService.analysisOf(
+                    byKey, row.getCve(), row.getRelatedCve(), row.getPackageKey());
+            AnalysisState state = found == null ? AnalysisState.NOT_SET : found.getState();
+            // 4장은 목록이다 — 해당 없음 · 오탐으로 빠진 건은 그 줄의 `건수` 에도
+            // `답 있는 건` 에도 넣지 않는다. 넣으면 `1 / 4건` 의 4 가 표의 건수(1)와
+            // 다르다.
+            if (!state.isOpen()) {
+                continue;
+            }
+            String key = groupKey(row.getPackageKey(), row.getPackageVersion());
+            long[] cell = counts.computeIfAbsent(key, k -> new long[2]);
             cell[1]++;
-            if (FindingAnalysisService.stateOf(byKey, row.getCve(), row.getRelatedCve(),
-                                               row.getPackageName()) != AnalysisState.NOT_SET) {
-                cell[0]++;
+            if (state == AnalysisState.NOT_SET) {
+                continue;
+            }
+            cell[0]++;
+            if (found.getResponse() != null) {
+                responses.computeIfAbsent(key, k -> new java.util.EnumMap<>(AnalysisResponse.class))
+                         .merge(found.getResponse(), 1L, Long::sum);
+            }
+            if (found.getReviewBy() != null) {
+                earliest.merge(key, found.getReviewBy(),
+                               (a, b) -> a.isBefore(b) ? a : b);
             }
         }
-        Map<String, Reviewed> out = new LinkedHashMap<>();
-        counts.forEach((name, cell) -> out.put(name, new Reviewed(cell[0], cell[1])));
+        Map<String, NoFixReview> out = new LinkedHashMap<>();
+        counts.forEach((key, cell) -> out.put(key, new NoFixReview(
+                new Reviewed(cell[0], cell[1]),
+                responses.getOrDefault(key, Map.of()),
+                earliest.get(key))));
         return out;
+    }
+
+    /** 4장 한 줄에 붙는 검토 결과의 모음. */
+    private record NoFixReview(Reviewed reviewed, Map<AnalysisResponse, Long> responses,
+                               java.time.LocalDate earliestReview) {
     }
 
     /**
@@ -300,66 +414,97 @@ public class ReportService {
                       .thenComparing(PackageAction::maxCvss,
                                      Comparator.nullsLast(Comparator.reverseOrder()))
                       .thenComparing(Comparator.comparingLong(PackageAction::total).reversed())
-                      .thenComparing(PackageAction::packageName);
+                      .thenComparing(PackageAction::packageName)
+                      .thenComparing(PackageAction::packageKey)
+                      .thenComparing(PackageAction::currentVersion);
 
     /**
      * 지난 스캔 대비 신규 · 해소 · 유지.
      *
-     * <p>{@code (CVE, 패키지명)} 으로 대조한다. 버전을 넣으면 패치했을 때 키가
-     * 바뀌어 "해소 1건 + 신규 1건"으로 갈라져 화면이 거짓말을 한다.
+     * <p>같은 패키지에서 번호(주 식별자 · 함께 온 CVE)가 하나라도 같으면 같은 취약점이다
+     * ({@link FindingMatch} — 검토 결과를 맞추는 규칙과 같다). 앞서는 주 식별자 하나로
+     * 맞대어, 같은 취약점의 주 식별자가 바뀌면 "해소 1 + 신규 1" 로 갈렸다. 버전은 넣지
+     * 않는다 — 넣으면 패치했을 때 키가 바뀌어 같은 것이 갈라진다.
+     *
+     * <p>지난 검사는 <b>최신 검사를 고르는 순서</b>에서 바로 앞의 완료 검사다
+     * ({@link #earlier}). 앞서는 이 검사보다 먼저 <i>돈</i> 검사였다 — 예전에 떠 둔
+     * SBOM 을 늦게 올리면 최신 검사의 보고서가 "첫 검사" 라고 말했다.
      */
     private Diff diff(Scan scan) {
-        Optional<Scan> previous = scans.findByAssetIdOrderByCreatedAtDesc(scan.getAsset().getId())
-                .stream()
-                .filter(s -> s.getStatus() == ScanStatus.DONE)
-                .filter(s -> s.getCreatedAt().isBefore(scan.getCreatedAt()))
-                .findFirst();
+        Optional<Scan> previous = earlier(scan).stream().findFirst();
 
         if (previous.isEmpty()) {
             return new Diff(null, 0, 0, 0);
         }
 
-        Set<String> now = new HashSet<>(findings.findCvePackagePairs(scan.getId()));
-        Set<String> before = new HashSet<>(findings.findCvePackagePairs(previous.get().getId()));
-
-        long added = now.stream().filter(k -> !before.contains(k)).count();
-        long resolved = before.stream().filter(k -> !now.contains(k)).count();
-        long kept = now.stream().filter(before::contains).count();
-        return new Diff(previous.get(), added, resolved, kept);
+        FindingMatch.Counts counts = FindingMatch.compare(
+                FindingMatch.of(findings.findKeyRows(scan.getId())),
+                FindingMatch.of(findings.findKeyRows(previous.get().getId())));
+        return new Diff(previous.get(), counts.added(), counts.resolved(), counts.kept());
     }
 
     // --- 5장: 조치 진행 현황 -------------------------------------------------
 
     private Progress progress(Scan scan, Targets targets) {
         // 4장이 센 것을 그대로 쓴다 — 5장의 `검토 결과 없음` 과 4장의 표가
-        // 다른 규칙으로 세면 같은 패키지를 두 장이 다르게 말한다.
+        // 다른 규칙으로 세면 같은 패키지를 두 장이 다르게 말한다. 키도 4장의 줄이다.
         Map<String, Reviewed> reviewed = targets.noFixRows().stream()
-                .collect(Collectors.toMap(r -> r.action().packageName(), NoFixRow::reviewed,
+                .collect(Collectors.toMap(r -> rowKey(r.action()), NoFixRow::reviewed,
                                           (a, b) -> a, LinkedHashMap::new));
-        Map<String, Remediation> byPackage = remediations
-                .findByAssetIdOrderByStatusAscPackageNameAsc(scan.getAsset().getId()).stream()
-                .collect(Collectors.toMap(Remediation::getPackageName, r -> r, (a, b) -> a));
+        List<Remediation> registered = remediations
+                .findByAssetIdOrderByStatusAscPackageNameAsc(scan.getAsset().getId());
+        // 패키지마다 **지금 조치** — 최신 회차(D5). 지난 회차는 다음 회차가 이어받았다.
+        // 키는 패키지 식별자다(V24). 식별자가 빈 옛 조치는 제 칸에 따로 선다 — 3장의 어느
+        // 줄에도 붙지 않고, 대기 · 진행이면 아래 표에 그대로 실린다.
+        Map<String, Remediation> byPackage = RemediationService.latestPerPackage(registered);
+        String assetPrefix = scan.getAsset().getId() + "|";
+        // 완료했는데 이 검사에 해소 건수가 남았으면 무엇인가(AfterDone) — 조치 화면과
+        // 같은 규칙을 <b>이 검사</b>에 비춘다.
+        Map<Long, AfterDone> after = remediationService.afterDone(
+                byPackage.values(), Map.of(scan.getAsset().getId(), scan));
 
+        // 3장의 줄은 전부 해소 건수가 있는 패키지라, 닫힌 조치가 붙으면 늘 갈래가 있다 —
+        // 혹시 없으면 앞서의 뜻(탐지 남음)으로 둔다. 빼면 5장의 합이 3장과 어긋난다.
         List<ActionRow> rows = targets.fixTargets().stream()
-                .map(action -> new ActionRow(action, byPackage.get(action.packageName())))
+                .map(action -> {
+                    Remediation r = byPackage.get(assetPrefix + action.packageKey());
+                    AfterDone left = r == null ? null : after.get(r.getId());
+                    if (r != null && r.getStatus().isClosed() && left == null) {
+                        left = new AfterDone(AfterDone.Kind.REMAINING, action.fixableCount());
+                    }
+                    return new ActionRow(action, r, left);
+                })
                 .toList();
 
-        long tracked = rows.stream().filter(r -> r.remediation() != null).count();
-        long overdue = rows.stream()
-                .filter(r -> r.remediation() != null && r.remediation().isOverdue()).count();
+        // 5장 아래 표. 3장 순서로 조치가 달린 줄을 싣고, 그 뒤에 **이 검사에
+        // 해소 건수가 없는데 아직 대기 · 진행인 조치**를 붙인다 — 올려서
+        // 탐지가 사라졌는데 완료로 넘기지 않은 것이다. 앞서는 3장에 없는
+        // 조치를 5장이 아예 모르고 있어서, 조치 화면의 대기 · 진행 수와
+        // 보고서의 수가 달랐다. 완료로 닫혔고 남은 것도 없는 조치는 싣지 않는다.
+        Set<String> targeted = rows.stream().map(r -> assetPrefix + r.action().packageKey())
+                                   .collect(Collectors.toSet());
+        List<TrackedRow> tracking = new ArrayList<>();
+        rows.stream().filter(ActionRow::isTracked)
+            .forEach(r -> tracking.add(new TrackedRow(r.remediation(), r.action().fixableCount(),
+                                                      r.afterDone())));
+        registered.stream()
+                  .filter(r -> r == byPackage.get(RemediationService.lineKey(r)))
+                  .filter(r -> !r.getStatus().isClosed()
+                               && !targeted.contains(RemediationService.lineKey(r)))
+                  .forEach(r -> tracking.add(new TrackedRow(r, 0, null)));
 
         // 고칠 수 없는 건에 "왜 그대로 두는가" 가 적혀 있는지. 점검에서
         // 반드시 묻는 것이고, 답이 없으면 방치로 읽힌다.
         //
         // 검토가 끝난 것(해당 없음·오탐)도 가져온다 — 목록에서는 빠지지만
         // "왜 그대로 두는가" 에는 그것도 답이다.
+        // 운영 종료한 자산의 것도 넣는다 — 그 자산의 제 보고서다.
         List<FindingAnalysis> explained =
-                analyses.list(true, null).stream()
+                analyses.list(true, null, true).stream()
                         .filter(a -> a.getAsset().getId().equals(scan.getAsset().getId()))
                         .toList();
 
-        return new Progress(rows, tracked, rows.size() - tracked, overdue,
-                            targets.blocked(), explained, reviewed);
+        return new Progress(rows, List.copyOf(tracking), targets.blocked(), explained, reviewed);
     }
 
     private String key(String value) {
@@ -370,8 +515,36 @@ public class ReportService {
     // 화면에 넘기는 모양
     // -----------------------------------------------------------------------
 
+    /**
+     * @param trend     6장 아래 표 — 최근 완료 검사(오래된 것부터). 하나뿐이면 비어 있다
+     * @param appendix  부록 — 실제 악용 · 심각 취약점(한 줄 = 취약점 하나)
+     * @param printedAt 계산한 시각 — 초안의 `출력 시각`
+     */
     public record Report(Scan scan, Overview overview, Summary summary,
-                         Targets targets, Progress progress, java.time.Instant printedAt) {
+                         Targets targets, Progress progress, List<TrendRow> trend,
+                         List<Appendix.Row> appendix, java.time.Instant printedAt) {
+
+        /**
+         * 이 보고서의 수가 나온 완료 검사 — 이 검사와 6장(이전 검사 · 최근 검사 추이)의 검사.
+         * 발행하면 이 검사들을 가리킨다(V20) — 하나씩 지우지 못한다.
+         */
+        public List<Scan> basisScans() {
+            Map<Long, Scan> basis = new LinkedHashMap<>();
+            basis.put(scan.getId(), scan);
+            if (targets.diff().hasPrevious()) {
+                basis.putIfAbsent(targets.diff().previous().getId(), targets.diff().previous());
+            }
+            trend.forEach(t -> basis.putIfAbsent(t.scan().getId(), t.scan()));
+            return List.copyOf(basis.values());
+        }
+    }
+
+    /**
+     * 추이 한 줄 — 검사 하나와 그 검사의 심각 · 높음 건수.
+     *
+     * @param current 이 보고서의 검사인가
+     */
+    public record TrendRow(Scan scan, long critical, long high, boolean current) {
     }
 
     /** 1장 — 점검 개요. */
@@ -397,12 +570,15 @@ public class ReportService {
      *                         영향이 미치는 것. 권한 상승과는 다른 축이다
      * @param unreadable       벡터가 없거나 3.x 가 아니어서 <b>판단하지 못한</b> 것.
      *                         0 이 아니라 판단 불가다 — 아니오로 세지 않는다.
+     * @param reachableByRow   3 · 4장의 줄(식별자 · 버전)마다 원격 접근 건수
      */
     public record Exposure(long reachable, long reachableFixable, long scopeChanged,
-                           long unreadable, Map<String, Long> reachableByPackage) {
+                           long unreadable, Map<String, Long> reachableByRow) {
 
-        public long reachableIn(String packageName) {
-            return reachableByPackage.getOrDefault(packageName, 0L);
+        /** 그 줄의 원격 접근 건수 — 같은 이름의 다른 버전 · 패키지 것은 넣지 않는다. */
+        public long reachableIn(PackageGroup row) {
+            return reachableByRow.getOrDefault(
+                    groupKey(row.getPackageKey(), row.getPackageVersion()), 0L);
         }
 
         /** 바로 닿는데 수정본이 없는 것. 가장 곤란한 자리다. */
@@ -481,45 +657,115 @@ public class ReportService {
     }
 
     /**
-     * 4장 한 줄 — 손댈 수 없는 패키지와, 우리가 적어 둔 검토 결과.
+     * 4장 한 줄 — 손댈 수 없는 패키지와, 그 줄에 실린 탐지들의 검토 결과.
      *
-     * <p>검토 결과가 없으면 {@code analysis} 가 {@code null} 이다. <b>비어
-     * 있다는 것을 그대로 보여 준다</b> — 점검에서 "이건 왜 안 고쳤냐" 를
-     * 묻는 자리가 여기다.
+     * <p>적어 둔 것이 없으면 <b>비어 있다는 것을 그대로 보여 준다</b> — 점검에서
+     * "이건 왜 안 고쳤냐" 를 묻는 자리가 여기다.
      *
-     * <p><b>{@code analysis} 가 있다는 것이 "이 패키지를 검토했다" 는 뜻은
-     * 아니다.</b> 검토는 {@code (자산, CVE, 패키지)} 하나에 하나씩 달리고 이
-     * 줄은 패키지 하나다. {@code reviewed} 가 그 묶음의 <b>몇 건에 답이
-     * 있는지</b>를 센다 — 그것 없이 앞의 {@code null} 검사만으로 `해당 없음`
-     * 을 찍고 있었고, 세 건 중 한 건만 적어 둔 패키지가 전부 설명된 것으로
-     * 읽혔다.
+     * <p><b>한 건을 골라 그 줄을 말하지 않는다.</b> 검토는 {@code (자산, CVE,
+     * 패키지)} 하나에 하나씩 달리고 이 줄은 패키지 하나다. {@code reviewed} 가
+     * 몇 건에 답이 있는지, {@code responses} 가 대응 방안별로 몇 건인지,
+     * {@code earliestReview} 가 가장 먼저 오는 재검토일을 말한다.
+     *
+     * @param responses      대응 방안 → 건수. 비어 있으면 아직 정한 대응이 없다
+     * @param earliestReview 그 줄의 재검토일 가운데 가장 이른 날. 없으면 {@code null}
      */
-    public record NoFixRow(PackageAction action, FindingAnalysis analysis, Reviewed reviewed) {
+    public record NoFixRow(PackageAction action, Reviewed reviewed,
+                           Map<AnalysisResponse, Long> responses,
+                           java.time.LocalDate earliestReview) {
 
-        /** 그 줄에 붙일 근거가 있는가 — 검토가 <b>끝났는가와는 다르다.</b> */
-        public boolean hasAnalysis() {
-            return analysis != null;
+        /** 재검토일이 이미 지났는가. */
+        public boolean reviewOverdue() {
+            return earliestReview != null && earliestReview.isBefore(java.time.LocalDate.now());
+        }
+
+        /** `조치 불가 2 · 위험 수용 1` — 없으면 빈 문자열. */
+        public String responseLine() {
+            return responses.entrySet().stream()
+                    .map(e -> e.getKey().label() + " " + e.getValue())
+                    .collect(Collectors.joining(" · "));
         }
     }
 
     /**
      * 5장 — 조치 진행 현황.
      *
-     * <p><b>단위가 둘이다.</b> {@code tracked}/{@code untracked} 는
-     * <b>패키지</b> 수이고({@link Remediation} 이 (자산, 패키지)로 등록된다),
-     * {@code trackedFindings}/{@code untrackedFindings} 는 그것이 덮는
-     * <b>건</b> 수다. 보고서가 "미등록 15개" 라고만 쓰면 읽는 사람은 그 15 가
-     * 48건 중 얼마인지 알 수 없다 — <b>단위가 말없이 바뀌는 자리</b>이고,
-     * 결재로 올라가는 문서에서 그것이 가장 먼저 의심받는다. 늘 함께 적는다.
+     * <p><b>갈래로 가른다</b> — 대기 · 진행 / 완료 · 탐지 남음 / 완료 · 신규 탐지 / 완료 ·
+     * 검증 대기 / 미등록. 조치를 완료로 바꿨는데 이 검사에 그 패키지의 해소 건수가 남아
+     * 있으면, 앞서 이 장은 `등록` 에, 구역 보고서 6장은 `미등록` 에 넣었다 — 같은 자산
+     * 하나를 두고 두 보고서의 수가 달랐다(띄운 앱에서 374 와 406). 완료했는데 남은 것은
+     * 둘 다 아니다. 그리고 남은 것도 셋으로 가른다({@link AfterDone}) — 대상이 남은 것 ·
+     * 새로 나온 것 · SBOM 이 완료보다 앞이라 아직 모르는 것. 구역 보고서가 같은 갈래로
+     * 센다({@code RemediationProgressTest} · {@code AfterDoneTest}).
+     *
+     * <p><b>단위가 둘이다.</b> {@code …Packages()} 는 <b>패키지</b> 수이고
+     * ({@link Remediation} 이 (자산, 패키지)로 등록된다), {@code …Findings()}
+     * 는 그것이 덮는 <b>건</b> 수다. 보고서가 "미등록 15개" 라고만 쓰면 읽는
+     * 사람은 그 15 가 48건 중 얼마인지 알 수 없다 — <b>단위가 말없이 바뀌는
+     * 자리</b>이고, 결재로 올라가는 문서에서 그것이 가장 먼저 의심받는다.
+     * 늘 함께 적는다. 갈래들의 건수를 더하면 3장 합계다.
+     *
+     * @param rows     3장의 줄 — 조치 대상 패키지와, 등록된 조치(최신 회차)가 있으면 그것
+     * @param tracking 5장 아래 표의 줄 — 대기 · 진행인 조치 전부와 완료했는데 남은 것
      */
-    public record Progress(List<ActionRow> rows, long tracked, long untracked, long overdue,
+    public record Progress(List<ActionRow> rows, List<TrackedRow> tracking,
                            List<PackageAction> residual, List<FindingAnalysis> explained,
                            Map<String, Reviewed> reviewed) {
 
-        /** 등록된 조치가 덮는 건수. 3장의 `해소 건수` 와 같은 축이다. */
-        public long trackedFindings() {
-            return rows.stream().filter(ActionRow::isTracked)
-                       .mapToLong(r -> r.action().fixableCount()).sum();
+        /** 5장 아래 표의 줄 수. 0 이면 표를 그리지 않는다. */
+        public long tracked() {
+            return tracking.size();
+        }
+
+        /** 대기 · 진행 — 그 상태인 조치 전부. 이 검사에 해소 건수가 없는 것도 든다. */
+        public long openPackages() {
+            return tracking.stream().filter(TrackedRow::isOpen).count();
+        }
+
+        /** 대기 · 진행인 조치가 덮는 건수. 3장의 `해소 건수` 와 같은 축이다. */
+        public long openFindings() {
+            return tracking.stream().filter(TrackedRow::isOpen)
+                           .mapToLong(TrackedRow::fixableCount).sum();
+        }
+
+        /** 완료 · 탐지 남음 — 완료했는데 이 검사에 조치 대상이 남은 패키지. */
+        public long doneRemainingPackages() {
+            return packages(AfterDone.Kind.REMAINING);
+        }
+
+        public long doneRemainingFindings() {
+            return findings(AfterDone.Kind.REMAINING);
+        }
+
+        /** 완료 · 신규 탐지 — 완료했는데 이 검사에 남은 것이 조치 대상이 아니다. */
+        public long doneNewPackages() {
+            return packages(AfterDone.Kind.NEW_FINDINGS);
+        }
+
+        public long doneNewFindings() {
+            return findings(AfterDone.Kind.NEW_FINDINGS);
+        }
+
+        /** 완료 · 검증 대기 — 이 검사의 SBOM 이 조치 완료보다 앞이다. */
+        public long donePendingPackages() {
+            return packages(AfterDone.Kind.PENDING);
+        }
+
+        public long donePendingFindings() {
+            return findings(AfterDone.Kind.PENDING);
+        }
+
+        private long packages(AfterDone.Kind kind) {
+            return tracking.stream().filter(t -> t.is(kind)).count();
+        }
+
+        private long findings(AfterDone.Kind kind) {
+            return tracking.stream().filter(t -> t.is(kind)).mapToLong(TrackedRow::fixableCount).sum();
+        }
+
+        /** 미등록 — 조치 대상인데 아무도 맡지 않은 패키지. */
+        public long untracked() {
+            return rows.stream().filter(r -> !r.isTracked()).count();
         }
 
         /** 아직 아무도 맡지 않은 건수. */
@@ -528,16 +774,27 @@ public class ReportService {
                        .mapToLong(r -> r.action().fixableCount()).sum();
         }
 
+        /** 기한이 지난 조치. 닫힌 조치는 지났다고 하지 않는다. */
+        public long overdue() {
+            return tracking.stream().filter(r -> r.remediation().isOverdue()).count();
+        }
+
+        /** 조치 대상도, 대기 · 진행인 조치도 없다 — 장에 `해당 없음` 한 줄. */
+        public boolean isEmpty() {
+            return rows.isEmpty() && tracking.isEmpty();
+        }
+
         /**
-         * 이 패키지의 <b>모든 건</b>에 답이 있는가.
+         * 이 줄의 <b>모든 건</b>에 답이 있는가.
          *
          * <p>앞서 {@code explained} 에 그 패키지 이름이 한 번이라도 있으면
          * 참이었다. 그러면 세 건 중 한 건만 적어 둔 패키지가 설명된 것으로
          * 세어지고, 아래 {@code unexplained()} 가 보고서에 찍는 수가 실제보다
-         * 작아진다 — <b>실제보다 안전해 보이는 숫자</b>다.
+         * 작아진다 — <b>실제보다 안전해 보이는 숫자</b>다. 그 뒤에도 이름으로 물어,
+         * 같은 이름의 4장 줄들이 한 줄의 답을 나눠 가졌다 — 줄(식별자 · 버전)로 묻는다.
          */
-        public boolean isExplained(String packageName) {
-            Reviewed r = reviewed.get(packageName);
+        public boolean isExplained(PackageAction row) {
+            Reviewed r = reviewed.get(rowKey(row));
             return r != null && r.all();
         }
 
@@ -546,28 +803,36 @@ public class ReportService {
             return explained.stream().filter(FindingAnalysis::isReviewOverdue).count();
         }
 
-        /** 손댈 수 없는데 <b>답이 없는 건이 남은</b> 패키지 — 설명이 빈 자리다. */
+        /** 손댈 수 없는데 <b>답이 없는 건이 남은</b> 줄 — 설명이 빈 자리다. */
         public long unexplained() {
-            return residual.stream().filter(r -> !isExplained(r.packageName())).count();
+            return residual.stream().filter(r -> !isExplained(r)).count();
         }
     }
 
-    /** 패키지 하나에 대한 조치 후보. */
-    public record PackageAction(String packageName, String packageType, String currentVersion,
-                                String targetVersion, long total, long fixableCount,
+    /**
+     * 패키지 하나에 대한 조치 후보.
+     *
+     * @param packageKey  패키지 식별자 — 이 줄의 키(버전과 함께). 조치 등록이 이것을 싣는다
+     * @param fixVersions 그 줄에 실린 탐지의 수정 버전 전부 — 하나로 고르지 않는다
+     *                    ({@link FixVersions}). 4장의 줄은 늘 비어 있다
+     */
+    public record PackageAction(String packageKey, String packageName, String packageType,
+                                String currentVersion,
+                                List<String> fixVersions, long total, long fixableCount,
                                 long kevCount, long criticalCount, long highCount,
                                 BigDecimal maxCvss, BigDecimal maxEpss, long reachableCount) {
 
-        PackageAction(PackageGroup group, long reachableCount) {
-            this(group.getPackageName(), group.getPackageType(), group.getPackageVersion(),
-                 group.getTargetVersion() == null ? "" : group.getTargetVersion(),
-                 group.getTotal(), group.getFixable(), group.getKevCount(),
+        PackageAction(PackageGroup group, long reachableCount, List<String> fixVersions) {
+            this(group.getPackageKey(), group.getPackageName(), group.getPackageType(),
+                 group.getPackageVersion(),
+                 fixVersions, group.getTotal(), group.getFixable(), group.getKevCount(),
                  group.getCriticalCount(), group.getHighCount(),
                  group.getMaxCvss(), group.getMaxEpss(), reachableCount);
         }
 
-        public boolean hasTarget() {
-            return targetVersion != null && !targetVersion.isBlank();
+        /** 이름 곁에 적는 네임스페이스 — groupId · scope · 배포판. 없으면 빈 글자. */
+        public String packageNamespace() {
+            return PackageKey.namespace(packageKey);
         }
 
         public boolean hasReachable() {
@@ -575,11 +840,47 @@ public class ReportService {
         }
     }
 
-    /** 조치 표 한 줄 — 후보와, 실제로 등록된 조치가 있으면 그것. */
-    public record ActionRow(PackageAction action, Remediation remediation) {
+    /**
+     * 조치 표 한 줄 — 후보와, 실제로 등록된 조치(그 패키지의 최신 회차)가 있으면 그것.
+     *
+     * @param afterDone 완료했는데 이 검사에 해소 건수가 남았으면 그 갈래, 아니면 {@code null}
+     */
+    public record ActionRow(PackageAction action, Remediation remediation, AfterDone afterDone) {
 
         public boolean isTracked() {
             return remediation != null;
+        }
+
+        /**
+         * 조치 상태 칸 — 완료했는데 남았으면 그 갈래의 말, 아니면 상태. 3장의 줄은 전부
+         * 해소 건수가 있는 패키지라, 닫힌 조치가 붙어 있으면 늘 갈래가 있다 — `완료` 만
+         * 찍으면 "끝났다는데 왜 조치 대상에 있나" 로 읽힌다.
+         */
+        public String statusLabel() {
+            return afterDone != null ? afterDone.label() : remediation.getStatus().label();
+        }
+
+        /** 완료 · 신규 탐지 — 새 조치(다음 회차)를 여는 `조치 등록` 을 둔다(D11). */
+        public boolean opensNextRound() {
+            return afterDone != null && afterDone.isNew();
+        }
+    }
+
+    /** 5장 아래 표 한 줄 — 조치와, 이 검사에서 그 조치가 덮는 해소 건수. */
+    public record TrackedRow(Remediation remediation, long fixableCount, AfterDone afterDone) {
+
+        /** 대기 · 진행. */
+        public boolean isOpen() {
+            return !remediation.getStatus().isClosed();
+        }
+
+        /** 조치 상태 칸 — 완료했는데 남았으면 그 갈래의 말. */
+        public String statusLabel() {
+            return afterDone != null ? afterDone.label() : remediation.getStatus().label();
+        }
+
+        boolean is(AfterDone.Kind kind) {
+            return afterDone != null && afterDone.kind() == kind;
         }
     }
 

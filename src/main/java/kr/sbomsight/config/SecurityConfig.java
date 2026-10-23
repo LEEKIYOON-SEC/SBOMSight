@@ -9,6 +9,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.WebAttributes;
+import org.springframework.security.web.access.AccessDeniedHandlerImpl;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
@@ -56,8 +58,9 @@ public class SecurityConfig {
      * <p><b>{@code style-src-attr} 만 {@code 'unsafe-inline'} 이다.</b> 심각도
      * 막대의 폭처럼 값이 서버에서 오는 것은 {@code style="width:37%"} 로만
      * 낼 수 있다(클래스로는 낼 수 없는 수다). 글자를 내보내는 자리는 전부
-     * Thymeleaf 가 이스케이프하고({@code th:utext} 0개) 스크립트는 막혀
-     * 있으므로, 남는 위험은 모양이 흐트러지는 정도다.
+     * Thymeleaf 가 이스케이프하고 스크립트는 막혀 있으므로, 남는 위험은 모양이
+     * 흐트러지는 정도다. {@code th:utext} 는 발행본 보기 한 곳뿐이다 — 이 앱이 그때
+     * 이스케이프하며 그려 저장한 문서를, 해시가 맞을 때만 내보낸다(PublicationTest).
      *
      * <p><b>{@code form-action 'self'}</b> — 폼이 남의 서버로 가지 않는다.
      * 자산 목록과 SBOM 이 담긴 폼이 바깥으로 제출되는 것을 막는 줄이다.
@@ -97,7 +100,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC).permitAll()
                 // 조회 권한은 읽기 전용이다. 쓰기는 전부 관리자.
-                .requestMatchers("/settings/**", "/audit/**", "/assets/*/delete").hasRole("ADMIN")
+                .requestMatchers("/settings/**", "/assets/*/delete").hasRole("ADMIN")
                 .anyRequest().authenticated())
 
             // 로그인 뒤 돌아갈 자리는 '사람이 볼 화면' 만 기억한다. 경로를
@@ -121,6 +124,16 @@ public class SecurityConfig {
                 .invalidateHttpSession(true)
                 .deleteCookies("SBOMSIGHT_SESSION")
                 .permitAll())
+
+            // 403 의 까닭을 요청에 얹어 두고 기본 처리기에 넘긴다. 기본 처리기는
+            // 오류 화면 주소를 따로 정했을 때만 얹는다 — 안 얹으면 오류 화면이
+            // 폼의 보안 확인 값(CSRF)이 낡아 막힌 것과 권한이 없어 막힌 것을 가르지
+            // 못하고, 관리자에게 "관리자 계정만 할 수 있습니다" 라고 말한다
+            // (ErrorPages · ErrorPageTest). 막는 규칙은 그대로다.
+            .exceptionHandling(denied -> denied.accessDeniedHandler((request, response, e) -> {
+                request.setAttribute(WebAttributes.ACCESS_DENIED_403, e);
+                new AccessDeniedHandlerImpl().handle(request, response, e);
+            }))
 
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)

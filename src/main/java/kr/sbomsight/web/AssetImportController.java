@@ -60,9 +60,19 @@ public class AssetImportController {
         }
 
         byte[] bytes = file.getBytes();
+        AssetImportService.Preview preview;
+        try {
+            preview = imports.preview(bytes);
+        } catch (IllegalArgumentException refused) {
+            // 줄 수 한도를 넘었다. 받지 않은 파일은 들고 있지 않는다 — 앞서 미리 본
+            // 파일이 세션에 남아 있으면 그것까지 버린다.
+            session.removeAttribute(SESSION_KEY);
+            flash.addFlashAttribute("error", refused.getMessage());
+            return "redirect:/assets/import";
+        }
         session.setAttribute(SESSION_KEY, bytes);
 
-        model.addAttribute("preview", imports.preview(bytes));
+        model.addAttribute("preview", preview);
         model.addAttribute("filename", file.getOriginalFilename());
         return "asset-import";
     }
@@ -73,7 +83,7 @@ public class AssetImportController {
         if (bytes == null) {
             // 세션이 끊겼거나 새로고침으로 두 번 눌렀다. 말없이 0건을
             // 등록하면 "왜 안 들어갔지" 가 된다.
-            flash.addFlashAttribute("error", "올린 파일이 남아 있지 않습니다. 다시 올려 주세요.");
+            flash.addFlashAttribute("error", "업로드한 파일이 남아 있지 않습니다. 다시 업로드해 주세요.");
             return "redirect:/assets/import";
         }
         session.removeAttribute(SESSION_KEY);

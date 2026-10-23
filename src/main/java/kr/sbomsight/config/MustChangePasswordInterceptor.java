@@ -8,6 +8,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
 
 /**
  * 비밀번호를 바꿔야 하는 계정을 변경 화면에 붙잡아 둔다.
@@ -29,19 +30,17 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class MustChangePasswordInterceptor implements HandlerInterceptor {
 
     /**
-     * 붙잡힌 상태에서도 열려야 하는 것.
+     * 붙잡힌 상태에서도 열려야 하는 화면.
      *
      * <p>비밀번호 화면 자체와 로그아웃이 막히면 빠져나갈 길이 없어진다.
-     * 정적 파일이 막히면 그 화면이 스타일 없이 뜬다.
+     * 정적 파일은 여기 적지 않는다 — {@link #preHandle} 이 처리기 종류로 먼저
+     * 거른다.
      */
     private static boolean alwaysAllowed(String path) {
         return path.equals("/password")
                 || path.equals("/logout")
                 || path.equals("/login")
-                || path.equals("/error")
-                || path.startsWith("/css/")
-                || path.startsWith("/js/")
-                || path.startsWith("/favicon");
+                || path.equals("/error");
     }
 
     private final AppUserRepository users;
@@ -55,6 +54,13 @@ public class MustChangePasswordInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws Exception {
+        // **정적 파일은 막지 않는다.** 앞서 경로를 하나씩 적어 두었는데
+        // `/css/` 만 있고 `/vendor/`(Tabler)·`/fonts/` 가 빠져, 붙잡힌 계정이
+        // 보는 변경 화면이 스타일 없이 떴다 — 설치 뒤 처음 보는 화면이다.
+        // 경로 대신 처리기 종류로 거르면 정적 폴더가 늘어도 다시 빠지지 않는다.
+        if (handler instanceof ResourceHttpRequestHandler) {
+            return true;
+        }
         String path = request.getRequestURI();
         if (alwaysAllowed(path)) {
             return true;

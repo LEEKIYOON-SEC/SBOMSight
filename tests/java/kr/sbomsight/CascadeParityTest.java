@@ -152,7 +152,7 @@ class CascadeParityTest {
         }
 
         assertThat(mismatches)
-                .as("docs/rework-plan.md §10 — 스키마를 바꾸면 양쪽을 함께 본다")
+                .as("CLAUDE.md 10 — 스키마를 바꾸면 양쪽을 함께 본다")
                 .isEmpty();
     }
 }

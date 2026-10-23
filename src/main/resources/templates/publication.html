@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      th:replace="~{layout :: page(~{::main}, 'reports', ${p.number} + ' 발행본')}">
+<body>
+<main class="report">
+
+  <!--/*
+    발행본 하나 — 발행한 순간에 그린 문서를 **그대로** 보인다(R11, D6). 다시 계산하지 않는다.
+
+    머리(발행 정보 표)는 인쇄에 함께 나간다 — 발행본 해시가 종이에 찍혀야 저장한 문서와
+    대조할 수 있다. 결재 문서 번호를 적는 칸과 그 이력은 화면의 것이라 인쇄하지 않는다.
+
+    **해시가 맞을 때만 문서를 보인다.** 볼 때마다 다시 대조한다(PublicationService.view).
+    저장한 문서가 고쳐졌으면 그 문서를 발행본인 척 보이지 않는다.
+  */-->
+  <div th:replace="~{fragments/ui :: pagehead(${p.number}, ${p.kind.label()} + ' · ' + ${target}, ~{::actions}, ~{::where})}"></div>
+  <th:block th:remove="all">
+    <div th:fragment="where">
+      <a href="/reports">보고서</a>
+      <span class="faint"> · </span>
+      <a href="/reports/publications">발행본</a>
+    </div>
+    <!--/* 같은 대상의 지금 보고서(초안) — 발행본과 지금 데이터를 견줄 때. 대상이 지워졌으면 두지 않는다. */-->
+    <div th:fragment="actions" class="btn-list">
+      <a class="btn" th:if="${liveLink != null}" th:href="@{${liveLink}}">지금 데이터로 보기</a>
+      <button type="button" class="btn" data-print th:if="${verified}">인쇄 · PDF</button>
+    </div>
+  </th:block>
+
+  <div class="page-body">
+    <div class="container-xl">
+
+  <!--/*
+    ══ 발행 정보 — 문서 밖 ══════════════════════════════════════════
+    발행 번호는 문서 안(문서 정보)에도 있다. 여기 다시 두는 것은 이 해시가 어느 발행본의
+    것인지 한 표 안에서 읽히게 하려는 것이다. 결재 문서 번호는 발행한 뒤에 적는 값이라
+    해시 밖이다 — 바꿔도 해시는 그대로다.
+  */-->
+  <table class="table docinfo publication-head">
+    <tbody>
+    <tr>
+      <th>발행 번호</th>
+      <td class="mono" th:text="${p.number}">2026-0001</td>
+      <th>결재 문서 번호</th>
+      <td th:text="${#strings.isEmpty(p.approvalDoc)} ? '—' : ${p.approvalDoc}">—</td>
+    </tr>
+    <tr>
+      <th>발행본 해시</th>
+      <td class="mono hash" colspan="3" th:text="'sha256:' + ${p.documentSha256}">sha256:3f2a…</td>
+    </tr>
+    </tbody>
+  </table>
+
+  <p class="note warn" th:unless="${verified}">
+    저장한 문서가 발행본 해시와 맞지 않습니다 — 발행 뒤에 바뀐 문서라 보이지 않습니다.
+  </p>
+
+  <!--/*
+    결재 문서 번호 — 적는 칸(관리자)과 바꾼 이력. 화면의 것이라 인쇄하지 않는다. 지금 값은 위
+    표에 있다. 바꾼 적이 없으면 이력 표를 두지 않는다 — 빈 화면 조각을 띄웠더니 문서보다 먼저
+    눈에 걸렸다(띄워 보고 찾았다). 조회 계정에는 바꾼 이력이 있을 때만 이 칸이 선다.
+  */-->
+  <div class="card no-print mb-4" sec:authorize="hasRole('ADMIN')">
+    <div class="card-body py-2">
+      <!--/* 검토 결과의 같은 칸과 같은 말 · 같은 너비(128자). 비우고 저장하면 지운 것이 이력에 남는다. */-->
+      <form method="post" th:action="@{'/reports/publications/' + ${p.id} + '/approval-doc'}"
+            class="d-flex align-items-center gap-2 flex-wrap">
+        <label class="form-label mb-0" for="publication-doc">결재 문서 번호</label>
+        <input class="form-control w-auto" id="publication-doc" name="approvalDoc" maxlength="128"
+               placeholder="보안-2026-0143" th:value="${p.approvalDoc}">
+        <button class="btn" type="submit">저장</button>
+      </form>
+    </div>
+    <div th:replace="~{::history}"></div>
+  </div>
+  <div class="card no-print mb-4" sec:authorize="!hasRole('ADMIN')" th:unless="${p.events.isEmpty()}">
+    <div th:replace="~{::history}"></div>
+  </div>
+  <th:block th:remove="all">
+    <!--/* 바꾼 것마다 한 줄 — 검토 결과 상세의 변경 이력과 같은 꼴(시각 · 변경 내용 · 계정). */-->
+    <div th:fragment="history" class="table-responsive" th:unless="${p.events.isEmpty()}">
+      <table class="table table-vcenter card-table">
+        <thead><tr><th class="tight">시각</th><th>변경 내용</th><th class="tight">계정</th></tr></thead>
+        <tbody>
+        <tr th:each="e : ${p.events}">
+          <td class="tight mono" th:text="${#temporals.format(e.at, 'yyyy-MM-dd HH:mm')}">—</td>
+          <td th:text="'결재 문서 번호 ' + (${#strings.isEmpty(e.before)} ? '—' : ${e.before}) + ' → '
+                       + (${#strings.isEmpty(e.after)} ? '—' : ${e.after})">결재 문서 번호 — → 보안-2026-0143</td>
+          <td class="tight" th:text="${e.actor}">admin</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </th:block>
+
+  <!--/*
+    ══ 저장한 문서 ═══════════════════════════════════════════════════
+    **이 앱에서 `th:utext` 를 쓰는 곳은 여기 하나다**(PublicationTest). 저장한 문서는 이
+    앱이 보고서 화면의 `document` 조각을 그린 것이라 글자는 그때 이미 이스케이프되어
+    있고, 해시가 맞을 때만 내보낸다 — 발행 뒤 DB 에서 고쳐 넣은 것은 여기 오지 않는다.
+  */-->
+  <div th:if="${verified}" th:utext="${p.documentHtml}"></div>
+
+  </div>
+    </div>
+
+</main>
+</body>
+</html>

@@ -22,7 +22,7 @@ public enum AnalysisJustification {
     REQUIRES_ENVIRONMENT("requires_environment", "특정 환경에서만 되는데 그 환경이 아님"),
     PROTECTED_BY_COMPILER("protected_by_compiler", "컴파일 옵션이 막고 있음"),
     PROTECTED_AT_RUNTIME("protected_at_runtime", "실행 환경이 막고 있음"),
-    PROTECTED_AT_PERIMETER("protected_at_perimeter", "방화벽·WAF 가 막고 있음"),
+    PROTECTED_AT_PERIMETER("protected_at_perimeter", "방화벽·WAF가 막고 있음"),
     // 검토 결과의 `추가 보안 통제` 칸과 같은 것을 가리킨다. 한 가지를 두 말로
     // 부르지 않는다 — 앞서 여기만 `다른 통제` 로 남아 있었다.
     PROTECTED_BY_MITIGATING_CONTROL("protected_by_mitigating_control", "추가 보안 통제가 막고 있음");

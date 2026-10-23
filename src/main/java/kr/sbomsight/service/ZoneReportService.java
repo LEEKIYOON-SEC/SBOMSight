@@ -3,6 +3,8 @@ package kr.sbomsight.service;
 import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.CvssVector;
+import kr.sbomsight.domain.FixVersions;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.FindingAnalysis;
 import kr.sbomsight.domain.Scan;
@@ -64,16 +66,18 @@ public class ZoneReportService {
     private final FindingRepository findings;
     private final RemediationRepository remediations;
     private final FindingAnalysisService analyses;
+    private final RemediationService remediationService;
 
     public ZoneReportService(AssetRepository assets, ZoneRepository zones, ScanRepository scans,
                              FindingRepository findings, RemediationRepository remediations,
-                             FindingAnalysisService analyses) {
+                             FindingAnalysisService analyses, RemediationService remediationService) {
         this.assets = assets;
         this.zones = zones;
         this.scans = scans;
         this.findings = findings;
         this.remediations = remediations;
         this.analyses = analyses;
+        this.remediationService = remediationService;
     }
 
     /**
@@ -88,7 +92,10 @@ public class ZoneReportService {
         // 그 1초 사이에 끝난 검사가 사라진다.
         Instant end = to.plusDays(1).atStartOfDay(WALL_CLOCK).toInstant();
 
-        Zone zone = zoneId == null ? null : zones.findById(zoneId).orElse(null);
+        // 없는 구역을 전체로 읽지 않는다. 앞서 `orElse(null)` 이라 지운 구역의
+        // 주소가 자산 0대짜리 "전체" 보고서를 200 으로 냈다 — 깨끗한 전체로 읽힌다.
+        Zone zone = zoneId == null ? null
+                : zones.findById(zoneId).orElseThrow(ZoneService.NoSuchZoneException::new);
         List<Asset> inScope = assets.findLiveWithZone().stream()
                 .filter(a -> zoneId == null || a.getZone().getId().equals(zoneId))
                 .toList();
@@ -103,20 +110,50 @@ public class ZoneReportService {
                 .filter(a -> !scannedIds.contains(a.getId()))
                 .toList();
 
-        Scope scope = scope(zone, from, to, inScope, current, notScanned, scanRuns);
-        Exposure exposure = exposure(current);
-        Aggregate aggregate = aggregate(current, exposure, inScope, notScanned);
-        Judgement judgement = judgement(current, baseline, exposure);
-        Action action = action(zoneId, inScope, judgement, start, end, scanIds(current));
+        // 기간 중 실패한 검사 — 완료 검사 뒤에 실패했는지, 실패만 했는지를 말하려고.
+        Map<Long, Failures> failures = new HashMap<>();
+        scans.countFailedPerAssetBetween(zoneId, start, end)
+             .forEach(f -> failures.put(f.getAssetId(), new Failures(f.getFailures(), f.getLastFailedAt())));
 
-        return new ZoneReport(scope, aggregate, judgement, action);
+        Set<Long> uploaded = new HashSet<>(scans.findAssetIdsWithUploadBetween(zoneId, start, end));
+        Scope scope = scope(zone, from, to, start, inScope, current, notScanned, scanRuns, failures,
+                            uploaded);
+        // **2·3장은 탐지 전부, 4·5장(과 그것을 잇는 6장의 건수)은 목록이다.**
+        // 목록은 검토 결과가 해당 없음 · 오탐인 건을 뺀다 — 취약점 화면 · 자산
+        // 보고서와 같은 규칙. 뺀 건수는 1장이 말한다.
+        Exposure exposure = exposure(current, true);
+        Aggregate aggregate = aggregate(current, exposure, inScope, notScanned);
+        Judgement judgement = judgement(current, baseline, exposure(current, false));
+        Action action = action(zoneId, inScope, judgement, start, end, current);
+        // 부록 — 실제 악용 · 심각과 그 설명 첫 문장(Appendix). 목록이다: 해당
+        // 없음 · 오탐은 4 · 5장처럼 뺀다. 한 줄이 여러 자산에 걸리면 자산 수를 센다.
+        List<Appendix.Row> appendix = current.isEmpty() ? List.of()
+                : Appendix.of(findings.findUrgentIn(scanIds(current), false));
+
+        return new ZoneReport(scope, aggregate, judgement, action, appendix);
     }
 
     // --- 1장: 점검 범위 -----------------------------------------------------
 
-    private Scope scope(Zone zone, LocalDate from, LocalDate to, List<Asset> inScope,
-                        List<Scan> current, List<Asset> notScanned, long scanRuns) {
+    /**
+     * @param start    기간의 시작 시각 — SBOM 생성 시각을 가르는 선
+     * @param uploaded 기간 안에 SBOM 을 올린 자산(다시 검사가 아닌 완료 검사가 있는 것)
+     */
+    private Scope scope(Zone zone, LocalDate from, LocalDate to, Instant start, List<Asset> inScope,
+                        List<Scan> current, List<Asset> notScanned, long scanRuns,
+                        Map<Long, Failures> failures, Set<Long> uploaded) {
         long totalFindings = current.stream().mapToLong(Scan::getFindingCount).sum();
+
+        // **이 기간에 서버를 새로 본 자산인가** — 기준 검사의 SBOM 생성 시각으로 가른다(R4).
+        // 앞서는 기간 안에 돈 검사가 있으면 전부 "검사한 자산" 이었다. 40일 전에 뜬 SBOM 을
+        // 이번 달에 다시 검사해도 들어가, 몇 대를 이번에 실제로 봤는지 읽을 수 없었다.
+        // 기간 전에 생성된 SBOM 은 둘로 가른다 — 기간 안에 올렸는가, 다시 검사만 했는가.
+        long sbomCreated = current.stream()
+                .filter(s -> !s.getSbomCreatedAt().isBefore(start)).count();
+        long oldSbomUploaded = current.stream()
+                .filter(s -> s.getSbomCreatedAt().isBefore(start))
+                .filter(s -> uploaded.contains(s.getAsset().getId())).count();
+        long rescanOnly = current.size() - sbomCreated - oldSbomUploaded;
 
         // 기간 동안 grype 이 바뀌었으면 증감의 일부는 서버가 아니라 도구가
         // 움직인 것이다. 판이 둘 이상이면 그 사실을 보고서에 적는다.
@@ -136,9 +173,10 @@ public class ZoneReportService {
         Instant newest = current.stream().map(Scan::getCreatedAt)
                                 .max(Comparator.naturalOrder()).orElse(null);
 
-        return new Scope(zone, from, to, inScope.size(), current.size(), notScanned,
+        return new Scope(zone, from, to, inScope.size(), current.size(),
+                         sbomCreated, oldSbomUploaded, rescanOnly, notScanned,
                          scanRuns, totalFindings, List.copyOf(grypeVersions),
-                         List.copyOf(dbDates), oldest, newest);
+                         List.copyOf(dbDates), oldest, newest, Map.copyOf(failures));
     }
 
     // --- 노출면 --------------------------------------------------------------
@@ -148,16 +186,21 @@ public class ZoneReportService {
      *
      * <p>읽지 못한 벡터는 세지 않고 따로 센다. "아니오" 로 밀어 넣으면
      * 아무도 확인하지 않은 판정이 보고서에 실린다.
+     *
+     * <p>패키지마다의 수는 <b>4 · 5장의 줄과 같은 키(패키지 식별자)</b>로 센다. 앞서
+     * 이름으로만 모아, 같은 이름이 유형으로 갈려 줄이 여럿 서면 이름 전체의 수가
+     * 줄마다 되풀이되어 찍혔고 4장 합계는 그것을 다시 더했다.
      */
-    private Exposure exposure(List<Scan> current) {
+    private Exposure exposure(List<Scan> current, boolean includeReviewed) {
         if (current.isEmpty()) {
             return new Exposure(0, 0, 0, 0, Map.of(), Map.of());
         }
         long reachable = 0, reachableFixable = 0, scopeChanged = 0, unreadable = 0;
-        Map<String, Long> byPackage = new HashMap<>();
+        Map<String, Long> byRow = new HashMap<>();
         Map<Long, Long> byAsset = new HashMap<>();
 
-        for (FindingRepository.ZoneExposureRow row : findings.exposureRowsIn(scanIds(current))) {
+        for (FindingRepository.ZoneExposureRow row
+                : findings.exposureRowsIn(scanIds(current), includeReviewed)) {
             Optional<CvssVector> parsed = CvssVector.parse(row.getVector());
             if (parsed.isEmpty()) {
                 unreadable++;
@@ -172,11 +215,11 @@ public class ZoneReportService {
                 if ("fixed".equalsIgnoreCase(row.getFixState())) {
                     reachableFixable++;
                 }
-                byPackage.merge(row.getPackageName(), 1L, Long::sum);
+                byRow.merge(row.getPackageKey(), 1L, Long::sum);
                 byAsset.merge(row.getAssetId(), 1L, Long::sum);
             }
         }
-        return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, byPackage, byAsset);
+        return new Exposure(reachable, reachableFixable, scopeChanged, unreadable, byRow, byAsset);
     }
 
     // --- 2·3장: 점검 결과 요약과 자산별 현황 --------------------------------
@@ -248,8 +291,8 @@ public class ZoneReportService {
         if (current.isEmpty()) {
             return counts;
         }
-        // 자산으로 한 번 갈라 둔다. 구역은 자산이 섞여 있어서 (CVE, 패키지명)
-        // 으로만 맞추면 web-01 의 검토 결과가 api-01 의 탐지에 붙는다.
+        // 자산으로 한 번 갈라 둔다. 구역은 자산이 섞여 있어서 (CVE, 패키지 식별자)
+        // 로만 맞추면 web-01 의 검토 결과가 api-01 의 탐지에 붙는다.
         //
         // **미리 갈라 둔다.** 탐지 줄마다 전체 지도를 훑으면 자산 다섯에
         // 탐지 이백이면 훑기가 천 번이다 — 구역이 커질수록 보고서가 느려진다.
@@ -263,7 +306,7 @@ public class ZoneReportService {
             Map<String, FindingAnalysis> forThisAsset =
                     byAsset.getOrDefault(row.getAssetId(), Map.of());
             counts.merge(FindingAnalysisService.stateOf(forThisAsset, row.getCve(),
-                                                        row.getRelatedCve(), row.getPackageName()),
+                                                        row.getRelatedCve(), row.getPackageKey()),
                          1L, Long::sum);
         }
         return counts;
@@ -276,17 +319,32 @@ public class ZoneReportService {
         List<ZonePackageAction> blocked = List.of();
 
         if (!current.isEmpty()) {
-            // 보고서는 거르지 않는다 — 기간 안의 것을 전부 센다. 넷 다 null.
+            // 필터는 걸지 않는다 — 기간 안의 것을 전부 센다(넷 다 null). 다만
+            // 목록이므로 해당 없음 · 오탐은 뺀다.
             List<ZonePackageGroup> groups =
-                    findings.groupByPackageIn(scanIds(current), null, null, null, null);
+                    findings.groupByPackageIn(scanIds(current), null, null, null, null, null, false);
+            // 수정 버전은 하나로 고르지 않는다 — 자산 너머로 그 패키지의 수정
+            // 버전 전부(FixVersions). 자산마다 배포판이 다르면 가짓수가 늘 뿐,
+            // 그중 하나를 골라 "이걸로 올리세요" 라고 적지 않는다.
+            Map<String, List<String>> fixes = findings
+                    .fixVersionsIn(scanIds(current), null, false).stream()
+                    .collect(java.util.stream.Collectors.groupingBy(
+                            FindingRepository.FixVersionRow::getPackageKey,
+                            java.util.stream.Collectors.collectingAndThen(
+                                    // 한 건의 칸에 후보가 여럿 이어져 있다 — 펴서 모은다.
+                                    java.util.stream.Collectors.flatMapping(
+                                            r -> FixVersions.split(r.getFixedVersion()).stream(),
+                                            java.util.stream.Collectors.toList()),
+                                    FixVersions::collect)));
             actions = groups.stream()
                     .filter(g -> g.getFixable() > 0)
-                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName())))
+                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g),
+                            fixes.getOrDefault(g.getPackageKey(), List.of())))
                     .sorted(BY_URGENCY)
                     .toList();
             blocked = groups.stream()
                     .filter(g -> g.getFixable() == 0)
-                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g.getPackageName())))
+                    .map(g -> new ZonePackageAction(g, exposure.reachableIn(g), List.of()))
                     .sorted(BY_URGENCY)
                     .toList();
         }
@@ -311,14 +369,16 @@ public class ZoneReportService {
                       .thenComparing(ZonePackageAction::maxCvss,
                                      Comparator.nullsLast(Comparator.reverseOrder()))
                       .thenComparing(Comparator.comparingLong(ZonePackageAction::total).reversed())
-                      .thenComparing(ZonePackageAction::packageName);
+                      .thenComparing(ZonePackageAction::packageName)
+                      .thenComparing(ZonePackageAction::packageKey);
 
     /**
      * 기간 시작 직전 대비 신규 · 해소 · 유지.
      *
-     * <p>대조 축은 {@code (자산, CVE, 패키지명)} 이다. 버전을 넣으면 패치한
-     * 건이 "해소 1건 + 신규 1건" 으로 갈라져 보이고, 자산을 빼면 A 서버에서
-     * 고치고 B 서버에서 생긴 것이 상쇄되어 둘 다 없던 일이 된다.
+     * <p>대조 축은 {@code (자산, 번호, 패키지 식별자)} 다 — 번호는 주 식별자 · 함께 온
+     * CVE 중 하나라도 같으면 같은 것({@link FindingMatch}, 자산 보고서 6장과 같다).
+     * 버전을 넣으면 패치한 건이 "해소 1건 + 신규 1건" 으로 갈라져 보이고, 자산을
+     * 빼면 A 서버에서 고치고 B 서버에서 생긴 것이 상쇄되어 둘 다 없던 일이 된다.
      *
      * <p><b>기준선이 없는 자산은 대조에서 뺀다.</b> 기간 중에 처음 등록한
      * 서버의 탐지를 전부 "신규" 로 세면 증감이 부풀려진다 — 새로 본 것이지
@@ -332,7 +392,8 @@ public class ZoneReportService {
                 .toList();
 
         if (comparable.isEmpty()) {
-            return new Movement(0, 0, 0, 0, current.size(), baseline.isEmpty() ? null : latest(baseline));
+            return new Movement(0, 0, 0, 0, current.size(), baseline.isEmpty() ? null : latest(baseline),
+                                List.of());
         }
 
         Set<Long> comparableAssets = comparable.stream().map(s -> s.getAsset().getId())
@@ -341,26 +402,21 @@ public class ZoneReportService {
                 .filter(s -> comparableAssets.contains(s.getAsset().getId()))
                 .toList();
 
-        Set<String> now = keys(comparable);
-        Set<String> before = keys(baselineComparable);
+        FindingMatch.Counts counts = FindingMatch.compare(keys(comparable), keys(baselineComparable));
 
-        long added = now.stream().filter(k -> !before.contains(k)).count();
-        long resolved = before.stream().filter(k -> !now.contains(k)).count();
-        long kept = now.stream().filter(before::contains).count();
-
-        return new Movement(added, resolved, kept, comparable.size(),
-                            current.size() - comparable.size(), latest(baselineComparable));
+        return new Movement(counts.added(), counts.resolved(), counts.kept(), comparable.size(),
+                            current.size() - comparable.size(), latest(baselineComparable),
+                            baselineComparable);
     }
 
-    private Set<String> keys(List<Scan> forScans) {
+    private List<FindingMatch.Key> keys(List<Scan> forScans) {
         if (forScans.isEmpty()) {
-            return Set.of();
+            return List.of();
         }
-        Set<String> out = new HashSet<>();
-        for (FindingRepository.AssetFindingKey k : findings.findKeysIn(scanIds(forScans))) {
-            out.add(k.getAssetId() + "|" + k.getCve() + "|" + k.getPackageName());
-        }
-        return out;
+        return findings.findKeysIn(scanIds(forScans)).stream()
+                .map(k -> new FindingMatch.Key(k.getAssetId(), k.getCve(), k.getRelatedCve(),
+                                               k.getPackageKey()))
+                .toList();
     }
 
     private Instant latest(List<Scan> list) {
@@ -370,7 +426,8 @@ public class ZoneReportService {
     // --- 6장: 조치 진행 현황 ------------------------------------------------
 
     private Action action(Long zoneId, List<Asset> inScope, Judgement judgement,
-                          Instant start, Instant end, List<Long> scanIds) {
+                          Instant start, Instant end, List<Scan> current) {
+        List<Long> scanIds = scanIds(current);
         Set<Long> scope = inScope.stream().map(Asset::getId)
                                  .collect(java.util.stream.Collectors.toSet());
         List<Remediation> all = remediations.findByZone(zoneId).stream()
@@ -382,14 +439,15 @@ public class ZoneReportService {
         long openedInPeriod = all.stream()
                 .filter(r -> !r.getCreatedAt().isBefore(start) && r.getCreatedAt().isBefore(end))
                 .count();
-        long closedInPeriod = all.stream()
-                .filter(r -> r.getClosedAt() != null
-                             && !r.getClosedAt().isBefore(start) && r.getClosedAt().isBefore(end))
-                .count();
+        // 기간 중 완료 — **이력의 완료 줄**로 센다. 완료 시각 칸(closed_at)으로 세면 다시 연
+        // 순간 그 칸이 비어 기간 중에 있었던 완료가 사라졌다(재현 시험 P2).
+        Set<Long> closedBetween = new HashSet<>(remediations.findClosedBetween(start, end));
+        long closedInPeriod = all.stream().filter(r -> closedBetween.contains(r.getId())).count();
 
         // 검토가 끝난 것(해당 없음·오탐)도 가져온다 — 목록에서는 빠지지만
         // "왜 그대로 두는가" 에는 그것도 답이다.
-        List<FindingAnalysis> explained = analyses.list(true, zoneId).stream()
+        // 운영 종료 거르기는 `scope`(범위 안 자산)가 한다 — 여기서 두 번 거르지 않는다.
+        List<FindingAnalysis> explained = analyses.list(true, zoneId, true).stream()
                 .filter(a -> scope.contains(a.getAsset().getId()))
                 .toList();
 
@@ -401,36 +459,66 @@ public class ZoneReportService {
         // **단위를 잇는다.** 조치는 (자산, 패키지)로 등록되고 탐지는 건이다.
         // "등록된 조치 3개" 만 적으면 읽는 사람은 그 3 이 138건 중 얼마인지
         // 알 수 없다 — 결재로 올라가는 문서에서 가장 먼저 의심받는 자리다.
-        Set<String> tracked = all.stream()
-                .filter(r -> !r.getStatus().isClosed())
-                .map(r -> r.getAsset().getId() + "|" + r.getPackageName())
-                .collect(java.util.stream.Collectors.toSet());
-        long trackedFindings = 0, untrackedFindings = 0;
-        for (FindingRepository.AssetPackageCount row : findings.countPerAssetPackage(scanIds)) {
+        //
+        // **갈래로 가른다** — 대기 · 진행 / 완료 · 탐지 남음 / 완료 · 신규 탐지 /
+        // 완료 · 검증 대기 / 미등록. 앞서 완료로 닫힌 조치의 패키지에 탐지가 남아
+        // 있으면 `미등록` 으로 셌다. 자산 보고서는 같은 것을 `등록` 으로 셌다 — 같은
+        // 자산 하나를 두고 두 보고서가 달랐다(RemediationProgressTest). 완료한 뒤 남은
+        // 것은 조치 화면과 같은 규칙(AfterDone)으로 가르되, 자산마다 **기간 중 최신
+        // 검사**에 비춘다. (자산, 패키지)의 조치는 최신 회차다(D5). 패키지는 식별자다(V24) —
+        // 식별자가 빈 옛 조치는 제 칸에 따로 서서 어느 줄의 해소 건수도 가져가지 않는다.
+        Map<String, Remediation> byKey = RemediationService.latestPerPackage(all);
+        Map<Long, Scan> scanPerAsset = new HashMap<>();
+        current.forEach(s -> scanPerAsset.put(s.getAsset().getId(), s));
+        Map<Long, AfterDone> after = remediationService.afterDone(byKey.values(), scanPerAsset);
+        long openFindings = 0, untrackedFindings = 0;
+        Map<AfterDone.Kind, long[]> done = new java.util.EnumMap<>(AfterDone.Kind.class);
+        for (AfterDone.Kind kind : AfterDone.Kind.values()) {
+            done.put(kind, new long[2]);
+        }
+        // 4장의 `해소 건수` 와 같은 축이다 — 해당 없음 · 오탐은 넣지 않는다.
+        for (FindingRepository.AssetPackageCount row
+                : findings.countPerAssetPackage(scanIds, false)) {
             if (row.getFixable() == 0) {
                 continue;   // 올려서 해소되는 것이 없는 패키지는 조치 대상이 아니다
             }
-            if (tracked.contains(row.getAssetId() + "|" + row.getPackageName())) {
-                trackedFindings += row.getFixable();
-            } else {
+            Remediation r = byKey.get(row.getAssetId() + "|" + row.getPackageKey());
+            if (r == null) {
                 untrackedFindings += row.getFixable();
+            } else if (!r.getStatus().isClosed()) {
+                openFindings += row.getFixable();
+            } else {
+                // 갈래는 AfterDone 이 정한다. 이 줄은 해소 건수가 있으니 늘 갈래가 있다 —
+                // 혹시 없으면 앞서의 뜻(탐지 남음)으로 센다. 빼면 합계가 4장과 어긋난다.
+                AfterDone left = after.get(r.getId());
+                AfterDone.Kind kind = left != null ? left.kind() : AfterDone.Kind.REMAINING;
+                done.get(kind)[0]++;
+                done.get(kind)[1] += row.getFixable();
             }
         }
 
+        Map<String, Set<Long>> answeredAssets = new HashMap<>();
+        Map<String, Reviewed> reviewed = reviewByPackage(inScope, scanIds, answeredAssets);
         return new Action(all.size(), open, overdue, openedInPeriod, closedInPeriod,
-                          overdueRows, explained, judgement.blocked(),
-                          trackedFindings, untrackedFindings,
-                          reviewByPackage(inScope, scanIds));
+                          overdueRows, explained, judgement.blocked(), openFindings,
+                          done.get(AfterDone.Kind.REMAINING)[0], done.get(AfterDone.Kind.REMAINING)[1],
+                          done.get(AfterDone.Kind.NEW_FINDINGS)[0], done.get(AfterDone.Kind.NEW_FINDINGS)[1],
+                          done.get(AfterDone.Kind.PENDING)[0], done.get(AfterDone.Kind.PENDING)[1],
+                          untrackedFindings, reviewed, answeredAssets);
     }
 
     /**
-     * 패키지마다 <b>몇 건에 답이 있나</b> — 구역 전체에서.
+     * 줄마다 <b>몇 건에 답이 있나</b> — 구역 전체에서.
      *
      * <p>3장(검토 결과 분포)과 <b>같은 걸음으로 센다.</b> 자산으로 한 번
-     * 갈라 맞춘다 — 구역은 자산이 섞여 있어서 {@code (CVE, 패키지명)} 으로만
+     * 갈라 맞춘다 — 구역은 자산이 섞여 있어서 {@code (CVE, 패키지 식별자)} 로만
      * 맞추면 web-01 의 검토 결과가 api-01 의 탐지에 붙는다.
+     *
+     * <p><b>5장의 줄(패키지 식별자)마다</b> 모은다. 앞서 이름으로 모아, 같은 이름이 유형으로
+     * 갈리면 한 줄의 답이 다른 줄에도 세어졌다 — 아무도 답하지 않은 줄에 `1대` 가 붙었다.
      */
-    private Map<String, Reviewed> reviewByPackage(List<Asset> inScope, List<Long> scanIds) {
+    private Map<String, Reviewed> reviewByPackage(List<Asset> inScope, List<Long> scanIds,
+                                                 Map<String, Set<Long>> answeredAssets) {
         Map<Long, Map<String, FindingAnalysis>> byAsset = new HashMap<>();
         analyses.byAssetKey(inScope.stream().map(Asset::getId).toList())
                 .forEach((key, value) -> byAsset
@@ -439,16 +527,23 @@ public class ZoneReportService {
 
         Map<String, long[]> counts = new LinkedHashMap<>();
         for (FindingRepository.AssetFindingKey row : findings.findKeysIn(scanIds)) {
-            long[] cell = counts.computeIfAbsent(row.getPackageName(), name -> new long[2]);
+            AnalysisState state = FindingAnalysisService.stateOf(
+                    byAsset.getOrDefault(row.getAssetId(), Map.of()),
+                    row.getCve(), row.getRelatedCve(), row.getPackageKey());
+            // 5장은 목록이다 — 해당 없음 · 오탐으로 빠진 건은 세지 않는다.
+            if (!state.isOpen()) {
+                continue;
+            }
+            String key = row.getPackageKey();
+            long[] cell = counts.computeIfAbsent(key, k -> new long[2]);
             cell[1]++;
-            if (FindingAnalysisService.stateOf(byAsset.getOrDefault(row.getAssetId(), Map.of()),
-                                               row.getCve(), row.getRelatedCve(),
-                                               row.getPackageName()) != AnalysisState.NOT_SET) {
+            if (state != AnalysisState.NOT_SET) {
                 cell[0]++;
+                answeredAssets.computeIfAbsent(key, k -> new HashSet<>()).add(row.getAssetId());
             }
         }
         Map<String, Reviewed> out = new LinkedHashMap<>();
-        counts.forEach((name, cell) -> out.put(name, new Reviewed(cell[0], cell[1])));
+        counts.forEach((key, cell) -> out.put(key, new Reviewed(cell[0], cell[1])));
         return out;
     }
 
@@ -466,19 +561,80 @@ public class ZoneReportService {
     // 화면에 넘기는 모양
     // -----------------------------------------------------------------------
 
-    public record ZoneReport(Scope scope, Aggregate aggregate, Judgement judgement, Action action) {
+    /** @param appendix 부록 — 실제 악용 · 심각 취약점(한 줄 = 취약점 하나, 자산 수와 함께) */
+    public record ZoneReport(Scope scope, Aggregate aggregate, Judgement judgement, Action action,
+                             List<Appendix.Row> appendix) {
+
+        /**
+         * 이 보고서의 수가 나온 완료 검사 — 3장의 자산마다 기준이 된 검사와 7장 대조에 쓴
+         * 기준선. 발행하면 이 검사들을 가리킨다(V20) — 하나씩 지우지 못한다.
+         */
+        public List<Scan> basisScans() {
+            Map<Long, Scan> basis = new LinkedHashMap<>();
+            aggregate.rows().stream().filter(AssetRow::scanned)
+                     .forEach(r -> basis.putIfAbsent(r.scan().getId(), r.scan()));
+            judgement.movement().baselineScans().forEach(s -> basis.putIfAbsent(s.getId(), s));
+            return List.copyOf(basis.values());
+        }
+    }
+
+    /** 기간 중 실패한 검사 — 한 자산의 횟수와 마지막 시각. */
+    public record Failures(long count, Instant last) {
     }
 
     /**
      * 1장 — 점검 범위.
      *
-     * @param notScanned 기간 안에 검사되지 않은 자산. <b>이 목록이 이 장의 핵심이다.</b>
+     * <p>{@code assetsScanned} 는 셋으로 갈린다 — 더하면 그 수다.
+     *
+     * @param sbomCreatedInPeriod 기준 검사의 SBOM 생성 시각이 기간 안 — 이 기간에 서버를 새로 봤다
+     * @param oldSbomUploaded     SBOM 은 기간 전에 생성됐는데 기간 안에 올렸다
+     * @param rescanOnly          SBOM 은 기간 전 것이고 기간 안에는 다시 검사만 했다
+     * @param notScanned 기간 안에 완료된 검사가 없는 자산. <b>이 목록이 이 장의 핵심이다.</b>
+     * @param failures   기간 중 실패한 검사가 있는 자산 → 횟수 · 마지막 시각
      */
     public record Scope(Zone zone, LocalDate from, LocalDate to,
-                        int assetsInScope, int assetsScanned, List<Asset> notScanned,
+                        int assetsInScope, int assetsScanned,
+                        long sbomCreatedInPeriod, long oldSbomUploaded, long rescanOnly,
+                        List<Asset> notScanned,
                         long scanRuns, long totalFindings,
                         List<String> grypeVersions, List<LocalDate> dbDates,
-                        Instant oldestScan, Instant newestScan) {
+                        Instant oldestScan, Instant newestScan,
+                        Map<Long, Failures> failures) {
+
+        /** 완료된 검사도, 실패한 검사도 없는 자산 — 기간 안에 돌리지 않았다. */
+        public List<Asset> neverScanned() {
+            return notScanned.stream().filter(a -> !failures.containsKey(a.getId())).toList();
+        }
+
+        /**
+         * 완료된 검사는 없고 실패한 검사만 있는 자산 — 돌렸는데 실패했다.
+         *
+         * <p>앞서 이 자산도 "검사 기록이 없는" 자산으로 적었다. 기록은 있다 — 고칠
+         * 것이 SBOM 이 아니라 검사 쪽(grype · DB)이라는 신호라 따로 말한다.
+         */
+        public List<Asset> failedOnly() {
+            return notScanned.stream().filter(a -> failures.containsKey(a.getId())).toList();
+        }
+
+        public Failures failuresOf(Long assetId) {
+            return failures.get(assetId);
+        }
+
+        /** 기간 중 실패한 검사 횟수 — `완료된 검사` 와 나란히 적는다. */
+        public long failedRuns() {
+            return failures.values().stream().mapToLong(Failures::count).sum();
+        }
+
+        /**
+         * 기준이 된 완료 검사 <b>뒤에</b> 실패한 검사가 있는가.
+         *
+         * <p>있으면 이 자산의 수는 실패 전 상태다 — 말하지 않으면 최신으로 읽힌다.
+         */
+        public boolean failedAfter(Scan base) {
+            Failures f = base == null ? null : failures.get(base.getAsset().getId());
+            return f != null && f.last().isAfter(base.getCreatedAt());
+        }
 
         public String zoneName() {
             return zone == null ? "전체" : zone.getName();
@@ -513,13 +669,18 @@ public class ZoneReportService {
         }
     }
 
-    /** 어떻게 닿을 수 있는가 — grype 이 준 CVSS 벡터를 풀어 센 것. */
+    /**
+     * 어떻게 닿을 수 있는가 — grype 이 준 CVSS 벡터를 풀어 센 것.
+     *
+     * @param reachableByRow 4 · 5장의 줄(패키지 식별자)마다 원격 접근 건수
+     */
     public record Exposure(long reachable, long reachableFixable, long scopeChanged,
-                           long unreadable, Map<String, Long> reachableByPackage,
+                           long unreadable, Map<String, Long> reachableByRow,
                            Map<Long, Long> reachableByAsset) {
 
-        public long reachableIn(String packageName) {
-            return reachableByPackage.getOrDefault(packageName, 0L);
+        /** 그 줄의 원격 접근 건수 — 같은 이름의 다른 패키지 것은 넣지 않는다. */
+        public long reachableIn(ZonePackageGroup row) {
+            return reachableByRow.getOrDefault(row.getPackageKey(), 0L);
         }
 
         public long reachableInAsset(Long assetId) {
@@ -550,6 +711,11 @@ public class ZoneReportService {
         /** 아직 아무도 보지 않은 건. */
         public long notReviewed() {
             return reviewOf(AnalysisState.NOT_SET);
+        }
+
+        /** 해당 없음 · 오탐 — 4·5장 목록에서 뺀 건수. 1장이 말한다. */
+        public long excludedFromLists() {
+            return reviewOf(AnalysisState.NOT_AFFECTED) + reviewOf(AnalysisState.FALSE_POSITIVE);
         }
 
         /**
@@ -609,10 +775,6 @@ public class ZoneReportService {
             return actions.stream().mapToLong(ZonePackageAction::reachableCount).sum();
         }
 
-        public long reachablePackages() {
-            return actions.stream().filter(a -> a.reachableCount() > 0).count();
-        }
-
         /** 두 대 이상에 공통으로 걸린 패키지 — 한 번 판단해 여러 대에 적용할 수 있는 것. */
         public List<ZonePackageAction> shared() {
             return actions.stream().filter(a -> a.assetCount() > 1).toList();
@@ -622,39 +784,35 @@ public class ZoneReportService {
     /**
      * 패키지 하나에 대한 구역 단위 조치 후보.
      *
+     * @param packageKey   패키지 식별자 — 이 줄의 키
      * @param assetCount   몇 대에 걸려 있는가 — 구역 보고서에만 있는 값
-     * @param versionCount 자산마다 설치된 판이 몇 가지인가
-     * @param targetCount  grype 이 제시한 수정 버전이 몇 가지인가
+     * @param versionCount 자산마다 설치된 버전이 몇 가지인가
+     * @param fixVersions  자산 너머로 그 패키지의 수정 버전 전부 — 하나로 고르지
+     *                     않는다({@link FixVersions}). 앞서 여러 가지면 `자산별
+     *                     확인` 으로만 적고 목록을 싣지 않았다
      */
-    public record ZonePackageAction(String packageName, String packageType,
+    public record ZonePackageAction(String packageKey, String packageName, String packageType,
                                     String anyVersion, long versionCount,
-                                    String targetVersion, long targetCount,
+                                    List<String> fixVersions,
                                     long total, long fixableCount, long assetCount,
                                     long kevCount, long criticalCount, long highCount,
                                     BigDecimal maxCvss, BigDecimal maxEpss, long reachableCount) {
 
-        ZonePackageAction(ZonePackageGroup g, long reachableCount) {
-            this(g.getPackageName(), g.getPackageType(), g.getAnyVersion(), g.getVersionCount(),
-                 g.getTargetVersion() == null ? "" : g.getTargetVersion(), g.getTargetCount(),
-                 g.getTotal(), g.getFixable(), g.getAssetCount(), g.getKevCount(),
-                 g.getCriticalCount(), g.getHighCount(), g.getMaxCvss(), g.getMaxEpss(),
-                 reachableCount);
+        ZonePackageAction(ZonePackageGroup g, long reachableCount, List<String> fixVersions) {
+            this(g.getPackageKey(), g.getPackageName(), g.getPackageType(), g.getAnyVersion(),
+                 g.getVersionCount(), fixVersions, g.getTotal(), g.getFixable(), g.getAssetCount(),
+                 g.getKevCount(), g.getCriticalCount(), g.getHighCount(), g.getMaxCvss(),
+                 g.getMaxEpss(), reachableCount);
         }
 
-        /** 설치된 판이 하나뿐일 때만 버전을 적는다. 섞여 있으면 "N종" 이다. */
+        /** 이름 곁에 적는 네임스페이스 — groupId · scope · 배포판. 없으면 빈 글자. */
+        public String packageNamespace() {
+            return PackageKey.namespace(packageKey);
+        }
+
+        /** 설치된 버전이 하나뿐일 때만 버전을 적는다. 섞여 있으면 "N가지" 다. */
         public boolean oneVersion() {
             return versionCount == 1;
-        }
-
-        /**
-         * 목표 버전을 단정할 수 있는가.
-         *
-         * <p>자산마다 배포판이 다르면 grype 이 주는 수정 버전도 다르다. 그중
-         * 하나를 골라 "이걸로 올리세요" 라고 쓰면 나머지 자산에 대해 <b>틀린
-         * 지시</b>가 된다. 여러 가지면 단정하지 않고 자산별 보고서로 보낸다.
-         */
-        public boolean oneTarget() {
-            return targetCount == 1 && targetVersion != null && !targetVersion.isBlank();
         }
 
         public boolean hasReachable() {
@@ -667,9 +825,11 @@ public class ZoneReportService {
      *
      * @param assetsCompared     기준선이 있어 실제로 대조한 자산 수
      * @param assetsWithoutBase  기간 중 처음 검사되어 대조에서 뺀 자산 수
+     * @param baselineScans      대조에 쓴 기준선 검사 — 대조한 자산마다 하나
      */
     public record Movement(long added, long resolved, long kept,
-                           long assetsCompared, long assetsWithoutBase, Instant baselineAt) {
+                           long assetsCompared, long assetsWithoutBase, Instant baselineAt,
+                           List<Scan> baselineScans) {
 
         public boolean comparable() {
             return assetsCompared > 0;
@@ -681,53 +841,64 @@ public class ZoneReportService {
         }
     }
 
-    /** 6장 — 조치 진행 현황. */
     /**
      * 6장 — 조치 진행 현황.
      *
-     * <p><b>단위가 둘이다.</b> {@code total}·{@code open} 은 <b>조치</b> 수
-     * ((자산, 패키지)로 등록된다)이고, {@code trackedFindings} ·
-     * {@code untrackedFindings} 는 그것이 덮는 <b>건</b> 수다. 둘을 함께
-     * 적지 않으면 "등록된 조치 3개" 가 138건 중 얼마인지 말해 주지 않는다.
+     * <p><b>단위가 둘이다.</b> {@code total} · {@code open} · {@code done…} 은
+     * <b>조치</b> 수((자산, 패키지)로 등록된다)이고, {@code …Findings} 는 그것이
+     * 덮는 <b>건</b> 수다. 둘을 함께 적지 않으면 "등록된 조치 3개" 가 138건 중
+     * 얼마인지 말해 주지 않는다.
+     *
+     * <p>대기 · 진행 / 완료 · 탐지 남음 / 완료 · 신규 탐지 / 완료 · 검증 대기 / 미등록 —
+     * 자산 보고서 5장과 같은 갈래다({@link AfterDone}). 갈래들의 건수를 더하면 4장 합계다.
+     *
+     * @param open           대기 · 진행인 조치 전부 — 기간 중 최신 검사에 해소 건수가 없는 것도 든다
+     * @param closedInPeriod 기간 안에 완료로 바뀐 조치 — 이력의 완료 줄로 센다
+     * @param doneRemaining  완료했는데 기간 중 최신 검사에 조치 대상이 남은 조치
+     * @param doneNew        완료했는데 남은 것이 조치 대상이 아닌 조치
+     * @param donePending    완료했는데 기간 중 최신 검사의 SBOM 이 완료보다 앞인 조치
      */
     public record Action(long total, long open, long overdue,
                          long openedInPeriod, long closedInPeriod,
                          List<Remediation> overdueRows, List<FindingAnalysis> explained,
                          List<ZonePackageAction> residual,
-                         long trackedFindings, long untrackedFindings,
-                         Map<String, Reviewed> reviewed) {
+                         long openFindings, long doneRemaining, long doneRemainingFindings,
+                         long doneNew, long doneNewFindings,
+                         long donePending, long donePendingFindings,
+                         long untrackedFindings,
+                         Map<String, Reviewed> reviewed, Map<String, Set<Long>> answeredAssets) {
 
         /**
-         * 이 패키지의 <b>모든 건</b>에 답이 있는가.
+         * 이 줄의 <b>모든 건</b>에 답이 있는가.
          *
          * <p>앞서 {@code explained} 에 그 이름이 한 번이라도 있으면 참이었다.
          * 자산 수는 {@link #explainedAssets} 가 이미 가려 주고 있었지만, 한
          * 자산 안에서 <b>탐지 열 건 중 한 건만</b> 적어 둔 것은 여전히 전부
-         * 설명된 것으로 세어졌다.
+         * 설명된 것으로 세어졌다. 묻는 키는 5장의 줄(패키지 식별자)이다.
          */
-        public boolean isExplained(String packageName) {
-            Reviewed r = reviewed.get(packageName);
+        public boolean isExplained(ZonePackageAction row) {
+            Reviewed r = reviewed.get(row.packageKey());
             return r != null && r.all();
         }
 
-        /** 그 패키지의 검토 진행 — 표의 `검토 결과` 칸이 이것을 그린다. */
-        public Reviewed reviewedIn(String packageName) {
-            return reviewed.get(packageName);
+        /** 그 줄의 검토 진행 — 표의 `검토 결과` 칸이 이것을 그린다. */
+        public Reviewed reviewedIn(ZonePackageAction row) {
+            return reviewed.get(row.packageKey());
         }
 
         /**
-         * 그 패키지에 검토 결과가 적힌 <b>자산이 몇 대인가.</b>
+         * 그 줄에 검토 결과가 적힌 <b>자산이 몇 대인가.</b>
          *
-         * <p>구역 보고서에서 {@link #isExplained(String)} 하나로 "검토함" 이라고
+         * <p>구역 보고서에서 {@link #isExplained} 하나로 "검토함" 이라고
          * 쓰면, 열두 대에 걸린 패키지를 한 대에서만 검토해 놓고도 전부 검토한
          * 것처럼 읽힌다. 걸린 자산 수와 나란히 놓아야 그 차이가 보인다.
          */
-        public long explainedAssets(String packageName) {
-            return explained.stream()
-                    .filter(a -> a.getPackageName().equals(packageName))
-                    .map(a -> a.getAsset().getId())
-                    .distinct()
-                    .count();
+        public long explainedAssets(ZonePackageAction row) {
+            // 그 줄에 실린 탐지(해당 없음 · 오탐을 뺀 것) 가운데 답이 있는 자산만
+            // 센다. 앞서는 그 구역의 검토 결과 전부에서 셌다 — 목록에서 빠진
+            // 해당 없음과 이미 사라진 탐지의 검토까지 들어가, `1대` 짜리 줄에
+            // `2대 검토` 가 붙을 수 있었다.
+            return answeredAssets.getOrDefault(row.packageKey(), Set.of()).size();
         }
 
         public long reviewOverdue() {
@@ -739,9 +910,9 @@ public class ZoneReportService {
             return residual.stream().mapToLong(ZonePackageAction::total).sum();
         }
 
-        /** 손댈 수 없는데 <b>답이 없는 건이 남은</b> 패키지 — 설명이 빈 자리다. */
+        /** 손댈 수 없는데 <b>답이 없는 건이 남은</b> 줄 — 설명이 빈 자리다. */
         public long unexplained() {
-            return residual.stream().filter(r -> !isExplained(r.packageName())).count();
+            return residual.stream().filter(r -> !isExplained(r)).count();
         }
     }
 }

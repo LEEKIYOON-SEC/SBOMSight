@@ -1,0 +1,16 @@
+{
+  "matches": [],
+  "source": {
+    "type": "sbom"
+  },
+  "distro": {
+    "name": "debian",
+    "version": "11"
+  },
+  "descriptor": {
+    "version": "0.0.0-fake",
+    "db": {
+      "built": "2026-09-01T00:00:00Z"
+    }
+  }
+}

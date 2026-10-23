@@ -3,6 +3,7 @@ package kr.sbomsight;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.AuditLog;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.AuditLogRepository;
@@ -141,7 +142,7 @@ class AuditLogTest {
         assets.saveAndFlush(asset);
 
         Remediation remediation = remediations.saveAndFlush(
-                new Remediation(asset, "openssl", ADMIN));
+                new Remediation(asset, "openssl", PackageKey.of(null, null, "openssl"), ADMIN));
         Long id = remediation.getId();
 
         mvc.perform(post("/actions/" + id + "/delete")
@@ -165,7 +166,7 @@ class AuditLogTest {
         asset.setName("rm-role-" + System.nanoTime());
         asset.setZone(zoneService.unassigned());
         assets.saveAndFlush(asset);
-        Long id = remediations.saveAndFlush(new Remediation(asset, "curl", ADMIN)).getId();
+        Long id = remediations.saveAndFlush(new Remediation(asset, "curl", PackageKey.of(null, null, "curl"), ADMIN)).getId();
 
         mvc.perform(post("/actions/" + id + "/delete")
                         .with(user("viewer").roles("VIEWER")).with(csrf()))
@@ -242,9 +243,10 @@ class AuditLogTest {
         // 그것이 곧 접속 현황 공개가 된다.
         mvc.perform(get("/settings/audit").with(user("viewer").roles("VIEWER")))
            .andExpect(status().isForbidden());
-        // 옛 주소로 우회해도 막혀야 한다. 넘겨주는 자리에 구멍이 나기 쉽다.
+        // 옛 주소(/audit)로 넘겨주던 다리는 걷었다 — 넘겨주는 자리가 없으니
+        // 우회할 길도 없다. 그 주소는 아무것도 내지 않는다.
         mvc.perform(get("/audit").with(user("viewer").roles("VIEWER")))
-           .andExpect(status().isForbidden());
+           .andExpect(status().isNotFound());
     }
 
     /**
@@ -260,7 +262,8 @@ class AuditLogTest {
      * 지우면 그 이름이 든 옛 행을 읽다 터진다.
      *
      * <p>새로 더할 때도 둘 중 하나여야 한다: 기록하든가, 아래 목록에 이유와
-     * 함께 적든가.
+     * 함께 적든가. 기록은 자바({@code AuditEvent.이름})이거나 마이그레이션
+     * ({@code '이름'} — V18 의 {@code ANALYSIS_MERGED})이다.
      */
     @Test
     @DisplayName("선언한 감사 행위는 기록되거나, 옛 이름으로 남긴 것이다")
@@ -284,9 +287,26 @@ class AuditLogTest {
             }
         }
 
+        // 마이그레이션이 감사 로그에 넣는 것도 기록이다 — V18 이 둘로 갈린 검토 결과를
+        // 합치며 `ANALYSIS_MERGED` 를 넣는다. SQL 이라 자바에는 없고 따옴표 안의 이름으로
+        // 적힌다. `INSERT INTO audit_log` 문만 본다 — 읽기만 하는 곳(V12 의
+        // `action = 'LOGIN_SUCCESS'`)은 기록이 아니다.
+        StringBuilder migrations = new StringBuilder();
+        java.util.regex.Pattern insert = java.util.regex.Pattern.compile(
+                "(?is)INSERT\\s+INTO\\s+audit_log\\b[^;]*;");
+        try (var files = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/resources/db/migration"))) {
+            for (java.nio.file.Path file : files.filter(f -> f.toString().endsWith(".sql")).toList()) {
+                var m = insert.matcher(java.nio.file.Files.readString(file));
+                while (m.find()) {
+                    migrations.append(m.group()).append('\n');
+                }
+            }
+        }
+
         List<String> orphans = java.util.Arrays.stream(AuditEvent.values())
                 .filter(e -> !historical.contains(e))
                 .filter(e -> !code.toString().contains("AuditEvent." + e.name()))
+                .filter(e -> !migrations.toString().contains("'" + e.name() + "'"))
                 .map(Enum::name)
                 .toList();
 

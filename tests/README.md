@@ -34,15 +34,6 @@ rm -rf tests                           # 리눅스
 | `run.sh` | 전체 시험 — `./mvnw -B test` |
 | `check-mariadb.sh` | 진짜 MySQL/MariaDB + Flyway 스키마로 전체 시험 |
 | `check-migrations.sh` | 마이그레이션만 — 빈 DB 와 데이터가 있는 DB 양쪽에 |
-| `check-table-width.py` | 표가 칸을 넘는지 (브라우저로 실측) |
-| `check-rows.py` | 목록의 밑선이 어긋나는지 |
-| `check-links.py` | 주소에 빈 값이 붙는지 |
-| `check-uniform.py` | 단추·입력칸이 한 모양인지 |
-| `check-contrast.py` | 글자 대비 (WCAG 2.1 AA) |
-| `check-csp.py` | 화면 동작이 CSP 아래에서 도는가 · 콘솔에 위반이 없는가 |
-
-`check-*.py` 는 **서버를 띄운 뒤** 돈다. 브라우저로 실제 픽셀을 재기
-때문이다 — HTML 만 봐서는 칸이 화면 밖으로 밀렸는지 알 수 없다.
 
 ## 쓰는 법
 
@@ -50,14 +41,6 @@ rm -rf tests                           # 리눅스
 ./mvnw -B test                                  # 컴파일 + 시험 (H2)
 DB_PORT=13306 ./tests/check-mariadb.sh          # 진짜 DB + Flyway 스키마
 DB_PORT=13306 ./tests/check-migrations.sh       # 마이그레이션만
-
-./scripts/run-server.sh                         # 띄운 뒤
-python3 tests/check-table-width.py 1280
-python3 tests/check-rows.py
-python3 tests/check-links.py
-python3 tests/check-uniform.py
-python3 tests/check-contrast.py
-python3 tests/check-csp.py
 ```
 
 ## 여기 없는 것

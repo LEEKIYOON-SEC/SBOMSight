@@ -32,13 +32,50 @@ public class Remediation {
     @org.hibernate.annotations.OnDelete(action = org.hibernate.annotations.OnDeleteAction.CASCADE)
     private Asset asset;
 
+    /** 화면에 찍는 이름. 같은 패키지인지는 {@link #packageKey} 가 가른다. */
     @Column(name = "package_name", nullable = false, length = 255)
     private String packageName;
 
-    @Column(name = "from_version", nullable = false, length = 128)
+    /**
+     * 패키지 식별자({@link PackageKey}) — 조치는 (자산, 이것)에 붙는다. 앞서는 이름이라 같은
+     * 자산의 npm {@code semver} 와 PyPI {@code semver} 가 한 조치를 나눠 가졌다(V24). 비어 있으면
+     * V24 가 어느 패키지의 것인지 가르지 못한 옛 조치다 — 지우지 않고 남기되 어느 줄에도 붙이지
+     * 않는다(대응 화면에 `패키지 확인 필요`).
+     */
+    @Column(name = "package_key", length = 512)
+    private String packageKey;
+
+    /**
+     * <b>조치 회차</b> — 같은 (자산, 패키지)에 몇 번째로 연 조치인가(D5).
+     *
+     * <p>앞서 조치는 (자산, 패키지)에 하나뿐이었다. 완료한 뒤 같은 패키지에 새 취약점이
+     * 나오면 그 완료된 조치를 다시 열 수밖에 없었고, 다시 열면 완료 시각이 지워져 기간
+     * 중 완료에서 그 완료가 사라졌다(재현 시험 P2). 이제 닫힌 조치만 있으면 새 조치를
+     * 연다({@link #followUp}) — 열린 조치는 (자산, 패키지)에 하나다(RemediationService.open).
+     */
+    @Column(name = "round_no", nullable = false)
+    private int roundNo = 1;
+
+    /**
+     * <b>이전 조치</b> — 바로 앞 회차의 번호. 첫 회차는 비어 있다. FK 는 두지 않는다
+     * (V19 머리말 — 자산을 지울 때 한 번에 사라지는 사이에 끼지 않게).
+     */
+    @Column(name = "previous_id")
+    private Long previousId;
+
+    /**
+     * 등록 당시의 설치 버전 <b>전부</b> — 수정 버전과 같은 꼴로 잇는다
+     * ({@link FixVersions}). 앞서는 CVSS 가 가장 높은 건의 것 하나였다 — 같은
+     * 패키지가 두 벌 깔린 자산에서 한 벌이 조치 어디에도 없었다. 넓힌 것은 {@code V16}.
+     */
+    @Column(name = "from_version", nullable = false, length = 4000)
     private String fromVersion = "";
 
-    @Column(name = "to_version", nullable = false, length = 128)
+    /**
+     * 등록 당시의 수정 버전 <b>전부</b> — 빈칸으로 잇는다({@link FixVersions}).
+     * 앞서는 CVSS 가 가장 높은 건의 것 하나였다. 넓힌 것은 {@code V15}.
+     */
+    @Column(name = "to_version", nullable = false, length = 4000)
     private String toVersion = "";
 
     @Enumerated(EnumType.STRING)
@@ -75,16 +112,18 @@ public class Remediation {
     @Column(name = "closed_at")
     private Instant closedAt;
 
+    /** 한 번에 여러 줄(상태 · 담당 · 기한 · 설명)이 같은 시각에 남으므로 순서를 번호로 마저 정한다. */
     @OneToMany(mappedBy = "remediation", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("at ASC")
+    @OrderBy("at ASC, id ASC")
     private List<RemediationEvent> events = new ArrayList<>();
 
     protected Remediation() {
     }
 
-    public Remediation(Asset asset, String packageName, String actor) {
+    public Remediation(Asset asset, String packageName, String packageKey, String actor) {
         this.asset = asset;
         this.packageName = packageName;
+        this.packageKey = packageKey;
         this.createdBy = actor == null ? "" : actor;
         this.updatedBy = this.createdBy;
     }
@@ -104,6 +143,39 @@ public class Remediation {
         this.events.add(new RemediationEvent(this, actor, previous, next, comment));
     }
 
+    /**
+     * 담당 · 기한 · 설명을 고치고, <b>바뀐 칸마다</b> 앞뒤 값을 발자취에 남긴다(R8).
+     *
+     * <p>앞서는 상태가 바뀔 때만 남겨, 상태를 그대로 두고 기한만 미루면 발자취에 아무것도
+     * 없었다 — "누가 기한을 밀었나" 에 답할 것이 다음 수정이 덮어쓰는 {@code updated_by}
+     * 하나였다. 변경 사유는 같은 저장의 줄마다 붙인다. 손대지 않은 칸은 남기지 않는다.
+     */
+    public void edit(String owner, LocalDate dueDate, String note, String actor, String comment) {
+        String newOwner = owner == null ? "" : owner.trim();
+        String newNote = note == null ? "" : note;
+        changed(actor, "담당", this.owner, newOwner, comment);
+        changed(actor, "기한", this.dueDate == null ? "" : this.dueDate.toString(),
+                dueDate == null ? "" : dueDate.toString(), comment);
+        changed(actor, "설명", this.note, newNote, comment);
+        this.owner = newOwner;
+        this.dueDate = dueDate;
+        this.note = newNote;
+    }
+
+    private void changed(String actor, String field, String before, String after, String comment) {
+        if (!before.equals(after)) {
+            events.add(RemediationEvent.field(this, actor, field, before, after, comment));
+        }
+    }
+
+    /**
+     * 앞 회차를 잇는다 — 회차는 하나 늘고, 이전 조치는 그 조치다(D5).
+     */
+    public void followUp(Remediation previous) {
+        this.roundNo = previous.roundNo + 1;
+        this.previousId = previous.getId();
+    }
+
     public Long getId() {
         return id;
     }
@@ -116,6 +188,28 @@ public class Remediation {
         return packageName;
     }
 
+    public String getPackageKey() {
+        return packageKey;
+    }
+
+    /** V24 가 어느 패키지의 것인지 가르지 못한 옛 조치인가. */
+    public boolean isPackageUnresolved() {
+        return packageKey == null || packageKey.isEmpty();
+    }
+
+    /** 화면에 이름 곁에 적는 네임스페이스({@link PackageKey#namespace}). */
+    public String getPackageNamespace() {
+        return PackageKey.namespace(packageKey);
+    }
+
+    public int getRoundNo() {
+        return roundNo;
+    }
+
+    public Long getPreviousId() {
+        return previousId;
+    }
+
     public String getFromVersion() {
         return fromVersion;
     }
@@ -124,12 +218,46 @@ public class Remediation {
         this.fromVersion = fromVersion == null ? "" : fromVersion;
     }
 
+    /** 등록 당시의 설치 버전 — 하나로 고르지 않은 목록. 화면 · CSV 는 이것을 쓴다. */
+    public List<String> getFromVersions() {
+        return FixVersions.split(fromVersion);
+    }
+
+    /** 설치 버전을 모아 적는다. 칸을 넘는 것은 목표 버전과 같이 뒤에서부터 뺀다. */
+    public void setFromVersions(List<String> versions) {
+        this.fromVersion = fit(versions);
+    }
+
     public String getToVersion() {
         return toVersion;
     }
 
     public void setToVersion(String toVersion) {
         this.toVersion = toVersion == null ? "" : toVersion;
+    }
+
+    /** 등록 당시의 수정 버전 — 하나로 고르지 않은 목록. 화면 · CSV 는 이것을 쓴다. */
+    public List<String> getToVersions() {
+        return FixVersions.split(toVersion);
+    }
+
+    /**
+     * 수정 버전을 모아 적는다.
+     *
+     * <p>칸(4,000자)을 넘으면 넘는 것부터 뺀다 — 넘는 채로 저장하면 조치
+     * 등록이 500 으로 끝난다. 버전 스물다섯 가지(openjdk)가 237자였다.
+     */
+    public void setToVersions(List<String> versions) {
+        this.toVersion = fit(versions);
+    }
+
+    /** 모아서(FixVersions) 칸(4,000자)에 들어가는 만큼 잇는다. */
+    private static String fit(List<String> versions) {
+        List<String> kept = new ArrayList<>(FixVersions.collect(versions));
+        while (!kept.isEmpty() && FixVersions.join(kept).length() > 4000) {
+            kept.remove(kept.size() - 1);
+        }
+        return FixVersions.join(kept);
     }
 
     public RemediationStatus getStatus() {

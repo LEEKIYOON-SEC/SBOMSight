@@ -184,9 +184,9 @@ class ListPagingTest {
      * 패키지탭은 왜 별도로 있는거야? 근데 왜 서로 개수가 달라?"
      *
      * <pre>
-     *   /packages                  인벤토리의 **이름** 수
+     *   /packages                  인벤토리의 **패키지 식별자** 수
      *   /assets/{id}?tab=packages  그 자산의 **설치 줄** 수 (이름+버전+경로)
-     *   /vulns?group=package       grype 이 **탐지를 낸 이름** 수
+     *   /vulns?group=package       grype 이 **탐지를 낸 패키지(식별자)** 수
      * </pre>
      *
      * <p>셋 다 맞는 수다. 무엇을 세는지 화면이 말하지 않으면 어느 쪽이
@@ -201,10 +201,10 @@ class ListPagingTest {
         seedFinding(scan, "CVE-2024-22222", "openssl");
 
         assertThat(open("/packages"))
-                .as("패키지 화면이 이름을 센다는 말이 없다").contains("패키지 이름")
+                .as("패키지 화면이 식별자를 센다는 말이 없다").contains("세는 단위 — <b>패키지 식별자</b>")
                 .as("탐지가 없는 것도 여기 있다는 말이 없다").contains("깔린 것 전부");
         assertThat(open("/vulns?group=package"))
-                .as("탐지가 난 것만 센다는 말이 없다").contains("탐지가 난 패키지 이름");
+                .as("탐지가 난 것만 센다는 말이 없다").contains("세는 단위 — <b>탐지가 난 패키지</b>(패키지 식별자 하나가 한 줄)");
         assertThat(open("/assets/" + asset.getId() + "?tab=packages"))
                 .as("설치 줄을 센다는 말이 없다").contains("설치된 줄");
     }
@@ -290,6 +290,44 @@ class ListPagingTest {
                 .contains("zzz-buried");
     }
 
+    /**
+     * <b>펼치기는 보던 쪽에서 펼친다.</b>
+     *
+     * <p>2쪽의 [자산 보기] 가 쪽 번호 없이 링크돼, 누르면 1쪽이 열리고 그 줄은 1쪽에 없어
+     * 아무것도 펼쳐지지 않았다(띄운 앱에서 재현 — `?size=10&page=1` 의 첫 줄). 펼치기는
+     * 목록을 바꾸지 않으니 쪽을 지킨다. 거르개 · 쪽 크기를 바꾸는 링크는 그대로 첫 쪽으로 간다.
+     */
+    @Test
+    @DisplayName("2쪽에서 [자산 보기] 를 누르면 2쪽에서 펼친다")
+    void expandingKeepsThePage() throws Exception {
+        Asset asset = seedAsset("expand");
+        Scan scan = seedScan(asset);
+        for (int i = 0; i < 14; i++) {
+            seedComponent(asset, scan, "pgx-%02d".formatted(i), "1.0." + i);
+        }
+
+        String second = open("/packages?q=pgx-&size=10&page=1");
+        java.util.regex.Matcher link = java.util.regex.Pattern
+                .compile("href=\"([^\"]*open=pkg%3Arpm%2Frocky%2Fpgx-1[0-3][^\"]*)\"").matcher(second);
+        assertThat(link.find()).as("2쪽에 2쪽 줄의 [자산 보기] 가 없다").isTrue();
+        String href = link.group(1).replace("&amp;", "&");
+        assertThat(href).as("[자산 보기] 가 보던 쪽을 잃었다").contains("page=1");
+
+        // 화면의 주소는 식별자를 인코딩해 싣는다(`pkg%3Arpm…`) — 브라우저처럼 그 주소 그대로 보낸다.
+        // 글자로 넘기면 MockMvc 가 한 번 더 인코딩해 앱이 `pkg%3A…` 를 받는다.
+        String opened = mvc.perform(get(java.net.URI.create(href)).with(user("tester").roles("ADMIN")))
+                           .andExpect(status().isOk())
+                           .andReturn().getResponse().getContentAsString();
+        assertThat(opened)
+                .as("눌렀더니 그 줄이 없는 쪽이 열려 아무것도 펼쳐지지 않았다")
+                .contains("class=\"zone-row\"")
+                .contains(asset.getName());
+        // 접기도 같은 쪽으로 돌아온다.
+        assertThat(opened).containsPattern("href=\"[^\"]*page=1[^\"]*\">접기<");
+        // 쪽 크기를 바꾸면 목록이 바뀐다 — 그 링크는 첫 쪽으로 간다(쪽 번호를 싣지 않는다).
+        assertThat(opened).doesNotContainPattern("href=\"[^\"]*size=30[^\"]*page=1");
+    }
+
     // --- 씨앗 --------------------------------------------------------------------
 
     private String open(String url) throws Exception {
@@ -316,6 +354,8 @@ class ListPagingTest {
         Finding f = new Finding(scan, cve + "|" + pkg + "|" + scan.getId(), cve, pkg);
         f.setPackageVersion("1.0.0");
         f.setPackageType("rpm");
+        // grype 은 SBOM 의 purl 을 그대로 싣는다 — 인벤토리(seedComponent)와 같은 식별자가 된다.
+        f.setPackagePurl("pkg:rpm/rocky/" + pkg + "@1.0.0");
         f.setSeverity("High");
         f.setFixState("fixed");
         f.setFixedVersion("1.0.1");

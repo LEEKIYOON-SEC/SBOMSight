@@ -76,9 +76,11 @@
     </div>
 
     <div class="card-footer d-flex align-items-center gap-2 py-2">
-      <span th:if="${g.oldestScan() != null}"
-            th:text="'가장 오래된 검사 ' + ${#temporals.format(g.oldestScan(), 'yyyy-MM-dd')}">—</span>
-      <span th:if="${g.oldestScan() == null}">검사 기록 없음</span>
+      <!--/* 오래됨은 SBOM 생성 시각으로 본다 — `30일 넘은 자산` 과 같은 기준. 앞서는 검사가
+           돈 시각이라, 옛 SBOM 을 다시 검사하면 이 구역이 새로 본 것처럼 읽혔다. */-->
+      <span th:if="${g.oldestSbom() != null}"
+            th:text="'가장 오래된 SBOM 생성 시각 ' + ${#temporals.format(g.oldestSbom(), 'yyyy-MM-dd')}">—</span>
+      <span th:if="${g.oldestSbom() == null}">검사 기록 없음</span>
       <span class="spacer"></span>
       <a th:unless="${g.isEmpty()}" th:href="@{/reports/zone(zone=${g.zone.id})}">보고서</a>
     </div>

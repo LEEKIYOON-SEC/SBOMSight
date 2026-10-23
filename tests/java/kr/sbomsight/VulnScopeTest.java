@@ -92,8 +92,8 @@ class VulnScopeTest {
     private List<Finding> lookup(String q) {
         VulnQuery.Scope scope = query.ofZone(null);
         return scope.scanIds().isEmpty() ? List.of()
-                : findings.findInBySeverity(scope.scanIds(), q, null, null, null,
-                                            false, PageRequest.of(0, 100)).getContent();
+                : findings.findInBySeverity(scope.scanIds(), q, null, null, null, null,
+                                            true, false, PageRequest.of(0, 100)).getContent();
     }
 
     // --- 범위 -----------------------------------------------------------------
@@ -123,8 +123,8 @@ class VulnScopeTest {
         // 다만 그 옛 검사를 직접 열면 그때 있던 것이 그대로 나와야 한다 —
         // 검사 하나를 여는 것은 "그때 무엇이 있었나" 를 묻는 일이다.
         VulnQuery.Scope old = query.ofScan(before.getId());
-        assertThat(findings.findInBySeverity(old.scanIds(), "log4j", null, null, null,
-                                             false, PageRequest.of(0, 100)))
+        assertThat(findings.findInBySeverity(old.scanIds(), "log4j", null, null, null, null,
+                                             true, false, PageRequest.of(0, 100)))
                 .hasSize(1);
     }
 
@@ -216,8 +216,8 @@ class VulnScopeTest {
         finding(scan(db, Instant.now()), "CVE-2021-44228", "log4j-core", "Critical", "fixed");
 
         VulnQuery.Scope scope = query.ofZone(dmz.getId());
-        assertThat(findings.findInBySeverity(scope.scanIds(), "log4j", null, null, null,
-                                             false, PageRequest.of(0, 100)))
+        assertThat(findings.findInBySeverity(scope.scanIds(), "log4j", null, null, null, null,
+                                             true, false, PageRequest.of(0, 100)))
                 .hasSize(1)
                 .extracting(f -> f.getScan().getAsset().getName())
                 .containsExactly(web.getName());
@@ -232,9 +232,57 @@ class VulnScopeTest {
         finding(s, "CVE-B", "log4j-api", "High", "not-fixed");
 
         VulnQuery.Scope scope = query.ofScan(s.getId());
-        assertThat(findings.findInBySeverity(scope.scanIds(), "log4j", null, false, null,
-                                             false, PageRequest.of(0, 100)))
+        assertThat(findings.findInBySeverity(scope.scanIds(), "log4j", null, null, false, null,
+                                             true, false, PageRequest.of(0, 100)))
                 .extracting(Finding::getPackageName).containsExactly("log4j-api");
+    }
+
+    /**
+     * <b>`수정 버전 없음` 은 어느 화면에서나 같은 건을 센다.</b>
+     *
+     * <p>grype 의 수정 상태는 넷이다 — {@code fixed} · {@code not-fixed} ·
+     * {@code wont-fix} · {@code unknown}. 자산 목록의 요약 줄과 보고서와 표의
+     * 딱지는 {@code not-fixed + wont-fix} 를 `수정 버전 없음`, {@code unknown} 을
+     * `확인 필요` 로 가르는데, 거르개의 `없음` 만 {@code fixed 가 아닌 것 전부}
+     * 를 셌다. 요약 줄의 `585 수정 버전 없음` 을 누르면 586건이 떴다.
+     */
+    @Test
+    @DisplayName("`수정 버전 없음` 은 요약 줄·거르개·표가 같은 건을 센다 — 확인 필요는 넣지 않는다")
+    void noFixMeansTheSameEverywhere() throws Exception {
+        Asset web = asset("nofix", dmz);
+        Scan s = scan(web, Instant.now());
+        finding(s, "CVE-NF-1", "nf-a", "High", "not-fixed");
+        finding(s, "CVE-NF-2", "nf-b", "High", "wont-fix");
+        finding(s, "CVE-NF-3", "nf-c", "High", "unknown");
+        finding(s, "CVE-NF-4", "nf-d", "High", "fixed");
+        findings.flush();
+
+        VulnQuery.Scope scope = query.ofScan(s.getId());
+        assertThat(findings.findInBySeverity(scope.scanIds(), "nf-", null, null, false, null,
+                                             true, false, PageRequest.of(0, 100)))
+                .as("`없음` 에 확인 필요(unknown)가 섞였다")
+                .extracting(Finding::getPackageName).containsExactlyInAnyOrder("nf-a", "nf-b");
+
+        // 요약 줄의 숫자와, 그 숫자를 눌렀을 때 뜨는 목록의 건수.
+        String home = mvc.perform(get("/").with(user("tester").roles("ADMIN")))
+                         .andReturn().getResponse().getContentAsString();
+        // 링크는 화면에 찍힌 그대로 따라간다 — 손으로 적으면 링크가 바뀌어도
+        // 이 시험은 모른다.
+        java.util.regex.Matcher summary = java.util.regex.Pattern
+                .compile("href=\"([^\"]+)\">\\s*<b>([\\d,]+)</b> 수정 버전 없음").matcher(home);
+        assertThat(summary.find()).as("요약 줄에 `수정 버전 없음` 이 없다").isTrue();
+        String href = summary.group(1).replace("&amp;", "&");
+
+        String list = mvc.perform(get(href).with(user("tester").roles("ADMIN")))
+                         .andReturn().getResponse().getContentAsString();
+        java.util.regex.Matcher count = java.util.regex.Pattern
+                .compile("<b class=\"num\">([\\d,]+)</b>\\s*<span class=\"text-secondary\">건</span>")
+                .matcher(list);
+        assertThat(count.find()).as("목록의 건수 줄을 못 찾았다").isTrue();
+
+        assertThat(count.group(1))
+                .as("요약 줄의 `수정 버전 없음` 과 그것을 누른 목록의 건수가 다르다")
+                .isEqualTo(summary.group(2));
     }
 
     // --- 정렬 -----------------------------------------------------------------
@@ -259,16 +307,16 @@ class VulnScopeTest {
         finding(s, "CVE-HIGH", "e-high", "High", "fixed");
 
         VulnQuery.Scope scope = query.ofScan(s.getId());
-        assertThat(findings.findInBySeverity(scope.scanIds(), null, null, null, null,
-                                             false, PageRequest.of(0, 100)).getContent())
+        assertThat(findings.findInBySeverity(scope.scanIds(), null, null, null, null, null,
+                                             true, false, PageRequest.of(0, 100)).getContent())
                 .extracting(Finding::getCve)
                 .containsExactly("CVE-CRIT", "CVE-HIGH", "CVE-MED", "CVE-LOW", "CVE-NONE");
 
         // 방향을 뒤집으면 낮은 것부터. **값 없는 것은 따라 올라오지 않는다** —
         // 오름차순에서 맨 앞은 "가장 안 위험한 것" 자리이고, 심각도를 모르는
         // 건을 그 자리에 놓으면 아무도 내리지 않은 판정이 된다.
-        assertThat(findings.findInBySeverity(scope.scanIds(), null, null, null, null,
-                                             true, PageRequest.of(0, 100)).getContent())
+        assertThat(findings.findInBySeverity(scope.scanIds(), null, null, null, null, null,
+                                             true, true, PageRequest.of(0, 100)).getContent())
                 .extracting(Finding::getCve)
                 .containsExactly("CVE-LOW", "CVE-MED", "CVE-HIGH", "CVE-CRIT", "CVE-NONE");
     }
@@ -308,7 +356,7 @@ class VulnScopeTest {
         VulnQuery.Scope scope = query.ofScan(s.getId());
         for (String axis : new String[] { "cvss", "epss" }) {
             for (String dir : new String[] { "asc", "desc" }) {
-                List<Finding> rows = findings.findIn(scope.scanIds(), null, null, null, null,
+                List<Finding> rows = findings.findIn(scope.scanIds(), null, null, null, null, null, true,
                                 PageRequest.of(0, 100, VulnQuery.order(axis, dir)))
                         .getContent();
                 assertThat(rows).extracting(Finding::getCve)
@@ -422,7 +470,7 @@ class VulnScopeTest {
         finding(b, "CVE-2021-44228", "log4j-core", "Critical", "fixed");
 
         VulnQuery.Scope scope = query.ofZone(null);
-        var groups = findings.groupByCveIn(scope.scanIds(), "log4j", null, null, null);
+        var groups = findings.groupByCveIn(scope.scanIds(), "log4j", null, null, null, null, true);
 
         assertThat(groups)
                 .as("같은 취약점이 번호가 달라 두 묶음으로 갈렸다")
@@ -469,6 +517,29 @@ class VulnScopeTest {
         assertThat(packagesOn("&fixable=false"))
                 .as("수정 버전 유무가 패키지별 묶기에도 걸린다")
                 .contains("spring-beans").doesNotContain("log4j-core");
+    }
+
+    /**
+     * <b>패키지별의 버전 열은 설치된 버전이고, 그렇게 부른다.</b>
+     *
+     * <p>열 이름이 `목표 버전` 이었는데 찍는 것은 설치된 버전이었다 — 띄운
+     * 앱에서 curl 줄에 `7.64.0-4+deb10u1`(설치된 것)이 목표로 떠 있었다.
+     * 그 열을 보고 올리면 이미 깔린 버전으로 "올리게" 된다.
+     */
+    @Test
+    @DisplayName("패키지별의 버전 열은 `현재 버전` 이다 — 설치된 버전을 목표라고 부르지 않는다")
+    void thePackageTabCallsTheInstalledVersionCurrent() throws Exception {
+        Asset web = asset("web", dmz);
+        finding(scan(web, Instant.now()), "CVE-2021-44228", "log4j-core", "Critical", "fixed");
+
+        String html = mvc.perform(get("/vulns?group=package").with(user("tester").roles("VIEWER")))
+                         .andExpect(status().isOk())
+                         .andReturn().getResponse().getContentAsString();
+
+        assertThat(html).contains("<th class=\"tight\">현재 버전</th>")
+                        .doesNotContain("목표 버전");
+        assertThat(html.substring(html.indexOf("<tbody>")))
+                .contains("2.14.1");     // 설치된 버전 — 이 칸이 찍는 것
     }
 
     /** `패키지별` 화면을 열어 표에 뜬 패키지 이름만 돌려준다. */

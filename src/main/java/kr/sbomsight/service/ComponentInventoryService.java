@@ -1,6 +1,11 @@
 package kr.sbomsight.service;
 
+import kr.sbomsight.config.SbomSightProperties;
+import kr.sbomsight.domain.PackageKey;
+import kr.sbomsight.domain.Scan;
+import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.ComponentRepository;
+import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.SbomStorage.ParsedComponent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,6 +13,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -33,16 +41,26 @@ public class ComponentInventoryService {
     private static final int BATCH = 1_000;
 
     private static final String INSERT = """
-            INSERT INTO component (asset_id, scan_id, name, version, type, purl, location)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO component (asset_id, scan_id, name, version, type, purl, package_key, location)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private final JdbcTemplate jdbc;
     private final ComponentRepository components;
+    private final ScanRepository scans;
+    private final AssetRepository assets;
+    private final SbomStorage storage;
+    private final SbomSightProperties properties;
 
-    public ComponentInventoryService(JdbcTemplate jdbc, ComponentRepository components) {
+    public ComponentInventoryService(JdbcTemplate jdbc, ComponentRepository components,
+                                     ScanRepository scans, AssetRepository assets,
+                                     SbomStorage storage, SbomSightProperties properties) {
         this.jdbc = jdbc;
         this.components = components;
+        this.scans = scans;
+        this.assets = assets;
+        this.storage = storage;
+        this.properties = properties;
     }
 
     /**
@@ -56,26 +74,148 @@ public class ComponentInventoryService {
     }
 
     /**
-     * 이 검사가 기준이 된다 — 같은 자산의 <b>다른 검사에서 온 행을 지운다.</b>
+     * 검사가 끝났다 — <b>그 검사가 자산의 지금 검사이면</b> 패키지 목록을 그 검사
+     * 것으로 바꾸고, <b>아니면</b> 그 검사가 담은 것을 버린다.
      *
-     * <p>넣기 전에 지우지 않고 넣은 뒤에 지운다. 읽다가 터지면 이전 인벤토리가
-     * 그대로 남아 있어야 한다.
+     * <p>넣기 전에 지우지 않고 <b>검사가 끝난 뒤에</b> 지운다({@code ScanService.run}
+     * 이 완료 표시와 한 트랜잭션으로 부른다). 읽다가든 grype 에서든 터지면 이전
+     * 인벤토리가 그대로 남아 있어야 한다 — 앞서 담자마자 지웠더니 grype 이 실패한
+     * 자산의 패키지 목록이 통째로 사라졌다.
      *
-     * <p><b>트랜잭션을 제 것으로 연다.</b> 부르는 쪽({@code ScanService.run})에는
-     * {@code @Transactional} 이 붙어 있지만 {@code runAsync} 가 같은 빈의
-     * {@code run} 을 부르기 때문에 프록시를 지나지 않는다 — 그 자리에 트랜잭션이
-     * 없고, {@code @Modifying} 질의는 트랜잭션 없이 돌지 못한다. 이것이 없어서
-     * 실제 업로드가 {@code READING} 단계에서
-     * {@code Executing an update/delete query} 로 실패했다. 시험 11개가 전부
-     * 통과한 채로 — 시험이 트랜잭션을 대신 열어 주고 있었다.
+     * <p><b>지우는 것은 끝난 검사의 행뿐이다.</b> 앞서는 "그 자산의 다른 검사에서
+     * 온 행" 을 전부 지웠는데, 아직 도는 검사가 이미 담아 둔 행도 거기 들었다.
+     * 검사 둘이 겹치면 먼저 끝난 쪽이 나중 것의 행을, 나중 것이 먼저 것의 행을
+     * 지워 패키지가 0행이 됐다. 그리고 <b>늦게 끝났다고 기준이 되지 않는다</b> —
+     * 기준은 자산의 지금 검사({@link ScanRepository#currentOf})다. 취약점 화면이
+     * 같은 것을 기준으로 삼는다(ScanOverlapTest).
+     *
+     * <p>자산 행을 잠근다. 같은 자산의 검사를 만드는 자리(ScanService)와 차례를
+     * 맞춘다.
+     *
+     * <p><b>트랜잭션을 제 것으로도 연다.</b> 부르는 쪽에 트랜잭션이 없으면
+     * {@code @Modifying} 질의가 {@code Executing an update/delete query} 로
+     * 터진다 — {@code runAsync} 가 같은 빈의 {@code run} 을 부르면 프록시를
+     * 지나지 않아 실제로 그랬다. 시험 11개가 전부 통과한 채로(시험이 트랜잭션을
+     * 대신 열어 주고 있었다).
+     *
+     * @return 그 검사가 지금 검사가 됐는가 — 아니면 담은 것을 버렸다
      */
     @Transactional
-    public void makeCurrent(long assetId, long scanId) {
-        int removed = components.deleteOtherScans(assetId, scanId);
+    public boolean makeCurrent(long assetId, long scanId) {
+        assets.lockById(assetId);
+        Long current = scans.currentOf(assetId).map(Scan::getId).orElse(null);
+        if (current == null || current != scanId) {
+            int dropped = components.deleteByScanId(scanId);
+            log.info("검사 {} 는 자산 {} 의 지금 검사(검사 {})가 아니라 담은 {}행을 버렸습니다",
+                    scanId, assetId, current, dropped);
+            return false;
+        }
+        int removed = components.deleteFinishedOtherScans(assetId, scanId);
         if (removed > 0) {
             log.info("자산 {} 의 이전 인벤토리 {}행을 새 검사 {} 것으로 바꿨습니다",
                     assetId, removed, scanId);
         }
+        return true;
+    }
+
+    /**
+     * 다시 담은 결과.
+     *
+     * @param from    다시 담은 검사 — 할 일이 없었거나 그 검사를 고르기 전에 멈췄으면 {@code null}
+     * @param rows    담은 행 수
+     * @param problem 담지 못한 까닭 — 담았으면 빈 글자
+     */
+    public record Restored(Scan from, long rows, String problem) {
+
+        static final Restored NOTHING = new Restored(null, 0, "");
+
+        public boolean happened() {
+            return from != null && problem.isEmpty();
+        }
+
+        public boolean failed() {
+            return !problem.isEmpty();
+        }
+    }
+
+    /**
+     * 자산의 지금 검사에 패키지 목록이 없으면 <b>그 검사의 보관 SBOM 에서 다시 담는다.</b>
+     *
+     * <p>패키지 목록은 지금 검사 것만 둔다. 그래서 지금 검사를 지우면 — 엉뚱한
+     * 자산에 올린 SBOM 을 지울 때가 그렇다 — 취약점 화면은 그 전 검사를 말하는데
+     * 패키지 목록은 0행이었다. 그 전 검사의 행은 새 검사가 끝날 때 이미 지웠다.
+     * SBOM 은 보관되어 있으므로 다시 읽는다.
+     *
+     * <p><b>검사 삭제가 커밋된 뒤에 제 트랜잭션으로 부른다</b>(ScanService.delete).
+     * 담다가 터지면 이 트랜잭션과 함께 되돌려져 담다 만 것이 남지 않는다. 보관
+     * 파일이 없거나 풀지 못하면 던지지 않고 까닭을 돌려준다 — 그때는 아직 한 줄도
+     * 담기 전이다. 읽다가 깨진 곳을 만나면 {@link SbomStorage#inspect} 가 거기서
+     * 멈추고 경고만 남기므로 거기까지 담긴다 — grype 이 이미 읽고 끝낸 SBOM 이라
+     * 그럴 일은 드물다.
+     *
+     * <p><b>자산 행을 맨 먼저 잠근다.</b> 같은 자산을 건드리는 쓰기(검사를 만들 때 ·
+     * 끝낼 때 · 지울 때)와 같은 차례다 — 자산 → 검사 → 패키지 행. 앞서는 읽고 담은
+     * 뒤에야 잠갔는데 MariaDB 에서 둘 다 재현됐다. 담을 때 외래 키가 자산 행에 건
+     * 공유 잠금을 배타 잠금으로 올리는 사이에 같은 자산의 업로드 · 검사 마무리가
+     * 끼면 교착이 났다. 그리고 잠그기 전에 읽은 스냅숏으로 지금 검사를 골라, 그
+     * 사이에 끝난 새 검사의 행을 지웠다.
+     */
+    @Transactional
+    public Restored restoreCurrent(long assetId) {
+        assets.lockById(assetId);
+        Scan current = scans.currentOf(assetId).orElse(null);
+        if (current == null || components.countByScanId(current.getId()) > 0) {
+            return Restored.NOTHING;
+        }
+        String stored = current.getSbomPath();
+        if (stored == null || stored.isBlank() || !Files.exists(Path.of(stored))) {
+            return new Restored(current, 0, "그 검사의 보관 SBOM 파일이 없습니다.");
+        }
+        Path dir = properties.scanDir(assetId, current.getId());
+        Path plain = dir.resolve("sbom-restore.json");
+        try {
+            storage.inflate(Path.of(stored), dir, plain.getFileName().toString());
+            try (Sink sink = open(assetId, current.getId())) {
+                storage.inspect(plain, sink);
+            }
+        } catch (IOException e) {
+            log.warn("자산 {} 의 패키지 목록을 다시 담지 못했습니다: {}", assetId, e.getMessage());
+            return new Restored(current, 0, "보관된 SBOM을 읽지 못했습니다(" + e.getMessage() + ").");
+        } finally {
+            // 풀다가 멈춘 것도 지운다 — 다 풀리지 않은 파일이 남는다.
+            try {
+                Files.deleteIfExists(plain);
+            } catch (IOException e) {
+                log.warn("임시 파일을 지우지 못했습니다: {}", plain);
+            }
+        }
+        // 잠금을 쥐고 있어 그사이 지금 검사가 바뀌지 않는다. 바뀌었다면 담은 것은
+        // makeCurrent 가 이미 버렸다.
+        if (!makeCurrent(assetId, current.getId())) {
+            return Restored.NOTHING;
+        }
+        long rows = components.countByScanId(current.getId());
+        log.info("자산 {} 의 패키지 목록을 검사 {} 의 보관 SBOM 에서 다시 담았습니다 ({}행)",
+                assetId, current.getId(), rows);
+        return new Restored(current, rows, "");
+    }
+
+    /**
+     * 최신 검사가 아닌 끝난 검사의 행을 버린다 — <b>최신 검사의 목록을 다시 담은 뒤에도
+     * 남은 것.</b>
+     *
+     * <p>{@link #restoreCurrent} 는 최신 검사의 보관 SBOM 이 없으면 아무것도 지우지 않고
+     * 까닭만 돌려준다. 그대로 두면 패키지 화면이 최신 검사가 아닌 SBOM 의 목록을 말한다 —
+     * 취약점 화면과 다른 검사다(1단계에서 막은 것). 비어 있는 편이 맞다: 화면은 "아직
+     * 담긴 패키지가 없습니다" 라고 말한다.
+     *
+     * @return 버린 행 수
+     */
+    @Transactional
+    public int dropStale(long assetId) {
+        assets.lockById(assetId);
+        long keep = scans.currentOf(assetId).map(Scan::getId).orElse(-1L);
+        return components.deleteFinishedOtherScans(assetId, keep);
     }
 
     /**
@@ -111,12 +251,18 @@ public class ComponentInventoryService {
 
         @Override
         public void accept(ParsedComponent parsed) {
+            String name = clip(parsed.name(), 255);
+            String type = clip(parsed.type(), 64);
+            String purl = clip(parsed.purl(), 512);
             pending.add(new Object[] {
                     assetId, scanId,
-                    clip(parsed.name(), 255),
+                    name,
                     clip(parsed.version(), 255),
-                    clip(parsed.type(), 64),
-                    clip(parsed.purl(), 512),
+                    type,
+                    purl,
+                    // 탐지와 같은 규칙 · 담는 값 그대로에서(Component 생성자와 같다) — 패키지
+                    // 화면의 한 줄이 이것이다(V24).
+                    PackageKey.of(purl, type, name),
                     clip(parsed.location(), 1000) });
             if (pending.size() >= BATCH) {
                 flush();

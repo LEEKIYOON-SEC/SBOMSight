@@ -96,6 +96,14 @@ public class Finding {
     @Column(name = "package_purl", nullable = false, length = 512)
     private String packagePurl = "";
 
+    /**
+     * 패키지 식별자 — purl 에서 버전 · 한정자를 뗀 것({@link PackageKey}). 검토 결과 · 조치 ·
+     * 보고서의 줄이 이것으로 이 탐지를 가리킨다. 이름 · 유형 · purl 에서 만들어지므로 저장할 때
+     * 채운다({@link #fillPackageKey}) — 손으로 적지 않는다(V24).
+     */
+    @Column(name = "package_key", nullable = false, length = 512)
+    private String packageKey = "";
+
     @Column(name = "package_language", nullable = false, length = 64)
     private String packageLanguage = "";
 
@@ -113,7 +121,13 @@ public class Finding {
     @Column(name = "fix_state", nullable = false, length = 32)
     private String fixState = "";
 
-    @Column(name = "fixed_version", nullable = false, length = 255)
+    /**
+     * 수정 버전 — grype 이 준 후보 <b>전부</b>({@code fix.versions}), 글자 순으로 빈칸 하나씩
+     * 띄워 잇는다({@link FixVersions}). 앞서 첫 번째 하나만 담았다 — NVD 로 맞춘 openssl
+     * 1.1.1k 의 CVE-2022-2068 은 {@code 1.0.2zf · 1.1.1p · 3.0.4} 셋을 주는데 화면 · 보고서는
+     * 다른 갈래인 {@code 1.0.2zf} 만 말했다. 하나로 고르지 않는다(V23).
+     */
+    @Column(name = "fixed_version", nullable = false, length = 1000)
     private String fixedVersion = "";
 
     @Column(name = "version_constraint", nullable = false, length = 512)
@@ -313,6 +327,18 @@ public class Finding {
         this.packagePurl = clip(packagePurl, 512);
     }
 
+    /** 패키지 식별자 — 저장하기 전에도 지금 칸들로 만들어 준다(아직 채우지 않았을 때). */
+    public String getPackageKey() {
+        return packageKey.isEmpty() ? PackageKey.of(packagePurl, packageType, packageName) : packageKey;
+    }
+
+    /** 저장할 때 채운다 — 이름 · 유형 · purl 이 정하는 값이라 따로 적는 길을 두지 않는다. */
+    @PrePersist
+    @PreUpdate
+    void fillPackageKey() {
+        packageKey = PackageKey.of(packagePurl, packageType, packageName);
+    }
+
     public String getPackageLanguage() {
         return packageLanguage;
     }
@@ -337,12 +363,37 @@ public class Finding {
         this.fixState = clip(fixState, 32);
     }
 
+    /** 저장된 꼴 그대로 — 후보가 여럿이면 빈칸으로 이어져 있다. 화면 · CSV 는 {@link #getFixedVersions()}. */
     public String getFixedVersion() {
         return fixedVersion;
     }
 
     public void setFixedVersion(String fixedVersion) {
-        this.fixedVersion = clip(fixedVersion, 255);
+        this.fixedVersion = clip(fixedVersion, 1000);
+    }
+
+    /** 수정 버전 후보 전부 — 글자 순. 하나만 적힌 옛 행도 그대로 읽힌다. */
+    public java.util.List<String> getFixedVersions() {
+        return FixVersions.split(fixedVersion);
+    }
+
+    /**
+     * grype 이 준 후보를 전부 적는다 — 빈 것을 빼고, 겹친 것을 하나로, 글자 순으로.
+     *
+     * <p>칸(1,000자)을 넘으면 넘는 것부터 빼고 그 사실을 기록에 남긴다 — 버전 중간에서
+     * 자르면 없는 버전이 생긴다. 후보 전부는 상세({@code detail_json})에 그대로 있다.
+     */
+    public void setFixedVersions(java.util.List<String> versions) {
+        java.util.List<String> kept = new java.util.ArrayList<>(
+                FixVersions.collect(versions == null ? java.util.List.of() : versions));
+        int all = kept.size();
+        while (!kept.isEmpty() && FixVersions.join(kept).length() > 1000) {
+            kept.remove(kept.size() - 1);
+        }
+        if (kept.size() < all) {
+            log.warn("수정 버전 후보 {}개 중 {}개만 칸(1,000자)에 담았습니다: {}", all, kept.size(), cve);
+        }
+        this.fixedVersion = FixVersions.join(kept);
     }
 
     public String getVersionConstraint() {
@@ -355,6 +406,33 @@ public class Finding {
 
     public String getMatchType() {
         return matchType;
+    }
+
+    /**
+     * 대조 방식의 화면 이름 — <b>무엇으로 맞췄는지</b>만 옮긴다.
+     *
+     * <p>grype 이 쓰는 셋이다(grype/match/type.go). {@code exact-indirect-match}
+     * 는 설치된 패키지가 아니라 그 <b>소스 패키지</b>(예: {@code libssl3} 의
+     * {@code openssl})로 맞춘 것이다 — grype 이 소스 쪽으로 찾은 결과를 설치된
+     * 패키지에 옮겨 붙일 때 이 이름으로 바꾼다. 원문은 화면에 함께 찍는다.
+     * 모르는 글자는 옮기지 않는다 — 빈 글자를 돌려주고 화면은 원문만 찍는다.
+     */
+    public String getMatchTypeLabel() {
+        return matchTypeLabel(matchType);
+    }
+
+    /** grype 의 순서(type.go 의 typeOrder) — 확실한 것부터. */
+    public static final java.util.List<String> MATCH_TYPES =
+            java.util.List.of("exact-direct-match", "exact-indirect-match", "cpe-match");
+
+    /** {@link #getMatchTypeLabel()} 와 같은 규칙 — 건 없이 글자만 있을 때. */
+    public static String matchTypeLabel(String raw) {
+        return switch (raw == null ? "" : raw) {
+            case "exact-direct-match" -> "패키지 이름으로 대조";
+            case "exact-indirect-match" -> "소스 패키지 이름으로 대조";
+            case "cpe-match" -> "CPE로 대조";
+            default -> "";
+        };
     }
 
     public void setMatchType(String matchType) {

@@ -79,8 +79,7 @@ DB_PORT=13306 DB_USER=… ./tests/check-migrations.sh  # 마이그레이션만 (
 
 ### 7. 시안이 있으면 나란히 놓고 대조한다
 
-승인받은 시안(`docs/preview.html`)이 있으면 **화면마다 하나씩 열어 좌우로
-비교한다.** 내가 만든 것만 보면 내가 만든 것은 언제나 맞아 보인다.
+승인받은 시안이 있으면 **화면마다 하나씩 열어 좌우로 비교한다.** 내가 만든 것만 보면 내가 만든 것은 언제나 맞아 보인다.
 
 - 시안에 있는데 앱에 **없는 화면**이 있는지 먼저 센다.
 - 색·글꼴만 옮기고 화면을 안 만든 것은 "디자인 적용" 이 아니다.
@@ -133,7 +132,8 @@ grype 이 낸 것은 **탐지**, 우리가 적는 것은 **검토 결과**다. �
 그 팀이 실제로 쓰는 말을 쓴다. **한 가지를 가리키는 말은 하나만** 쓴다.
 줄여서 뜻이 흐려지면 줄이지 않는다.
 
-- 새 글자를 화면에 쓰기 전에 `docs/rework-plan.md` §4.1 의 어휘표를 본다.
+- 새 글자를 화면에 쓰기 전에 어휘표(`tests/java/kr/sbomsight/VocabularyTest.java`
+  의 `BANNED` · `BANNED_HEADERS`)를 본다.
 - **시스템이 모르는 것을 아는 척하지 않는다.** 사람이 자유롭게 적는 칸에 통제를
   뜻하는 이름을 붙이지 않는다. 시스템이 아는 값(로그인 계정·시각)은 자동으로 남긴다.
 
@@ -166,9 +166,8 @@ DB_PORT=13306 ./tests/check-migrations.sh     # 마이그레이션만
 
 | 무엇 | 어디 |
 |---|---|
-| **지금 하고 있는 개편** | **`docs/rework-plan.md`** |
-| **승인받은 화면 시안** | **`docs/preview.html`** |
+| 어휘표 | `tests/java/kr/sbomsight/VocabularyTest.java` |
 | 설치 절차 | `docs/windows-setup.md` |
-| 올린 뒤 운영 | `docs/operations.md` |
+| 설치한 뒤 운영 | `docs/operations.md` |
 | 폐쇄망 운영 | `docs/offline-operations.md` |
 | 설계에서 지키는 것 | `README.md` |

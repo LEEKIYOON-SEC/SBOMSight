@@ -24,8 +24,13 @@ import java.util.List;
  *
  * <p>화면마다 같은 질의를 다시 짜지 않도록 여기 한 곳에서 담는다. 전부
  * 집계 질의라 한 화면에 다섯 번 왕복한다 — 목록을 끌어와 세는 것이 아니다.
+ *
+ * <p><b>이 패키지의 컨트롤러에만 붙는다.</b> 가리지 않으면 스프링의 오류
+ * 처리(BasicErrorController)에도 붙어, 기둥이 없는 오류 화면 한 장에 SQL 이
+ * 다섯 번 나갔다 — DB 가 멈춰 난 500 이면 오류 화면을 그리다 또 멈춘다
+ * (ErrorPageTest).
  */
-@ControllerAdvice
+@ControllerAdvice(basePackageClasses = LayoutAdvice.class)
 public class LayoutAdvice {
 
     private static final List<RemediationStatus> OPEN =
@@ -71,9 +76,13 @@ public class LayoutAdvice {
         // 대응 배지는 하나다. 앞서는 '조치' 와 '위험 수용' 이 기둥에서 갈라져
         // 있어 어느 쪽이 급한지 두 번 봐야 했고, 두 화면을 하나로 합치면서
         // 숫자도 합친다. 기한이 지난 것 = 조치 기한 + 재검토일.
+        //
+        // **운영 종료한 자산의 것은 세지 않는다** — 자산 수(`navAssetCount`)와
+        // 같은 범위다. 앞서 세어서, 자산 목록에서 사라진 자산의 기한 지난
+        // 조치가 배지를 붉게 남겨 두었다(RetiredAssetActionsTest).
         model.addAttribute("navActionOverdue",
-                remediations.countOverdue(today) + analyses.countReviewOverdue(today));
-        model.addAttribute("navActionOpen", remediations.countByStatusIn(OPEN));
+                remediations.countOverdue(today, false) + analyses.countReviewOverdue(today, false));
+        model.addAttribute("navActionOpen", remediations.countByStatusIn(OPEN, false));
         model.addAttribute("navInitials", initials(auth.getName()));
     }
 

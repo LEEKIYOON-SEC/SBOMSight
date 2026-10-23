@@ -1,9 +1,11 @@
 package kr.sbomsight;
 
 import kr.sbomsight.domain.AnalysisJustification;
+import kr.sbomsight.domain.AnalysisResponse;
 import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.domain.Zone;
@@ -29,6 +31,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * 구역 · 기간 보고서.
@@ -124,6 +127,15 @@ class ZoneReportTest {
                 .filter(a -> a.packageName().equals(packageName))
                 .findFirst().orElseThrow(() -> new AssertionError(
                         "조치 대상에 " + packageName + " 이 없습니다: " + r.judgement().actions()));
+    }
+
+    /** 5장의 한 줄 — 이름 · 유형으로 찾는다. */
+    private ZonePackageAction residual(ZoneReportService.Action action, String packageName,
+                                       String packageType) {
+        return action.residual().stream()
+                .filter(b -> b.packageName().equals(packageName) && b.packageType().equals(packageType))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "5장에 " + packageName + "/" + packageType + " 이 없습니다: " + action.residual()));
     }
 
     // --- 기간 ------------------------------------------------------------------
@@ -237,8 +249,7 @@ class ZoneReportTest {
         assertThat(openssl.fixableCount()).isEqualTo(6);
         assertThat(openssl.reachableCount()).isEqualTo(3);
         assertThat(openssl.oneVersion()).isTrue();
-        assertThat(openssl.oneTarget()).isTrue();
-        assertThat(openssl.targetVersion()).isEqualTo("3.0.7");
+        assertThat(openssl.fixVersions()).containsExactly("3.0.7");
     }
 
     @Test
@@ -251,10 +262,11 @@ class ZoneReportTest {
 
         ZonePackageAction openssl = action(report(), "openssl");
 
-        // 하나를 골라 "3.0.7 로 올리세요" 라고 쓰면 나머지 자산에는 틀린 지시다.
+        // 하나를 골라 "3.0.7 로 올리세요" 라고 쓰면 나머지 자산에는 틀린 지시다 —
+        // 고르지 않고 둘 다 적는다(FixVersions).
         assertThat(openssl.assetCount()).isEqualTo(2);
         assertThat(openssl.oneVersion()).isFalse();
-        assertThat(openssl.oneTarget()).isFalse();
+        assertThat(openssl.fixVersions()).containsExactly("3.0.7", "3.0.9");
         assertThat(openssl.versionCount()).isEqualTo(2);
     }
 
@@ -302,6 +314,48 @@ class ZoneReportTest {
     }
 
     /**
+     * <b>원격 접근은 그 줄의 것만 센다.</b>
+     *
+     * <p>4 · 5장의 한 줄은 (이름, 유형)인데 원격 접근은 이름으로만 모았다. 같은 이름이
+     * 배포판 패키지와 바이너리로 갈려 줄이 여럿 서면 이름 전체의 수가 줄마다 되풀이되어
+     * 찍혔고, 합계 줄은 그것을 다시 더해 부풀었다.
+     */
+    @Test
+    @DisplayName("원격 접근은 줄(이름 · 유형)마다 센다 — 합계가 부풀지 않는다")
+    void reachIsCountedPerRowNotPerName() {
+        Scan web = scan(asset("web"), LocalDate.of(2026, 9, 10));
+        finding(web, "CVE-1", "openssl", "3.0.2", "High", "fixed", "3.0.7", 7.5, REACHABLE);
+        finding(web, "CVE-2", "openssl", "3.0.2", "High", "fixed", "3.0.7", 7.5, REACHABLE);
+        Scan api = scan(asset("api"), LocalDate.of(2026, 9, 10));
+        Finding binary = finding(api, "CVE-3", "openssl", "3.0.2", "High", "fixed", "3.0.7", 7.5,
+                                 REACHABLE);
+        binary.setPackageType("binary");
+        findings.saveAndFlush(binary);
+        // 수정 버전이 없는 유형 — 5장에 선다.
+        Finding apk = finding(api, "CVE-4", "openssl", "3.0.2", "High", "not-fixed", "", 7.5,
+                              REACHABLE);
+        apk.setPackageType("apk");
+        findings.saveAndFlush(apk);
+
+        ZoneReport r = report();
+
+        assertThat(r.judgement().actions())
+                .extracting(ZonePackageAction::packageType, ZonePackageAction::reachableCount)
+                .containsExactlyInAnyOrder(tuple("rpm", 2L), tuple("binary", 1L));
+        assertThat(r.judgement().blocked())
+                .extracting(ZonePackageAction::packageType, ZonePackageAction::reachableCount)
+                .containsExactly(tuple("apk", 1L));
+        assertThat(r.judgement().resolvableReach())
+                .as("4장 합계가 유형마다 되풀이된 수를 다시 더했다")
+                .isEqualTo(3);
+        // 줄마다 센 것을 다 더하면 목록의 원격 접근 전부다 — 어긋나면 어느 줄이 남의 건을 셌다.
+        assertThat(java.util.stream.Stream.concat(r.judgement().actions().stream(),
+                                                  r.judgement().blocked().stream())
+                                          .mapToLong(ZonePackageAction::reachableCount).sum())
+                .isEqualTo(r.judgement().exposure().reachable());
+    }
+
+    /**
      * 열두 대에 걸린 패키지를 한 대에서만 검토해 놓고 "검토함" 이라고 쓰면
      * 전부 검토한 것으로 읽힌다. 몇 대인지를 센다 — 띄워 보고 찾은 것이다.
      *
@@ -318,19 +372,110 @@ class ZoneReportTest {
             Scan s = scan(a, LocalDate.of(2026, 9, 10));
             finding(s, "CVE-1", "glibc", "2.34", "High", "wont-fix", "", 7.8, NEEDS_LOGIN);
         }
+        // 목록에 남는 상태로 적는다(해당됨 · 조치 불가). 해당 없음 · 오탐은 5장
+        // 목록에서 빠지므로 `몇 대를 검토했나` 를 재는 데 쓸 수 없다 — 그쪽은
+        // 아래 시험이 본다.
         for (Asset a : new Asset[] { first, second }) {
-            analyses.record(a, "CVE-1", "glibc",
-                            AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE,
-                            null, "이 경로를 쓰지 않습니다", "", "", null, "tester");
+            analyses.record(a, "CVE-1", "glibc", PackageKey.of(null, "rpm", "glibc"),
+                            AnalysisState.EXPLOITABLE, null, AnalysisResponse.CAN_NOT_FIX,
+                            "업스트림에 수정 버전 없음", "", "",
+                            LocalDate.now().plusDays(30), "tester");
         }
 
         ZoneReportService.Action action = report().action();
 
         // 세 대에 걸려 있고 그중 두 대를 검토했다. 나머지 한 대가 묻히면 안 된다.
-        assertThat(action.residual()).extracting(ZonePackageAction::assetCount)
-                .containsExactly(3L);
-        assertThat(action.explainedAssets("glibc")).isEqualTo(2);
-        assertThat(action.explainedAssets("openssl")).isZero();
+        assertThat(action.residual()).extracting(ZonePackageAction::packageName,
+                                                 ZonePackageAction::assetCount)
+                .containsExactly(tuple("glibc", 3L));
+        assertThat(action.explainedAssets(residual(action, "glibc", "rpm"))).isEqualTo(2);
+    }
+
+    /**
+     * <b>해당 없음 · 오탐은 4 · 5장 목록에서 빠지고 1장이 그 수를 적는다.</b>
+     * 검토한 자산 수도 그 줄에 실린 탐지에서만 센다.
+     */
+    @Test
+    @DisplayName("해당 없음 · 오탐은 4 · 5장에서 빠진다 — 1장이 그 수를, 5장의 `n대` 는 남은 줄에서")
+    void reviewedOutLeavesTheLists() {
+        Asset first = asset("web");
+        Asset second = asset("api");
+        Asset untouched = asset("db");
+        for (Asset a : new Asset[] { first, second, untouched }) {
+            Scan s = scan(a, LocalDate.of(2026, 9, 10));
+            finding(s, "CVE-1", "glibc", "2.34", "High", "wont-fix", "", 7.8, NEEDS_LOGIN);
+            finding(s, "CVE-2", "openssl", "3.0.0", "High", "fixed", "3.0.7", 7.5, REACHABLE);
+        }
+        for (Asset a : new Asset[] { first, second }) {
+            analyses.record(a, "CVE-1", "glibc", PackageKey.of(null, "rpm", "glibc"),
+                            AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE,
+                            null, "이 경로를 쓰지 않습니다", "", "", null, "tester");
+        }
+        analyses.record(first, "CVE-2", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.FALSE_POSITIVE,
+                        null, null, "패키지 오인", "", "", null, "tester");
+
+        ZoneReport r = report();
+
+        assertThat(r.aggregate().excludedFromLists()).isEqualTo(3);
+        assertThat(r.aggregate().total()).as("탐지 건수는 그대로다").isEqualTo(6);
+        assertThat(r.action().residual()).extracting(ZonePackageAction::assetCount)
+                .as("해당 없음으로 적은 두 대가 5장에 남았다")
+                .containsExactly(1L);
+        assertThat(r.action().explainedAssets(residual(r.action(), "glibc", "rpm")))
+                .as("5장에 남은 한 대는 아무도 검토하지 않았다")
+                .isZero();
+        assertThat(r.judgement().resolvableFindings())
+                .as("오탐으로 적은 한 건이 4장의 해소 건수에 남았다")
+                .isEqualTo(2);
+        assertThat(r.action().untrackedFindings())
+                .as("6장의 건수는 4장의 해소 건수와 같은 축이다")
+                .isEqualTo(2);
+    }
+
+    /**
+     * <b>5장의 검토 결과는 그 줄의 건만 센다.</b>
+     *
+     * <p>5장의 한 줄은 (이름, 유형)인데 검토 결과는 이름으로만 모았다. 같은 이름이 유형으로
+     * 갈리면 한 줄의 검토가 다른 줄에도 세어졌다 — 아무도 답하지 않은 apk 줄에 rpm 줄의
+     * `1대` 가 붙었고, 4장에 선 바이너리 줄의 건까지 분모에 들어갔다.
+     */
+    @Test
+    @DisplayName("5장 — 검토 결과는 그 줄(이름 · 유형)의 건만 센다")
+    void residualReviewIsCountedPerRow() {
+        Asset web = asset("web");
+        Scan s1 = scan(web, LocalDate.of(2026, 9, 10));
+        finding(s1, "CVE-1", "openssl", "3.0.2", "High", "not-fixed", "", 7.5, NEEDS_LOGIN);
+        Scan s2 = scan(asset("api"), LocalDate.of(2026, 9, 10));
+        Finding apk = finding(s2, "CVE-2", "openssl", "3.0.2", "High", "not-fixed", "", 7.5,
+                              NEEDS_LOGIN);
+        apk.setPackageType("apk");
+        findings.saveAndFlush(apk);
+        // 수정 버전이 있는 유형 — 4장에 선다.
+        Finding binary = finding(s2, "CVE-3", "openssl", "3.0.2", "High", "fixed", "3.0.7", 7.5,
+                                 NEEDS_LOGIN);
+        binary.setPackageType("binary");
+        findings.saveAndFlush(binary);
+        analyses.record(web, "CVE-1", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.IN_TRIAGE,
+                        null, null, "", "", "", null, "tester");
+
+        ZoneReportService.Action action = report().action();
+
+        assertThat(action.residual()).extracting(ZonePackageAction::packageType)
+                .containsExactlyInAnyOrder("rpm", "apk");
+        ZonePackageAction rpm = residual(action, "openssl", "rpm");
+        ZonePackageAction other = residual(action, "openssl", "apk");
+        assertThat(action.reviewedIn(rpm).done()).isEqualTo(1);
+        assertThat(action.reviewedIn(rpm).total())
+                .as("검토 결과의 분모가 그 줄의 건수가 아니다")
+                .isEqualTo(rpm.total()).isEqualTo(1);
+        assertThat(action.explainedAssets(rpm)).isEqualTo(1);
+        assertThat(action.isExplained(rpm)).isTrue();
+        assertThat(action.reviewedIn(other).done()).as("답한 적 없는 줄에 남의 검토가 세어졌다").isZero();
+        assertThat(action.reviewedIn(other).total()).isEqualTo(other.total()).isEqualTo(1);
+        assertThat(action.explainedAssets(other)).as("답한 적 없는 줄에 `1대` 가 붙었다").isZero();
+        assertThat(action.unexplained())
+                .as("답 없는 건이 남은 줄은 apk 하나다")
+                .isEqualTo(1);
     }
 
     @Test

@@ -46,10 +46,15 @@
     if (link) {
       e.preventDefault();
       dialog.querySelector('#analysis-asset').value = link.dataset.asset;
+      // 탐지 번호 — 비어 있으면(검토 결과 상세) 서버는 번호로 찾는다. 앞서 연 줄의
+      // 번호가 남지 않게 언제나 덮어쓴다.
+      dialog.querySelector('#analysis-finding').value = link.dataset.finding || '';
       dialog.querySelector('#analysis-cve').value = link.dataset.cve;
+      // 서버로는 패키지 식별자를 보낸다 — 이름이 같은 다른 패키지(npm · PyPI 의 semver)와
+      // 가르는 값이다. 머리에는 이름과 식별자를 함께 찍는다.
       dialog.querySelector('#analysis-pkg').value = link.dataset.pkg;
       dialog.querySelector('#analysis-what').textContent =
-              link.dataset.label + ' · ' + link.dataset.pkg;
+              link.dataset.label + ' · ' + link.dataset.pkgName + ' (' + link.dataset.pkg + ')';
 
       // 이미 적어 둔 것이 있으면 그 값에서 시작한다. 빈 칸에서 시작하면
       // 한 칸만 고치려던 사람이 나머지를 지우게 된다.

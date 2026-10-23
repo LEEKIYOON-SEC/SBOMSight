@@ -108,13 +108,13 @@ class ReviewToActionTest {
     @DisplayName("자산에서 조치를 연다 — 등록 당시 버전은 최신 검사 것으로 남는다")
     void anActionOpensFromTheAsset() throws Exception {
         mvc.perform(post("/assets/" + asset.getId() + "/remediations")
-                            .param("packageName", pkg)
+                            .param("packageKey", PackageKey.of(null, "java-archive", pkg))
                             .with(user("tester").roles("ADMIN")).with(csrf()))
            .andExpect(status().is3xxRedirection())
            .andExpect(redirectedUrlPattern("/actions/*"));
 
         Remediation opened = remediations
-                .findByAssetIdAndPackageName(asset.getId(), pkg)
+                .findLatest(asset.getId(), PackageKey.of(null, "java-archive", pkg))
                 .orElseThrow(() -> new AssertionError("조치가 안 열렸습니다"));
 
         assertThat(opened.getFromVersion()).isEqualTo("2.14.1");
@@ -136,7 +136,7 @@ class ReviewToActionTest {
     void openingTwiceKeepsOneAction() throws Exception {
         for (int i = 0; i < 2; i++) {
             mvc.perform(post("/assets/" + asset.getId() + "/remediations")
-                                .param("packageName", pkg)
+                                .param("packageKey", PackageKey.of(null, "java-archive", pkg))
                                 .with(user("tester").roles("ADMIN")).with(csrf()))
                .andExpect(status().is3xxRedirection());
         }
@@ -150,11 +150,11 @@ class ReviewToActionTest {
     @DisplayName("조회 권한은 조치를 열 수 없다")
     void viewersCannotOpenAnAction() throws Exception {
         mvc.perform(post("/assets/" + asset.getId() + "/remediations")
-                            .param("packageName", pkg)
+                            .param("packageKey", PackageKey.of(null, "java-archive", pkg))
                             .with(user("viewer").roles("VIEWER")).with(csrf()))
            .andExpect(status().isForbidden());
 
-        assertThat(remediations.findByAssetIdAndPackageName(asset.getId(), pkg))
+        assertThat(remediations.findLatest(asset.getId(), PackageKey.of(null, "java-archive", pkg)))
                 .isEmpty();
     }
 
@@ -168,7 +168,7 @@ class ReviewToActionTest {
     @Test
     @DisplayName("취약점 표와 검토 결과에 조치 단추가 있다")
     void bothScreensOfferTheButton() throws Exception {
-        analyses.record(asset, "CVE-2021-44228", pkg,
+        analyses.record(asset, "CVE-2021-44228", pkg, PackageKey.of(null, "java-archive", pkg),
                         AnalysisState.EXPLOITABLE, null, AnalysisResponse.UPDATE,
                         "2.17.0 으로 올립니다", "", "", null, "admin");
 
@@ -184,10 +184,10 @@ class ReviewToActionTest {
 
         // 열고 나면 같은 자리가 `조치 등록` 이 아니라 그 조치를 가리킨다.
         mvc.perform(post("/assets/" + asset.getId() + "/remediations")
-                            .param("packageName", pkg)
+                            .param("packageKey", PackageKey.of(null, "java-archive", pkg))
                             .with(user("tester").roles("ADMIN")).with(csrf()));
         Remediation opened = remediations
-                .findByAssetIdAndPackageName(asset.getId(), pkg).orElseThrow();
+                .findLatest(asset.getId(), PackageKey.of(null, "java-archive", pkg)).orElseThrow();
 
         assertThat(open("/actions?tab=analyses"))
                 .as("이미 연 조치가 있는데 `조치 등록` 이 또 떠 있다")
@@ -208,7 +208,7 @@ class ReviewToActionTest {
                 .as("CVE별에 검토 진행이 없다").contains("미검토")
                 .as("CVE별에서 항목별로 갈 길이 없다").contains("항목별로 보기");
 
-        analyses.record(asset, "CVE-2021-44228", pkg,
+        analyses.record(asset, "CVE-2021-44228", pkg, PackageKey.of(null, "java-archive", pkg),
                         AnalysisState.IN_TRIAGE, null, null, "", "", "", null, "admin");
 
         assertThat(open("/vulns?group=package"))

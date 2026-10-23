@@ -5,7 +5,7 @@ SBOM 기반 취약점 대응 검토. **Syft 와 Grype 이 전부이고**, 이 �
 
 ```
 대상 서버에서 syft 로 SBOM 을 뜬다
-        ↓  (파일을 웹에 올린다)
+        ↓  (파일을 웹에 업로드한다)
 이 서버에서 grype 이 돈다
         ↓
 자산별로 결과가 쌓인다 — 이력 비교 · 패키지 인벤토리 · 조치 관리 · 보고서
@@ -26,7 +26,7 @@ SBOM 기반 취약점 대응 검토. **Syft 와 Grype 이 전부이고**, 이 �
 | 화면 바탕 | **Tabler 1.5.1 (MIT)** — CSS 한 장만 저장소에 담아 쓴다. JS 도, `dist/libs` 도 가져오지 않는다 |
 | 로그인 | Spring Security 폼 로그인 · 세션 유휴 만료 · CSRF |
 | DB | MariaDB 또는 MySQL 8 · Flyway 마이그레이션 · 드라이버는 MariaDB Connector/J (LGPL-2.1) |
-| 검사 | **syft**(SBOM 생성, 대상 서버에서) · **grype**(취약점 매칭, 이 서버에서) |
+| 검사 | **syft**(SBOM 생성, 대상 서버에서) · **grype**(취약점 대조, 이 서버에서) |
 
 HTTPS 는 필수다(443). 금융권 지침상 http 로는 열지 않는다.
 
@@ -34,9 +34,10 @@ HTTPS 는 필수다(443). 금융권 지침상 http 로는 열지 않는다.
 
 ## 설치
 
-아래는 요약이다. **Windows 11 PC 에 처음부터 올리는 전체 절차는
+아래는 요약이다. **Windows 11 PC 에 처음부터 설치하는 전체 절차는
 [`docs/windows-setup.md`](docs/windows-setup.md) 에 있다** — 단계마다 확인
-명령과 막혔을 때 볼 곳이 붙어 있다.
+명령과 막혔을 때 볼 곳이 붙어 있다. **Linux 서버(Ubuntu 24.04 · systemd)는
+[`docs/linux-setup.md`](docs/linux-setup.md).**
 
 ### 1. 준비물
 
@@ -91,18 +92,17 @@ notepad config\env.ps1          # 비밀번호 채우기
 .\scripts\run-server.ps1 -Listen    # 방화벽까지 열고 기동 (관리자 PowerShell)
 ```
 ```bash
-# Linux — 환경변수로 준다. 저장소에 두지 않는다.
-export SBOMSIGHT_PORT=443
-export SBOMSIGHT_DB_URL='jdbc:mariadb://localhost:3306/sbomsight?...'
-export SBOMSIGHT_DB_PASSWORD='<비밀번호>'
-export SBOMSIGHT_KEYSTORE_PASSWORD='<키스토어비밀번호>'
+# Linux — config/env 에 값을 적어 두고 스크립트가 읽게 한다(값은 작은따옴표로).
+cp scripts/env.example.sh config/env && chmod 600 config/env
+nano config/env                     # 비밀번호 · DB 주소 채우기
 
 ./mvnw clean package -DskipTests
-java -jar target/sbomsight-1.0.0.jar
+./scripts/run-server.sh --check     # 준비 상태만 확인
+./scripts/run-server.sh             # 서비스로 두려면 docs/linux-setup.md 9단계(systemd)
 ```
 
 **Windows 는 443 에 관리자 권한이 필요 없다** — 낮은 포트를 제한하는 것은
-Linux 다(`setcap 'cap_net_bind_service=+ep' $(which java)`). Windows 에서
+Linux 다(서비스로 돌리면 systemd 의 `AmbientCapabilities` 가 준다 — linux-setup.md 9단계). Windows 에서
 443 이 안 열리면 대개 IIS 나 `World Wide Web Publishing Service` 가 이미
 쓰고 있거나, Hyper-V·WSL 이 예약해 둔 포트 구간에 걸린 것이다.
 `scripts\run-server.ps1 -Check` 가 둘 다 확인해 준다.
@@ -117,12 +117,13 @@ Linux 다(`setcap 'cap_net_bind_service=+ep' $(which java)`). Windows 에서
 
 ```powershell
 .\scripts\install-service.ps1            # 관리자 PowerShell · 등록하고 띄운다
-.\scripts\install-service.ps1 -Stop      # 판올림 전에 내린다 (jar 가 잠긴다)
+.\scripts\install-service.ps1 -Stop      # 업그레이드 전에 내린다 (jar 가 잠긴다)
 ```
 
 창이 없으니 콘솔에 찍히던 것은 `logs\service.log` 로 간다. 운영 절차 전체 —
-서비스 다루기 · 운영 리듬 · 백업 · 판올림 — 는
-[`docs/operations.md`](docs/operations.md) 에 있다.
+서비스 다루기 · 운영 리듬 · 백업 · 업그레이드 — 는
+[`docs/operations.md`](docs/operations.md) 에 있다. Linux 는 systemd 유닛으로 —
+[`docs/linux-setup.md`](docs/linux-setup.md) 9단계.
 
 ---
 
@@ -135,22 +136,24 @@ syft dir:/ -o cyclonedx-json > web-01.sbom.json      # 서버 전체
 syft <이미지> -o cyclonedx-json > app.sbom.json       # 컨테이너
 ```
 
-CycloneDX · SPDX · syft 자체 형식 모두 받는다. grype 이 읽을 수 있으면 된다.
+**JSON 셋만 받는다** — CycloneDX JSON · SPDX JSON · syft JSON. 패키지 목록을
+JSON 에서만 읽으므로 XML·tag-value 는 업로드하는 자리에서 돌려보낸다.
 
 ### 웹에서
 
-1. **자산 등록** — 서버 한 대를 등록한다. 관리 단위는 스캔이 아니라 서버다.
-2. **SBOM 올리기** — 그 자산 안에서 올린다. grype 이 뒤에서 돌고, 끝나면
+1. **자산 등록** — 서버 한 대를 등록한다. 관리 단위는 검사가 아니라 서버다.
+2. **SBOM 업로드** — 그 자산 안에서 업로드하고 `검사 시작`. grype 이 뒤에서 돌고, 끝나면
    이력에 나타난다.
-3. **취약점 보기** — 심각도·수정본 유무·CVE 로 거르고 정렬한다. 행의 `적기`
-   로 검토 결과를 남긴다 — `해당 없음`·`오탐` 은 목록에서 빠지지만 **탐지
+3. **취약점 보기** — 심각도·수정 버전 유무·CVE 로 거르고 정렬한다. 행의 `작성`
+   으로 검토 결과를 남긴다 — `해당 없음`·`오탐` 은 목록에서 빠지지만 **탐지
    건수는 그대로다.**
 4. **패키지 보기** — 무엇이 어디에 몇 버전으로 깔려 있나. 취약점이 없는
-   패키지도 있다. `버전 갈림` 딱지가 이 화면의 핵심 신호다 — 취약한 버전과
-   안전한 버전이 섞였다는 뜻이고, 곧 안 올린 자산이 남았다는 뜻이다.
+   패키지도 있다. `일부만 업그레이드` 딱지가 이 화면의 핵심 신호다 — 취약한 버전과
+   안전한 버전이 섞였다는 뜻이고, 곧 업그레이드하지 않은 자산이 남았다는 뜻이다.
 5. **조치 등록** — 보고서의 조치 대상 표에서 그 자리에 담당·기한을 정한다.
 6. **보고서** — 자산 한 대, 또는 구역·기간. 표와 각주뿐이고 산문이 없다.
-   인쇄하면 그대로 PDF 가 된다.
+   인쇄하면 그대로 PDF 가 된다. 열 때마다 지금 데이터로 계산한 초안이고, 결재에 올릴
+   것은 `발행` 으로 그 순간의 문서를 발행본으로 남긴다(발행 번호 · 문서의 해시).
 7. **CSV 내려받기** — 화면의 필터가 그대로 적용된다. 엑셀에서 바로 열린다.
 
 ### 관리 (설정 화면)
@@ -162,13 +165,14 @@ CycloneDX · SPDX · syft 자체 형식 모두 받는다. grype 이 읽을 수 �
 - **접근 IP** — 허용 대역 밖이면 로그인 화면도 열리지 않는다. 비워 두면
   제한하지 않는다(로그인은 여전히 필요하다). 지금 접속 중인 주소가 빠진
   목록은 저장되지 않는다 — 저장하는 순간 본인이 잠긴다.
-- **도구 상태** — grype 을 실제로 불러 판을 확인한다.
+- **도구 상태** — grype 을 실제로 불러 버전을 확인한다.
 
 ### 지울 때
 
-자산을 지우면 **그 안의 스캔·탐지·조치와 디스크에 보관된 SBOM·검사 결과가
+자산을 지우면 **그 안의 검사·탐지·조치·검토 결과와 디스크에 보관된 SBOM·검사 결과가
 함께 사라진다.** 무엇이 몇 건 지워지는지 화면에 표시되고, 자산 이름을 정확히
-입력해야 실행된다.
+입력해야 실행된다. 발행본은 남는다 — 발행 때의 문서 그대로다. 발행본이 가리키는
+검사는 하나씩 지우지 못한다.
 
 ---
 
@@ -207,19 +211,28 @@ false 로 채우면 "악용 확률 0%"·"악용된 적 없음"이라는, 아무�
 **무엇으로 판정했는지 남긴다.** grype 판과 취약점 DB 기준일을 결과와 함께
 저장한다. 없으면 몇 달 뒤 같은 SBOM 의 결과가 달라진 이유를 설명할 수 없다.
 
+**결재한 문서를 다시 계산하지 않는다.** 보고서는 열 때마다 지금 데이터로 계산된다 —
+검토 결과를 하나 적으면 지난달 보고서의 숫자도 바뀐다. 결재에 올릴 것은 발행해 그 순간의
+문서와 그 SHA-256 을 저장하고, 볼 때마다 대조한다. 발행하지 않은 것은 `초안` 이라고 찍는다.
+
 **CVE 번호를 앞에 놓는다.** 언어 생태계에서 grype 의 주 식별자는 GHSA 인데,
 결재·보고는 CVE 번호로 돈다. grype 이 함께 준 CVE 를 꺼내 크게 쓰고 GHSA 는
 옆에 남긴다 — 주 식별자를 바꾸는 것이 아니라 같은 응답 안의 값을 옮긴 것이고,
 CVE 가 없으면 지어내지 않는다.
 
-**이력은 (CVE, 패키지명) 으로 대조한다.** 버전을 넣으면 부분 패치한 건이
-"해소 1건 + 신규 1건"으로 갈라져 화면이 거짓말을 한다.
+**이력은 (번호, 패키지 식별자) 로 대조한다.** 패키지 식별자는 purl 에서 버전 · 한정자를
+뗀 것이다 — 이름만으로는 npm 과 PyPI 의 semver, groupId 만 다른 jackson-databind 가 한
+패키지가 된다. 버전을 넣으면 부분 패치한 건이
+"해소 1건 + 신규 1건"으로 갈라져 화면이 거짓말을 한다. 번호는 주 식별자와 함께
+온 CVE 를 둘 다 보고, 하나라도 같으면 같은 취약점이다 — 같은 취약점이 한 번은
+CVE 로, 한 번은 GHSA 로 와도 갈라지지 않는다. 검토 결과도 같은 규칙으로 찾는다.
+두 번호로 따로 적힌 것이 둘이면 나중에 고친 것을 따른다.
 
 **접근 통제는 소켓 주소로만 한다.** `X-Forwarded-For` 는 누구든 채워 보낼 수
 있어서, 그것을 믿으면 허용 목록이 헤더 한 줄로 우회된다. 이름 조회도 하지
 않는다 — DNS 가 느리거나 결과가 바뀔 때 접근 통제가 함께 흔들린다.
 
-**지우면 파일도 지운다.** 스캔 결과의 DB 행만 지우면 디스크에 SBOM 이 남고,
+**지우면 파일도 지운다.** 검사 결과의 DB 행만 지우면 디스크에 SBOM 이 남고,
 그 안에는 그 서버에 설치된 패키지 목록이 통째로 들어 있다.
 
 ---
@@ -233,7 +246,7 @@ CVE 가 없으면 지어내지 않는다.
 `GrypeMapperTest` 는 **실제 grype 0.87 이 낸 98건짜리 출력 전체**를 태운다.
 손으로 만든 픽스처로는 안 잡히는 것들이 있었다 — `descriptor.db.location` 이
 숫자가 아니라 경로 문자열이었고, CVSS 벡터가 174자여서 열 폭을 넘겼다. 둘 다
-스캔 전체를 잃게 만드는 오류였다.
+검사 전체를 잃게 만드는 오류였다.
 
 ---
 
@@ -251,15 +264,7 @@ CVE 가 없으면 지어내지 않는다.
 ```bash
 DB_PORT=13306 ./tests/check-mariadb.sh        # 진짜 DB + Flyway 스키마로 전체 시험
 DB_PORT=13306 ./tests/check-migrations.sh     # 빈 DB 와 데이터가 있는 DB 양쪽에 태운다
-python3 tests/check-table-width.py 1280       # 표가 칸을 넘는지 (브라우저로 실측)
-python3 tests/check-links.py                  # 주소에 빈 값이 붙는지
-python3 tests/check-uniform.py                # 단추·입력칸이 한 모양인지
-python3 tests/check-contrast.py               # 글자 대비 (WCAG 2.1 AA)
 ```
-
-아래 둘은 **브라우저만 알 수 있는 것**이라 시험이 아니라 스크립트다. 표가
-칸을 넘는지는 글자 폭을 실제로 재야 알고, 링크는 그려진 뒤의 모양을 봐야 안다
-(`./scripts/run-server.sh` 로 띄운 뒤에 돌린다).
 
 ---
 
@@ -268,7 +273,7 @@ python3 tests/check-contrast.py               # 글자 대비 (WCAG 2.1 AA)
 우리 코드는 루트 [`LICENSE`](LICENSE) — MIT.
 
 쓰는 것들의 목록은 [`NOTICE.md`](NOTICE.md) 에 있다. **이 도구로 이 도구의
-SBOM 을 뽑아서 만든다** — 손으로 적은 목록은 다음 판올림에서 반드시 어긋난다.
+SBOM 을 뽑아서 만든다** — 손으로 적은 목록은 다음 업그레이드에서 반드시 어긋난다.
 
 ```bash
 scripts/make-notice.sh     # syft 로 배포물을 훑어 NOTICE.md 를 다시 만든다

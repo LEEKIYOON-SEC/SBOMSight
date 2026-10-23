@@ -17,10 +17,59 @@ import java.util.Optional;
  * 자산을 함께 읽는다. {@code open-in-view} 를 꺼 두었으므로 화면을 그릴 때는
  * 이미 세션이 닫혀 있고, 여기서 안 읽어 오면 그 자리에서 터진다. 열어 두는
  * 쪽으로 도망가면 표 한 장에 질의가 줄 수만큼 더 나간다.
+ *
+ * <p><b>운영 종료한 자산의 것을 셀지는 부르는 쪽이 정한다</b>
+ * ({@code includeArchived}). 기둥의 숫자는 늘 빼고, 대응 화면은
+ * {@code 운영 종료 자산 포함} 을 켰을 때만 넣는다. 앞서 여기 질의들은 자산을
+ * 보지 않아서, 운영 종료한 자산이 목록에서 사라진 뒤에도 그 자산의 기한 지난
+ * 조치가 배지에 남았다(RetiredAssetActionsTest).
  */
 public interface RemediationRepository extends JpaRepository<Remediation, Long> {
 
-    Optional<Remediation> findByAssetIdAndPackageName(Long assetId, String packageName);
+    /** (자산, 패키지 식별자)의 조치를 회차가 늦은 것부터 — 맨 앞이 지금 조치(최신 회차). */
+    List<Remediation> findByAssetIdAndPackageKeyOrderByRoundNoDescIdDesc(Long assetId, String packageKey);
+
+    /**
+     * (자산, 패키지 식별자)의 <b>지금 조치</b> — 최신 회차.
+     *
+     * <p>회차가 생긴 뒤로(D5, V19) 한 (자산, 패키지)에 조치가 여럿일 수 있다. 앞서 쓰던
+     * {@code findByAssetIdAndPackageName} 은 하나를 전제로 해, 둘째 회차가 생기는 순간
+     * "결과가 하나가 아님" 으로 터진다. 열린 조치는 많아야 하나이고, 있으면 그것이 최신
+     * 회차다(RemediationService).
+     *
+     * <p>패키지는 이름이 아니라 식별자다(V24) — 이름으로 찾아 npm 의 semver 와 PyPI 의
+     * semver 가 한 조치를 나눠 가졌다. <b>식별자가 없으면 아무것도 아니다</b> — 이름에서 온
+     * 메서드는 {@code null} 을 {@code IS NULL} 로 바꿔, V24 가 가르지 못한 옛 조치를 돌려준다.
+     */
+    default Optional<Remediation> findLatest(Long assetId, String packageKey) {
+        if (packageKey == null || packageKey.isEmpty()) {
+            return Optional.empty();
+        }
+        return findByAssetIdAndPackageKeyOrderByRoundNoDescIdDesc(assetId, packageKey)
+                .stream().findFirst();
+    }
+
+    /** 이 가운데 다음 회차가 이어받은 조치 — 지난 회차라 완료 뒤 표시를 붙이지 않는다. */
+    @Query("SELECT r.previousId FROM Remediation r WHERE r.previousId IN :ids")
+    List<Long> findPreviousIdsIn(@Param("ids") java.util.Collection<Long> ids);
+
+    /** 이 조치를 이은 다음 회차 — 있으면 이 조치는 다시 열지도 지우지도 않는다. */
+    Optional<Remediation> findFirstByPreviousId(Long previousId);
+
+    /**
+     * 기간 안에 <b>완료로 바뀐</b> 조치 — 구역 보고서의 `기간 중 완료`.
+     *
+     * <p>완료 시각 칸({@code closed_at})으로 세면 다시 연 순간 그 칸이 비어, 기간 중에
+     * 있었던 완료가 사라졌다(재현 시험 P2). 이력의 완료 줄은 남는다. 같은 조치가 기간
+     * 중에 두 번 완료돼도 하나로 센다.
+     */
+    @Query("""
+           SELECT DISTINCT e.remediation.id FROM RemediationEvent e
+           WHERE e.toStatus = 'DONE' AND e.fromStatus <> 'DONE'
+             AND e.at >= :start AND e.at < :end
+           """)
+    List<Long> findClosedBetween(@Param("start") java.time.Instant start,
+                                 @Param("end") java.time.Instant end);
 
     List<Remediation> findByAssetIdOrderByStatusAscPackageNameAsc(Long assetId);
 
@@ -34,11 +83,13 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
     Optional<Remediation> findDetail(@Param("id") Long id);
 
     @Query("""
-           SELECT r FROM Remediation r JOIN FETCH r.asset
+           SELECT r FROM Remediation r JOIN FETCH r.asset a
            WHERE r.status IN :statuses
-           ORDER BY r.dueDate ASC, r.asset.name ASC, r.packageName ASC
+             AND (:includeArchived = TRUE OR a.archivedAt IS NULL)
+           ORDER BY r.dueDate ASC, a.name ASC, r.packageName ASC
            """)
-    List<Remediation> findAllWithAsset(@Param("statuses") List<RemediationStatus> statuses);
+    List<Remediation> findAllWithAsset(@Param("statuses") List<RemediationStatus> statuses,
+                                       @Param("includeArchived") boolean includeArchived);
 
     /**
      * 대응 화면의 조치 탭.
@@ -57,6 +108,7 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
            SELECT r FROM Remediation r JOIN FETCH r.asset a JOIN FETCH a.zone z
            WHERE r.status IN :statuses
              AND (:zoneId IS NULL OR z.id = :zoneId)
+             AND (:includeArchived = TRUE OR a.archivedAt IS NULL)
            ORDER BY CASE WHEN r.status = 'DONE' THEN 2
                          WHEN r.dueDate < :today THEN 0
                          ELSE 1 END,
@@ -64,13 +116,14 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
            """)
     List<Remediation> findForList(@Param("zoneId") Long zoneId,
                                   @Param("statuses") List<RemediationStatus> statuses,
-                                  @Param("today") LocalDate today);
+                                  @Param("today") LocalDate today,
+                                  @Param("includeArchived") boolean includeArchived);
 
     /**
      * 여러 자산치 — 목록이 줄마다 "조치가 걸렸나" 를 찍는 데 쓴다.
      *
      * <p>줄마다 물으면 표 한 장에 수백 번 왕복한다. 한 번에 가져와 자바에서
-     * {@code (자산id, 패키지명)} 으로 맞춘다.
+     * {@code (자산id, 패키지 식별자)} 로 맞춘다.
      */
     @Query("""
            SELECT r FROM Remediation r JOIN FETCH r.asset a
@@ -80,23 +133,44 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
 
     /** 기한이 지난 채 아직 안 닫힌 것. 첫 화면에서 먼저 보여야 하는 값이다. */
     @Query("""
-           SELECT r FROM Remediation r JOIN FETCH r.asset
+           SELECT r FROM Remediation r JOIN FETCH r.asset a
            WHERE r.dueDate < :today AND r.status IN ('OPEN', 'IN_PROGRESS')
+             AND (:includeArchived = TRUE OR a.archivedAt IS NULL)
            ORDER BY r.dueDate ASC
            """)
-    List<Remediation> findOverdue(@Param("today") LocalDate today);
+    List<Remediation> findOverdue(@Param("today") LocalDate today,
+                                  @Param("includeArchived") boolean includeArchived);
 
-    long countByAssetIdAndStatusIn(Long assetId, List<RemediationStatus> statuses);
+    /**
+     * 자산 목록 — 자산마다 그 상태인 조치 수를 <b>한 번에</b>.
+     *
+     * <p>앞서 자산마다 따로 셌다(countByAssetIdAndStatusIn). 목록의 요약 줄이
+     * 거르기 전 전체를 세므로 쪽에 안 보이는 자산까지 — 자산 수만큼 왕복했다.
+     */
+    @Query("""
+           SELECT r.asset.id AS assetId, COUNT(r) AS total FROM Remediation r
+           WHERE r.status IN :statuses
+           GROUP BY r.asset.id
+           """)
+    List<FindingRepository.AssetCount> countPerAsset(@Param("statuses") List<RemediationStatus> statuses);
 
     /** 사이드바 숫자 — 아직 안 닫힌 조치. */
-    long countByStatusIn(List<RemediationStatus> statuses);
+    @Query("""
+           SELECT COUNT(r) FROM Remediation r
+           WHERE r.status IN :statuses
+             AND (:includeArchived = TRUE OR r.asset.archivedAt IS NULL)
+           """)
+    long countByStatusIn(@Param("statuses") List<RemediationStatus> statuses,
+                         @Param("includeArchived") boolean includeArchived);
 
     /** 사이드바 숫자 — 기한이 지난 채 안 닫힌 것. 붉게 띄우는 근거다. */
     @Query("""
            SELECT COUNT(r) FROM Remediation r
            WHERE r.dueDate < :today AND r.status IN ('OPEN', 'IN_PROGRESS')
+             AND (:includeArchived = TRUE OR r.asset.archivedAt IS NULL)
            """)
-    long countOverdue(@Param("today") LocalDate today);
+    long countOverdue(@Param("today") LocalDate today,
+                      @Param("includeArchived") boolean includeArchived);
 
 
     /** 구역 보고서용 — 한 구역(또는 전체)의 조치 전부. 닫힌 것도 함께 센다. */

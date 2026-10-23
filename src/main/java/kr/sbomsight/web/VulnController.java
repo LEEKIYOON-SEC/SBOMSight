@@ -1,13 +1,16 @@
 package kr.sbomsight.web;
 
 import jakarta.servlet.http.HttpServletResponse;
+import kr.sbomsight.domain.CvssVector;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.service.CsvWriter;
+import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.Paging;
 import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.ZoneService;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,7 +21,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
@@ -54,8 +60,11 @@ public class VulnController {
     private final FindingRepository findings;
     private final ZoneService zones;
     private final VulnQuery query;
+    private final FindingAnalysisService analyses;
 
-    public VulnController(FindingRepository findings, ZoneService zones, VulnQuery query) {
+    public VulnController(FindingRepository findings, ZoneService zones, VulnQuery query,
+                          FindingAnalysisService analyses) {
+        this.analyses = analyses;
         this.findings = findings;
         this.zones = zones;
         this.query = query;
@@ -67,9 +76,11 @@ public class VulnController {
                         @RequestParam(required = false) Long asset,
                         @RequestParam(defaultValue = "item") String group,
                         @RequestParam(required = false) String q,
+                        @RequestParam(required = false) String pkg,
                         @RequestParam(required = false) String severity,
                         @RequestParam(required = false) Boolean fixable,
                         @RequestParam(required = false) Boolean kev,
+                        @RequestParam(defaultValue = "false") boolean includeDone,
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(required = false) Integer size,
                         @RequestParam(required = false) Integer jump,
@@ -86,8 +97,12 @@ public class VulnController {
         // 아니라 아직 아무것도 고르지 않은 상태다.
         VulnQuery.Links links = new VulnQuery.Links("/vulns", null)
                 .with("zone", zone).with("scan", scan).with("group", group)
-                .with("q", q).with("severity", severity)
+                // 패키지 하나(식별자) — 묶은 줄 · 패키지 화면의 링크가 싣는다. 검색어와 따로 둔다:
+                // 검색어는 이름의 일부라 같은 이름의 다른 패키지도 걸린다.
+                .with("q", q).with("pkg", pkg).with("severity", severity)
                 .with("fixable", fixable).with("kev", kev)
+                // 끈 것은 적지 않는다 — 빼는 것이 기본이다.
+                .with("includeDone", includeDone ? "true" : null)
                 .size(size)
                 .with("sort", "severity".equals(sort) ? null : sort)
                 .with("dir", "desc".equals(dir) ? null : dir);
@@ -106,6 +121,7 @@ public class VulnController {
         model.addAttribute("selectedScan", scan);
         model.addAttribute("group", group);
         model.addAttribute("q", q);
+        model.addAttribute("pkg", pkg == null || pkg.isBlank() ? null : pkg.trim());
         model.addAttribute("severity", severity);
         model.addAttribute("fixable", fixable);
         model.addAttribute("kev", kev);
@@ -113,7 +129,8 @@ public class VulnController {
         model.addAttribute("dir", dir);
         model.addAttribute("links", links);
 
-        query.fill(model, scope, group, q, severity, fixable, kev, page, size, sort, dir);
+        query.fill(model, scope, group, q, pkg, severity, fixable, kev, includeDone,
+                   page, size, sort, dir);
         return "vulns";
     }
 
@@ -121,30 +138,60 @@ public class VulnController {
     @GetMapping("/{cve}")
     public String detail(@PathVariable String cve,
                          @RequestParam(required = false) Long zone,
+                         @RequestParam(defaultValue = "false") boolean includeDone,
                          @RequestParam(defaultValue = "0") int page,
                          @RequestParam(required = false) Integer size,
                          @RequestParam(required = false) Integer jump,
                          Model model) {
         VulnQuery.Links links = new VulnQuery.Links("/vulns/" + cve, null)
-                .with("zone", zone).size(size);
+                .with("zone", zone)
+                .with("includeDone", includeDone ? "true" : null)
+                .size(size);
         String jumped = Paging.jump(links, jump);
         if (jumped != null) {
             return jumped;
         }
 
+        // 목록과 같은 규칙 — 해당 없음 · 오탐은 기본에서 뺀다. 빼지 않으면
+        // CVE별 목록의 `영향 자산 3대` 를 눌렀는데 여기서 `4대` 라고 말한다.
         VulnQuery.Scope scope = query.ofZone(zone);
         List<Finding> rows = scope.scanIds().isEmpty()
-                ? List.of() : findings.findByCveIn(scope.scanIds(), cve);
+                ? List.of() : findings.findByCveIn(scope.scanIds(), cve, includeDone);
+        long reviewedOut = scope.scanIds().isEmpty() ? 0
+                : findings.countReviewedOut(scope.scanIds(), cve, null, null, null, null, null);
+        // 걸린 것이 전부 해당 없음 · 오탐이면 없는 CVE 가 아니다 — 그 사실과
+        // 함께 보는 길을 보여 준다. 검토 결과의 CVE 번호를 누르면 여기로 온다.
+        if (rows.isEmpty() && reviewedOut == 0) {
+            throw new ResponseStatusException(NOT_FOUND, cve + "에 걸린 탐지가 없습니다.");
+        }
         if (rows.isEmpty()) {
-            throw new ResponseStatusException(NOT_FOUND, cve + " 로 걸리는 탐지가 없습니다.");
+            return "redirect:" + links.copy().with("includeDone", "true").here();
         }
 
         model.addAttribute("cve", cve);
         model.addAttribute("links", links);
+        model.addAttribute("includeDone", includeDone);
+        model.addAttribute("reviewedOut", reviewedOut);
         model.addAttribute("rows", Paging.slice(rows, page, size));
         // 대표로 한 건을 쓴다 — CVSS·벡터·심각도는 취약점의 속성이라 같다.
         model.addAttribute("first", rows.get(0));
-        model.addAttribute("spread", findings.zoneSpread(scope.scanIds(), cve));
+        // 벡터에 적힌 접근 경로(시안의 `접근 경로` 줄). 읽을 수 없으면(3.x 가
+        // 아니면) 비워 두고 화면이 `판단 불가` 라고 말한다 — 보고서 2.3 과 같다.
+        model.addAttribute("vector", CvssVector.parse(rows.get(0).getCvssVector()).orElse(null));
+        // 자산마다 적어 둔 검토 결과 — 목록(finding-table)과 같은 키로 찾는다.
+        model.addAttribute("analyses", analyses.byAssetKey(
+                rows.stream().map(f -> f.getScan().getAsset().getId()).distinct().toList()));
+        // **대조 방식은 탐지마다 다르다** — 한 CVE 가 어느 자산에서는 패키지
+        // 이름으로, 다른 자산에서는 소스 패키지로 걸린다. 앞서 대표 한 건의 것을
+        // CVE 의 것처럼 찍었다. 전부에서(자른 쪽이 아니라) 방식마다 센다.
+        Map<String, Long> byMatchType = rows.stream()
+                .map(Finding::getMatchType).filter(t -> !t.isBlank())
+                .collect(Collectors.groupingBy(t -> t, Collectors.counting()));
+        model.addAttribute("matchTypes", byMatchType.keySet().stream()
+                .sorted(Comparator.comparingInt(VulnController::rank).thenComparing(t -> t))
+                .map(t -> new MatchTypeCount(t, Finding.matchTypeLabel(t), byMatchType.get(t)))
+                .toList());
+        model.addAttribute("spread", findings.zoneSpread(scope.scanIds(), cve, includeDone));
         // **자른 쪽이 아니라 전부에서 센다.** 한 쪽에 보이는 자산 수를
         // 찍으면 `3대` 인데 쪽이 다섯인 화면이 된다.
         model.addAttribute("assetCount",
@@ -152,30 +199,58 @@ public class VulnController {
         return "vuln-detail";
     }
 
+    /** 대조 방식 하나 — 원문 · 화면 이름(모르는 글자면 빈 글자) · 건수. */
+    public record MatchTypeCount(String raw, String label, long count) {
+    }
+
+    /** grype 의 순서, 모르는 것은 뒤로. */
+    private static int rank(String matchType) {
+        int i = Finding.MATCH_TYPES.indexOf(matchType);
+        return i < 0 ? Finding.MATCH_TYPES.size() : i;
+    }
+
     @GetMapping("/export.csv")
     public void export(@RequestParam(required = false) Long zone,
                        @RequestParam(required = false) Long scan,
                        @RequestParam(required = false) String q,
+                       @RequestParam(required = false) String pkg,
                        @RequestParam(required = false) String severity,
                        @RequestParam(required = false) Boolean fixable,
                        @RequestParam(required = false) Boolean kev,
+                       @RequestParam(defaultValue = "false") boolean includeDone,
                        HttpServletResponse response) throws IOException {
         VulnQuery.Scope scope = scan != null ? query.ofScan(scan) : query.ofZone(zone);
-        // 내려받기는 한 페이지가 아니라 걸린 것 전부다. 화면에 100건만 보이는데
-        // 파일도 100건이면 그 파일로 대조를 할 수 없다.
-        List<Finding> rows = scope.scanIds().isEmpty() ? List.of()
-                // 파일은 언제나 심각한 것부터다. 화면의 정렬 방향을 따라가지
-                // 않는다 — 내려받은 파일이 어떤 순서였는지 나중에 알 수 없으면
-                // 두 파일을 나란히 놓고 대조할 수 없다.
-                : findings.findInBySeverity(scope.scanIds(), blank(q), blank(severity),
-                                            fixable, kev, false, PageRequest.of(0, 100_000))
-                          .getContent();
 
         response.setContentType("text/csv; charset=UTF-8");
         response.setHeader("Content-Disposition",
                 "attachment; filename=\"vulns-" + LocalDate.now() + ".csv\"");
-        CsvWriter.writeLookup(response.getOutputStream(), rows);
+
+        // 내려받기는 한 페이지가 아니라 걸린 것 **전부**다. 화면에 100건만
+        // 보이는데 파일도 100건이면 그 파일로 대조를 할 수 없다.
+        //
+        // **나눠 읽는다.** 앞서는 10만 건을 한 번에 받았고 넘는 것은 말없이
+        // 빠졌다. 한 번에 다 올리면 탐지마다 붙은 설명 · 원문까지 메모리에 함께
+        // 오른다(실측 평균 1.1KB). 파일은 언제나 심각한 것부터다 — 화면의 정렬
+        // 방향을 따라가지 않는다. 어떤 순서였는지 나중에 알 수 없으면 두 파일을
+        // 나란히 놓고 대조할 수 없다.
+        try (CsvWriter.Lookup csv = CsvWriter.lookup(response.getOutputStream())) {
+            if (scope.scanIds().isEmpty()) {
+                return;
+            }
+            for (int page = 0; ; page++) {
+                Slice<Finding> chunk = findings.sliceInBySeverity(
+                        scope.scanIds(), blank(q), blank(pkg), blank(severity), fixable, kev,
+                        includeDone, false, PageRequest.of(page, EXPORT_CHUNK));
+                csv.write(chunk.getContent());
+                if (!chunk.hasNext()) {
+                    break;
+                }
+            }
+        }
     }
+
+    /** 내려받기를 한 번에 읽는 줄 수. */
+    private static final int EXPORT_CHUNK = 2_000;
 
     private String blank(String value) {
         return value == null || value.isBlank() ? null : value.trim();

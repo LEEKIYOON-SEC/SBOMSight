@@ -45,7 +45,7 @@
         <p class="faint" style="margin-bottom:0">
           <span th:text="${filename}">assets.csv</span> ·
           <!--/* 어떤 인코딩으로 읽었는지 밝힌다. 한글이 깨져 보이면 여기부터 본다. */-->
-          <span th:text="${preview.charsetName()} + ' 로 읽음'">UTF-8 로 읽음</span>
+          <span th:text="'인코딩 ' + ${preview.charsetName()}">인코딩 UTF-8</span>
           <span th:if="${preview.headerSkipped()}"> · 첫 줄은 제목으로 보고 건너뜀</span>
         </p>
         <p th:if="${!preview.newZones().isEmpty()}" class="faint" style="margin-bottom:0">

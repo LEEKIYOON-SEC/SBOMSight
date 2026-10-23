@@ -60,6 +60,7 @@ public class PackageController {
                        @RequestParam(name = "vulnerable", required = false) Boolean vulnerableParam,
                        @RequestParam(name = "mixed", required = false) Boolean mixedParam,
                        @RequestParam(required = false) String open,
+                       @RequestParam(name = "openType", required = false) String openType,
                        @RequestParam(defaultValue = "0") int page,
                        @RequestParam(required = false) Integer size,
                        @RequestParam(required = false) Integer jump,
@@ -67,8 +68,12 @@ public class PackageController {
         boolean vulnerable = Boolean.TRUE.equals(vulnerableParam);
         boolean mixed = Boolean.TRUE.equals(mixedParam);
 
+        // 보던 쪽도 싣는다 — [자산 보기]/[접기] 는 목록을 바꾸지 않으니 그 쪽에서 펼쳐야 한다.
+        // 앞서 싣지 않아 2쪽의 줄을 펼치면 1쪽이 열리고 아무것도 펼쳐지지 않았다. 거르개 ·
+        // 쪽 크기 · 쪽 넘김 링크는 쪽 번호를 덮거나 빼므로(VulnQuery.Links) 그대로 첫 쪽으로 간다.
         VulnQuery.Links links = filters(new VulnQuery.Links("/packages", null),
-                                        zone, type, q, vulnerable, mixed).size(size);
+                                        zone, type, q, vulnerable, mixed).size(size)
+                .with("page", page > 0 ? page : null);
         String jumped = Paging.jump(links, jump);
         if (jumped != null) {
             return jumped;
@@ -96,17 +101,31 @@ public class PackageController {
         model.addAttribute("csv", filters(new VulnQuery.Links("/packages/export.csv", null),
                                           zone, type, q, vulnerable, mixed));
         // 그 패키지의 취약점으로 — 구역은 이어 간다.
-        model.addAttribute("vulnLinks", new VulnQuery.Links("/vulns", null).with("zone", zone));
+        //
+        // **패키지별로 묶어 보낸다.** 앞서 검색어(이름)로 보내 `curl` 이 `libcurl4` 까지
+        // 걸렸다 — 패키지별이면 각 패키지가 제 수로 한 줄씩 섰다. 이제 식별자(`pkg`)로
+        // 보낸다 — 그 패키지 한 줄만 선다. 같은 이름의 다른 패키지(npm 과 PyPI 의 semver,
+        // groupId 만 다른 jackson-databind)도 섞이지 않는다. 이 화면의 수는 탐지
+        // 건수이므로 해당 없음 · 오탐도 넣어 연다.
+        model.addAttribute("vulnLinks", new VulnQuery.Links("/vulns", null)
+                .with("zone", zone).with("group", "package").with("includeDone", "true"));
 
         // 펼친 줄. 주소에 남는다 — 새로고침하면 접히는 화면은 공유할 수 없다.
+        //
+        // 줄이 패키지 식별자라 `open` 에 식별자를 싣는다(`pkg:…`). 식별자가 붙기 전의 주소 —
+        // 이름과 유형(`?open=openssl&openType=rpm`), 이름만(`?open=openssl`) — 은 그 이름
+        // (과 유형)의 줄을 전부 펼친다. 적어 둔 주소가 죽지 않게.
+        String openKind = openType == null || openType.isBlank() ? null : openType;
         model.addAttribute("open", open);
+        model.addAttribute("openByKey", PackageService.isKey(open));
+        model.addAttribute("openType", openKind);
         if (open != null && !open.isBlank()) {
-            model.addAttribute("openRows", packages.assetsOf(open, zone));
+            model.addAttribute("openRows", packages.assetsOf(open, openKind, zone));
         }
 
         // 인벤토리 자체가 비어 있는가. "거르개에 걸리는 것이 없다" 와
         // "아직 아무 자산도 다시 검사하지 않았다" 는 다른 말이다.
-        model.addAttribute("inventoryEmpty", components.count() == 0);
+        model.addAttribute("inventoryEmpty", components.countCurrent() == 0);
         return "packages";
     }
 

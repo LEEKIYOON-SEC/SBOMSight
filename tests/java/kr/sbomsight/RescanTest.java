@@ -138,7 +138,7 @@ class RescanTest {
 
         assertThatThrownBy(() -> scanService.rescan(scan, "tester"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("보관된 SBOM 이 없어");
+                .hasMessageContaining("보관된 SBOM이 없어");
     }
 
     @Test

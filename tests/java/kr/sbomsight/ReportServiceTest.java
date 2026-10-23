@@ -15,8 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * 보고서 — 기승전결.
@@ -133,11 +135,11 @@ class ReportServiceTest {
     void chapter2CountsOurOwnReview() {
         Scan scan = seedTypicalScan();      // 6건
 
-        analyses.record(asset, "CVE-1", "openssl", AnalysisState.IN_TRIAGE,
+        analyses.record(asset, "CVE-1", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.IN_TRIAGE,
                         null, null, "", "", "", null, "tester");
-        analyses.record(asset, "CVE-2", "openssl", AnalysisState.EXPLOITABLE,
+        analyses.record(asset, "CVE-2", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.EXPLOITABLE,
                         null, null, "", "", "", null, "tester");
-        analyses.record(asset, "CVE-5", "glibc", AnalysisState.NOT_AFFECTED,
+        analyses.record(asset, "CVE-5", "glibc", PackageKey.of(null, "rpm", "glibc"), AnalysisState.NOT_AFFECTED,
                         AnalysisJustification.CODE_NOT_REACHABLE, null, "", "", "", null, "tester");
 
         ReportService.Summary ch = reports.build(scan).summary();
@@ -181,7 +183,7 @@ class ReportServiceTest {
         scans.saveAndFlush(scan);
 
         // 사람은 CVE 번호로 적어 둔다.
-        analyses.record(asset, "CVE-2021-44228", "log4j-core", AnalysisState.FALSE_POSITIVE,
+        analyses.record(asset, "CVE-2021-44228", "log4j-core", PackageKey.of(null, "rpm", "log4j-core"), AnalysisState.FALSE_POSITIVE,
                         null, null, "", "", "", null, "tester");
 
         ReportService.Report report = reports.build(scan);
@@ -203,35 +205,38 @@ class ReportServiceTest {
      * 올라가는 문서에서 가장 먼저 의심받는다.
      *
      * <p>여기서 못 박는 것은 <b>두 수가 실제로 맞물린다</b>는 것이다:
-     * 등록 건수 + 미등록 건수 = 2.2 의 `수정 버전 있음`. 어긋나면 어느
-     * 쪽이든 틀린 것이고, 보고서가 스스로와 모순된다.
+     * 대기 · 진행 + 완료 · 탐지 남음 + 미등록 건수 = 2.2 의 `수정 버전 있음`.
+     * 어긋나면 어느 쪽이든 틀린 것이고, 보고서가 스스로와 모순된다. 세
+     * 갈래가 된 까닭은 {@code RemediationProgressTest} 에 있다.
      */
     @Test
-    @DisplayName("5장의 등록·미등록 건수가 2.2 의 수정 버전 있음과 맞는다")
+    @DisplayName("5장의 세 갈래 건수가 2.2 의 수정 버전 있음과 맞는다")
     void chapter5FindingCountsReconcileWithChapter2() {
         Scan scan = seedTypicalScan();      // 6건 — openssl 3 · curl 1 (고칠 수 있음), glibc 2 (없음)
 
         // 아직 아무것도 등록하지 않았다.
         ReportService.Report before = reports.build(scan);
-        assertThat(before.progress().trackedFindings()).isZero();
+        assertThat(before.progress().openFindings()).isZero();
+        assertThat(before.progress().doneRemainingFindings()).isZero();
         assertThat(before.progress().untrackedFindings())
                 .as("등록이 없으면 고칠 수 있는 건 전부가 미등록이다")
                 .isEqualTo(before.summary().fixable());
 
         // openssl 하나를 등록한다 — 패키지 하나지만 건은 셋이다.
-        remediations.saveAndFlush(new Remediation(asset, "openssl", "tester"));
+        remediations.saveAndFlush(new Remediation(asset, "openssl", PackageKey.of(null, "rpm", "openssl"), "tester"));
 
         ReportService.Report after = reports.build(scan);
         assertThat(after.progress().tracked())
                 .as("패키지로는 하나")
                 .isEqualTo(1);
-        assertThat(after.progress().trackedFindings())
+        assertThat(after.progress().openFindings())
                 .as("건으로는 셋 — 이 차이가 보이지 않으면 두 수를 이을 수 없다")
                 .isEqualTo(3);
         assertThat(after.progress().untrackedFindings()).isEqualTo(1);   // curl
 
-        assertThat(after.progress().trackedFindings() + after.progress().untrackedFindings())
-                .as("등록 + 미등록 이 2.2 의 `수정 버전 있음` 과 어긋나면 보고서가 스스로와 모순된다")
+        assertThat(after.progress().openFindings() + after.progress().doneRemainingFindings()
+                   + after.progress().untrackedFindings())
+                .as("세 갈래의 합이 2.2 의 `수정 버전 있음` 과 어긋나면 보고서가 스스로와 모순된다")
                 .isEqualTo(after.summary().fixable());
     }
 
@@ -281,7 +286,7 @@ class ReportServiceTest {
         ReportService.PackageAction openssl = ch.fixTargets().stream()
                 .filter(a -> a.packageName().equals("openssl")).findFirst().orElseThrow();
         assertThat(openssl.fixableCount()).isEqualTo(3);
-        assertThat(openssl.targetVersion()).isEqualTo("3.0.7");
+        assertThat(openssl.fixVersions()).containsExactly("3.0.7");
         assertThat(openssl.criticalCount()).isEqualTo(1);
         assertThat(openssl.maxCvss()).isEqualByComparingTo("9.80");
 
@@ -331,7 +336,7 @@ class ReportServiceTest {
     void chapter4SplitsTrackedAndUntracked() {
         Scan scan = seedTypicalScan();
 
-        Remediation remediation = new Remediation(asset, "openssl", "admin");
+        Remediation remediation = new Remediation(asset, "openssl", PackageKey.of(null, "rpm", "openssl"), "admin");
         remediation.setOwner("인프라운영팀");
         remediation.moveTo(RemediationStatus.IN_PROGRESS, "admin", "적용 예정");
         remediations.save(remediation);
@@ -428,6 +433,117 @@ class ReportServiceTest {
                 .extracting(ReportService.PackageAction::reachableCount).isEqualTo(0L);
         // 3장 표가 덮는 원격 접근 건수 합계 — log4j-core 의 2건뿐이다.
         assertThat(ch.resolvableReach()).isEqualTo(2);
+    }
+
+    /** 버전 · 유형까지 지정해 밖에서 바로 닿는 건 하나를 만든다. */
+    private void reachableAt(Scan scan, String cve, String pkg, String version, String type,
+                             String fixState) {
+        Finding f = finding(scan, cve, pkg, version, "High", fixState,
+                            "fixed".equals(fixState) ? "9.9.9" : "", 9.8);
+        f.setPackageType(type);
+        f.setCvssVector("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H");
+        findings.save(f);
+    }
+
+    /**
+     * <b>원격 접근은 그 줄의 것만 센다.</b>
+     *
+     * <p>3 · 4장의 한 줄은 (이름, 버전, 유형)인데 원격 접근은 이름으로만 모았다. 한
+     * 자산에 같은 패키지가 두 버전으로 깔리면 — jar 가 두 곳에 풀린 것처럼 — 그 이름의
+     * 수가 버전마다 되풀이되어 찍혔고, 합계 줄은 그것을 다시 더해 부풀었다. 이름이
+     * 같고 유형이 다른 것(배포판 패키지와 바이너리)도 같았다.
+     */
+    @Test
+    @DisplayName("3 · 4장 — 원격 접근은 줄(이름 · 버전 · 유형)마다 센다 — 합계가 부풀지 않는다")
+    void reachIsCountedPerRowNotPerName() {
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scans.saveAndFlush(scan);
+        // 같은 이름 두 버전 — 2.9.8 에 바로 닿는 건 둘, 2.12.1 에 하나.
+        reachableAt(scan, "CVE-A", "jackson-databind", "2.9.8", "java-archive", "fixed");
+        reachableAt(scan, "CVE-B", "jackson-databind", "2.9.8", "java-archive", "fixed");
+        reachableAt(scan, "CVE-C", "jackson-databind", "2.12.1", "java-archive", "fixed");
+        // 같은 이름 · 같은 버전 · 다른 유형 — 바이너리 쪽은 수정 버전이 없어 4장에 선다.
+        reachableAt(scan, "CVE-E", "openssl", "3.0.2", "deb", "fixed");
+        reachableAt(scan, "CVE-F", "openssl", "3.0.2", "binary", "not-fixed");
+        scan.setMatchCount(5);
+        scan.setFindingCount(5);
+        scans.saveAndFlush(scan);
+
+        ReportService.Targets ch = reports.build(scan).targets();
+
+        assertThat(ch.fixTargets())
+                .extracting(a -> a.packageName() + "@" + a.currentVersion() + "/" + a.packageType(),
+                            ReportService.PackageAction::reachableCount)
+                .containsExactlyInAnyOrder(tuple("jackson-databind@2.9.8/java-archive", 2L),
+                                           tuple("jackson-databind@2.12.1/java-archive", 1L),
+                                           tuple("openssl@3.0.2/deb", 1L));
+        assertThat(ch.blocked())
+                .extracting(a -> a.packageName() + "@" + a.currentVersion() + "/" + a.packageType(),
+                            ReportService.PackageAction::reachableCount)
+                .containsExactly(tuple("openssl@3.0.2/binary", 1L));
+        assertThat(ch.resolvableReach())
+                .as("3장 합계가 버전마다 되풀이된 수를 다시 더했다")
+                .isEqualTo(4);
+        // 줄마다 센 것을 다 더하면 목록의 원격 접근 전부다 — 어긋나면 어느 줄이 남의 건을 셌다.
+        assertThat(Stream.concat(ch.fixTargets().stream(), ch.blocked().stream())
+                         .mapToLong(ReportService.PackageAction::reachableCount).sum())
+                .isEqualTo(ch.exposure().reachable());
+    }
+
+    /**
+     * <b>4장의 검토는 그 줄의 건만 센다.</b>
+     *
+     * <p>4장의 한 줄은 (이름, 버전, 유형)인데 검토 결과는 이름으로만 모았다. 같은 이름의
+     * 다른 버전 · 유형 것(3장에 선 것까지)이 그 줄의 `검토` · `대응 방안` · `재검토일` 에
+     * 섞였다 — 건수 2인 줄에 `2 / 4건` 이 찍혔고, 한 건도 답하지 않은 줄에 남의 위험 수용과
+     * 그 재검토일이 붙었다.
+     */
+    @Test
+    @DisplayName("4장 — 검토 · 대응 방안 · 재검토일은 그 줄(이름 · 버전 · 유형)의 건만 센다")
+    void chapter4ReviewIsCountedPerRow() {
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scans.saveAndFlush(scan);
+        // 4장 두 줄 — 같은 이름 · 같은 버전 · 다른 유형
+        finding(scan, "CVE-1", "openssl", "1.0.0", "High", "not-fixed", "", 7.5);
+        finding(scan, "CVE-2", "openssl", "1.0.0", "High", "not-fixed", "", 7.5);
+        Finding binary = finding(scan, "CVE-6", "openssl", "1.0.0", "High", "not-fixed", "", 7.5);
+        binary.setPackageType("binary");
+        findings.save(binary);
+        // 3장 한 줄 — 같은 이름 · 다른 버전
+        finding(scan, "CVE-3", "openssl", "1.1.0", "High", "fixed", "1.1.9", 7.5);
+        scan.setMatchCount(4);
+        scan.setFindingCount(4);
+        scans.saveAndFlush(scan);
+
+        java.time.LocalDate reviewBy = java.time.LocalDate.now().plusDays(30);
+        analyses.record(asset, "CVE-1", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.IN_TRIAGE,
+                        null, null, "", "", "", null, "tester");
+        analyses.record(asset, "CVE-2", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.EXPLOITABLE,
+                        null, AnalysisResponse.WILL_NOT_FIX, "", "", "", reviewBy, "tester");
+
+        ReportService.Report report = reports.build(scan);
+        ReportService.NoFixRow rpm = report.targets().noFixRows().stream()
+                .filter(r -> r.action().packageType().equals("rpm")).findFirst().orElseThrow();
+        ReportService.NoFixRow other = report.targets().noFixRows().stream()
+                .filter(r -> r.action().packageType().equals("binary")).findFirst().orElseThrow();
+
+        assertThat(rpm.reviewed().done()).isEqualTo(2);
+        assertThat(rpm.reviewed().total())
+                .as("검토의 분모가 그 줄의 건수가 아니다")
+                .isEqualTo(rpm.action().total()).isEqualTo(2);
+        assertThat(rpm.responses()).containsEntry(AnalysisResponse.WILL_NOT_FIX, 1L);
+        assertThat(rpm.earliestReview()).isEqualTo(reviewBy);
+
+        assertThat(other.reviewed().done()).as("답한 적 없는 줄에 남의 검토가 세어졌다").isZero();
+        assertThat(other.reviewed().total()).isEqualTo(other.action().total()).isEqualTo(1);
+        assertThat(other.responses()).as("답한 적 없는 줄에 남의 대응 방안이 붙었다").isEmpty();
+        assertThat(other.earliestReview()).isNull();
+
+        assertThat(report.progress().unexplained())
+                .as("답 없는 건이 남은 줄은 바이너리 하나다")
+                .isEqualTo(1);
     }
 
     @Test
