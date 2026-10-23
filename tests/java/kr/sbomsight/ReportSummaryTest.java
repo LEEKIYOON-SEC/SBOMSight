@@ -159,8 +159,10 @@ class ReportSummaryTest {
     }
 
     /** 요약의 상위 표에 찍힌 패키지 이름, 찍힌 순서대로. */
+    /** 요약 표의 패키지 칸 — 이름 아래에 식별자가 붙는다(fragments/ui :: pkgkey). */
     private static List<String> packagesIn(String summary) {
-        Matcher m = Pattern.compile("<td><b>([^<]+)</b></td>").matcher(summary);
+        Matcher m = Pattern.compile("<td><b>([^<]+)</b>(?: <div class=\"pkgkey\">[^<]*</div>)? ?</td>")
+                .matcher(summary);
         List<String> out = new java.util.ArrayList<>();
         while (m.find()) {
             out.add(m.group(1));

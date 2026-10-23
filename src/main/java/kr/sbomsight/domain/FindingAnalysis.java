@@ -21,14 +21,21 @@ import java.util.List;
  * 조합일 뿐이었다. 표를 따로 두니 같은 건에 "수용" 과 "조치" 가 각각 달릴 수
  * 있었고, 둘이 무슨 관계인지는 아무 데도 없었다. 한 표로 합친다.
  *
- * <p>단위는 {@code (자산, CVE, 패키지명)} 이다. 버전을 넣으면 부분 패치로
- * 버전이 바뀌는 순간 검토 결과가 조용히 풀린다.
+ * <p>단위는 {@code (자산, CVE, 패키지 식별자)} 다({@link PackageKey} — purl 에서 버전을 뗀 것).
+ * 버전을 넣으면 부분 패치로 버전이 바뀌는 순간 검토 결과가 조용히 풀린다. 앞서는 패키지
+ * <b>이름</b>이라, 같은 자산의 npm {@code semver} 에 적은 `해당 없음` 이 PyPI {@code semver} 의
+ * 같은 번호 탐지까지 목록에서 뺐다(V24).
+ *
+ * <p><b>식별자가 비어 있는 행</b>은 V24 가 어느 패키지의 것인지 가르지 못한 옛 기록이다 —
+ * 같은 이름의 패키지가 그 자산에 둘 이상이었거나 근거가 된 탐지가 남아 있지 않았다. 지우지도
+ * 아무 패키지에나 붙이지도 않고 남겨 둔다: 어느 탐지에도 붙지 않고(목록 · 보고서에서 아무것도
+ * 빼지 않는다), 검토 결과 목록에 `패키지 확인 필요` 로 뜬다.
  */
 @Entity
 @Table(name = "finding_analysis",
        uniqueConstraints = @UniqueConstraint(
                name = "ux_analysis_key",
-               columnNames = { "asset_id", "cve", "package_name" }))
+               columnNames = { "asset_id", "cve", "package_key" }))
 public class FindingAnalysis {
 
     @Id
@@ -48,8 +55,13 @@ public class FindingAnalysis {
     @Column(nullable = false, length = 128)
     private String cve;
 
+    /** 화면에 찍는 이름. 같은 패키지인지는 {@link #packageKey} 가 가른다. */
     @Column(name = "package_name", nullable = false, length = 255)
     private String packageName;
+
+    /** 패키지 식별자 — 비어 있으면 V24 가 가르지 못한 옛 기록(머리말). */
+    @Column(name = "package_key", length = 512)
+    private String packageKey;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -108,10 +120,11 @@ public class FindingAnalysis {
     protected FindingAnalysis() {
     }
 
-    public FindingAnalysis(Asset asset, String cve, String packageName) {
+    public FindingAnalysis(Asset asset, String cve, String packageName, String packageKey) {
         this.asset = asset;
         this.cve = cve;
         this.packageName = packageName;
+        this.packageKey = packageKey;
     }
 
     /**
@@ -129,9 +142,14 @@ public class FindingAnalysis {
         return reviewBy != null && reviewBy.isBefore(LocalDate.now());
     }
 
-    /** 목록·보고서가 쓰는 키. 버전은 넣지 않는다. */
+    /** 목록·보고서가 쓰는 키 — 번호와 패키지 식별자. 버전은 넣지 않는다. */
     public String key() {
-        return cve + "|" + packageName;
+        return cve + "|" + packageKey;
+    }
+
+    /** V24 가 어느 패키지의 것인지 가르지 못한 옛 기록인가 — 어느 탐지에도 붙지 않는다. */
+    public boolean isPackageUnresolved() {
+        return packageKey == null || packageKey.isEmpty();
     }
 
     /** 아무도 손대지 않은 것과 같은가. 화면에서 표시를 붙일지 가른다. */
@@ -158,6 +176,15 @@ public class FindingAnalysis {
 
     public String getPackageName() {
         return packageName;
+    }
+
+    public String getPackageKey() {
+        return packageKey;
+    }
+
+    /** 화면에 이름 곁에 적는 네임스페이스({@link PackageKey#namespace}). */
+    public String getPackageNamespace() {
+        return PackageKey.namespace(packageKey);
     }
 
     public AnalysisState getState() {

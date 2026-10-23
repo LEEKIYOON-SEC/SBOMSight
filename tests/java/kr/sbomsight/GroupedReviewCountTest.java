@@ -26,14 +26,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * <b>묶은 줄의 `검토` 칸은 그 줄의 수를 말한다</b> — 취약점 화면의 CVE별.
+ * <b>묶은 줄의 `검토` 칸은 그 줄의 수를 말한다</b> — 취약점 화면의 CVE별 · 패키지별.
  *
- * <p>줄과 세는 키가 달랐다. CVE별 줄은 (번호, 심각도)인데 수는 번호로만 셌다. 그래서 같은
- * 번호가 심각도로 두 줄로 갈리면 두 줄이 같은 `1 / 2건` 을 말했다 — 한 줄에는 없는 검토가
- * 있다고.
+ * <p>줄과 세는 키가 달랐다. CVE별 줄은 (번호, 심각도)인데 수는 번호로만 셌고, 패키지별 줄은
+ * (이름, 유형)인데 수는 이름으로만 셌다. 그래서 같은 번호가 심각도로 두 줄로 갈리면 두 줄이
+ * 같은 `1 / 2건` 을 말했고, npm 과 PyPI 의 semver 두 줄이 같은 `1 / 3건` 을 말했다 — 한 줄에는
+ * 없는 검토가 있다고, 다른 줄에는 없는 건이 있다고.
  *
- * <p>여기서 적는 검토 결과의 번호는 그 패키지에만 있어 이름으로 붙어도 다른 패키지에 닿지
- * 않는다. 틀리는 것은 세는 키뿐이다.
+ * <p>검토 결과가 다른 패키지에 붙는 문제(PackageIdentityTest)와 따로 본다 — 여기서 적는 검토
+ * 결과의 번호는 그 패키지에만 있어 이름으로 붙어도 다른 패키지에 닿지 않는다. 틀리는 것은
+ * 세는 키뿐이다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -65,12 +67,16 @@ class GroupedReviewCountTest {
         // 그 생태계의 권고문 심각도를 준다.
         finding("CVE-2099-5001", "alpha", "npm", "pkg:npm/alpha@1.0.0", "High");
         finding("CVE-2099-5001", "beta", "python", "pkg:pypi/beta@1.0.0", "Medium");
+        // 이름이 같은 두 패키지 — 번호는 겹치지 않는다.
+        finding("CVE-2099-5002", "semver", "npm", "pkg:npm/semver@7.5.1", "High");
+        finding("CVE-2099-5003", "semver", "npm", "pkg:npm/semver@7.5.1", "Medium");
+        finding("CVE-2099-5004", "semver", "python", "pkg:pypi/semver@2.13.0", "Low");
     }
 
     @Test
     @DisplayName("CVE별 — 심각도로 갈린 같은 번호의 두 줄이 서로의 검토 수를 합치지 않는다")
     void cveRowsCountTheirOwnRow() throws Exception {
-        notAffected("CVE-2099-5001", "alpha");
+        notAffected("CVE-2099-5001", "alpha", "pkg:npm/alpha");
 
         String html = open("/vulns?scan=" + scan.getId() + "&group=cve&includeDone=true");
         assertThat(row(html, ">CVE-2099-5001</a>", "<span>높음</span>"))
@@ -78,6 +84,19 @@ class GroupedReviewCountTest {
         assertThat(row(html, ">CVE-2099-5001</a>", "<span>보통</span>"))
                 .as("검토하지 않은 줄(보통)이 옆 줄의 검토를 제 것처럼 말한다")
                 .contains("미검토").doesNotContain("/ 2건");
+    }
+
+    @Test
+    @DisplayName("패키지별 — 같은 이름의 두 줄(npm · PyPI)이 서로의 건수 · 검토 수를 합치지 않는다")
+    void packageRowsCountTheirOwnRow() throws Exception {
+        notAffected("CVE-2099-5002", "semver", "pkg:npm/semver");
+
+        String html = open("/vulns?scan=" + scan.getId() + "&group=package&includeDone=true");
+        assertThat(row(html, "<b>semver</b>", "class=\"tight faint\">npm</td>"))
+                .as("npm 줄 — 2건 중 1건").contains("1 / 2건");
+        assertThat(row(html, "<b>semver</b>", "class=\"tight faint\">python</td>"))
+                .as("PyPI 줄이 npm 줄의 검토 · 건수를 제 것처럼 말한다")
+                .contains("미검토").doesNotContain("/ 3건");
     }
 
     // -----------------------------------------------------------------------
@@ -95,8 +114,8 @@ class GroupedReviewCountTest {
         scans.saveAndFlush(scan);
     }
 
-    private void notAffected(String cve, String name) {
-        analyses.record(asset, cve, name, AnalysisState.NOT_AFFECTED,
+    private void notAffected(String cve, String name, String packageKey) {
+        analyses.record(asset, cve, name, packageKey, AnalysisState.NOT_AFFECTED,
                         AnalysisJustification.CODE_NOT_PRESENT, null, "시험", "", "", null, "tester");
     }
 

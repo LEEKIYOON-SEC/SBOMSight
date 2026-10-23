@@ -1,0 +1,37 @@
+# 패키지 식별자 — 같은 입력과 기대값을 자바(PackageKeyTest)와 V24 의 SQL(tests/check-migrations.sh)이 함께 견준다.
+# 칸: purl<TAB>유형<TAB>이름<TAB>기대 식별자. 빈 칸은 빈 값. 앞뒤 빈칸은 담을 때 이미 떼므로 넣지 않는다.
+# 유형은 탐지의 것(grype · syft 의 이름)이든 인벤토리의 것(purl 의 이름)이든 같은 식별자가 나와야 한다.
+pkg:npm/semver@7.5.4	npm	semver	pkg:npm/semver
+pkg:pypi/semver@3.0.2	python	semver	pkg:pypi/semver
+pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.15.2	java-archive	jackson-databind	pkg:maven/com.fasterxml.jackson.core/jackson-databind
+pkg:maven/org.codehaus.jackson/jackson-databind@1.9.13	java-archive	jackson-databind	pkg:maven/org.codehaus.jackson/jackson-databind
+pkg:npm/%40angular/core@16.2.0	npm	@angular/core	pkg:npm/%40angular/core
+pkg:npm/@scope/name@1.0.0	npm	@scope/name	pkg:npm/@scope/name
+pkg:rpm/rocky/openssl-libs@3.0.7-24.el9?arch=x86_64&upstream=openssl-3.0.7-24.el9.src.rpm&distro=rocky-9.3	rpm	openssl-libs	pkg:rpm/rocky/openssl-libs
+pkg:deb/debian/libssl3@3.0.11-1~deb12u2?arch=amd64&upstream=openssl&distro=debian-12	deb	libssl3	pkg:deb/debian/libssl3
+pkg:golang/github.com/gin-gonic/gin@v1.9.1	go-module	github.com/gin-gonic/gin	pkg:golang/github.com/gin-gonic/gin
+pkg:generic/openssl@1.1.1k	binary	openssl	pkg:generic/openssl
+pkg:maven/org.example/lib@1.0#sub/path	java-archive	lib	pkg:maven/org.example/lib
+pkg:maven/org.example/lib?type=jar	java-archive	lib	pkg:maven/org.example/lib
+pkg:maven/g/a@1.0?x=y#p@q	java-archive	a	pkg:maven/g/a
+pkg:a/b?x=1/2	a	b	pkg:a/b
+pkg:NPM/Upper@1.0	npm	Upper	pkg:npm/Upper
+pkg:pypi/PyYAML@6.0	python	PyYAML	pkg:pypi/PyYAML
+pkg:conda/numpy@1.26.0	conda	numpy	pkg:conda/numpy
+pkg:github/actions/checkout@v4	github-action	actions/checkout	pkg:github/actions/checkout
+pkg:npm/%40types/node	npm	@types/node	pkg:npm/%40types/node
+pkg:generic/name/@1	binary	name	pkg:generic/name
+	java-archive	log4j-core	pkg:maven/log4j-core
+	python	requests	pkg:pypi/requests
+	conda	numpy	pkg:generic/numpy
+	UnknownPackage	mystery	pkg:/mystery
+		busybox	pkg:/busybox
+	binary	busybox	pkg:binary/busybox
+	Python	pycase	pkg:Python/pycase
+	npm	한글패키지	pkg:npm/한글패키지
+pkg:/weird@1	npm	weird	pkg:npm/weird
+PKG:pypi/upper@1.0	python	upper	pkg:pypi/upper
+pkg:npm	npm	x	pkg:npm/x
+pkg:npm/@1.0	npm	empty	pkg:npm/empty
+pkg:npm/@types/node	npm	@types/node	pkg:npm/@types/node
+purl-but-not	rpm	bash	pkg:rpm/bash

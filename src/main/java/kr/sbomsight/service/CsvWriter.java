@@ -23,8 +23,15 @@ import java.util.List;
  * 없으면 엑셀이 파일을 EUC-KR 로 짐작해 전부 깨진 글자로 연다.
  *
  * <p>줄 구분은 CRLF 다. 엑셀이 LF 만 있는 파일을 한 줄로 읽는 경우가 있다.
+ *
+ * <p><b>파일마다 `패키지 식별자` 를 이름 옆에 싣는다</b>(V24) — 화면이 같은 패키지로 묶고
+ * 검토 결과 · 조치를 붙이는 키다. 이름만 있으면 npm 과 PyPI 의 semver, groupId 만 다른 두
+ * jackson-databind 가 엑셀에서 한 패키지로 읽힌다.
  */
 public final class CsvWriter {
+
+    /** 식별자가 빈 옛 검토 결과 · 조치 — V24 가 어느 패키지의 것인지 가르지 못했다. 화면과 같은 말. */
+    static final String UNRESOLVED = "패키지 확인 필요";
 
     private static final DateTimeFormatter WHEN =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
@@ -48,13 +55,14 @@ public final class CsvWriter {
                                          java.util.Map<Long, AfterDone> afterDone)
             throws IOException {
         try (Writer writer = start(out)) {
-            row(writer, "자산", "패키지", "조치 회차", "현재 버전", "목표 버전", "조치 상태", "담당",
-                        "기한", "등록 당시 건수", "설명", "등록", "최종 변경");
+            row(writer, "자산", "패키지", "패키지 식별자", "조치 회차", "현재 버전", "목표 버전",
+                        "조치 상태", "담당", "기한", "등록 당시 건수", "설명", "등록", "최종 변경");
             for (Remediation r : list) {
                 AfterDone left = afterDone.get(r.getId());
                 row(writer,
                     r.getAsset().getName(),
                     r.getPackageName(),
+                    r.isPackageUnresolved() ? UNRESOLVED : r.getPackageKey(),
                     String.valueOf(r.getRoundNo()),
                     // 하나로 고르지 않는다 — 여럿이면 `현재 버전 N가지: a · b` (V16)
                     FixVersions.describe("현재 버전", r.getFromVersions()),
@@ -84,8 +92,8 @@ public final class CsvWriter {
     public static void writeAnalyses(OutputStream out, List<FindingAnalysis> rows)
             throws IOException {
         try (Writer writer = start(out)) {
-            row(writer, "자산", "구역", "취약점", "패키지", "검토 상태", "근거", "대응 방안",
-                        "설명", "추가 보안 통제", "결재 문서 번호", "재검토일",
+            row(writer, "자산", "구역", "취약점", "패키지", "패키지 식별자", "검토 상태", "근거",
+                        "대응 방안", "설명", "추가 보안 통제", "결재 문서 번호", "재검토일",
                         "기록한 사람", "기록한 때");
             for (FindingAnalysis a : rows) {
                 row(writer,
@@ -93,6 +101,7 @@ public final class CsvWriter {
                     a.getAsset().getZone().getName(),
                     a.getCve(),
                     a.getPackageName(),
+                    a.isPackageUnresolved() ? UNRESOLVED : a.getPackageKey(),
                     a.getState().label(),
                     a.getJustification() == null ? "" : a.getJustification().label(),
                     a.getResponse() == null ? "" : a.getResponse().label(),
@@ -147,7 +156,7 @@ public final class CsvWriter {
     public static Lookup lookup(OutputStream out) throws IOException {
         Writer writer = start(out);
         row(writer, "자산", "구역", "CVE", "별칭", "심각도", "CVSS",
-                    "패키지", "설치 버전", "수정 버전", "수정 상태", "검사 시각",
+                    "패키지", "패키지 식별자", "설치 버전", "수정 버전", "수정 상태", "검사 시각",
                     "심각도 원문", "수정 상태 원문");
         return new Lookup(writer);
     }
@@ -180,6 +189,7 @@ public final class CsvWriter {
                     Severity.of(f.getSeverity()).label(),
                     f.getCvssScore() == null ? "" : f.getCvssScore().toPlainString(),
                     f.getPackageName(),
+                    f.getPackageKey(),
                     f.getPackageVersion(),
                     // 후보가 여럿이면 `수정 버전 3가지: a · b · c` — 조치 CSV 와 같은 꼴.
                     FixVersions.describe(f.getFixedVersions()),
@@ -200,7 +210,7 @@ public final class CsvWriter {
     /**
      * 패키지 인벤토리.
      *
-     * <p>한 줄이 {@code (패키지, 버전)} 하나다 — 화면의 버전 조각 하나. 버전
+     * <p>한 줄이 {@code (패키지 식별자, 버전)} 하나다 — 화면의 버전 조각 하나. 버전
      * 분포를 한 칸에 몰아 넣으면 엑셀에서 거르지도 정렬하지도 못한다.
      *
      * <p><b>등급은 grype 이 낸 것 중 가장 높은 것</b>이고, 걸린 것이 없으면
@@ -210,11 +220,12 @@ public final class CsvWriter {
     public static void writePackages(OutputStream out, List<PackageService.ExportRow> rows)
             throws IOException {
         try (Writer writer = start(out)) {
-            row(writer, "패키지", "유형", "버전", "자산 수", "취약점", "최고 심각도");
+            row(writer, "패키지", "패키지 식별자", "유형", "버전", "자산 수", "취약점", "최고 심각도");
             for (PackageService.ExportRow r : rows) {
                 var version = r.version();
                 row(writer,
                     r.name(),
+                    r.packageKey(),
                     r.type(),
                     version.version(),
                     String.valueOf(version.assetCount()),

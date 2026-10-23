@@ -39,6 +39,12 @@
       최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
       이 패키지 탐지 <b th:text="${remaining} + '건'">0건</b>.
     </span>
+    <!--/* 어느 패키지의 조치인지 가르지 못한 옛 기록(V24) — 셀 탐지가 없다. 0건이라고 말하면
+         다 고친 것으로 읽힌다. */-->
+    <span th:if="${remediation.packageUnresolved}" class="muted">
+      어느 패키지의 조치인지 가를 근거가 없던 옛 기록 — 최신 검사의 탐지에 잇지 않음.
+      같은 이름의 패키지가 여럿이면 그 패키지의 탐지에서 조치를 다시 등록.
+    </span>
     <!--/*
       **완료로 닫았는데 해소 건수가 남았으면 보고서와 같은 말로 적는다** — 세 갈래
       (AfterDone): 탐지 남음 · 신규 탐지 · 검증 대기. 위의 `탐지` 는 해당 없음 · 오탐까지
@@ -59,6 +65,7 @@
                   + ')보다 앞 · 새 SBOM을 업로드하면 풀림'">최신 검사의 SBOM 생성 시각 2026-09-30 10:00 — 조치 완료(2026-10-01 09:00)보다 앞 · 새 SBOM을 업로드하면 풀림</div>
     <form th:if="${afterDone != null and afterDone.isNew()}" method="post" sec:authorize="hasRole('ADMIN')"
           th:action="@{'/assets/' + ${remediation.asset.id} + '/remediations'}" style="margin-top:8px">
+      <input type="hidden" name="packageKey" th:value="${remediation.packageKey}">
       <input type="hidden" name="packageName" th:value="${remediation.packageName}">
       <button type="submit" class="btn btn-sm">조치 등록</button>
       <span class="faint ms-2" th:text="${remediation.roundNo + 1} + '회차로 엶'">2회차로 엶</span>
@@ -141,6 +148,9 @@
     <div class="card-body">
     <table class="table kv">
       <tr><th>패키지</th><td th:text="${remediation.packageName}">openssl</td></tr>
+      <!--/* 같은 패키지인지 가르는 값(V24) — 탐지 · 검토 결과 · CSV 와 같은 것. */-->
+      <tr><th>패키지 식별자</th>
+          <td><div th:replace="~{fragments/ui :: pkgkey(${remediation.packageKey})}"></div></td></tr>
       <tr><th>현재 → 목표</th>
           <td class="mono"><th:block th:replace="~{fragments/ui :: curversions(${remediation.fromVersions}, '—')}"></th:block> →
               <th:block th:replace="~{fragments/ui :: fixversions(${remediation.toVersions}, '확인 필요')}"></th:block></td></tr>

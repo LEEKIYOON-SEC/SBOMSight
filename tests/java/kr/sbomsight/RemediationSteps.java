@@ -72,9 +72,13 @@ final class RemediationSteps {
         return scan;
     }
 
-    /** 취약점 화면 · 검토 결과 탭의 `조치 등록` — 자산의 지금 검사에서. */
-    MvcResult register(Asset asset, String packageName) throws Exception {
+    /**
+     * 취약점 화면 · 검토 결과 탭의 `조치 등록` — 자산의 지금 검사에서. 화면처럼 패키지
+     * 식별자와 이름을 보낸다(V24) — 이름은 그 패키지의 탐지가 어디에도 없을 때만 쓰인다.
+     */
+    MvcResult register(Asset asset, String packageName, String packageKey) throws Exception {
         return mvc.perform(post("/assets/" + asset.getId() + "/remediations")
+                                   .param("packageKey", packageKey)
                                    .param("packageName", packageName)
                                    .with(user("tester").roles("ADMIN")).with(csrf()))
                   .andExpect(status().is3xxRedirection())

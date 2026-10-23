@@ -5,6 +5,7 @@ import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.FindingAnalysis;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.domain.Zone;
@@ -67,7 +68,7 @@ class CveDetailTest {
         // web 은 패키지 이름으로, db 는 소스 패키지(openssl)로 걸렸다.
         finding(web, "libssl3", "exact-direct-match");
         finding(db, "libssl3", "exact-indirect-match");
-        reviewed = analyses.record(web, CVE, "libssl3", AnalysisState.NOT_AFFECTED,
+        reviewed = analyses.record(web, CVE, "libssl3", PackageKey.of(null, null, "libssl3"), AnalysisState.NOT_AFFECTED,
                                    AnalysisJustification.CODE_NOT_REACHABLE, null,
                                    "", "", "", null, "tester");
     }

@@ -56,12 +56,18 @@ public class RemediationController {
      */
     @PostMapping("/scans/{scanId}/remediations")
     @PreAuthorize("hasRole('ADMIN')")
-    public String open(@PathVariable Long scanId, @RequestParam String packageName,
+    public String open(@PathVariable Long scanId, @RequestParam String packageKey,
+                       @RequestParam(required = false) String packageName,
                        Principal principal, RedirectAttributes flash) {
         Scan scan = scans.findWithAsset(scanId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "검사를 찾을 수 없습니다."));
-        return opened(service.open(scan.getAsset(), scan, packageName, principal.getName()),
-                      packageName, flash);
+        try {
+            return opened(service.open(scan.getAsset(), scan, packageName, packageKey,
+                                       principal.getName()), flash);
+        } catch (IllegalArgumentException refused) {
+            flash.addFlashAttribute("error", refused.getMessage());
+            return "redirect:/reports/scan/" + scanId;
+        }
     }
 
     /**
@@ -75,10 +81,16 @@ public class RemediationController {
      * <p>검사가 한 번도 끝나지 않은 자산에는 열지 않는다. 등록 당시 버전과
      * 건수를 남길 근거가 없고, 근거 없는 스냅샷은 나중에 "그때 무엇을 보고
      * 정했나" 에 답하지 못한다.
+     *
+     * <p><b>패키지는 식별자로 받는다</b>({@code packageKey} — V24). 이름({@code packageName})은
+     * 그 검사에 이 패키지의 탐지가 없을 때만 조치에 적을 이름이다 — 있으면 탐지의 이름을 쓴다.
+     * 앞서 이름으로 받아, 같은 자산의 npm semver 줄에서 누른 `조치 등록` 이 PyPI semver 의
+     * 탐지까지 등록 당시 건수 · 버전에 넣었다.
      */
     @PostMapping("/assets/{assetId}/remediations")
     @PreAuthorize("hasRole('ADMIN')")
-    public String openForAsset(@PathVariable Long assetId, @RequestParam String packageName,
+    public String openForAsset(@PathVariable Long assetId, @RequestParam String packageKey,
+                               @RequestParam(required = false) String packageName,
                                Principal principal, RedirectAttributes flash) {
         Asset asset = assets.findById(assetId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "자산을 찾을 수 없습니다."));
@@ -88,8 +100,13 @@ public class RemediationController {
                                     asset.getName() + " 자산은 완료된 검사가 없어 조치를 열 수 없습니다.");
             return "redirect:/assets/" + assetId;
         }
-        return opened(service.open(asset, latest, packageName, principal.getName()),
-                      packageName, flash);
+        try {
+            return opened(service.open(asset, latest, packageName, packageKey, principal.getName()),
+                          flash);
+        } catch (IllegalArgumentException refused) {
+            flash.addFlashAttribute("error", refused.getMessage());
+            return "redirect:/assets/" + assetId;
+        }
     }
 
     /**
@@ -108,14 +125,15 @@ public class RemediationController {
      * 함께 적는다 — 조치를 지우면 그 스냅샷이 함께 사라지고, 남는 것은
      * 감사 로그의 이 줄뿐이다.
      */
-    private String opened(RemediationService.Opened opened, String packageName,
-                          RedirectAttributes flash) {
+    private String opened(RemediationService.Opened opened, RedirectAttributes flash) {
         Remediation remediation = opened.remediation();
+        String packageName = remediation.getPackageName();
         if (opened.created()) {
             String round = remediation.getRoundNo() > 1 ? remediation.getRoundNo() + "회차 · " : "";
             audit.record(AuditEvent.REMEDIATION_CREATED,
                          remediation.getAsset().getName() + " · " + packageName,
-                         round + "등록 당시 " + remediation.getOpenedCount() + "건"
+                         round + remediation.getPackageKey() + " · 등록 당시 "
+                         + remediation.getOpenedCount() + "건"
                          + (remediation.getFromVersions().isEmpty() ? ""
                             : (remediation.getFromVersions().size() == 1 ? " · 현재 " : " · ")
                               + FixVersions.describe("현재 버전", remediation.getFromVersions()))

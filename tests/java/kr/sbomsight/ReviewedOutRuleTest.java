@@ -84,8 +84,9 @@ class ReviewedOutRuleTest {
         return findings.saveAndFlush(f);
     }
 
+    /** 탐지는 purl · 유형 없이 만든다(위) — 그 식별자(pkg:/이름)로 적는다. */
     private void review(Asset a, String cve, String pkg, AnalysisState state) {
-        analyses.record(a, cve, pkg, state,
+        analyses.record(a, cve, pkg, PackageKey.of(null, null, pkg), state,
                         state == AnalysisState.NOT_AFFECTED ? AnalysisJustification.CODE_NOT_PRESENT : null,
                         state == AnalysisState.EXPLOITABLE ? AnalysisResponse.WILL_NOT_FIX : null,
                         "시험", "", "",
@@ -118,23 +119,24 @@ class ReviewedOutRuleTest {
         // 적은 것이 없다
         finding("CVE-R-8", "", "p-none");
 
-        Set<String> shown = findings.findInBySeverity(List.of(scan.getId()), null, null, null, null,
+        Set<String> shown = findings.findInBySeverity(List.of(scan.getId()), null, null, null, null, null,
                                                       false, false, PageRequest.of(0, 100))
-                                    .stream().map(Finding::getPackageName).collect(Collectors.toSet());
+                                    .stream().map(Finding::getPackageKey).collect(Collectors.toSet());
 
         Map<String, FindingAnalysis> byKey = analyses.byKey(asset.getId());
         Set<String> openByJava = findings.findKeyRows(scan.getId()).stream()
                 .filter(k -> FindingAnalysisService.stateOf(byKey, k.getCve(), k.getRelatedCve(),
-                                                            k.getPackageName()).isOpen())
-                .map(FindingRepository.FindingKey::getPackageName)
+                                                            k.getPackageKey()).isOpen())
+                .map(FindingRepository.FindingKey::getPackageKey)
                 .collect(Collectors.toSet());
 
         assertThat(shown)
                 .as("SQL 이 남긴 것과 stateOf 가 열려 있다고 본 것이 다르다")
                 .isEqualTo(openByJava)
-                .containsExactlyInAnyOrder("p-accept", "p-triage", "p-both-2", "p-elsewhere", "p-none");
+                .containsExactlyInAnyOrder("pkg:/p-accept", "pkg:/p-triage", "pkg:/p-both-2",
+                                           "pkg:/p-elsewhere", "pkg:/p-none");
 
-        assertThat(findings.countReviewedOut(List.of(scan.getId()), null, null, null, null, null))
+        assertThat(findings.countReviewedOut(List.of(scan.getId()), null, null, null, null, null, null))
                 .as("빠진 건수")
                 .isEqualTo(4);   // p-na · p-fp · p-ghsa · p-both
     }

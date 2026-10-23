@@ -32,8 +32,18 @@ public class Remediation {
     @org.hibernate.annotations.OnDelete(action = org.hibernate.annotations.OnDeleteAction.CASCADE)
     private Asset asset;
 
+    /** 화면에 찍는 이름. 같은 패키지인지는 {@link #packageKey} 가 가른다. */
     @Column(name = "package_name", nullable = false, length = 255)
     private String packageName;
+
+    /**
+     * 패키지 식별자({@link PackageKey}) — 조치는 (자산, 이것)에 붙는다. 앞서는 이름이라 같은
+     * 자산의 npm {@code semver} 와 PyPI {@code semver} 가 한 조치를 나눠 가졌다(V24). 비어 있으면
+     * V24 가 어느 패키지의 것인지 가르지 못한 옛 조치다 — 지우지 않고 남기되 어느 줄에도 붙이지
+     * 않는다(대응 화면에 `패키지 확인 필요`).
+     */
+    @Column(name = "package_key", length = 512)
+    private String packageKey;
 
     /**
      * <b>조치 회차</b> — 같은 (자산, 패키지)에 몇 번째로 연 조치인가(D5).
@@ -110,9 +120,10 @@ public class Remediation {
     protected Remediation() {
     }
 
-    public Remediation(Asset asset, String packageName, String actor) {
+    public Remediation(Asset asset, String packageName, String packageKey, String actor) {
         this.asset = asset;
         this.packageName = packageName;
+        this.packageKey = packageKey;
         this.createdBy = actor == null ? "" : actor;
         this.updatedBy = this.createdBy;
     }
@@ -175,6 +186,20 @@ public class Remediation {
 
     public String getPackageName() {
         return packageName;
+    }
+
+    public String getPackageKey() {
+        return packageKey;
+    }
+
+    /** V24 가 어느 패키지의 것인지 가르지 못한 옛 조치인가. */
+    public boolean isPackageUnresolved() {
+        return packageKey == null || packageKey.isEmpty();
+    }
+
+    /** 화면에 이름 곁에 적는 네임스페이스({@link PackageKey#namespace}). */
+    public String getPackageNamespace() {
+        return PackageKey.namespace(packageKey);
     }
 
     public int getRoundNo() {

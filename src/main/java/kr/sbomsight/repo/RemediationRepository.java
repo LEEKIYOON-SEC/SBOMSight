@@ -26,19 +26,26 @@ import java.util.Optional;
  */
 public interface RemediationRepository extends JpaRepository<Remediation, Long> {
 
-    /** (자산, 패키지)의 조치를 회차가 늦은 것부터 — 맨 앞이 지금 조치(최신 회차). */
-    List<Remediation> findByAssetIdAndPackageNameOrderByRoundNoDescIdDesc(Long assetId, String packageName);
+    /** (자산, 패키지 식별자)의 조치를 회차가 늦은 것부터 — 맨 앞이 지금 조치(최신 회차). */
+    List<Remediation> findByAssetIdAndPackageKeyOrderByRoundNoDescIdDesc(Long assetId, String packageKey);
 
     /**
-     * (자산, 패키지)의 <b>지금 조치</b> — 최신 회차.
+     * (자산, 패키지 식별자)의 <b>지금 조치</b> — 최신 회차.
      *
      * <p>회차가 생긴 뒤로(D5, V19) 한 (자산, 패키지)에 조치가 여럿일 수 있다. 앞서 쓰던
      * {@code findByAssetIdAndPackageName} 은 하나를 전제로 해, 둘째 회차가 생기는 순간
      * "결과가 하나가 아님" 으로 터진다. 열린 조치는 많아야 하나이고, 있으면 그것이 최신
      * 회차다(RemediationService).
+     *
+     * <p>패키지는 이름이 아니라 식별자다(V24) — 이름으로 찾아 npm 의 semver 와 PyPI 의
+     * semver 가 한 조치를 나눠 가졌다. <b>식별자가 없으면 아무것도 아니다</b> — 이름에서 온
+     * 메서드는 {@code null} 을 {@code IS NULL} 로 바꿔, V24 가 가르지 못한 옛 조치를 돌려준다.
      */
-    default Optional<Remediation> findLatest(Long assetId, String packageName) {
-        return findByAssetIdAndPackageNameOrderByRoundNoDescIdDesc(assetId, packageName)
+    default Optional<Remediation> findLatest(Long assetId, String packageKey) {
+        if (packageKey == null || packageKey.isEmpty()) {
+            return Optional.empty();
+        }
+        return findByAssetIdAndPackageKeyOrderByRoundNoDescIdDesc(assetId, packageKey)
                 .stream().findFirst();
     }
 
@@ -116,7 +123,7 @@ public interface RemediationRepository extends JpaRepository<Remediation, Long> 
      * 여러 자산치 — 목록이 줄마다 "조치가 걸렸나" 를 찍는 데 쓴다.
      *
      * <p>줄마다 물으면 표 한 장에 수백 번 왕복한다. 한 번에 가져와 자바에서
-     * {@code (자산id, 패키지명)} 으로 맞춘다.
+     * {@code (자산id, 패키지 식별자)} 로 맞춘다.
      */
     @Query("""
            SELECT r FROM Remediation r JOIN FETCH r.asset a

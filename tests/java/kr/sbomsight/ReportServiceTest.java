@@ -135,11 +135,11 @@ class ReportServiceTest {
     void chapter2CountsOurOwnReview() {
         Scan scan = seedTypicalScan();      // 6건
 
-        analyses.record(asset, "CVE-1", "openssl", AnalysisState.IN_TRIAGE,
+        analyses.record(asset, "CVE-1", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.IN_TRIAGE,
                         null, null, "", "", "", null, "tester");
-        analyses.record(asset, "CVE-2", "openssl", AnalysisState.EXPLOITABLE,
+        analyses.record(asset, "CVE-2", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.EXPLOITABLE,
                         null, null, "", "", "", null, "tester");
-        analyses.record(asset, "CVE-5", "glibc", AnalysisState.NOT_AFFECTED,
+        analyses.record(asset, "CVE-5", "glibc", PackageKey.of(null, "rpm", "glibc"), AnalysisState.NOT_AFFECTED,
                         AnalysisJustification.CODE_NOT_REACHABLE, null, "", "", "", null, "tester");
 
         ReportService.Summary ch = reports.build(scan).summary();
@@ -183,7 +183,7 @@ class ReportServiceTest {
         scans.saveAndFlush(scan);
 
         // 사람은 CVE 번호로 적어 둔다.
-        analyses.record(asset, "CVE-2021-44228", "log4j-core", AnalysisState.FALSE_POSITIVE,
+        analyses.record(asset, "CVE-2021-44228", "log4j-core", PackageKey.of(null, "rpm", "log4j-core"), AnalysisState.FALSE_POSITIVE,
                         null, null, "", "", "", null, "tester");
 
         ReportService.Report report = reports.build(scan);
@@ -223,7 +223,7 @@ class ReportServiceTest {
                 .isEqualTo(before.summary().fixable());
 
         // openssl 하나를 등록한다 — 패키지 하나지만 건은 셋이다.
-        remediations.saveAndFlush(new Remediation(asset, "openssl", "tester"));
+        remediations.saveAndFlush(new Remediation(asset, "openssl", PackageKey.of(null, "rpm", "openssl"), "tester"));
 
         ReportService.Report after = reports.build(scan);
         assertThat(after.progress().tracked())
@@ -336,7 +336,7 @@ class ReportServiceTest {
     void chapter4SplitsTrackedAndUntracked() {
         Scan scan = seedTypicalScan();
 
-        Remediation remediation = new Remediation(asset, "openssl", "admin");
+        Remediation remediation = new Remediation(asset, "openssl", PackageKey.of(null, "rpm", "openssl"), "admin");
         remediation.setOwner("인프라운영팀");
         remediation.moveTo(RemediationStatus.IN_PROGRESS, "admin", "적용 예정");
         remediations.save(remediation);
@@ -518,9 +518,9 @@ class ReportServiceTest {
         scans.saveAndFlush(scan);
 
         java.time.LocalDate reviewBy = java.time.LocalDate.now().plusDays(30);
-        analyses.record(asset, "CVE-1", "openssl", AnalysisState.IN_TRIAGE,
+        analyses.record(asset, "CVE-1", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.IN_TRIAGE,
                         null, null, "", "", "", null, "tester");
-        analyses.record(asset, "CVE-2", "openssl", AnalysisState.EXPLOITABLE,
+        analyses.record(asset, "CVE-2", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.EXPLOITABLE,
                         null, AnalysisResponse.WILL_NOT_FIX, "", "", "", reviewBy, "tester");
 
         ReportService.Report report = reports.build(scan);

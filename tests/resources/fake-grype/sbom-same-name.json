@@ -1,0 +1,262 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3001",
+        "dataSource": "fake",
+        "namespace": "github:language:javascript",
+        "severity": "High",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": {
+              "baseScore": 7.5
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "7.5.2"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "javascript-matcher",
+          "searchedBy": {
+            "namespace": "github:language:javascript"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3001",
+            "versionConstraint": "< 7.5.2"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "semver",
+        "version": "7.5.1",
+        "type": "npm",
+        "purl": "pkg:npm/semver@7.5.1",
+        "locations": [
+          {
+            "path": "/app/node_modules/semver/package.json"
+          }
+        ]
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3003",
+        "dataSource": "fake",
+        "namespace": "github:language:javascript",
+        "severity": "Medium",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N",
+            "metrics": {
+              "baseScore": 5.3
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "7.5.3"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "javascript-matcher",
+          "searchedBy": {
+            "namespace": "github:language:javascript"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3003",
+            "versionConstraint": "< 7.5.3"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "semver",
+        "version": "7.5.1",
+        "type": "npm",
+        "purl": "pkg:npm/semver@7.5.1",
+        "locations": [
+          {
+            "path": "/app/node_modules/semver/package.json"
+          }
+        ]
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3001",
+        "dataSource": "fake",
+        "namespace": "github:language:python",
+        "severity": "High",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": {
+              "baseScore": 7.5
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "3.0.1"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "namespace": "github:language:python"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3001",
+            "versionConstraint": "< 3.0.1"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "semver",
+        "version": "2.13.0",
+        "type": "python",
+        "purl": "pkg:pypi/semver@2.13.0",
+        "locations": [
+          {
+            "path": "/usr/lib/python3/site-packages/semver-2.13.0.dist-info/METADATA"
+          }
+        ]
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3002",
+        "dataSource": "fake",
+        "namespace": "github:language:java",
+        "severity": "Critical",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": {
+              "baseScore": 9.8
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "2.9.10.8"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "java-matcher",
+          "searchedBy": {
+            "namespace": "github:language:java"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3002",
+            "versionConstraint": "< 2.9.10.8"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "jackson-databind",
+        "version": "2.9.8",
+        "type": "java-archive",
+        "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.9.8",
+        "locations": [
+          {
+            "path": "/opt/app/lib/jackson-databind-2.9.8.jar"
+          }
+        ]
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3002",
+        "dataSource": "fake",
+        "namespace": "github:language:java",
+        "severity": "Critical",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": {
+              "baseScore": 9.8
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.9.14"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "java-matcher",
+          "searchedBy": {
+            "namespace": "github:language:java"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3002",
+            "versionConstraint": "< 1.9.14"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "jackson-databind",
+        "version": "1.9.13",
+        "type": "java-archive",
+        "purl": "pkg:maven/org.codehaus.jackson/jackson-databind@1.9.13",
+        "locations": [
+          {
+            "path": "/opt/legacy/lib/jackson-databind-1.9.13.jar"
+          }
+        ]
+      }
+    }
+  ],
+  "source": {
+    "type": "sbom"
+  },
+  "distro": {
+    "name": "debian",
+    "version": "12"
+  },
+  "descriptor": {
+    "version": "0.0.0-fake",
+    "db": {
+      "built": "2026-10-01T00:00:00Z"
+    }
+  }
+}

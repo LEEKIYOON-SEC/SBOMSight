@@ -37,13 +37,20 @@ public final class Appendix {
      *
      * @param kev        한 건이라도 실제 악용 확인(KEV)
      * @param critical   한 건이라도 심각
-     * @param packages   걸린 패키지 이름 — 글자 순, 겹침 없이
+     * @param packages   걸린 패키지 — 식별자마다 하나, 이름 · 식별자 순
      * @param assetCount 걸린 자산 수 — 구역 보고서가 찍는다
      * @param maxCvss    가장 높은 CVSS. 없으면 {@code null}
      * @param summary    설명의 첫 문장. 설명이 없으면 빈 글자(표는 {@code —})
      */
-    public record Row(String cve, boolean kev, boolean critical, List<String> packages,
+    public record Row(String cve, boolean kev, boolean critical, List<Pkg> packages,
                       long assetCount, BigDecimal maxCvss, String summary) {
+    }
+
+    /**
+     * 부록의 패키지 하나 — 이름은 찍을 값, 식별자가 같은 패키지인지 가른다(PackageKey · V24).
+     * 앞서 이름으로 겹침을 뺐다 — groupId 만 다른 두 dom4j 가 같은 취약점에 걸리면 한 줄이었다.
+     */
+    public record Pkg(String name, String key) {
     }
 
     /** 실제 악용 먼저(확인된 사실) → 최고 CVSS → 번호. */
@@ -67,7 +74,8 @@ public final class Appendix {
         return new Row(cve,
                 rows.stream().anyMatch(f -> Boolean.TRUE.equals(f.getKev())),
                 rows.stream().anyMatch(f -> "critical".equalsIgnoreCase(f.getSeverity())),
-                rows.stream().map(Finding::getPackageName).distinct().sorted().toList(),
+                rows.stream().map(f -> new Pkg(f.getPackageName(), f.getPackageKey())).distinct()
+                    .sorted(Comparator.comparing(Pkg::name).thenComparing(Pkg::key)).toList(),
                 rows.stream().map(f -> f.getScan().getAsset().getId()).distinct().count(),
                 rows.stream().map(Finding::getCvssScore).filter(Objects::nonNull)
                     .max(Comparator.naturalOrder()).orElse(null),

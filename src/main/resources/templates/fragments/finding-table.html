@@ -138,9 +138,13 @@
       <td class="num tight"
           th:text="${f.epss != null} ? ${#numbers.formatDecimal(f.epss * 100, 1, 2)} + '%' : '—'">—</td>
 
+      <!--/* 유형 옆에 네임스페이스(groupId · scope · 배포판)를 단다 — 같은 이름의 다른
+           패키지(groupId 만 다른 jackson-databind)가 이 표에서 같은 줄처럼 보이지 않게.
+           검토 결과 · 조치는 패키지 식별자로 붙는다(V24). */-->
       <td>
         <span th:text="${f.packageName}">openssl</span>
-        <div class="faint" th:text="${f.packageType}">rpm</div>
+        <div class="faint" th:with="ns=${T(kr.sbomsight.domain.PackageKey).namespace(f.packageKey)}"
+             th:text="${f.packageType} + (${#strings.isEmpty(ns)} ? '' : ' · ' + ${ns})">rpm</div>
         <!--/* 경로는 grype 이 줄 때만 나온다. 빈 칸을 만들어 두면 "경로가 없는
              패키지" 처럼 읽힌다 — 실제로는 SBOM 이 안 담은 것이다. */-->
         <div class="faint path" th:if="${!#strings.isEmpty(f.installPath)}"
@@ -186,13 +190,13 @@
         </th:block>
 
         <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${f.scan.asset.id}, ${f.id}, ${f.displayId},
-                         ${f.packageName}, '')}"></a>
+                         ${f.packageName}, ${f.packageKey}, '')}"></a>
       </td>
 
-      <td class="tight" th:with="r=${actions.get(f.scan.asset.id + '|' + f.packageName)},
+      <td class="tight" th:with="r=${actions.get(f.scan.asset.id + '|' + f.packageKey)},
                                  left=${r != null} ? ${afterDone.get(r.id)} : null">
-        <!--/* 그 (자산, 패키지)의 지금 조치(최신 회차). 완료인데 지금 검사에 해소 건수가
-             남았으면 세 갈래(AfterDone) — 보고서 5장과 같은 말로. */-->
+        <!--/* 그 (자산, 패키지 식별자)의 지금 조치(최신 회차). 완료인데 지금 검사에 해소
+             건수가 남았으면 세 갈래(AfterDone) — 보고서 5장과 같은 말로. */-->
         <a th:if="${r != null}" th:href="@{'/actions/' + ${r.id}}"
            th:with="label=${left != null} ? ${left.label()} : ${r.status.label()}"
            th:title="${r.packageName} + ' 조치 · ' + ${label}"
@@ -210,6 +214,7 @@
         <form th:if="${r == null or (left != null and left.isNew())}" method="post"
               sec:authorize="hasRole('ADMIN')"
               th:action="@{'/assets/' + ${f.scan.asset.id} + '/remediations'}">
+          <input type="hidden" name="packageKey" th:value="${f.packageKey}">
           <input type="hidden" name="packageName" th:value="${f.packageName}">
           <button type="submit" class="linkbtn">조치 등록</button>
         </form>

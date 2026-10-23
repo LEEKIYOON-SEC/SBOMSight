@@ -25,7 +25,9 @@
          행을 먼저 찾는다(R6). 검토 결과 상세에서 열면 비어 있다. */-->
     <input type="hidden" name="findingId" id="analysis-finding">
     <input type="hidden" name="cve" id="analysis-cve">
-    <input type="hidden" name="packageName" id="analysis-pkg">
+    <!--/* 패키지는 식별자로 보낸다(V24) — 이름으로 보내면 같은 자산의 같은 이름(npm · PyPI 의
+         semver)에 적은 결정이 서로에게 붙는다. */-->
+    <input type="hidden" name="packageKey" id="analysis-pkg">
     <input type="hidden" name="back" th:value="${back}">
 
     <!--/*
@@ -122,15 +124,17 @@
   `findingId` 는 탐지 번호 — 표 · CVE 상세가 싣는다. 서버가 그 탐지의 두 번호(주 식별자 ·
   함께 온 CVE)로 있던 행을 먼저 찾아 고친다. 검토 결과 상세는 그 행 자신을 고치므로 null.
   `cve` 는 화면에 찍는 번호(finding.displayId)다 — 결재도 보고도 그 번호로 돈다.
+  `name` 은 팝업 머리에 찍을 패키지 이름, `key` 는 서버로 보내는 패키지 식별자(V24).
   `cls` 는 모양(목록은 글자 링크, 상세는 단추). 조회 계정에는 그리지 않는다.
 
-    <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${assetId}, ${f.id}, ${cve}, ${pkg}, 'btn btn-sm')}"></a>
+    <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${assetId}, ${f.id}, ${cve},
+                     ${f.packageName}, ${f.packageKey}, 'btn btn-sm')}"></a>
 */-->
-<a th:fragment="link(a, assetId, findingId, cve, pkg, cls)" sec:authorize="hasRole('ADMIN')" href="#"
+<a th:fragment="link(a, assetId, findingId, cve, name, key, cls)" sec:authorize="hasRole('ADMIN')" href="#"
    class="analysis-link" th:classappend="${cls}"
    th:text="${a != null and !a.untouched} ? '수정' : '작성'"
    th:attr="data-asset=${assetId}, data-finding=${findingId != null} ? ${findingId} : '',
-            data-cve=${cve}, data-pkg=${pkg}, data-label=${cve},
+            data-cve=${cve}, data-pkg=${key}, data-pkg-name=${name}, data-label=${cve},
             data-state=${a != null} ? ${a.state.name()} : 'NOT_SET',
             data-justification=${a != null and a.justification != null} ? ${a.justification.name()} : '',
             data-response=${a != null and a.response != null} ? ${a.response.name()} : '',

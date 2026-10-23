@@ -108,6 +108,7 @@ final class PublicationJson {
             out.put("id", r.getId());
             out.put("assetId", r.getAsset().getId());
             out.put("packageName", r.getPackageName());
+            out.put("packageKey", r.getPackageKey());
             out.put("roundNo", r.getRoundNo());
             out.put("previousId", r.getPreviousId());
             out.put("status", r.getStatus());
@@ -122,6 +123,7 @@ final class PublicationJson {
             out.put("assetId", a.getAsset().getId());
             out.put("cve", a.getCve());
             out.put("packageName", a.getPackageName());
+            out.put("packageKey", a.getPackageKey());
             out.put("state", a.getState());
             out.put("justification", a.getJustification());
             out.put("response", a.getResponse());

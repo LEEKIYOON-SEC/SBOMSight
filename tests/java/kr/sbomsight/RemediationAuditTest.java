@@ -135,7 +135,7 @@ class RemediationAuditTest {
     @DisplayName("담당·기한만 바꿔도 `조치 변경` 이 남는다 — 발자취에도 칸마다 한 줄")
     void changingOnlyTheOwnerIsRecorded() throws Exception {
         open("/assets/" + asset.getId() + "/remediations");
-        Remediation opened = remediations.findLatest(asset.getId(), pkg)
+        Remediation opened = remediations.findLatest(asset.getId(), PackageKey.of(null, null, pkg))
                                          .orElseThrow();
         int eventsBefore = opened.getEvents().size();
 
@@ -169,7 +169,7 @@ class RemediationAuditTest {
     @DisplayName("상태를 바꾸면 `조치 변경` 에 앞뒤 상태가 적힌다")
     void changingTheStatusRecordsBothSides() throws Exception {
         open("/assets/" + asset.getId() + "/remediations");
-        Remediation opened = remediations.findLatest(asset.getId(), pkg)
+        Remediation opened = remediations.findLatest(asset.getId(), PackageKey.of(null, null, pkg))
                                          .orElseThrow();
 
         mvc.perform(post("/actions/" + opened.getId())
@@ -195,7 +195,7 @@ class RemediationAuditTest {
     @DisplayName("고친 것이 없으면 `조치 변경` 이 남지 않는다")
     void savingWithoutAChangeIsNotRecorded() throws Exception {
         open("/assets/" + asset.getId() + "/remediations");
-        Remediation opened = remediations.findLatest(asset.getId(), pkg)
+        Remediation opened = remediations.findLatest(asset.getId(), PackageKey.of(null, null, pkg))
                                          .orElseThrow();
 
         mvc.perform(post("/actions/" + opened.getId())
@@ -223,7 +223,7 @@ class RemediationAuditTest {
     @DisplayName("V14 가 남긴 `하지 않고 닫음 → 대기` 이력이 있어도 조치 상세가 열린다")
     void aHistoryRowFromV14StillRenders() throws Exception {
         open("/assets/" + asset.getId() + "/remediations");
-        Remediation opened = remediations.findLatest(asset.getId(), pkg)
+        Remediation opened = remediations.findLatest(asset.getId(), PackageKey.of(null, null, pkg))
                                          .orElseThrow();
         remediations.flush();
 
@@ -249,7 +249,7 @@ class RemediationAuditTest {
     // -----------------------------------------------------------------------
 
     private void open(String path) throws Exception {
-        mvc.perform(post(path).param("packageName", pkg)
+        mvc.perform(post(path).param("packageKey", PackageKey.of(null, null, pkg))
                               .with(user("tester").roles("ADMIN")).with(csrf()))
            .andExpect(status().is3xxRedirection());
     }

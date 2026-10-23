@@ -3,6 +3,7 @@ package kr.sbomsight;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.AuditEvent;
 import kr.sbomsight.domain.AuditLog;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.AuditLogRepository;
@@ -141,7 +142,7 @@ class AuditLogTest {
         assets.saveAndFlush(asset);
 
         Remediation remediation = remediations.saveAndFlush(
-                new Remediation(asset, "openssl", ADMIN));
+                new Remediation(asset, "openssl", PackageKey.of(null, null, "openssl"), ADMIN));
         Long id = remediation.getId();
 
         mvc.perform(post("/actions/" + id + "/delete")
@@ -165,7 +166,7 @@ class AuditLogTest {
         asset.setName("rm-role-" + System.nanoTime());
         asset.setZone(zoneService.unassigned());
         assets.saveAndFlush(asset);
-        Long id = remediations.saveAndFlush(new Remediation(asset, "curl", ADMIN)).getId();
+        Long id = remediations.saveAndFlush(new Remediation(asset, "curl", PackageKey.of(null, null, "curl"), ADMIN)).getId();
 
         mvc.perform(post("/actions/" + id + "/delete")
                         .with(user("viewer").roles("VIEWER")).with(csrf()))

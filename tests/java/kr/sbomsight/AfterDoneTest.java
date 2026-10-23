@@ -48,6 +48,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @AutoConfigureMockMvc
 class AfterDoneTest {
 
+    /** 미리 만든 검사 결과(fake-grype)의 openssl — 패키지 식별자(V24). */
+    private static final String OPENSSL = "pkg:deb/debian/openssl";
+
     /** 탐지가 하나도 없는 검사 결과(fake-grype/sbom-none.json). */
     private static final String NONE = "sbom-none";
 
@@ -81,7 +84,7 @@ class AfterDoneTest {
     void aTargetLeftAfterTheFixSaysRemaining() throws Exception {
         Asset asset = asset("remain");
         steps.upload(asset, Instant.now().minus(10, ChronoUnit.DAYS), "1.1.1k", CurrentScanRuleTest.V1);
-        long id = idOf(steps.register(asset, "openssl"));
+        long id = idOf(steps.register(asset, "openssl", OPENSSL));
         steps.save(id, "DONE", "1.1.1n 적용");
         // 올렸다고 했는데 다시 뜬 SBOM 에 그대로다.
         steps.uploadNow(asset, "1.1.1k", CurrentScanRuleTest.V1);
@@ -95,7 +98,7 @@ class AfterDoneTest {
     void onlyNewFindingsSayNew() throws Exception {
         Asset asset = asset("new");
         steps.upload(asset, Instant.now().minus(10, ChronoUnit.DAYS), "1.1.1k", CurrentScanRuleTest.V1);
-        long id = idOf(steps.register(asset, "openssl"));
+        long id = idOf(steps.register(asset, "openssl", OPENSSL));
         steps.save(id, "DONE", "1.1.1n 적용");
         // 1.1.1n 으로 올랐다 — CVE-2023-0001 은 사라지고 CVE-2024-0002 가 새로 나왔다.
         steps.uploadNow(asset, "1.1.1n", CurrentScanRuleTest.V2);
@@ -107,7 +110,7 @@ class AfterDoneTest {
         assertThat(steps.page("/actions/" + id)).contains(register);
         assertThat(row(steps.page("/assets/" + asset.getId() + "?tab=vulns"), ">CVE-2024-0002<"))
                 .contains(register).contains("조치 등록");
-        assertThat(idOf(steps.register(asset, "openssl"))).as("새 조치(2회차)를 연다").isNotEqualTo(id);
+        assertThat(idOf(steps.register(asset, "openssl", OPENSSL))).as("새 조치(2회차)를 연다").isNotEqualTo(id);
     }
 
     @Test
@@ -116,7 +119,7 @@ class AfterDoneTest {
         Asset asset = asset("pending");
         Scan old = steps.upload(asset, Instant.now().minus(40, ChronoUnit.DAYS), "1.1.1k",
                                 CurrentScanRuleTest.V1);
-        long id = idOf(steps.register(asset, "openssl"));
+        long id = idOf(steps.register(asset, "openssl", OPENSSL));
         steps.save(id, "DONE", "1.1.1n 적용 — SBOM 은 아직 못 뜸");
         // 취약점 DB 가 바뀌어 최신 줄을 다시 검사했다 — 서버를 다시 읽은 것이 아니다.
         steps.rescan(asset, old);
@@ -143,7 +146,7 @@ class AfterDoneTest {
     void nothingTargetedSaysNew() throws Exception {
         Asset asset = asset("none");
         steps.upload(asset, Instant.now().minus(10, ChronoUnit.DAYS), "1.1.1n", NONE);
-        long id = idOf(steps.register(asset, "openssl"));
+        long id = idOf(steps.register(asset, "openssl", OPENSSL));
         assertThat(steps.page("/actions/" + id)).contains("등록 당시 탐지 없음");
         steps.save(id, "DONE", "점검 창에서 확인");
         steps.uploadNow(asset, "1.1.1n", CurrentScanRuleTest.V2);

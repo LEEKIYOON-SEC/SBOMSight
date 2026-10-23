@@ -301,6 +301,12 @@ tbody tr.zone-row:hover > td { background: var(--subtle); }
 .longname { overflow-wrap: anywhere; }
 .tag.longname { white-space: normal; word-break: keep-all; }
 
+/* 패키지 식별자(`fragments/ui :: pkgkey`) — 이름 아래 작게. 빈칸이 없는 긴 글자라
+   `.longname` 처럼 어디서든 접는다: 접지 않으면 그 폭이 칸의 최소 폭이 되어 좁은 칸
+   (`tight`)이 식별자 길이로 벌어진다. 칸 폭은 위의 이름이 정하고 식별자는 그 폭에 접힌다. */
+.pkgkey { font-family: var(--tblr-font-monospace); font-size: 12px; color: var(--fg-faint);
+          white-space: normal; overflow-wrap: anywhere; }
+
 /* 보고서의 `비고` 칸. 줄로 쌓되 한 줄은 쪼개지지 않게 둔다. */
 .remark { white-space: nowrap; }
 

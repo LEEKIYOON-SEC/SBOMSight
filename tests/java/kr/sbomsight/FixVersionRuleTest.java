@@ -88,7 +88,7 @@ class FixVersionRuleTest {
         scan.setFindingCount(8);
         scans.saveAndFlush(scan);
 
-        analyses.record(asset, "CVE-2099-5", "tomcat-coyote", AnalysisState.NOT_AFFECTED,
+        analyses.record(asset, "CVE-2099-5", "tomcat-coyote", PackageKey.of(null, "java-archive", "tomcat-coyote"), AnalysisState.NOT_AFFECTED,
                         AnalysisJustification.CODE_NOT_PRESENT, null, "시험", "", "", null, "tester");
     }
 
@@ -120,10 +120,10 @@ class FixVersionRuleTest {
         assertThat(zoneRow.fixVersions()).containsExactlyElementsOf(ALL);
 
         mvc.perform(post("/assets/" + asset.getId() + "/remediations")
-                            .param("packageName", "tomcat-coyote")
+                            .param("packageKey", "pkg:maven/tomcat-coyote")
                             .with(user("tester").roles("ADMIN")).with(csrf()));
         Remediation opened = remediations
-                .findLatest(asset.getId(), "tomcat-coyote").orElseThrow();
+                .findLatest(asset.getId(), "pkg:maven/tomcat-coyote").orElseThrow();
         assertThat(opened.getToVersions())
                 .as("조치가 보고서와 다른 목표를 적었다")
                 .containsExactlyElementsOf(ALL);
@@ -184,9 +184,9 @@ class FixVersionRuleTest {
                 .containsExactlyElementsOf(both);
 
         mvc.perform(post("/assets/" + asset.getId() + "/remediations")
-                            .param("packageName", "openssl")
+                            .param("packageKey", "pkg:binary/openssl")
                             .with(user("tester").roles("ADMIN")).with(csrf()));
-        Remediation opened = remediations.findLatest(asset.getId(), "openssl").orElseThrow();
+        Remediation opened = remediations.findLatest(asset.getId(), "pkg:binary/openssl").orElseThrow();
         assertThat(opened.getToVersion())
                 .as("조치의 목표가 글자 순 · 겹침 없는 꼴로 적히지 않았다")
                 .isEqualTo(String.join(" ", both));

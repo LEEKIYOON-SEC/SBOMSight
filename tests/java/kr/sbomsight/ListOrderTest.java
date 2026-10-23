@@ -47,7 +47,9 @@ class ListOrderTest {
      * 깔리면(component 에는 유일 키가 없다) 두 줄의 순서가 정해지지 않는다.
      * 대응 화면의 검토 결과 목록은 요청마다 전부 읽어 쪽을 자른다 — 같은 자산의
      * 같은 CVE 가 패키지 둘에 걸리면 마찬가지다. 자산 이름은 유일하고
-     * (uk_assets_name), 검토 결과는 (자산, CVE, 패키지) 에 하나다(ux_analysis_key).
+     * (uk_assets_name), 검토 결과는 (자산, CVE, 패키지 식별자) 에 하나다(ux_analysis_key).
+     * 이름이 같은 다른 패키지(npm · PyPI 의 semver)가 있고, 식별자가 빈 옛 기록(V24)은
+     * 같은 번호에 여럿일 수 있어 식별자 · id 까지 둔다.
      */
     @Test
     @DisplayName("자산의 패키지 탭 · 대응 화면의 검토 결과 목록도 정렬의 끝이 줄 하나를 가리킨다")
@@ -55,7 +57,7 @@ class ListOrderTest {
         assertThat(orderBy(ComponentRepository.class, "findByAsset"))
                 .endsWith("c.name ASC, c.version ASC, c.id ASC");
         assertThat(orderBy(FindingAnalysisRepository.class, "findForList"))
-                .endsWith("a.name ASC, f.cve ASC, f.packageName ASC");
+                .endsWith("a.name ASC, f.cve ASC, f.packageName ASC, f.packageKey ASC, f.id ASC");
         // CVE 상세도 요청마다 전부 읽어 쪽을 자른다.
         assertThat(orderBy(FindingRepository.class, "findByCveIn"))
                 .endsWith("ax.name ASC, f.packageName ASC, f.id ASC");

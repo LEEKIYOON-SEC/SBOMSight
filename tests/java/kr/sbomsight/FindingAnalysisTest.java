@@ -62,7 +62,7 @@ class FindingAnalysisTest {
 
     /** 앞서의 '위험 수용' 에 해당하는 조합. */
     private FindingAnalysis acceptRisk(String cve, String pkg) {
-        return service.record(asset, cve, pkg,
+        return service.record(asset, cve, pkg, PackageKey.of(null, null, pkg),
                               AnalysisState.EXPLOITABLE, null, AnalysisResponse.WILL_NOT_FIX,
                               "업스트림에 수정 버전이 없고 해당 기능을 쓰지 않습니다",
                               "내부망에서만 접근", "보안-2026-0143", future(), "tester");
@@ -77,13 +77,13 @@ class FindingAnalysisTest {
     @Test
     @DisplayName("해당 없음은 근거를 골라야 적힌다")
     void notAffectedNeedsAJustification() {
-        assertThatThrownBy(() -> service.record(asset, "CVE-1", "openssl",
+        assertThatThrownBy(() -> service.record(asset, "CVE-1", "openssl", PackageKey.of(null, null, "openssl"),
                                                 AnalysisState.NOT_AFFECTED, null, null,
                                                 "", "", "", null, "tester"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("근거");
 
-        FindingAnalysis ok = service.record(asset, "CVE-1", "openssl",
+        FindingAnalysis ok = service.record(asset, "CVE-1", "openssl", PackageKey.of(null, null, "openssl"),
                 AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE, null,
                 "", "", "", null, "tester");
         assertThat(ok.getJustification()).isEqualTo(AnalysisJustification.CODE_NOT_REACHABLE);
@@ -93,11 +93,11 @@ class FindingAnalysisTest {
     @Test
     @DisplayName("해당 없음이 아니게 되면 근거는 지워진다")
     void justificationIsClearedWhenTheStateMovesOn() {
-        service.record(asset, "CVE-1", "openssl",
+        service.record(asset, "CVE-1", "openssl", PackageKey.of(null, null, "openssl"),
                        AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_PRESENT, null,
                        "", "", "", null, "tester");
 
-        FindingAnalysis moved = service.record(asset, "CVE-1", "openssl",
+        FindingAnalysis moved = service.record(asset, "CVE-1", "openssl", PackageKey.of(null, null, "openssl"),
                 AnalysisState.EXPLOITABLE, AnalysisJustification.CODE_NOT_PRESENT,
                 AnalysisResponse.UPDATE, "", "", "", null, "tester");
 
@@ -115,7 +115,7 @@ class FindingAnalysisTest {
     void leavingItAloneNeedsAReviewDate() {
         for (AnalysisResponse r : new AnalysisResponse[] {
                 AnalysisResponse.CAN_NOT_FIX, AnalysisResponse.WILL_NOT_FIX }) {
-            assertThatThrownBy(() -> service.record(asset, "CVE-" + r.name(), "openssl",
+            assertThatThrownBy(() -> service.record(asset, "CVE-" + r.name(), "openssl", PackageKey.of(null, null, "openssl"),
                                                     AnalysisState.EXPLOITABLE, null, r,
                                                     "", "", "", null, "tester"))
                     .as("%s 에 기한 없이 통과했다", r.label())
@@ -124,7 +124,7 @@ class FindingAnalysisTest {
         }
 
         // 고치기로 한 것은 묻지 않는다.
-        FindingAnalysis fixing = service.record(asset, "CVE-UP", "openssl",
+        FindingAnalysis fixing = service.record(asset, "CVE-UP", "openssl", PackageKey.of(null, null, "openssl"),
                 AnalysisState.EXPLOITABLE, null, AnalysisResponse.UPDATE,
                 "", "", "", null, "tester");
         assertThat(fixing.getReviewBy()).isNull();
@@ -133,7 +133,7 @@ class FindingAnalysisTest {
     @Test
     @DisplayName("재검토일은 미래여야 한다")
     void theReviewDateMustBeInTheFuture() {
-        assertThatThrownBy(() -> service.record(asset, "CVE-1", "openssl",
+        assertThatThrownBy(() -> service.record(asset, "CVE-1", "openssl", PackageKey.of(null, null, "openssl"),
                 AnalysisState.EXPLOITABLE, null, AnalysisResponse.WILL_NOT_FIX,
                 "", "", "", LocalDate.now().minusDays(1), "tester"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -145,7 +145,7 @@ class FindingAnalysisTest {
     @DisplayName("고치기로 바꾸면 재검토일은 지워진다")
     void theReviewDateGoesWhenWeDecideToFixIt() {
         acceptRisk("CVE-1", "openssl");
-        FindingAnalysis fixed = service.record(asset, "CVE-1", "openssl",
+        FindingAnalysis fixed = service.record(asset, "CVE-1", "openssl", PackageKey.of(null, null, "openssl"),
                 AnalysisState.EXPLOITABLE, null, AnalysisResponse.UPDATE,
                 "", "", "", future(), "tester");
         assertThat(fixed.getReviewBy()).isNull();
@@ -162,7 +162,7 @@ class FindingAnalysisTest {
         FindingAnalysis first = acceptRisk("CVE-1", "openssl");
         Long id = first.getId();
 
-        FindingAnalysis again = service.record(asset, "CVE-1", "openssl",
+        FindingAnalysis again = service.record(asset, "CVE-1", "openssl", PackageKey.of(null, null, "openssl"),
                 AnalysisState.NOT_AFFECTED, AnalysisJustification.PROTECTED_AT_PERIMETER, null,
                 "WAF 에서 해당 경로를 막습니다", "", "", null, "tester");
 
@@ -190,7 +190,7 @@ class FindingAnalysisTest {
         assertThat(afterFirst).isEqualTo(6);
 
         // 나머지는 그대로 두고 설명만 고친다.
-        FindingAnalysis same = service.record(asset, "CVE-1", "openssl",
+        FindingAnalysis same = service.record(asset, "CVE-1", "openssl", PackageKey.of(null, null, "openssl"),
                 AnalysisState.EXPLOITABLE, null, AnalysisResponse.WILL_NOT_FIX,
                 "설명만 고칩니다", "내부망에서만 접근", "보안-2026-0143", future(), "tester");
 
@@ -237,7 +237,7 @@ class FindingAnalysisTest {
     @Test
     @DisplayName("해당 없음은 기본 목록에서 빠지고, 켜면 나온다")
     void finishedItemsHideUntilAsked() {
-        service.record(asset, "CVE-2", "openssl",
+        service.record(asset, "CVE-2", "openssl", PackageKey.of(null, null, "openssl"),
                        AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_PRESENT, null,
                        "", "", "", null, "tester");
 
@@ -269,7 +269,7 @@ class FindingAnalysisTest {
         scan.setMatchCount(1);
         scans.saveAndFlush(scan);
 
-        service.record(asset, "CVE-1", "spring-core",
+        service.record(asset, "CVE-1", "spring-core", PackageKey.of(null, null, "spring-core"),
                        AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE, null,
                        "", "", "", null, "tester");
 
@@ -284,7 +284,8 @@ class FindingAnalysisTest {
     @DisplayName("검토 결과 키는 버전을 넣지 않는다")
     void theKeyIgnoresVersion() {
         // 버전을 넣으면 부분 패치로 버전이 바뀌는 순간 검토 결과가 조용히 풀린다.
-        assertThat(acceptRisk("CVE-1", "openssl").key()).isEqualTo("CVE-1|openssl");
+        // 패키지 쪽도 식별자다 — purl 에서 버전을 뗀 것(PackageKey). 이 탐지는 purl · 유형이 없다.
+        assertThat(acceptRisk("CVE-1", "openssl").key()).isEqualTo("CVE-1|pkg:/openssl");
     }
 
     @Test
@@ -327,7 +328,7 @@ class FindingAnalysisTest {
         scans.saveAndFlush(scan);
 
         // 사람이 읽고 적는 번호로 적는다.
-        service.record(asset, "CVE-2021-44228", "log4j-core",
+        service.record(asset, "CVE-2021-44228", "log4j-core", PackageKey.of(null, null, "log4j-core"),
                        AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE, null,
                        "해당 클래스를 로드하지 않습니다", "", "", null, "tester");
 
@@ -374,7 +375,7 @@ class FindingAnalysisTest {
         findings.saveAndFlush(f);
 
         // 옮겨 온 행은 그때의 주 식별자(GHSA)로 적혀 있다.
-        service.record(asset, "GHSA-2gwj-7jmv-h26r", "log4j-core",
+        service.record(asset, "GHSA-2gwj-7jmv-h26r", "log4j-core", PackageKey.of(null, null, "log4j-core"),
                        AnalysisState.EXPLOITABLE, null, AnalysisResponse.WILL_NOT_FIX,
                        "", "", "", future(), "tester");
 
@@ -411,7 +412,7 @@ class FindingAnalysisTest {
         scans.saveAndFlush(scan);
 
         mvc.perform(post("/analyses").param("assetId", asset.getId().toString())
-                                     .param("cve", longId).param("packageName", "pyyaml")
+                                     .param("cve", longId).param("packageKey", "pkg:/pyyaml")
                                      .param("state", "IN_TRIAGE").param("note", "긴 번호")
                                      .with(user("tester").roles("ADMIN")).with(csrf()))
            .andExpect(status().is3xxRedirection());
@@ -444,7 +445,7 @@ class FindingAnalysisTest {
     void viewersCannotRecord() throws Exception {
         mvc.perform(post("/analyses").with(user("viewer").roles("VIEWER")).with(csrf())
                         .param("assetId", asset.getId().toString())
-                        .param("cve", "CVE-1").param("packageName", "openssl")
+                        .param("cve", "CVE-1").param("packageKey", "pkg:/openssl")
                         .param("state", "NOT_AFFECTED")
                         .param("justification", "CODE_NOT_PRESENT"))
            .andExpect(status().isForbidden());
@@ -457,15 +458,23 @@ class FindingAnalysisTest {
     @Test
     @DisplayName("고르지 않은 칸은 빈 값으로 와도 받는다")
     void emptySelectionsAreAccepted() throws Exception {
+        // 탐지 번호 없이 새로 적는 것은 이 자산에 그 패키지의 탐지가 있을 때만이다.
+        Scan scan = new Scan(asset, "tester");
+        scan.setStatus(ScanStatus.DONE);
+        scans.saveAndFlush(scan);
+        Finding f = new Finding(scan, "CVE-7|openssl", "CVE-7", "openssl");
+        f.setSeverity("High");
+        findings.saveAndFlush(f);
+
         mvc.perform(post("/analyses").with(user("admin2").roles("ADMIN")).with(csrf())
                         .param("assetId", asset.getId().toString())
-                        .param("cve", "CVE-7").param("packageName", "openssl")
+                        .param("cve", "CVE-7").param("packageKey", "pkg:/openssl")
                         .param("state", "IN_TRIAGE")
                         .param("justification", "").param("response", "")
                         .param("reviewBy", "").param("note", "확인 중입니다"))
            .andExpect(redirectedUrl("/actions?tab=analyses"));
 
-        assertThat(repo.findOne(asset.getId(), "CVE-7", "openssl")).isPresent();
+        assertThat(repo.findOne(asset.getId(), "CVE-7", "pkg:/openssl")).isPresent();
     }
 
     /**
@@ -477,7 +486,7 @@ class FindingAnalysisTest {
     void refusesAnExternalRedirect() throws Exception {
         mvc.perform(post("/analyses").with(user("admin2").roles("ADMIN")).with(csrf())
                         .param("assetId", asset.getId().toString())
-                        .param("cve", "CVE-9").param("packageName", "openssl")
+                        .param("cve", "CVE-9").param("packageKey", "pkg:/openssl")
                         .param("state", "IN_TRIAGE")
                         .param("back", "//evil.example.com/"))
            .andExpect(redirectedUrl("/actions?tab=analyses"));

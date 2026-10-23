@@ -67,12 +67,15 @@ public class FindingAnalysisController {
         // 최신 검사에서 이 탐지가 아직 있는가 — 조치 상세와 같다. 검토 결과를
         // 저절로 바꾸지는 않는다. 사라진 까닭(올렸는지 · 검사 대상이
         // 바뀌었는지)은 도구가 알 수 없다. 번호는 둘 다 본다 — 적어 둔 번호가
-        // 함께 온 CVE 쪽일 수 있다(findByCveIn 이 두 칸을 다 본다).
+        // 함께 온 CVE 쪽일 수 있다(findByCveIn 이 두 칸을 다 본다). 패키지는 식별자로
+        // 견준다(V24) — 이름으로 견주어 같은 이름의 다른 패키지 탐지가 `이 탐지` 로 셌다.
+        // 식별자가 빈 옛 기록은 어느 탐지와도 같지 않다 — 화면이 그렇다고 말한다.
         Scan latest = scans.currentOf(analysis.getAsset().getId()).orElse(null);
         model.addAttribute("latest", latest);
-        model.addAttribute("present", latest == null ? List.<Finding>of()
+        model.addAttribute("present", latest == null || analysis.isPackageUnresolved()
+                ? List.<Finding>of()
                 : findings.findByCveIn(List.of(latest.getId()), analysis.getCve(), true).stream()
-                          .filter(f -> f.getPackageName().equals(analysis.getPackageName()))
+                          .filter(f -> f.getPackageKey().equals(analysis.getPackageKey()))
                           .toList());
         // 이력이 적는 칸까지 남기 시작한 시각 — 그보다 먼저 만든 것에만 각주로(V19).
         model.addAttribute("historySince", settings.historyFieldsSince()
@@ -89,13 +92,16 @@ public class FindingAnalysisController {
      * <p><b>표 · CVE 상세는 탐지 번호({@code findingId})를 함께 보낸다</b> — 서버가 그
      * 탐지의 두 번호로 있던 행을 먼저 찾는다(FindingAnalysisService.recordForFinding).
      * 검토 결과 상세는 그 행 자신을 고치므로 보내지 않는다 — 그 행의 번호로 찾는다.
+     *
+     * <p><b>패키지는 식별자로 받는다</b>({@code packageKey} — V24). 앞서 이름으로 받아, npm 의
+     * semver 줄에서 적은 `해당 없음` 이 같은 자산 PyPI semver 의 같은 번호 탐지에도 붙었다.
      */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public String record(@RequestParam Long assetId,
                          @RequestParam(required = false) Long findingId,
                          @RequestParam String cve,
-                         @RequestParam String packageName,
+                         @RequestParam(required = false) String packageKey,
                          @RequestParam(required = false) String state,
                          @RequestParam(required = false) String justification,
                          @RequestParam(required = false) String response,
@@ -117,10 +123,11 @@ public class FindingAnalysisController {
             AnalysisState chosen = newState == null ? AnalysisState.NOT_SET : newState;
             Runnable write = () -> {
                 if (findingId == null) {
-                    analyses.record(asset, cve, packageName, chosen, newJustification, newResponse,
+                    // 있던 것만 고친다 — 이름은 그 행의 것이다(null).
+                    analyses.record(asset, cve, null, packageKey, chosen, newJustification, newResponse,
                                     note, otherControl, approvalDoc, newReviewBy, principal.getName());
                 } else {
-                    analyses.recordForFinding(asset, findingId, packageName, chosen, newJustification,
+                    analyses.recordForFinding(asset, findingId, packageKey, chosen, newJustification,
                                               newResponse, note, otherControl, approvalDoc, newReviewBy,
                                               principal.getName());
                 }
@@ -129,7 +136,7 @@ public class FindingAnalysisController {
                 write.run();
             } catch (org.springframework.dao.DataIntegrityViolationException race) {
                 // **동시에 두 번 눌렸다.** `record` 는 `없으면 만든다` 인데 그
-                // 사이에 다른 요청이 같은 `(자산, CVE, 패키지)` 를 만들 수 있다.
+                // 사이에 다른 요청이 같은 `(자산, CVE, 패키지 식별자)` 를 만들 수 있다.
                 // DB 의 유일 제약(`ux_analysis_key`)이 막아 데이터는 갈라지지
                 // 않지만, 예외가 그대로 올라가면 화면이 500 이 되어 적은 것이
                 // 들어갔는지 알 수 없다.
@@ -137,7 +144,7 @@ public class FindingAnalysisController {
                 // 한 번 더 부른다 — 이제 그 줄이 있으므로 `고치는 길` 로 가고,
                 // 바뀐 칸만 이력에 남는다. 두 번째도 겹치면 그때는 올린다.
                 log.info("검토 결과를 적는 요청이 겹쳤습니다 — 다시 한 번 적습니다: {} · {}",
-                         cve, packageName);
+                         cve, packageKey);
                 write.run();
             }
             flash.addFlashAttribute("message", cve + "의 검토 결과를 적었습니다.");

@@ -4,6 +4,7 @@ import kr.sbomsight.domain.AnalysisJustification;
 import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.domain.Zone;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -76,7 +78,7 @@ class ReportAppendixTest {
         finding(dbScan, "CVE-2099-1001", "openssl", "Critical", null, 9.1,
                 "OpenSSL has a flaw in X (e.g. Y). Attackers can Z.");
 
-        analyses.record(web, "CVE-2099-1004", "glibc", AnalysisState.NOT_AFFECTED,
+        analyses.record(web, "CVE-2099-1004", "glibc", PackageKey.of(null, null, "glibc"), AnalysisState.NOT_AFFECTED,
                         AnalysisJustification.CODE_NOT_PRESENT, null, "", "", "", null, "tester");
     }
 
@@ -113,6 +115,30 @@ class ReportAppendixTest {
                 .containsPattern("CVE-2099-1001</td>.*?<td class=\"num tight\">2대</td>")
                 .doesNotContain("CVE-2099-1004");
         assertThat(appendix.split("CVE-2099-1001", -1)).as("한 줄이다").hasSize(2);
+    }
+
+    /**
+     * <b>패키지 칸도 식별자로 가른다</b>(V24). 앞서 이름으로 겹침을 뺐다 — groupId 만 다른 두
+     * dom4j 가 같은 심각 취약점에 걸리면 `dom4j` 한 줄로 적혀, 받는 사람은 하나로 읽었다.
+     */
+    @Test
+    @DisplayName("부록의 패키지 칸 — 이름이 같아도 식별자가 다르면 따로 적는다")
+    void sameNamePackagesStayApart() throws Exception {
+        for (String purl : List.of("pkg:maven/dom4j/dom4j@1.6.1", "pkg:maven/org.dom4j/dom4j@2.1.1")) {
+            Finding f = new Finding(webScan, "CVE-2099-1008|" + purl, "CVE-2099-1008", "dom4j");
+            f.setPackageVersion(purl.substring(purl.indexOf('@') + 1));
+            f.setPackageType("java-archive");
+            f.setPackagePurl(purl);
+            f.setSeverity("Critical");
+            f.setDescription("dom4j allows External Entities by default.");
+            findings.saveAndFlush(f);
+        }
+        for (String url : List.of("/reports/scan/" + webScan.getId(), "/reports/zone?zone=" + zone.getId())) {
+            String row = flat(appendix(page(url))).replaceAll(".*(CVE-2099-1008</td>.*?</tr>).*", "$1");
+            assertThat(row).as(url)
+                    .contains("<div class=\"pkgkey\">pkg:maven/dom4j/dom4j</div>")
+                    .contains("<div class=\"pkgkey\">pkg:maven/org.dom4j/dom4j</div>");
+        }
     }
 
     @Test

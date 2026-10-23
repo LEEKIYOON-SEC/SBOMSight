@@ -108,13 +108,13 @@ class AnalysisIdentifierTest {
                 .param("assetId", a.getId().toString())
                 .param("findingId", f.getId().toString())
                 .param("cve", f.getDisplayId())
-                .param("packageName", f.getPackageName())
+                .param("packageKey", f.getPackageKey())
                 .param("state", state);
     }
 
     /** 이미 둘로 갈린 행을 만든다 — 앞서 그렇게 쌓였다(V11 이 옮긴 행 · 표에서 고친 행). */
     private FindingAnalysis row(String cve, String pkg, AnalysisState state, Instant updatedAt) {
-        FindingAnalysis a = analyses.record(asset, cve, pkg, state,
+        FindingAnalysis a = analyses.record(asset, cve, pkg, PackageKey.of(null, null, pkg), state,
                 state == AnalysisState.NOT_AFFECTED ? AnalysisJustification.CODE_NOT_PRESENT : null,
                 null, "시험", "", "", null, "tester");
         a.setUpdatedAt(updatedAt);
@@ -127,7 +127,7 @@ class AnalysisIdentifierTest {
     }
 
     private Set<String> listed(Scan s) {
-        return findings.findInBySeverity(List.of(s.getId()), null, null, null, null,
+        return findings.findInBySeverity(List.of(s.getId()), null, null, null, null, null,
                                          false, false, PageRequest.of(0, 100))
                        .stream().map(Finding::getPackageName).collect(Collectors.toSet());
     }
@@ -192,7 +192,7 @@ class AnalysisIdentifierTest {
                             .param("assetId", asset.getId().toString())
                             .param("findingId", mine.getId().toString())
                             .param("cve", mine.getDisplayId())
-                            .param("packageName", "openssl")
+                            .param("packageKey", "pkg:/openssl")
                             .param("state", "NOT_AFFECTED").param("justification", "CODE_NOT_PRESENT"))
            .andExpect(status().is3xxRedirection())
            .andExpect(flash().attributeExists("error"));
@@ -217,7 +217,7 @@ class AnalysisIdentifierTest {
         finding(s, "GHSA-bbbb-2222-0002", "CVE-2025-0002", "pkg-b");
 
         assertThat(listed(s)).as("목록(SQL)이 옛 결정으로 뺐다").containsExactlyInAnyOrder("pkg-a", "pkg-b");
-        assertThat(findings.countReviewedOut(List.of(s.getId()), null, null, null, null, null)).isZero();
+        assertThat(findings.countReviewedOut(List.of(s.getId()), null, null, null, null, null, null)).isZero();
 
         ReportService.Report report = reports.build(scans.findWithAsset(s.getId()).orElseThrow());
         assertThat(report.summary().reviewOf(AnalysisState.EXPLOITABLE))

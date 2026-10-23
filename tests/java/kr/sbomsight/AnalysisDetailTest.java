@@ -5,6 +5,7 @@ import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.FindingAnalysis;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.repo.AssetRepository;
@@ -73,9 +74,9 @@ class AnalysisDetailTest {
 
         // 두 사람이 차례로 적었다 — 검토 중으로 두었다가, 해당 없음으로 닫으며
         // 결재 문서 번호를 적었다.
-        analyses.record(asset, "CVE-2099-7777", "zlib", AnalysisState.IN_TRIAGE, null, null,
+        analyses.record(asset, "CVE-2099-7777", "zlib", PackageKey.of(null, null, "zlib"), AnalysisState.IN_TRIAGE, null, null,
                         "", "", "", null, "alice");
-        analysis = analyses.record(asset, "CVE-2099-7777", "zlib", AnalysisState.NOT_AFFECTED,
+        analysis = analyses.record(asset, "CVE-2099-7777", "zlib", PackageKey.of(null, null, "zlib"), AnalysisState.NOT_AFFECTED,
                                    AnalysisJustification.CODE_NOT_REACHABLE, null,
                                    "호출 경로 없음", "", "보안-2026-0001", null, "bob");
     }

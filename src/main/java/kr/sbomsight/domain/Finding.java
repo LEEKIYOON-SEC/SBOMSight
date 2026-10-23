@@ -96,6 +96,14 @@ public class Finding {
     @Column(name = "package_purl", nullable = false, length = 512)
     private String packagePurl = "";
 
+    /**
+     * 패키지 식별자 — purl 에서 버전 · 한정자를 뗀 것({@link PackageKey}). 검토 결과 · 조치 ·
+     * 보고서의 줄이 이것으로 이 탐지를 가리킨다. 이름 · 유형 · purl 에서 만들어지므로 저장할 때
+     * 채운다({@link #fillPackageKey}) — 손으로 적지 않는다(V24).
+     */
+    @Column(name = "package_key", nullable = false, length = 512)
+    private String packageKey = "";
+
     @Column(name = "package_language", nullable = false, length = 64)
     private String packageLanguage = "";
 
@@ -317,6 +325,18 @@ public class Finding {
 
     public void setPackagePurl(String packagePurl) {
         this.packagePurl = clip(packagePurl, 512);
+    }
+
+    /** 패키지 식별자 — 저장하기 전에도 지금 칸들로 만들어 준다(아직 채우지 않았을 때). */
+    public String getPackageKey() {
+        return packageKey.isEmpty() ? PackageKey.of(packagePurl, packageType, packageName) : packageKey;
+    }
+
+    /** 저장할 때 채운다 — 이름 · 유형 · purl 이 정하는 값이라 따로 적는 길을 두지 않는다. */
+    @PrePersist
+    @PreUpdate
+    void fillPackageKey() {
+        packageKey = PackageKey.of(packagePurl, packageType, packageName);
     }
 
     public String getPackageLanguage() {

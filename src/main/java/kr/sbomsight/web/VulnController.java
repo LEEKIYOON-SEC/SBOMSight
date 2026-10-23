@@ -76,6 +76,7 @@ public class VulnController {
                         @RequestParam(required = false) Long asset,
                         @RequestParam(defaultValue = "item") String group,
                         @RequestParam(required = false) String q,
+                        @RequestParam(required = false) String pkg,
                         @RequestParam(required = false) String severity,
                         @RequestParam(required = false) Boolean fixable,
                         @RequestParam(required = false) Boolean kev,
@@ -96,7 +97,9 @@ public class VulnController {
         // 아니라 아직 아무것도 고르지 않은 상태다.
         VulnQuery.Links links = new VulnQuery.Links("/vulns", null)
                 .with("zone", zone).with("scan", scan).with("group", group)
-                .with("q", q).with("severity", severity)
+                // 패키지 하나(식별자) — 묶은 줄 · 패키지 화면의 링크가 싣는다. 검색어와 따로 둔다:
+                // 검색어는 이름의 일부라 같은 이름의 다른 패키지도 걸린다.
+                .with("q", q).with("pkg", pkg).with("severity", severity)
                 .with("fixable", fixable).with("kev", kev)
                 // 끈 것은 적지 않는다 — 빼는 것이 기본이다.
                 .with("includeDone", includeDone ? "true" : null)
@@ -118,6 +121,7 @@ public class VulnController {
         model.addAttribute("selectedScan", scan);
         model.addAttribute("group", group);
         model.addAttribute("q", q);
+        model.addAttribute("pkg", pkg == null || pkg.isBlank() ? null : pkg.trim());
         model.addAttribute("severity", severity);
         model.addAttribute("fixable", fixable);
         model.addAttribute("kev", kev);
@@ -125,7 +129,7 @@ public class VulnController {
         model.addAttribute("dir", dir);
         model.addAttribute("links", links);
 
-        query.fill(model, scope, group, q, severity, fixable, kev, includeDone,
+        query.fill(model, scope, group, q, pkg, severity, fixable, kev, includeDone,
                    page, size, sort, dir);
         return "vulns";
     }
@@ -154,7 +158,7 @@ public class VulnController {
         List<Finding> rows = scope.scanIds().isEmpty()
                 ? List.of() : findings.findByCveIn(scope.scanIds(), cve, includeDone);
         long reviewedOut = scope.scanIds().isEmpty() ? 0
-                : findings.countReviewedOut(scope.scanIds(), cve, null, null, null, null);
+                : findings.countReviewedOut(scope.scanIds(), cve, null, null, null, null, null);
         // 걸린 것이 전부 해당 없음 · 오탐이면 없는 CVE 가 아니다 — 그 사실과
         // 함께 보는 길을 보여 준다. 검토 결과의 CVE 번호를 누르면 여기로 온다.
         if (rows.isEmpty() && reviewedOut == 0) {
@@ -209,6 +213,7 @@ public class VulnController {
     public void export(@RequestParam(required = false) Long zone,
                        @RequestParam(required = false) Long scan,
                        @RequestParam(required = false) String q,
+                       @RequestParam(required = false) String pkg,
                        @RequestParam(required = false) String severity,
                        @RequestParam(required = false) Boolean fixable,
                        @RequestParam(required = false) Boolean kev,
@@ -234,8 +239,8 @@ public class VulnController {
             }
             for (int page = 0; ; page++) {
                 Slice<Finding> chunk = findings.sliceInBySeverity(
-                        scope.scanIds(), blank(q), blank(severity), fixable, kev, includeDone,
-                        false, PageRequest.of(page, EXPORT_CHUNK));
+                        scope.scanIds(), blank(q), blank(pkg), blank(severity), fixable, kev,
+                        includeDone, false, PageRequest.of(page, EXPORT_CHUNK));
                 csv.write(chunk.getContent());
                 if (!chunk.hasNext()) {
                     break;

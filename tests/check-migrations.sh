@@ -398,6 +398,111 @@ SQL
         echo "  └ 탐지 12건 · 검토 결과 3행 · 조치 4행 · 조치 대상 9행을 넣었다 (후보 여럿 · 하나 · 없음 · 못 읽음 · 너무 긺 · 해당 없음 · 대소문자)" ;;
     esac
 
+    # V24 가 탐지 · 인벤토리 · 검토 결과 · 조치에 패키지 식별자를 단다. 달 것이 있는 상태에서
+    # 태워야 한다.
+    #   벡터 — tests/resources/package-key-vectors.tsv 의 줄마다 탐지 하나 · 패키지 하나. 앱의
+    #          PackageKey(PackageKeyTest)와 같은 기대값이 나와야 한다.
+    #   v24-a — 검사 둘. 앞 검사: npm 과 PyPI 의 semver(같은 번호 2401) · npm left-pad(2402, 그리고
+    #          GHSA 주 식별자에 함께 온 CVE 2406) · groupId 만 다른 jackson-databind 둘(2403 · 2404) ·
+    #          같은 purl 을 다른 이름으로 적은 PyYAML / pyyaml-dist(2407). 뒤 검사: npm semver 만(2405).
+    #   v24-b — npm semver 만(2401).
+    #   검토 결과 — 2401 semver(a: 둘에 붙음 → 비움 / b: 하나 → 붙임) · 2402 left-pad · 2403
+    #          jackson-databind(번호로 하나) · 2405 semver(뒤 검사의 npm 만) · 2499 semver(붙던 탐지
+    #          없음 → 비움) · 2406(함께 온 CVE) · 2407 이름 둘이 한 식별자(→ 둘 다 비움).
+    #   조치 — semver(a: 등록한 검사에 둘 → 비움 / b: 하나) · left-pad · jackson-databind(둘 → 비움) ·
+    #          등록한 검사가 지워진 것 · 모르는 것 · 이름 둘이 한 식별자(→ 둘 다 비움). 전부 대기
+    #          1회차 — V14 · V19 확인이 조치 전부의 상태와 회차를 센다.
+    # 자산은 새로 만든다(내부업무 — 자산 수를 세는 확인이 없는 구역). 검토 결과 · 조치의 수를
+    # 적어 두었다가 V24 직후에 견준다 — 지우거나 늘리지 않는다.
+    case "$(basename "$f")" in V23__*)
+        esc() { local s=${1//\\/\\\\}; s=${s//\'/\\\'}; printf '%s' "$s"; }
+        FROWS=""; CROWS=""; n=0
+        while IFS=$'\037' read -r purl type name key; do
+            n=$((n + 1))
+            FROWS="$FROWS${FROWS:+,}
+         (@v, 'v24-vec-$n', 'CVE-2099-$((24000 + n))', '$(esc "$name")', 'v24-vec-$n', '$(esc "$type")', '$(esc "$purl")')"
+            CROWS="$CROWS${CROWS:+,}
+         (@va, @v, '$(esc "$name")', 'v24-vec-$n', '$(esc "$type")', '$(esc "$purl")')"
+        done < <(grep -v '^#' tests/resources/package-key-vectors.tsv | grep -v '^$' | tr '\t' '\037')
+        VECTORS=$n
+        run "$DB" -e "
+        INSERT INTO assets (name, zone_id, os_name, note, created_at)
+        SELECT 'v24-v', id, '', '', NOW(6) FROM zones WHERE name = '내부업무';
+        SET @va = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (@va, 'DONE', NOW(6), 'v24check', 'v24-vec', NOW(6));
+        SET @v = LAST_INSERT_ID();
+        INSERT INTO findings (scan_id, finding_key, cve, package_name, package_version, package_type, package_purl)
+        VALUES $FROWS;
+        INSERT INTO component (asset_id, scan_id, name, version, type, purl)
+        VALUES $CROWS;
+
+        INSERT INTO assets (name, zone_id, os_name, note, created_at)
+        SELECT 'v24-a', id, '', '', NOW(6) FROM zones WHERE name = '내부업무';
+        SET @a = LAST_INSERT_ID();
+        INSERT INTO assets (name, zone_id, os_name, note, created_at)
+        SELECT 'v24-b', id, '', '', NOW(6) FROM zones WHERE name = '내부업무';
+        SET @b = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (@a, 'DONE', '2026-09-01 09:00:00', 'v24check', 'v24-a1', '2026-09-01 09:00:00');
+        SET @s1 = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (@a, 'DONE', '2026-09-10 09:00:00', 'v24check', 'v24-a2', '2026-09-10 09:00:00');
+        SET @s2 = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (@b, 'DONE', '2026-09-01 09:00:00', 'v24check', 'v24-b1', '2026-09-01 09:00:00');
+        SET @s3 = LAST_INSERT_ID();
+        INSERT INTO findings (scan_id, finding_key, cve, related_cve, package_name, package_version,
+                              package_type, package_purl) VALUES
+         (@s1, 'a1', 'CVE-2099-2401', '', 'semver', '7.5.1', 'npm', 'pkg:npm/semver@7.5.1'),
+         (@s1, 'a2', 'CVE-2099-2401', '', 'semver', '2.13.0', 'python', 'pkg:pypi/semver@2.13.0'),
+         (@s1, 'a3', 'CVE-2099-2402', '', 'left-pad', '1.1.0', 'npm', 'pkg:npm/left-pad@1.1.0'),
+         (@s1, 'a4', 'GHSA-v24g-v24g-v24g', 'CVE-2099-2406', 'left-pad', '1.1.0', 'npm', 'pkg:npm/left-pad@1.1.0'),
+         (@s1, 'a5', 'CVE-2099-2403', '', 'jackson-databind', '2.9.8', 'java-archive',
+          'pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.9.8'),
+         (@s1, 'a6', 'CVE-2099-2404', '', 'jackson-databind', '1.9.13', 'java-archive',
+          'pkg:maven/org.codehaus.jackson/jackson-databind@1.9.13'),
+         (@s1, 'a7', 'CVE-2099-2407', '', 'PyYAML', '5.3', 'python', 'pkg:pypi/pyyaml@5.3'),
+         (@s1, 'a8', 'CVE-2099-2407', '', 'pyyaml-dist', '5.3', 'python', 'pkg:pypi/pyyaml@5.3'),
+         (@s2, 'a9', 'CVE-2099-2405', '', 'semver', '7.5.2', 'npm', 'pkg:npm/semver@7.5.2'),
+         (@s3, 'b1', 'CVE-2099-2401', '', 'semver', '7.5.1', 'npm', 'pkg:npm/semver@7.5.1');
+        INSERT INTO finding_analysis (asset_id, cve, package_name, state, created_at, updated_at) VALUES
+         (@a, 'CVE-2099-2401', 'semver', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@b, 'CVE-2099-2401', 'semver', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@a, 'CVE-2099-2402', 'left-pad', 'FALSE_POSITIVE', NOW(6), NOW(6)),
+         (@a, 'CVE-2099-2403', 'jackson-databind', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@a, 'CVE-2099-2405', 'semver', 'IN_TRIAGE', NOW(6), NOW(6)),
+         (@a, 'CVE-2099-2499', 'semver', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@a, 'CVE-2099-2406', 'left-pad', 'EXPLOITABLE', NOW(6), NOW(6)),
+         (@a, 'CVE-2099-2407', 'PyYAML', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@a, 'CVE-2099-2407', 'pyyaml-dist', 'FALSE_POSITIVE', NOW(6), NOW(6));
+        INSERT INTO remediations
+          (asset_id, package_name, from_version, to_version, status, owner, opened_scan_id,
+           opened_count, note, created_at, created_by, updated_at, updated_by)
+        VALUES
+         (@a, 'semver', '', '', 'OPEN', '', @s1, 2, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@b, 'semver', '', '', 'OPEN', '', @s3, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@a, 'left-pad', '', '', 'IN_PROGRESS', '', @s1, 2, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@a, 'jackson-databind', '', '', 'OPEN', '', @s1, 2, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@a, 'v24-gone', '', '', 'OPEN', '', 999997, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@a, 'v24-legacy', '', '', 'OPEN', '', NULL, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@a, 'PyYAML', '', '', 'OPEN', '', @s1, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@a, 'pyyaml-dist', '', '', 'OPEN', '', @s1, 1, '', NOW(6), 'admin', NOW(6), 'admin');"
+        COUNTS24=$(run "$DB" -N -e "
+            SELECT CONCAT((SELECT COUNT(*) FROM finding_analysis), '|', (SELECT COUNT(*) FROM remediations), '|',
+                          (SELECT COUNT(*) FROM findings), '|', (SELECT COUNT(*) FROM component));")
+        echo "  └ 벡터 ${VECTORS}줄(탐지 · 패키지) · 탐지 10건 · 검토 결과 9행 · 조치 8행을 넣었다 (같은 이름의 npm/PyPI · groupId 둘 · 붙던 탐지 없음 · 지워진 검사 · 이름 둘이 한 식별자)" ;;
+    esac
+
+    case "$(basename "$f")" in V24__*)
+        AFTER24=$(run "$DB" -N -e "
+            SELECT CONCAT((SELECT COUNT(*) FROM finding_analysis), '|', (SELECT COUNT(*) FROM remediations), '|',
+                          (SELECT COUNT(*) FROM findings), '|', (SELECT COUNT(*) FROM component));")
+        [ "$AFTER24" = "$COUNTS24" ] || {
+            echo "  V24 앞뒤로 행 수가 다릅니다 — 검토 결과|조치|탐지|패키지 '$COUNTS24' → '$AFTER24'"; exit 1; }
+        echo "  └ 검토 결과 · 조치 · 탐지 · 패키지 행 수 그대로 ($AFTER24) — 지우거나 합치지 않음" ;;
+    esac
+
     case "$(basename "$f")" in V9__*)
         run "$DB" -e "
         INSERT INTO risk_acceptances
@@ -990,6 +1095,120 @@ done
 echo "  따옴표 · 역슬래시가 든 목표와 등록한 검사가 없는 조치는 그대로 (마이그레이션은 멈추지 않음)"
 
 run "$DB" -N -e "SHOW TABLES LIKE '%v23';" | grep -q . \
+    && { echo "  이관에 쓴 표가 남아 있습니다"; exit 1; }
+echo "  이관에 쓴 표는 지움"
+
+# --- V24: 패키지 식별자 ------------------------------------------------------------
+#
+# 탐지 · 인벤토리는 purl 에서 버전 · 한정자를 뗀 것(없으면 유형 · 이름) — 앱의 PackageKey 와 같은
+# 벡터로 견준다. 검토 결과 · 조치의 옛 기록은 앞서 붙던 탐지가 한 패키지일 때만 식별자를 받고,
+# 아니면 비운 채(NULL) 남는다 — 지우지도 아무 패키지에나 붙이지도 않는다.
+
+KEYCOLS=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(CONCAT(TABLE_NAME, '=', COLUMN_TYPE, ':', IS_NULLABLE, ':', COLLATION_NAME)
+                        ORDER BY FIELD(TABLE_NAME, 'component', 'finding_analysis', 'findings', 'remediations')
+                        SEPARATOR ' ')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = '$DB' AND COLUMN_NAME = 'package_key';")
+WANT="component=varchar(512):NO:utf8mb4_bin finding_analysis=varchar(512):YES:utf8mb4_bin findings=varchar(512):NO:utf8mb4_bin remediations=varchar(512):YES:utf8mb4_bin"
+[ "$KEYCOLS" = "$WANT" ] || { echo "  식별자 칸이 '$KEYCOLS' 입니다"; echo "  기대 '$WANT'"; exit 1; }
+echo "  식별자 칸 — 탐지 · 패키지는 비지 않음, 검토 결과 · 조치는 비울 수 있음 · 글자 그대로 견줌(utf8mb4_bin)"
+
+n=0
+while IFS=$'\037' read -r purl type name key; do
+    n=$((n + 1))
+    got=$(run "$DB" -N -r -e "
+        SELECT CONCAT((SELECT package_key FROM findings WHERE finding_key = 'v24-vec-$n'), '|',
+                      (SELECT package_key FROM component WHERE version = 'v24-vec-$n'));")
+    [ "$got" = "$key|$key" ] || {
+        echo "  벡터 $n ($purl · $type · $name) 의 식별자가 '$got' 입니다 (기대 '$key' 둘 — 탐지|패키지)"; exit 1; }
+done < <(grep -v '^#' tests/resources/package-key-vectors.tsv | grep -v '^$' | tr '\t' '\037')
+echo "  벡터 ${n}줄 — 탐지 · 패키지 모두 앱(PackageKeyTest)과 같은 식별자"
+
+EMPTY=$(run "$DB" -N -e "
+    SELECT CONCAT((SELECT COUNT(*) FROM findings WHERE package_key = ''), '|',
+                  (SELECT COUNT(*) FROM component WHERE package_key = '' AND version LIKE 'v24-vec-%'));")
+[ "$EMPTY" = "0|0" ] || { echo "  식별자가 빈 탐지 · 패키지가 있습니다 ('$EMPTY')"; exit 1; }
+echo "  있던 탐지 전부에 식별자 (purl 이 없던 옛 탐지도 유형 · 이름으로)"
+
+review() {   # review <자산 이름> <번호> <이름> → 식별자 (비었으면 NULL)
+    run "$DB" -N -r -e "
+        SELECT IFNULL(fa.package_key, 'NULL') FROM finding_analysis fa JOIN assets a ON a.id = fa.asset_id
+        WHERE a.name = '$1' AND fa.cve = '$2' AND fa.package_name = '$3';"
+}
+for want in "v24-a|CVE-2099-2401|semver|NULL" \
+            "v24-b|CVE-2099-2401|semver|pkg:npm/semver" \
+            "v24-a|CVE-2099-2402|left-pad|pkg:npm/left-pad" \
+            "v24-a|CVE-2099-2403|jackson-databind|pkg:maven/com.fasterxml.jackson.core/jackson-databind" \
+            "v24-a|CVE-2099-2405|semver|pkg:npm/semver" \
+            "v24-a|CVE-2099-2499|semver|NULL" \
+            "v24-a|CVE-2099-2406|left-pad|pkg:npm/left-pad" \
+            "v24-a|CVE-2099-2407|PyYAML|NULL" \
+            "v24-a|CVE-2099-2407|pyyaml-dist|NULL"; do
+    IFS='|' read -r asset cve name key <<< "$want"
+    got=$(review "$asset" "$cve" "$name")
+    [ "$got" = "$key" ] || { echo "  검토 결과 $asset · $cve · $name 의 식별자가 '$got' 입니다 (기대 '$key')"; exit 1; }
+done
+echo "  검토 결과 — 앞서 붙던 탐지가 한 패키지면 그 식별자 (번호 · 함께 온 CVE · 다른 검사의 것까지)"
+echo "    같은 이름의 둘에 붙던 것 · 붙던 탐지가 없는 것 · 이름 둘이 한 식별자에 모인 것은 비움"
+
+remediation() {   # remediation <자산 이름> <이름> → 식별자 (비었으면 NULL)
+    run "$DB" -N -r -e "
+        SELECT IFNULL(r.package_key, 'NULL') FROM remediations r JOIN assets a ON a.id = r.asset_id
+        WHERE a.name = '$1' AND r.package_name = '$2';"
+}
+for want in "v24-a|semver|NULL" "v24-b|semver|pkg:npm/semver" "v24-a|left-pad|pkg:npm/left-pad" \
+            "v24-a|jackson-databind|NULL" "v24-a|v24-gone|NULL" "v24-a|v24-legacy|NULL" \
+            "v24-a|PyYAML|NULL" "v24-a|pyyaml-dist|NULL"; do
+    IFS='|' read -r asset name key <<< "$want"
+    got=$(remediation "$asset" "$name")
+    [ "$got" = "$key" ] || { echo "  조치 $asset · $name 의 식별자가 '$got' 입니다 (기대 '$key')"; exit 1; }
+done
+echo "  조치 — 등록한 검사의 그 이름 탐지가 한 패키지면 그 식별자"
+echo "    둘 이상 · 등록한 검사가 지워졌거나 모르는 것 · 이름 둘이 한 식별자에 모인 것은 비움"
+
+# 앞 판들이 넣은 기록도 같은 규칙으로 — purl 없는 옛 탐지의 패키지는 유형 없는 식별자(pkg:/이름).
+GOT=$(run "$DB" -N -r -e "
+    SELECT CONCAT((SELECT IFNULL(package_key, 'NULL') FROM remediations WHERE package_name = 'tomcat-coyote'), '|',
+                  (SELECT IFNULL(package_key, 'NULL') FROM finding_analysis WHERE cve = 'CVE-2025-5'), '|',
+                  (SELECT IFNULL(package_key, 'NULL') FROM remediations WHERE package_name = 'libxml2'), '|',
+                  (SELECT IFNULL(package_key, 'NULL') FROM finding_analysis WHERE cve = 'CVE-2024-0001'));")
+[ "$GOT" = "pkg:/tomcat-coyote|pkg:/tomcat-coyote|NULL|NULL" ] || {
+    echo "  앞 판들의 기록이 '$GOT' 입니다 (기대 pkg:/tomcat-coyote|pkg:/tomcat-coyote|NULL|NULL)"; exit 1; }
+echo "  앞 판들의 기록도 — 등록한 검사가 있는 조치 · 탐지가 있는 검토 결과는 식별자, 위험 수용에서 옮긴 것 · 지워진 검사는 비움"
+
+UX=$(run "$DB" -N -e "
+    SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ',')
+    FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = '$DB' AND TABLE_NAME = 'finding_analysis' AND INDEX_NAME = 'ux_analysis_key'
+      AND NON_UNIQUE = 0;")
+[ "$UX" = "asset_id,cve,package_key" ] || { echo "  검토 결과의 유일 키가 '$UX' 입니다"; exit 1; }
+A=$(run "$DB" -N -e "SELECT id FROM assets WHERE name = 'v24-a';")
+run "$DB" -e "
+    INSERT INTO finding_analysis (asset_id, cve, package_name, package_key, state, created_at, updated_at)
+    VALUES ($A, 'CVE-2099-2401', 'semver', 'pkg:npm/semver', 'IN_TRIAGE', NOW(6), NOW(6)),
+           ($A, 'CVE-2099-2401', 'semver', 'pkg:pypi/semver', 'IN_TRIAGE', NOW(6), NOW(6)),
+           ($A, 'CVE-2099-2401', 'semver-old', NULL, 'IN_TRIAGE', NOW(6), NOW(6));"
+if run "$DB" -e "
+    INSERT INTO finding_analysis (asset_id, cve, package_name, package_key, state, created_at, updated_at)
+    VALUES ($A, 'CVE-2099-2401', 'semver', 'pkg:npm/semver', 'IN_TRIAGE', NOW(6), NOW(6));" 2>/dev/null; then
+    echo "  같은 (자산, 번호, 식별자)의 검토 결과가 두 번 들어갔습니다"; exit 1
+fi
+echo "  유일 키 (자산, 번호, 식별자) — 같은 이름의 npm · PyPI 에 따로 적힘 · 비운 옛 기록은 몇이든 남음"
+
+for ix in "findings|ix_findings_scan_pkgkey|scan_id,package_key" \
+          "component|ix_component_pkgkey|package_key" \
+          "remediations|ix_remediation_asset_pkgkey|asset_id,package_key"; do
+    IFS='|' read -r table name cols <<< "$ix"
+    got=$(run "$DB" -N -e "
+        SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ',')
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = '$DB' AND TABLE_NAME = '$table' AND INDEX_NAME = '$name';")
+    [ "$got" = "$cols" ] || { echo "  $table 의 색인 $name 이 '$got' 입니다 (기대 '$cols')"; exit 1; }
+done
+echo "  색인 — 탐지 (검사, 식별자) · 패키지 (식별자) · 조치 (자산, 식별자)"
+
+run "$DB" -N -e "SHOW TABLES LIKE '%v24';" | grep -q . \
     && { echo "  이관에 쓴 표가 남아 있습니다"; exit 1; }
 echo "  이관에 쓴 표는 지움"
 

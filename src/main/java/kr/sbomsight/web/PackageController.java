@@ -102,21 +102,22 @@ public class PackageController {
                                           zone, type, q, vulnerable, mixed));
         // 그 패키지의 취약점으로 — 구역은 이어 간다.
         //
-        // **패키지별로 묶어 보낸다.** 검색어는 부분 일치라 `curl` 로 찾으면
-        // `libcurl4` 까지 걸린다. 항목별로 보내면 이 줄의 수(curl 67건)와 다른
-        // 수(134건)가 뜨고, 패키지별이면 각 패키지가 제 수로 한 줄씩 선다.
-        // 이 화면의 수는 탐지 건수이므로 해당 없음 · 오탐도 넣어 연다.
+        // **패키지별로 묶어 보낸다.** 앞서 검색어(이름)로 보내 `curl` 이 `libcurl4` 까지
+        // 걸렸다 — 패키지별이면 각 패키지가 제 수로 한 줄씩 섰다. 이제 식별자(`pkg`)로
+        // 보낸다 — 그 패키지 한 줄만 선다. 같은 이름의 다른 패키지(npm 과 PyPI 의 semver,
+        // groupId 만 다른 jackson-databind)도 섞이지 않는다. 이 화면의 수는 탐지
+        // 건수이므로 해당 없음 · 오탐도 넣어 연다.
         model.addAttribute("vulnLinks", new VulnQuery.Links("/vulns", null)
                 .with("zone", zone).with("group", "package").with("includeDone", "true"));
 
         // 펼친 줄. 주소에 남는다 — 새로고침하면 접히는 화면은 공유할 수 없다.
         //
-        // 줄이 (이름, 유형)이라 유형도 주소에 싣는다(`openType`). 유형 없이 이름만 든 옛
-        // 주소(`?open=openssl`)는 그 이름의 줄을 전부 펼친다 — 적어 둔 주소가 죽지 않게.
-        // 빈 유형(SBOM 이 안 담은 것)도 하나의 유형이라 `openType=` 으로는 가리킬 수 없다 —
-        // 그 줄은 유형 없이 열린다.
+        // 줄이 패키지 식별자라 `open` 에 식별자를 싣는다(`pkg:…`). 식별자가 붙기 전의 주소 —
+        // 이름과 유형(`?open=openssl&openType=rpm`), 이름만(`?open=openssl`) — 은 그 이름
+        // (과 유형)의 줄을 전부 펼친다. 적어 둔 주소가 죽지 않게.
         String openKind = openType == null || openType.isBlank() ? null : openType;
         model.addAttribute("open", open);
+        model.addAttribute("openByKey", PackageService.isKey(open));
         model.addAttribute("openType", openKind);
         if (open != null && !open.isBlank()) {
             model.addAttribute("openRows", packages.assetsOf(open, openKind, zone));

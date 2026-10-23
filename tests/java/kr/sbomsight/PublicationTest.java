@@ -209,7 +209,7 @@ class PublicationTest {
 
         // 발행 뒤에 일어난 일 — P8 과 같다.
         mvc.perform(post("/analyses").param("assetId", a.getId().toString())
-                                     .param("cve", "CVE-2099-1000").param("packageName", "openssl")
+                                     .param("cve", "CVE-2099-1000").param("packageKey", "pkg:rpm/openssl")
                                      .param("state", "FALSE_POSITIVE").param("note", "발행 뒤")
                                      .with(user("tester").roles("ADMIN")).with(csrf()))
            .andExpect(status().is3xxRedirection());

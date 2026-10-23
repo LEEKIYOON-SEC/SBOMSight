@@ -477,7 +477,7 @@ public class AssetController {
         // 말한다.
         model.addAttribute("vulnTabCount", latest == null ? 0
                 : findings.countByScanId(latest.getId()) - findings.countReviewedOut(
-                        List.of(latest.getId()), null, null, null, null, null));
+                        List.of(latest.getId()), null, null, null, null, null, null));
         List<Remediation> assetRemediations = remediations.findByAssetIdOrderByStatusAscPackageNameAsc(id);
         model.addAttribute("remediations", assetRemediations);
         // 완료인데 지금 검사에 해소 건수가 남은 조치 — 세 갈래(AfterDone), 조치 화면 ·
@@ -501,7 +501,7 @@ public class AssetController {
             // `scope` 는 넘기지 않는다 — 전체 취약점 화면은 머리에
             // `scope.label()` 을 찍지만 자산 상세는 자기 제목을 따로 그린다.
             // `ofScan` 을 두 번 부르던 것도 한 번으로 줄인다.
-            vulns.fill(model, vulns.ofScan(latest.getId()), group, q, severityFilter,
+            vulns.fill(model, vulns.ofScan(latest.getId()), group, q, null, severityFilter,
                        fixable, kev, includeDone, page, size, sort, dir);
             model.addAttribute("links", tabLinks(id, tab, group, q, severityFilter, fixable,
                                                  kev, includeDone, size, sort, dir));

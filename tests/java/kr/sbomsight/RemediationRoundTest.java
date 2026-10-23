@@ -49,6 +49,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @AutoConfigureMockMvc
 class RemediationRoundTest {
 
+    /** 미리 만든 검사 결과(fake-grype)의 openssl — 패키지 식별자(V24). */
+    private static final String OPENSSL = "pkg:deb/debian/openssl";
+
     @Autowired MockMvc mvc;
     @Autowired AssetRepository assets;
     @Autowired ScanRepository scans;
@@ -81,12 +84,12 @@ class RemediationRoundTest {
     void aClosedRemediationOpensTheNextRound() throws Exception {
         Asset asset = asset("round");
         steps.upload(asset, Instant.now().minus(10, ChronoUnit.DAYS), "1.1.1k", CurrentScanRuleTest.V1);
-        long first = idOf(steps.register(asset, "openssl"));
+        long first = idOf(steps.register(asset, "openssl", OPENSSL));
         steps.save(first, "DONE", "1.1.1n 적용");
 
         // 고친 뒤의 SBOM — CVE-2023-0001 은 사라지고 CVE-2024-0002 가 새로 나왔다.
         steps.uploadNow(asset, "1.1.1n", CurrentScanRuleTest.V2);
-        MvcResult again = steps.register(asset, "openssl");
+        MvcResult again = steps.register(asset, "openssl", OPENSSL);
         long second = idOf(again);
         assertThat(second).as("완료한 조치로 보냈다 — 새 조치를 열지 않았다").isNotEqualTo(first);
         assertThat(again.getFlashMap().get("message")).isEqualTo("openssl 조치를 2회차로 등록했습니다.");
@@ -105,7 +108,7 @@ class RemediationRoundTest {
         assertThat(action.openedInPeriod()).isEqualTo(2);
 
         // 열린 회차가 있으면 그것으로 보낸다 — 두 번 눌러도 3회차가 생기지 않는다.
-        MvcResult third = steps.register(asset, "openssl");
+        MvcResult third = steps.register(asset, "openssl", OPENSSL);
         assertThat(idOf(third)).isEqualTo(second);
         assertThat(third.getFlashMap().get("message")).isEqualTo("openssl 조치는 이미 등록되어 있습니다.");
         assertThat(remediations.findByAssetIdOrderByStatusAscPackageNameAsc(asset.getId())).hasSize(2);
@@ -113,9 +116,9 @@ class RemediationRoundTest {
         // 조치 목록은 회차를 칸으로 적는다(패키지 바로 뒤) — 같은 패키지의 두 줄이 구별된다.
         String list = steps.page("/actions?zone=" + zone.getId());
         assertThat(tight(row(list, "href=\"/actions/" + second + "\"")))
-                .contains(">openssl</a></td><td class=\"num tight\">2</td>");
+                .contains(">openssl</a><div class=\"pkgkey\">" + OPENSSL + "</div></td><td class=\"num tight\">2</td>");
         assertThat(tight(row(list, "href=\"/actions/" + first + "\"")))
-                .contains(">openssl</a></td><td class=\"num tight\">1</td>");
+                .contains(">openssl</a><div class=\"pkgkey\">" + OPENSSL + "</div></td><td class=\"num tight\">1</td>");
     }
 
     @Test
@@ -123,10 +126,10 @@ class RemediationRoundTest {
     void onlyTheLatestRoundCanBeReopened() throws Exception {
         Asset asset = asset("reopen");
         steps.upload(asset, Instant.now().minus(10, ChronoUnit.DAYS), "1.1.1k", CurrentScanRuleTest.V1);
-        long first = idOf(steps.register(asset, "openssl"));
+        long first = idOf(steps.register(asset, "openssl", OPENSSL));
         steps.save(first, "DONE", "");
         steps.uploadNow(asset, "1.1.1n", CurrentScanRuleTest.V2);
-        long second = idOf(steps.register(asset, "openssl"));
+        long second = idOf(steps.register(asset, "openssl", OPENSSL));
         assertThat(second).isNotEqualTo(first);
 
         MvcResult refused = steps.save(first, "IN_PROGRESS", "다시 엶");
@@ -147,7 +150,7 @@ class RemediationRoundTest {
     void completionsInThePeriodComeFromHistory() throws Exception {
         Asset asset = asset("closed");
         steps.upload(asset, Instant.now().minus(10, ChronoUnit.DAYS), "1.1.1k", CurrentScanRuleTest.V1);
-        long id = idOf(steps.register(asset, "openssl"));
+        long id = idOf(steps.register(asset, "openssl", OPENSSL));
         steps.save(id, "DONE", "");
         steps.save(id, "IN_PROGRESS", "덜 됐다 — 다시 엶");
 
@@ -162,7 +165,7 @@ class RemediationRoundTest {
     void registrationKeepsItsTargets() throws Exception {
         Asset asset = asset("targets");
         steps.upload(asset, Instant.now().minus(10, ChronoUnit.DAYS), "1.1.1k", CurrentScanRuleTest.V1);
-        long id = idOf(steps.register(asset, "openssl"));
+        long id = idOf(steps.register(asset, "openssl", OPENSSL));
 
         String before = steps.page("/actions/" + id);
         assertThat(before).contains("<h2>조치 대상</h2>");
@@ -188,7 +191,7 @@ class RemediationRoundTest {
     void targetsAreInTheOrderOfTheNumbersShown() throws Exception {
         Asset asset = asset("order");
         steps.upload(asset, Instant.now().minus(10, ChronoUnit.DAYS), "1.1.1k", "sbom-two");
-        long id = idOf(steps.register(asset, "openssl"));
+        long id = idOf(steps.register(asset, "openssl", OPENSSL));
 
         String html = steps.page("/actions/" + id);
         int older = html.indexOf(">CVE-2021-2222<");

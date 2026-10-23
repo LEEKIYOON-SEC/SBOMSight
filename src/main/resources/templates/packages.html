@@ -133,15 +133,18 @@
           </thead>
           <tbody>
           <!--/*
-            한 줄은 (이름, 유형)이다 — 같은 이름도 유형이 다르면 다른 줄이다. 펼친 줄도
-            이름과 유형으로 가린다(`open` · `openType`). 유형 없이 이름만 든 옛 주소로 열면
-            그 이름의 줄이 전부 펼쳐지고, 줄마다 제 유형의 자산만 그린다.
+            한 줄은 패키지 식별자다(V24) — 같은 이름도 유형 · 네임스페이스(groupId 등)가 다르면
+            다른 줄이다. 펼친 줄도 식별자로 가린다(`open=pkg:…`). 식별자가 붙기 전의 주소 —
+            이름과 유형(`openType`), 이름만 — 으로 열면 그 이름(과 유형)의 줄이 전부 펼쳐지고,
+            줄마다 제 식별자의 자산만 그린다.
           */-->
           <th:block th:each="p : ${listing.rows().content}"
-                    th:with="isOpen=${open == p.name() and (openType == null or openType == p.type())}">
+                    th:with="isOpen=${openByKey ? open == p.packageKey()
+                                      : (open == p.name() and (openType == null or openType == p.type()))}">
           <tr>
             <td>
               <b th:text="${p.name()}">openssl-libs</b>
+              <div th:replace="~{fragments/ui :: pkgkey(${p.packageKey()})}"></div>
               <!--/*
                 이 줄에 표시를 따로 단다 — 색이 아니라 글자로 단다(§5-15).
                 이것이 이 화면의 핵심 신호다: 걸린 것이 있는 버전과 없는
@@ -178,9 +181,10 @@
             <td class="tight actions">
               <a class="btn btn-sm"
                  th:href="@{${isOpen ? links.copy().with('open', null).with('openType', null).here()
-                                     : links.copy().with('open', p.name()).with('openType', p.type()).here()}}"
+                                     : links.copy().with('open', p.packageKey()).with('openType', null).here()}}"
                  th:text="${isOpen} ? '접기' : '자산 보기'">자산 보기</a>
-              <a class="btn btn-sm" th:href="@{${vulnLinks.change('q', p.name())}}"
+              <!--/* 그 패키지 하나로(식별자) — 이름으로 보내면 같은 이름의 다른 패키지도 걸린다. */-->
+              <a class="btn btn-sm" th:href="@{${vulnLinks.change('pkg', p.packageKey())}}"
                  th:if="${p.findingCount() > 0}">취약점</a>
             </td>
           </tr>
@@ -205,7 +209,7 @@
                   </tr>
                   </thead>
                   <tbody>
-                  <tr th:each="c : ${openRows}" th:if="${c.type == p.type()}">
+                  <tr th:each="c : ${openRows}" th:if="${c.packageKey == p.packageKey()}">
                     <td class="tight">
                       <a th:href="@{'/assets/' + ${c.asset.id}(tab='packages')}"
                          th:text="${c.asset.name}">web-01</a></td>
@@ -242,17 +246,18 @@
     */-->
     <!--/*
       **무엇을 세는지 적는다.** 이 화면과 자산의 패키지 탭, 취약점의
-      패키지별은 셋 다 `패키지` 를 세는데 단위가 다르다 — 여기는 이름 · 유형,
-      자산 탭은 설치 줄, 취약점은 탐지가 난 이름이다. 셋 다 맞는 수인데
+      패키지별은 셋 다 `패키지` 를 세는데 단위가 다르다 — 여기는 깔린 패키지(식별자),
+      자산 탭은 설치 줄, 취약점은 탐지가 난 패키지(식별자)다. 셋 다 맞는 수인데
       무엇을 세는지 안 적으면 어느 쪽이 맞는지 물어볼 자리가 없고, 그러면
       세 수가 다 못 미덥게 된다.
 
-      **유형이 단위에 든다.** 앞서 이름만이라 같은 이름의 npm 과 pypi 패키지가 한 줄로
-      합쳐져, 버전 분포와 취약점 수에 남의 것이 섞였다.
+      **패키지 식별자가 단위다**(V24). 앞서 이름만이라 같은 이름의 npm 과 pypi 패키지가,
+      그다음 (이름, 유형)이라 groupId 만 다른 Maven 패키지가 한 줄로 합쳐져 버전 분포와
+      취약점 수에 남의 것이 섞였다.
     */-->
     <p class="footnote" th:if="${listing.rows().totalElements > 0}">
-      ※ 세는 단위 — <b>패키지 이름 · 유형</b> · 여러 버전·여러 자산이어도 한 줄.
-      같은 이름도 유형이 다르면 다른 줄.
+      ※ 세는 단위 — <b>패키지 식별자</b> · 여러 버전·여러 자산이어도 한 줄.
+      같은 이름도 유형 · 네임스페이스가 다르면 다른 줄.
     </p>
     <p class="footnote" th:if="${listing.rows().totalElements > 0}">
       ※ 깔린 것 전부 · 탐지 난 것만은

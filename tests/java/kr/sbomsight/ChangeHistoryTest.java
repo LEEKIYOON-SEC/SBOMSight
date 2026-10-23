@@ -64,7 +64,7 @@ class ChangeHistoryTest {
     }
 
     private Remediation remediation(String pkg) {
-        Remediation r = new Remediation(asset, pkg, "tester");
+        Remediation r = new Remediation(asset, pkg, PackageKey.of(null, null, pkg), "tester");
         r.moveTo(RemediationStatus.OPEN, "tester", "조치 등록");
         return remediations.saveAndFlush(r);
     }
@@ -95,10 +95,10 @@ class ChangeHistoryTest {
     @Test
     @DisplayName("검토 결과의 설명 · 추가 보안 통제 · 결재 문서 번호도 이력에 앞뒤 값이 남는다 — 줄이지 않고")
     void analysisTextChangesAreRecorded() {
-        analyses.record(asset, "CVE-2099-1", "openssl", AnalysisState.IN_TRIAGE, null, null,
+        analyses.record(asset, "CVE-2099-1", "openssl", PackageKey.of(null, null, "openssl"), AnalysisState.IN_TRIAGE, null, null,
                         "처음 설명", "", "", null, "tester");
         String longNote = "가".repeat(2000);
-        FindingAnalysis a = analyses.record(asset, "CVE-2099-1", "openssl", AnalysisState.IN_TRIAGE,
+        FindingAnalysis a = analyses.record(asset, "CVE-2099-1", "openssl", PackageKey.of(null, null, "openssl"), AnalysisState.IN_TRIAGE,
                                             null, null, longNote, "WAF 차단", "보안-2026-0143", null,
                                             "tester");
 
@@ -116,13 +116,13 @@ class ChangeHistoryTest {
     @Test
     @DisplayName("모든 칸을 남기기 시작한 뒤에 만든 것에는 각주가 없고, 그 전에 만든 것에는 그 시각을 밝힌다")
     void theFootnoteSaysWhenTheFullHistoryStarted() throws Exception {
-        FindingAnalysis older = analyses.record(asset, "CVE-2099-2", "zlib", AnalysisState.IN_TRIAGE,
+        FindingAnalysis older = analyses.record(asset, "CVE-2099-2", "zlib", PackageKey.of(null, null, "zlib"), AnalysisState.IN_TRIAGE,
                                                 null, null, "", "", "", null, "tester");
         Remediation olderAction = remediation("zlib");
         Thread.sleep(5);
         AppSetting since = settings.saveAndFlush(new AppSetting("history_fields_since", "V19", ""));
         Thread.sleep(5);
-        FindingAnalysis newer = analyses.record(asset, "CVE-2099-3", "curl", AnalysisState.IN_TRIAGE,
+        FindingAnalysis newer = analyses.record(asset, "CVE-2099-3", "curl", PackageKey.of(null, null, "curl"), AnalysisState.IN_TRIAGE,
                                                 null, null, "", "", "", null, "tester");
         Remediation newerAction = remediation("curl");
         String at = WHEN.format(since.getUpdatedAt());

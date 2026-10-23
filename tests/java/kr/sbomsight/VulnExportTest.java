@@ -66,14 +66,16 @@ class VulnExportTest {
             // 같은 CVE · 같은 패키지를 여럿 둔다 — 정렬 값이 같은 줄이 쪽 경계에
             // 걸려도 빠지거나 두 번 나오지 않아야 한다. 설치 버전은 정렬 축이
             // 아니고 CSV 에 찍힌다 — 줄마다 달라 겹침을 셀 수 있다.
+            // 패키지 식별자는 엔티티가 담을 때 채운다(Finding#fillPackageKey) — 행만 넣으니 같은
+            // 규칙(purl · 유형이 없으면 pkg:/이름)으로 손수 적는다.
             rows.add(new Object[] { scan.getId(), "k" + i, "CVE-2099-" + (i % 7),
-                                    "pkg-" + (i % 3), "High", "1." + i });
+                                    "pkg-" + (i % 3), "pkg:/pkg-" + (i % 3), "High", "1." + i });
         }
-        jdbc.batchUpdate("INSERT INTO findings (scan_id, finding_key, cve, package_name, severity, "
-                         + "related_cve, cvss_vector, cvss_version, package_version, package_type, "
+        jdbc.batchUpdate("INSERT INTO findings (scan_id, finding_key, cve, package_name, package_key, "
+                         + "severity, related_cve, cvss_vector, cvss_version, package_version, package_type, "
                          + "package_purl, package_language, install_path, fix_state, fixed_version, "
                          + "version_constraint, match_type, matcher, namespace, data_source) "
-                         + "VALUES (?, ?, ?, ?, ?, '', '', '', ?, '', '', '', '', 'fixed', '9.9', "
+                         + "VALUES (?, ?, ?, ?, ?, ?, '', '', '', ?, '', '', '', '', 'fixed', '9.9', "
                          + "'', '', '', '', '')", rows);
 
         byte[] body = mvc.perform(get("/vulns/export.csv?scan=" + scan.getId())
@@ -115,7 +117,8 @@ class VulnExportTest {
                                        StandardCharsets.UTF_8).lines().toList();
         List<String> header = cells(lines.get(0).replace("﻿", ""));
         assertThat(header).containsExactly("자산", "구역", "CVE", "별칭", "심각도", "CVSS", "패키지",
-                "설치 버전", "수정 버전", "수정 상태", "검사 시각", "심각도 원문", "수정 상태 원문");
+                "패키지 식별자", "설치 버전", "수정 버전", "수정 상태", "검사 시각", "심각도 원문",
+                "수정 상태 원문");
 
         assertThat(row(lines, header, "CVE-2099-0001"))
                 .containsExactly("심각", "수정 버전 있음", "Critical", "fixed");
@@ -172,11 +175,11 @@ class VulnExportTest {
     }
 
     private void insert(Scan scan, String cve, String severity, String fixState, String fixedVersion) {
-        jdbc.update("INSERT INTO findings (scan_id, finding_key, cve, package_name, severity, "
+        jdbc.update("INSERT INTO findings (scan_id, finding_key, cve, package_name, package_key, severity, "
                     + "related_cve, cvss_vector, cvss_version, package_version, package_type, "
                     + "package_purl, package_language, install_path, fix_state, fixed_version, "
                     + "version_constraint, match_type, matcher, namespace, data_source) "
-                    + "VALUES (?, ?, ?, 'zlib', ?, '', '', '', '1.0', '', '', '', '', ?, ?, "
+                    + "VALUES (?, ?, ?, 'zlib', 'pkg:/zlib', ?, '', '', '', '1.0', '', '', '', '', ?, ?, "
                     + "'', '', '', '', '')",
                     scan.getId(), cve + "|zlib", cve, severity, fixState, fixedVersion);
     }

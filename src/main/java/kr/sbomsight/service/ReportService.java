@@ -145,7 +145,7 @@ public class ReportService {
      * <p>벡터를 읽을 수 없는 건은 <b>세지 않고 따로 센다.</b> 아니오로 밀어
      * 넣으면 "원격에서 닿지 않습니다" 라는, 아무도 확인하지 않은 판정이 된다.
      *
-     * <p>패키지마다의 수는 <b>3 · 4장의 줄과 같은 키(이름 · 버전 · 유형)</b>로 센다.
+     * <p>패키지마다의 수는 <b>3 · 4장의 줄과 같은 키(패키지 식별자 · 버전)</b>로 센다.
      * 앞서 이름으로만 모아, 같은 패키지가 두 버전으로 깔린 자산에서 이름 전체의 수가
      * 버전마다 되풀이되어 찍혔고 3장 합계는 그것을 다시 더했다.
      */
@@ -169,8 +169,8 @@ public class ReportService {
                 if ("fixed".equalsIgnoreCase(row.getFixState())) {
                     reachableFixable++;
                 }
-                reachableByRow.merge(groupKey(row.getPackageName(), row.getPackageVersion(),
-                                              row.getPackageType()), 1L, Long::sum);
+                reachableByRow.merge(groupKey(row.getPackageKey(), row.getPackageVersion()),
+                                     1L, Long::sum);
             }
         }
 
@@ -200,7 +200,7 @@ public class ReportService {
 
     /** 고유 취약점 수 — 같은 CVE 가 여러 패키지에 걸리면 한 가지로 센다. 1장은 탐지 전부를 센다. */
     private long distinctVulnerabilities(Scan scan) {
-        return findings.groupByCveIn(List.of(scan.getId()), null, null, null, null, true).size();
+        return findings.groupByCveIn(List.of(scan.getId()), null, null, null, null, null, true).size();
     }
 
     // --- 2장: 점검 결과 요약 -------------------------------------------------
@@ -254,7 +254,7 @@ public class ReportService {
         Map<AnalysisState, Long> counts = FindingAnalysisService.emptyStateCounts();
         for (FindingRepository.FindingKey row : findings.findKeyRows(scan.getId())) {
             AnalysisState state = FindingAnalysisService.stateOf(
-                    byKey, row.getCve(), row.getRelatedCve(), row.getPackageName());
+                    byKey, row.getCve(), row.getRelatedCve(), row.getPackageKey());
             counts.merge(state, 1L, Long::sum);
         }
         return counts;
@@ -272,17 +272,17 @@ public class ReportService {
     private Targets targets(Scan scan, Exposure exposure) {
         // 목록이다 — 해당 없음 · 오탐은 뺀다. `원격 접근` 도 같은 규칙으로 센
         // 노출면(exposure)을 받는다. 한 줄 안에서 `해소 건수` 는 뺐는데
-        // `원격 접근` 은 넣으면 두 칸이 서로 다른 건을 센다. 줄의 키(이름 · 버전 ·
-        // 유형)도 같아야 한다 — 이름으로 세면 같은 이름의 다른 줄 것이 섞인다.
+        // `원격 접근` 은 넣으면 두 칸이 서로 다른 건을 센다. 줄의 키(패키지 식별자 ·
+        // 버전)도 같아야 한다 — 이름으로 세면 같은 이름의 다른 줄 것이 섞인다.
         List<PackageGroup> groups = findings.groupByPackage(scan.getId(), false);
 
         // 수정 버전은 하나로 고르지 않는다 — 그 줄에 실린 탐지(해당 없음 ·
         // 오탐을 뺀 것)의 수정 버전 전부(FixVersions). 묶음 키와 같은
-        // (이름, 버전, 유형)으로 모은다.
+        // (식별자, 버전)으로 모은다.
         Map<String, List<String>> fixes = findings
                 .fixVersionsIn(List.of(scan.getId()), null, false).stream()
                 .collect(Collectors.groupingBy(
-                        r -> groupKey(r.getPackageName(), r.getPackageVersion(), r.getPackageType()),
+                        r -> groupKey(r.getPackageKey(), r.getPackageVersion()),
                         Collectors.collectingAndThen(
                                 // 한 건의 칸에 후보가 여럿 이어져 있다 — 펴서 모은다.
                                 Collectors.flatMapping(
@@ -299,9 +299,8 @@ public class ReportService {
         List<PackageAction> actions = groups.stream()
                 .filter(g -> g.getFixable() > 0)
                 .map(g -> new PackageAction(g, exposure.reachableIn(g),
-                                            fixes.getOrDefault(groupKey(g.getPackageName(),
-                                                    g.getPackageVersion(), g.getPackageType()),
-                                                    List.of())))
+                                            fixes.getOrDefault(groupKey(g.getPackageKey(),
+                                                    g.getPackageVersion()), List.of())))
                 .sorted(BY_URGENCY)
                 .toList();
 
@@ -320,13 +319,12 @@ public class ReportService {
         // 패키지)에 하나씩이고 이 표는 패키지로 한 줄이다. 앞서 그중 **아무
         // 한 건**을 골라 상태 · 근거 · 재검토일을 찍었다(띄운 앱에서 nginx
         // 네 건이 `오탐 · — · —` — 위험 수용과 그 재검토일이 사라졌다). 이제
-        // 그 줄에 실린 탐지들의 것을 **모은다**(reviewSummaries). 그 줄의 키(이름 ·
-        // 버전 · 유형)로 모은다 — 이름으로 모으면 같은 이름의 다른 줄 것이 섞인다.
+        // 그 줄에 실린 탐지들의 것을 **모은다**(reviewSummaries). 그 줄의 키(식별자 ·
+        // 버전)로 모은다 — 이름으로 모으면 같은 이름의 다른 줄 것이 섞인다.
         Map<String, NoFixReview> reviews = reviewSummaries(scan);
         List<NoFixRow> noFixRows = blocked.stream()
                 .map(b -> {
-                    NoFixReview r = reviews.get(groupKey(b.packageName(), b.currentVersion(),
-                                                         b.packageType()));
+                    NoFixReview r = reviews.get(rowKey(b));
                     return r == null
                             ? new NoFixRow(b, new Reviewed(0, b.total()), Map.of(), null)
                             : new NoFixRow(b, r.reviewed(), r.responses(), r.earliestReview());
@@ -335,15 +333,17 @@ public class ReportService {
         return new Targets(actions, blocked, noFixRows, diff, exposure);
     }
 
-    /** 묶음 질의의 키 — 이름 · 버전 · 유형. 셋 중 하나라도 null 이면 빈 값으로 친다. */
-    private static String groupKey(String name, String version, String type) {
-        return Objects.toString(name, "") + '\u0000' + Objects.toString(version, "")
-                + '\u0000' + Objects.toString(type, "");
+    /**
+     * 묶음 질의의 키 — 패키지 식별자 · 버전(V24). 앞서 이름 · 버전 · 유형이라 groupId 만 다른
+     * 두 jackson-databind 의 같은 버전이 한 줄이었다. 둘 중 하나라도 null 이면 빈 값으로 친다.
+     */
+    private static String groupKey(String packageKey, String version) {
+        return Objects.toString(packageKey, "") + '\u0000' + Objects.toString(version, "");
     }
 
     /** 3 · 4장 한 줄의 키 — {@link #groupKey} 와 같은 식. */
     private static String rowKey(PackageAction row) {
-        return groupKey(row.packageName(), row.currentVersion(), row.packageType());
+        return groupKey(row.packageKey(), row.currentVersion());
     }
 
     /**
@@ -354,7 +354,7 @@ public class ReportService {
      * {@link FindingAnalysisService#analysisOf} 로 맞춘다. 규칙이 갈리면 한
      * 보고서 안에서 2.4 의 `미검토 30건` 과 4장이 서로를 부정한다.
      *
-     * <p><b>4장의 줄(이름 · 버전 · 유형)마다</b> 모은다. 앞서 이름으로 모아, 같은 이름의
+     * <p><b>4장의 줄(식별자 · 버전)마다</b> 모은다. 앞서 이름으로 모아, 같은 이름의
      * 다른 버전 · 유형 것(3장에 선 것까지)이 그 줄의 분모 · 대응 방안 · 재검토일에
      * 섞였다 — 건수 2인 줄에 `2 / 4건` 이 찍혔다.
      */
@@ -365,7 +365,7 @@ public class ReportService {
         Map<String, java.time.LocalDate> earliest = new HashMap<>();
         for (FindingRepository.FindingKey row : findings.findKeyRows(scan.getId())) {
             FindingAnalysis found = FindingAnalysisService.analysisOf(
-                    byKey, row.getCve(), row.getRelatedCve(), row.getPackageName());
+                    byKey, row.getCve(), row.getRelatedCve(), row.getPackageKey());
             AnalysisState state = found == null ? AnalysisState.NOT_SET : found.getState();
             // 4장은 목록이다 — 해당 없음 · 오탐으로 빠진 건은 그 줄의 `건수` 에도
             // `답 있는 건` 에도 넣지 않는다. 넣으면 `1 / 4건` 의 4 가 표의 건수(1)와
@@ -373,8 +373,7 @@ public class ReportService {
             if (!state.isOpen()) {
                 continue;
             }
-            String key = groupKey(row.getPackageName(), row.getPackageVersion(),
-                                  row.getPackageType());
+            String key = groupKey(row.getPackageKey(), row.getPackageVersion());
             long[] cell = counts.computeIfAbsent(key, k -> new long[2]);
             cell[1]++;
             if (state == AnalysisState.NOT_SET) {
@@ -415,7 +414,9 @@ public class ReportService {
                       .thenComparing(PackageAction::maxCvss,
                                      Comparator.nullsLast(Comparator.reverseOrder()))
                       .thenComparing(Comparator.comparingLong(PackageAction::total).reversed())
-                      .thenComparing(PackageAction::packageName);
+                      .thenComparing(PackageAction::packageName)
+                      .thenComparing(PackageAction::packageKey)
+                      .thenComparing(PackageAction::currentVersion);
 
     /**
      * 지난 스캔 대비 신규 · 해소 · 유지.
@@ -453,9 +454,10 @@ public class ReportService {
         List<Remediation> registered = remediations
                 .findByAssetIdOrderByStatusAscPackageNameAsc(scan.getAsset().getId());
         // 패키지마다 **지금 조치** — 최신 회차(D5). 지난 회차는 다음 회차가 이어받았다.
-        Map<String, Remediation> byPackage = new HashMap<>();
-        RemediationService.latestPerPackage(registered).values()
-                .forEach(r -> byPackage.put(r.getPackageName(), r));
+        // 키는 패키지 식별자다(V24). 식별자가 빈 옛 조치는 제 칸에 따로 선다 — 3장의 어느
+        // 줄에도 붙지 않고, 대기 · 진행이면 아래 표에 그대로 실린다.
+        Map<String, Remediation> byPackage = RemediationService.latestPerPackage(registered);
+        String assetPrefix = scan.getAsset().getId() + "|";
         // 완료했는데 이 검사에 해소 건수가 남았으면 무엇인가(AfterDone) — 조치 화면과
         // 같은 규칙을 <b>이 검사</b>에 비춘다.
         Map<Long, AfterDone> after = remediationService.afterDone(
@@ -465,7 +467,7 @@ public class ReportService {
         // 혹시 없으면 앞서의 뜻(탐지 남음)으로 둔다. 빼면 5장의 합이 3장과 어긋난다.
         List<ActionRow> rows = targets.fixTargets().stream()
                 .map(action -> {
-                    Remediation r = byPackage.get(action.packageName());
+                    Remediation r = byPackage.get(assetPrefix + action.packageKey());
                     AfterDone left = r == null ? null : after.get(r.getId());
                     if (r != null && r.getStatus().isClosed() && left == null) {
                         left = new AfterDone(AfterDone.Kind.REMAINING, action.fixableCount());
@@ -479,15 +481,16 @@ public class ReportService {
         // 탐지가 사라졌는데 완료로 넘기지 않은 것이다. 앞서는 3장에 없는
         // 조치를 5장이 아예 모르고 있어서, 조치 화면의 대기 · 진행 수와
         // 보고서의 수가 달랐다. 완료로 닫혔고 남은 것도 없는 조치는 싣지 않는다.
-        Set<String> targeted = rows.stream().map(r -> r.action().packageName())
+        Set<String> targeted = rows.stream().map(r -> assetPrefix + r.action().packageKey())
                                    .collect(Collectors.toSet());
         List<TrackedRow> tracking = new ArrayList<>();
         rows.stream().filter(ActionRow::isTracked)
             .forEach(r -> tracking.add(new TrackedRow(r.remediation(), r.action().fixableCount(),
                                                       r.afterDone())));
         registered.stream()
-                  .filter(r -> r == byPackage.get(r.getPackageName()))
-                  .filter(r -> !r.getStatus().isClosed() && !targeted.contains(r.getPackageName()))
+                  .filter(r -> r == byPackage.get(RemediationService.lineKey(r)))
+                  .filter(r -> !r.getStatus().isClosed()
+                               && !targeted.contains(RemediationService.lineKey(r)))
                   .forEach(r -> tracking.add(new TrackedRow(r, 0, null)));
 
         // 고칠 수 없는 건에 "왜 그대로 두는가" 가 적혀 있는지. 점검에서
@@ -567,15 +570,15 @@ public class ReportService {
      *                         영향이 미치는 것. 권한 상승과는 다른 축이다
      * @param unreadable       벡터가 없거나 3.x 가 아니어서 <b>판단하지 못한</b> 것.
      *                         0 이 아니라 판단 불가다 — 아니오로 세지 않는다.
-     * @param reachableByRow   3 · 4장의 줄(이름 · 버전 · 유형)마다 원격 접근 건수
+     * @param reachableByRow   3 · 4장의 줄(식별자 · 버전)마다 원격 접근 건수
      */
     public record Exposure(long reachable, long reachableFixable, long scopeChanged,
                            long unreadable, Map<String, Long> reachableByRow) {
 
-        /** 그 줄의 원격 접근 건수 — 같은 이름의 다른 버전 · 유형 것은 넣지 않는다. */
+        /** 그 줄의 원격 접근 건수 — 같은 이름의 다른 버전 · 패키지 것은 넣지 않는다. */
         public long reachableIn(PackageGroup row) {
             return reachableByRow.getOrDefault(
-                    groupKey(row.getPackageName(), row.getPackageVersion(), row.getPackageType()), 0L);
+                    groupKey(row.getPackageKey(), row.getPackageVersion()), 0L);
         }
 
         /** 바로 닿는데 수정본이 없는 것. 가장 곤란한 자리다. */
@@ -788,7 +791,7 @@ public class ReportService {
          * 참이었다. 그러면 세 건 중 한 건만 적어 둔 패키지가 설명된 것으로
          * 세어지고, 아래 {@code unexplained()} 가 보고서에 찍는 수가 실제보다
          * 작아진다 — <b>실제보다 안전해 보이는 숫자</b>다. 그 뒤에도 이름으로 물어,
-         * 같은 이름의 4장 줄들이 한 줄의 답을 나눠 가졌다 — 줄(이름 · 버전 · 유형)로 묻는다.
+         * 같은 이름의 4장 줄들이 한 줄의 답을 나눠 가졌다 — 줄(식별자 · 버전)로 묻는다.
          */
         public boolean isExplained(PackageAction row) {
             Reviewed r = reviewed.get(rowKey(row));
@@ -809,19 +812,27 @@ public class ReportService {
     /**
      * 패키지 하나에 대한 조치 후보.
      *
+     * @param packageKey  패키지 식별자 — 이 줄의 키(버전과 함께). 조치 등록이 이것을 싣는다
      * @param fixVersions 그 줄에 실린 탐지의 수정 버전 전부 — 하나로 고르지 않는다
      *                    ({@link FixVersions}). 4장의 줄은 늘 비어 있다
      */
-    public record PackageAction(String packageName, String packageType, String currentVersion,
+    public record PackageAction(String packageKey, String packageName, String packageType,
+                                String currentVersion,
                                 List<String> fixVersions, long total, long fixableCount,
                                 long kevCount, long criticalCount, long highCount,
                                 BigDecimal maxCvss, BigDecimal maxEpss, long reachableCount) {
 
         PackageAction(PackageGroup group, long reachableCount, List<String> fixVersions) {
-            this(group.getPackageName(), group.getPackageType(), group.getPackageVersion(),
+            this(group.getPackageKey(), group.getPackageName(), group.getPackageType(),
+                 group.getPackageVersion(),
                  fixVersions, group.getTotal(), group.getFixable(), group.getKevCount(),
                  group.getCriticalCount(), group.getHighCount(),
                  group.getMaxCvss(), group.getMaxEpss(), reachableCount);
+        }
+
+        /** 이름 곁에 적는 네임스페이스 — groupId · scope · 배포판. 없으면 빈 글자. */
+        public String packageNamespace() {
+            return PackageKey.namespace(packageKey);
         }
 
         public boolean hasReachable() {

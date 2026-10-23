@@ -5,6 +5,7 @@ import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
 import kr.sbomsight.domain.FindingAnalysis;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.RemediationStatus;
 import kr.sbomsight.domain.Scan;
@@ -244,7 +245,7 @@ class RetiredAssetActionsTest {
     }
 
     private void overdueRemediation(Asset asset) {
-        Remediation r = new Remediation(asset, "openssl", "tester");
+        Remediation r = new Remediation(asset, "openssl", PackageKey.of(null, null, "openssl"), "tester");
         r.moveTo(RemediationStatus.OPEN, "tester", "조치 등록");
         r.setDueDate(LocalDate.now().minusDays(1));
         remediations.saveAndFlush(r);
@@ -252,7 +253,7 @@ class RetiredAssetActionsTest {
 
     /** 재검토일은 오늘 이후로만 적힌다 — 날이 지나 지난 것이 된 것으로 만든다. */
     private void overdueReview(Asset asset) {
-        FindingAnalysis a = analyses.record(asset, "CVE-2099-0001", "openssl",
+        FindingAnalysis a = analyses.record(asset, "CVE-2099-0001", "openssl", PackageKey.of(null, null, "openssl"),
                 AnalysisState.EXPLOITABLE, null, AnalysisResponse.WILL_NOT_FIX,
                 "업스트림에 수정 버전 없음", "", "", LocalDate.now().plusDays(30), "tester");
         a.setReviewBy(LocalDate.now().minusDays(1));

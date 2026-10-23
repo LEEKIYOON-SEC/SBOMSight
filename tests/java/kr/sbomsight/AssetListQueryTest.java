@@ -81,7 +81,7 @@ class AssetListQueryTest {
             f.setSeverity("High");
             findings.save(f);
 
-            Remediation r = new Remediation(asset, "q-pkg", "tester");
+            Remediation r = new Remediation(asset, "q-pkg", PackageKey.of(null, null, "q-pkg"), "tester");
             r.moveTo(RemediationStatus.OPEN, "tester", "조치 등록");
             remediations.save(r);
         }

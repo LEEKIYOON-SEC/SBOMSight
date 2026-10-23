@@ -23,6 +23,10 @@ import java.util.stream.Collectors;
  * 가로질러야 한다 — "openssl 을 3.0.7 로 올린다"는 다음 스캔에서도 같은 일이고, 스캔이
  * 바뀌었다고 처음부터 다시 적을 이유가 없다.
  *
+ * <p><b>패키지는 식별자다</b>(PackageKey · V24) — purl 에서 버전을 뗀 것. 앞서 이름이라 한
+ * 자산의 npm semver 와 PyPI semver 가 한 조치를 나눠 가졌다. 식별자가 빈 조치는 V24 가
+ * 어느 패키지의 것인지 가르지 못한 옛 기록이다 — 어느 탐지 줄에도 붙지 않는다.
+ *
  * <p><b>회차</b>(D5): 열린 조치는 (자산, 패키지)에 하나다. 닫힌 조치만 있는 패키지에
  * 등록하면 새 조치를 연다 — 조치 회차가 늘고 이전 조치를 가리킨다. 그 (자산, 패키지)의
  * <b>지금 조치</b>는 최신 회차다({@link #byAssetPackage}). 다시 열기는 잘못 닫은 것을
@@ -70,18 +74,35 @@ public class RemediationService {
      * 때 스냅숏을 잡는다 — 잠그기 전에 읽으면 앞 요청이 커밋한 조치를 못 본다.
      */
     @Transactional
-    public Opened open(Asset asset, Scan scan, String packageName, String actor) {
+    public Opened open(Asset asset, Scan scan, String packageName, String packageKey, String actor) {
+        if (packageKey == null || packageKey.isBlank()) {
+            throw new IllegalArgumentException("어느 패키지의 조치인지 확인되지 않아 등록할 수 없습니다.");
+        }
         assets.lockById(asset.getId());
-        Optional<Remediation> latest = remediations.findLatest(asset.getId(), packageName);
+        Optional<Remediation> latest = remediations.findLatest(asset.getId(), packageKey);
         if (latest.isPresent() && !latest.get().getStatus().isClosed()) {
             return new Opened(latest.get(), false);
         }
-        return new Opened(create(asset, scan, packageName, actor, latest.orElse(null)), true);
+        return new Opened(create(asset, scan, packageName, packageKey, actor, latest.orElse(null)), true);
     }
 
-    private Remediation create(Asset asset, Scan scan, String packageName, String actor,
-                               Remediation previous) {
-        Remediation remediation = new Remediation(asset, packageName, actor);
+    /**
+     * @param packageName 화면에 찍을 이름 — 탐지가 이 식별자를 부르는 이름을 먼저 쓴다(그 검사 ·
+     *                    이전 회차 · 그 자산의 다른 검사 차례로). 어디에도 없을 때만 받은 것을
+     *                    쓴다 — 식별자와 짝이 맞지 않는 이름이 화면 · CSV 에 남지 않게.
+     */
+    private Remediation create(Asset asset, Scan scan, String packageName, String packageKey,
+                               String actor, Remediation previous) {
+        List<Finding> current = findings
+                .findByScanIdAndPackageKeyOrderByCvssScoreDesc(scan.getId(), packageKey);
+        String name = !current.isEmpty() ? current.get(0).getPackageName()
+                : previous != null ? previous.getPackageName()
+                : findings.findPackageNames(asset.getId(), packageKey).stream().findFirst()
+                          .orElse(packageName);
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("조치를 등록할 패키지를 찾을 수 없습니다.");
+        }
+        Remediation remediation = new Remediation(asset, name, packageKey, actor);
         if (previous != null) {
             remediation.followUp(previous);
         }
@@ -92,14 +113,12 @@ public class RemediationService {
         // 현재 버전도 하나로 고르지 않는다 — 등록 당시 건수(openedCount)와 같은
         // 건의 설치 버전 전부. 앞서는 CVSS 가 가장 높은 건의 것 하나라, 같은
         // 패키지가 두 벌 깔린 자산에서 한 벌이 조치 어디에도 없었다(V16).
-        List<Finding> current = findings
-                .findByScanIdAndPackageNameOrderByCvssScoreDesc(scan.getId(), packageName);
         remediation.setFromVersions(current.stream().map(Finding::getPackageVersion).toList());
         // 목표는 하나로 고르지 않는다 — 수정 버전 전부(FixVersions). 앞서는
         // CVSS 가 가장 높은 건의 것 하나를 적었다(curl deb10u4 — 그리로 올려도
         // 10건이 남는다). 보고서 3장과 같은 건(해당 없음 · 오탐 제외)에서 모은다.
         remediation.setToVersions(findings
-                .fixVersionsIn(List.of(scan.getId()), packageName, false).stream()
+                .fixVersionsIn(List.of(scan.getId()), packageKey, false).stream()
                 // 한 건의 칸에 후보가 여럿 이어져 있다 — 펴서 모은다.
                 .flatMap(r -> FixVersions.split(r.getFixedVersion()).stream())
                 .toList());
@@ -177,14 +196,15 @@ public class RemediationService {
         if (latest == null) {
             return list.stream().collect(Collectors.toMap(Remediation::getId, r -> -1L));
         }
-        // 탐지 수다 — 해당 없음 · 오탐도 센다(검토는 탐지를 없애지 않는다).
+        // 탐지 수다 — 해당 없음 · 오탐도 센다(검토는 탐지를 없애지 않는다). 식별자가 빈 옛
+        // 조치는 셀 패키지가 없다 — 0 으로 두지 않고 -1(모름)이다.
         Map<String, Long> byPackage = findings.groupByPackage(latest.getId(), true).stream()
-                .collect(Collectors.toMap(FindingRepository.PackageGroup::getPackageName,
+                .collect(Collectors.toMap(FindingRepository.PackageGroup::getPackageKey,
                                           FindingRepository.PackageGroup::getTotal,
                                           Long::sum));
         return list.stream().collect(Collectors.toMap(
                 Remediation::getId,
-                r -> byPackage.getOrDefault(r.getPackageName(), 0L),
+                r -> r.isPackageUnresolved() ? -1L : byPackage.getOrDefault(r.getPackageKey(), 0L),
                 (a, b) -> a));
     }
 
@@ -260,15 +280,15 @@ public class RemediationService {
         Set<Long> assetIds = closed.stream().map(r -> r.getAsset().getId()).collect(Collectors.toSet());
         Map<String, FindingAnalysis> byAssetKey = analyses.byAssetKey(assetIds);
 
-        // (자산|패키지) → 남은 해소 건의 번호 짝들
+        // (자산|패키지 식별자) → 남은 해소 건의 번호 짝들
         Map<String, List<FindingRepository.AssetFindingKey>> left = new HashMap<>();
         for (FindingRepository.AssetFindingKey k : findings.findFixableKeysIn(scanIds)) {
             FindingAnalysis found = FindingAnalysisService.analysisOf(
-                    byAssetKey, k.getAssetId(), k.getCve(), k.getRelatedCve(), k.getPackageName());
+                    byAssetKey, k.getAssetId(), k.getCve(), k.getRelatedCve(), k.getPackageKey());
             if (found != null && !found.getState().isOpen()) {
                 continue;   // 해당 없음 · 오탐 — 목록에서 빠진 건
             }
-            left.computeIfAbsent(k.getAssetId() + "|" + k.getPackageName(), x -> new ArrayList<>()).add(k);
+            left.computeIfAbsent(k.getAssetId() + "|" + k.getPackageKey(), x -> new ArrayList<>()).add(k);
         }
 
         Map<Long, Set<String>> targetIds = new HashMap<>();
@@ -284,8 +304,9 @@ public class RemediationService {
         Map<Long, AfterDone> out = new HashMap<>();
         for (Remediation r : closed) {
             Scan scan = scanPerAsset.get(r.getAsset().getId());
-            List<FindingRepository.AssetFindingKey> rest =
-                    left.getOrDefault(r.getAsset().getId() + "|" + r.getPackageName(), List.of());
+            // 식별자가 빈 옛 조치는 남은 탐지를 가를 수 없다 — 붙일 줄이 없다.
+            List<FindingRepository.AssetFindingKey> rest = r.isPackageUnresolved() ? List.of()
+                    : left.getOrDefault(r.getAsset().getId() + "|" + r.getPackageKey(), List.of());
             if (scan == null || rest.isEmpty()) {
                 continue;
             }
@@ -332,12 +353,12 @@ public class RemediationService {
     }
 
     /**
-     * 여러 자산치를 {@code (자산id, 패키지명)} 키로 — 그 (자산, 패키지)의 <b>지금 조치</b>
+     * 여러 자산치를 {@code (자산id, 패키지 식별자)} 키로 — 그 (자산, 패키지)의 <b>지금 조치</b>
      * (최신 회차).
      *
      * <p>목록이 줄마다 `조치 등록`/`조치 보기` 중 무엇을 그릴지 정하는 데
      * 쓴다. 키에 <b>자산 id 를 넣는다</b> — 구역·전체 범위는 자산이 섞여
-     * 있어서 패키지명으로만 맞추면 web-01 의 조치가 api-01 행에 붙는다.
+     * 있어서 패키지로만 맞추면 web-01 의 조치가 api-01 행에 붙는다.
      */
     @Transactional(readOnly = true)
     public Map<String, Remediation> byAssetPackage(Collection<Long> assetIds) {
@@ -346,13 +367,25 @@ public class RemediationService {
     }
 
     /**
-     * {@code (자산id|패키지명)} → 최신 회차. 보고서도 이것으로 고른다 — 지난 회차는 다음
+     * {@code (자산id|패키지 식별자)} → 최신 회차. 보고서도 이것으로 고른다 — 지난 회차는 다음
      * 회차가 이어받았으므로 지금 그 패키지를 말하지 않는다.
+     *
+     * <p><b>식별자가 빈 옛 조치는 저마다 한 칸</b>이다({@link #lineKey}) — 어느 패키지인지
+     * 모르는 것끼리 한 칸에 모으면 하나만 남고 나머지가 목록 · 보고서에서 사라진다.
      */
     public static Map<String, Remediation> latestPerPackage(Collection<Remediation> list) {
         return list.stream().collect(Collectors.toMap(
-                r -> r.getAsset().getId() + "|" + r.getPackageName(), Function.identity(),
+                RemediationService::lineKey, Function.identity(),
                 (a, b) -> later(a, b) ? a : b));
+    }
+
+    /**
+     * 조치가 서는 칸 — {@code 자산id|패키지 식별자}. 식별자가 빈 옛 조치는 제 번호로 따로 선다
+     * ({@code 자산id|#번호}) — 어느 탐지 줄의 키({@code 자산id|pkg:…})와도 같지 않다.
+     */
+    public static String lineKey(Remediation r) {
+        return r.getAsset().getId() + "|"
+                + (r.isPackageUnresolved() ? "#" + r.getId() : r.getPackageKey());
     }
 
     /** a 가 b 보다 늦은 회차인가 — 회차, 같으면 번호. */
@@ -382,15 +415,16 @@ public class RemediationService {
 
     /**
      * 그 검사의 그 패키지 탐지가 가진 번호들(주 식별자 · 함께 온 CVE) — 조치 대상이 지금도
-     * 있는지 맞대는 데 쓴다. 해당 없음 · 오탐도 든다(검토는 탐지를 없애지 않는다).
+     * 있는지 맞대는 데 쓴다. 해당 없음 · 오탐도 든다(검토는 탐지를 없애지 않는다). 식별자가
+     * 빈 옛 조치는 맞댈 탐지가 없다 — 빈 것이다.
      */
     @Transactional(readOnly = true)
-    public Set<String> idsIn(Scan scan, String packageName) {
-        if (scan == null) {
+    public Set<String> idsIn(Scan scan, String packageKey) {
+        if (scan == null || packageKey == null || packageKey.isEmpty()) {
             return Set.of();
         }
         Set<String> ids = new HashSet<>();
-        for (Finding f : findings.findByScanIdAndPackageNameOrderByCvssScoreDesc(scan.getId(), packageName)) {
+        for (Finding f : findings.findByScanIdAndPackageKeyOrderByCvssScoreDesc(scan.getId(), packageKey)) {
             ids.add(f.getCve());
             if (f.getRelatedCve() != null && !f.getRelatedCve().isBlank()) {
                 ids.add(f.getRelatedCve());
@@ -409,7 +443,7 @@ public class RemediationService {
     /** 그 (자산, 패키지)의 최신 회차 — 이 조치가 지난 회차일 때 화면이 그리로 잇는다. */
     @Transactional(readOnly = true)
     public Optional<Remediation> latestOf(Remediation remediation) {
-        return remediations.findLatest(remediation.getAsset().getId(), remediation.getPackageName())
+        return remediations.findLatest(remediation.getAsset().getId(), remediation.getPackageKey())
                            .filter(latest -> !latest.getId().equals(remediation.getId()));
     }
 }

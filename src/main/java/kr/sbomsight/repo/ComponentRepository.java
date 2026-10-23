@@ -106,15 +106,16 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
                                 Pageable pageable);
 
     /**
-     * 패키지 이름 · 유형으로 묶은 한 줄 — {@code /packages} 의 표.
+     * 패키지 식별자로 묶은 한 줄 — {@code /packages} 의 표.
      *
-     * <p><b>유형도 묶음 키다.</b> 앞서 이름으로만 묶고 유형을 {@code MIN} 으로 집었다. 같은
-     * 이름이 두 생태계에 있으면(npm 의 {@code semver} 와 pypi 의 {@code semver}) 한 줄로
-     * 합쳐져, 유형 칸은 그중 하나만 말하고 버전 분포 · 취약점 수에는 남의 것이 섞였다.
-     * 유형은 담을 때 purl 의 이름으로 맞춰 두었다(ComponentReader · V22).
+     * <p><b>한 줄은 패키지 식별자다</b>(PackageKey · V24) — 탐지 · 검토 결과 · 조치와 같은 키.
+     * 앞서 (이름, 유형)이라 groupId 만 다른 두 jackson-databind 가 한 줄로 합쳐져, 버전 분포 ·
+     * 취약점 수에 남의 것이 섞였다(그 전에는 이름 하나라 npm 과 pypi 의 {@code semver} 가).
+     * 이름 · 유형은 화면에 찍을 값이다 — 같은 식별자를 syft 가 다른 이름으로 적었으면
+     * 그중 하나(MIN)다.
      */
     @Query("""
-           SELECT c.name AS name, c.type AS type,
+           SELECT c.packageKey AS packageKey, MIN(c.name) AS name, MIN(c.type) AS type,
                   COUNT(DISTINCT c.asset.id) AS assetCount,
                   COUNT(DISTINCT c.version) AS versionCount
            FROM Component c
@@ -124,14 +125,16 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
              AND (:type IS NULL OR c.type = :type)
              AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
-           GROUP BY c.name, c.type
-           ORDER BY COUNT(DISTINCT c.asset.id) DESC, c.name ASC, c.type ASC
+           GROUP BY c.packageKey
+           ORDER BY COUNT(DISTINCT c.asset.id) DESC, MIN(c.name) ASC, c.packageKey ASC
            """)
-    List<PackageRow> groupByNameAndType(@Param("zoneId") Long zoneId,
-                                        @Param("type") String type,
-                                        @Param("q") String q);
+    List<PackageRow> groupByPackage(@Param("zoneId") Long zoneId,
+                                    @Param("type") String type,
+                                    @Param("q") String q);
 
     interface PackageRow {
+        String getPackageKey();
+
         String getName();
 
         String getType();
@@ -142,30 +145,32 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
     }
 
     /**
-     * 버전 분포 — {@code (이름, 유형, 버전)} 마다 몇 대인가.
+     * 버전 분포 — {@code (식별자, 버전)} 마다 몇 대인가.
      *
-     * <p>목록에 뜬 이름만 물어 본다. 전부 가져오면 12만 개짜리 자산 백 대에서
-     * 수백만 행이 된다. 그 이름의 다른 유형 줄도 함께 오므로 부르는 쪽이 줄(이름 ·
-     * 유형)로 가른다 — 앞서 유형을 보지 않아, 유형 거르개를 걸어도 같은 이름의 다른
-     * 유형 버전이 그 줄의 버전 분포에 끼었다.
+     * <p>목록에 뜬 줄의 식별자만 물어 본다. 전부 가져오면 12만 개짜리 자산 백 대에서
+     * 수백만 행이 된다. 앞서 이름으로 물어 유형으로 갈랐는데, 이제 줄의 키 그대로 묻는다 —
+     * 같은 이름의 다른 패키지 버전이 그 줄의 버전 분포에 끼지 않는다.
      */
     @Query("""
-           SELECT c.name AS name, c.type AS type, c.version AS version,
+           SELECT c.packageKey AS packageKey, MIN(c.name) AS name, MIN(c.type) AS type,
+                  c.version AS version,
                   COUNT(DISTINCT c.asset.id) AS assetCount
            FROM Component c
            JOIN c.asset a
            JOIN c.scan s
            WHERE a.archivedAt IS NULL AND s.status = 'DONE'
-             AND c.name IN :names
+             AND c.packageKey IN :keys
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
-           GROUP BY c.name, c.type, c.version
+           GROUP BY c.packageKey, c.version
            ORDER BY COUNT(DISTINCT c.asset.id) DESC, c.version ASC
            """)
-    List<VersionRow> versionSpread(@Param("names") List<String> names,
+    List<VersionRow> versionSpread(@Param("keys") List<String> keys,
                                    @Param("zoneId") Long zoneId);
 
-    /** 버전 분포 한 조각 — {@code (이름, 유형, 버전)} 하나. */
+    /** 버전 분포 한 조각 — {@code (식별자, 버전)} 하나. 이름 · 유형은 화면 · CSV 에 찍을 값. */
     interface VersionRow {
+        String getPackageKey();
+
         String getName();
 
         String getType();
@@ -180,12 +185,13 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
      *
      * <p>화면은 앞 200개 이름만 싣는다. 내보내기가 거기서 잘리면 <b>잘린 파일이
      * 결재 문서에 붙는다</b> — 그래서 여기서는 이름으로 자르지 않고 거르개만
-     * 건다. 행 수는 {@code (이름, 유형, 버전)} 만큼이라 인벤토리 전체보다 작다.
+     * 건다. 행 수는 {@code (식별자, 버전)} 만큼이라 인벤토리 전체보다 작다.
      * 앞서 {@code (이름, 버전)} 으로 묶고 유형을 {@code MIN} 으로 집어, 같은 이름 · 버전이
      * 두 유형에 있으면 한 줄로 합쳐졌다.
      */
     @Query("""
-           SELECT c.name AS name, c.type AS type, c.version AS version,
+           SELECT c.packageKey AS packageKey, MIN(c.name) AS name, MIN(c.type) AS type,
+                  c.version AS version,
                   COUNT(DISTINCT c.asset.id) AS assetCount
            FROM Component c
            JOIN c.asset a
@@ -194,8 +200,8 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
              AND (:type IS NULL OR c.type = :type)
              AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
-           GROUP BY c.name, c.type, c.version
-           ORDER BY c.name ASC, c.type ASC, c.version ASC
+           GROUP BY c.packageKey, c.version
+           ORDER BY MIN(c.name) ASC, c.packageKey ASC, c.version ASC
            """)
     List<VersionRow> versionSpreadAll(@Param("zoneId") Long zoneId,
                                       @Param("type") String type,
@@ -209,11 +215,23 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
            """)
     List<String> types();
 
+    /** 펼쳤을 때의 자산별 줄 — 패키지 하나(식별자). */
+    @Query("""
+           SELECT c FROM Component c
+             JOIN FETCH c.asset a
+             JOIN FETCH a.zone
+             JOIN FETCH c.scan s
+           WHERE c.packageKey = :packageKey AND a.archivedAt IS NULL AND s.status = 'DONE'
+             AND (:zoneId IS NULL OR a.zone.id = :zoneId)
+           ORDER BY c.version ASC, a.name ASC, c.id ASC
+           """)
+    List<Component> findByPackageKey(@Param("packageKey") String packageKey,
+                                     @Param("zoneId") Long zoneId);
+
     /**
-     * 펼쳤을 때의 자산별 줄. 한 패키지만 물어 본다.
-     *
-     * <p>유형이 {@code null} 이면 그 이름의 유형 전부 — 유형이 붙기 전의 주소
-     * ({@code ?open=이름})로 열어도 펼쳐지게. 화면은 줄마다 제 유형 것만 그린다.
+     * 식별자가 붙기 전의 주소({@code ?open=이름&openType=유형} · {@code ?open=이름})로 열었을 때 —
+     * 적어 둔 주소가 죽지 않게. 유형이 {@code null} 이면 그 이름의 줄 전부다. 화면은 줄마다
+     * 제 식별자의 것만 그린다.
      */
     @Query("""
            SELECT c FROM Component c

@@ -45,8 +45,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li><b>취약한 버전과 안전한 버전이 섞인 것을 가려낸다.</b> 이 화면을 두는
  *       이유에 가장 가까운 신호다 — "이미 올린 자산이 있는데 안 올린 자산이
  *       남았다".</li>
- *   <li><b>한 줄은 (이름, 유형)이다.</b> 같은 이름이 두 생태계에 있으면 두 줄이고,
- *       탐지는 유형까지 맞는 줄에 붙는다. 유형은 purl 의 이름으로 맞춘다.</li>
+ *   <li><b>한 줄은 패키지 식별자다</b>(PackageKey · V24). 같은 이름이 두 생태계에 있거나
+ *       groupId 만 다르면 두 줄이고, 탐지는 식별자가 같은 줄에 붙는다. 유형은 purl 의
+ *       이름으로 맞춘다.</li>
  * </ol>
  */
 @SpringBootTest
@@ -741,10 +742,10 @@ class ComponentInventoryTest {
         // 엑셀이 UTF-8 로 읽는 유일한 방법.
         assertThat(csv).startsWith("﻿");
         assertThat(csv.lines().toList())
-                .containsSubsequence("﻿\"패키지\",\"유형\",\"버전\",\"자산 수\",\"취약점\",\"최고 심각도\"",
-                                     "\"csv-glibc\",\"rpm\",\"2.34-83\",\"1\",\"0\",\"\"",
-                                     "\"csv-log4j\",\"maven\",\"2.14.1\",\"1\",\"1\",\"심각\"",
-                                     "\"csv-log4j\",\"maven\",\"2.17.1\",\"1\",\"0\",\"\"");
+                .containsSubsequence("﻿\"패키지\",\"패키지 식별자\",\"유형\",\"버전\",\"자산 수\",\"취약점\",\"최고 심각도\"",
+                                     "\"csv-glibc\",\"pkg:rpm/rocky/csv-glibc\",\"rpm\",\"2.34-83\",\"1\",\"0\",\"\"",
+                                     "\"csv-log4j\",\"pkg:maven/org.apache.logging.log4j/csv-log4j\",\"maven\",\"2.14.1\",\"1\",\"1\",\"심각\"",
+                                     "\"csv-log4j\",\"pkg:maven/org.apache.logging.log4j/csv-log4j\",\"maven\",\"2.17.1\",\"1\",\"0\",\"\"");
 
         // 걸린 것이 없는 버전에 등급을 적으면 아무도 내리지 않은 판정이 된다.
         assertThat(csv)
@@ -756,8 +757,8 @@ class ComponentInventoryTest {
         String mixedOnly = mvc.perform(get("/packages/export.csv?q=csv-&mixed=true")
                                                .with(user("tester").roles("ADMIN")))
                               .andReturn().getResponse().getContentAsString();
-        assertThat(mixedOnly).contains("\"csv-log4j\",\"maven\",\"2.14.1\"")
-                             .contains("\"csv-log4j\",\"maven\",\"2.17.1\"")
+        assertThat(mixedOnly).contains("\"pkg:maven/org.apache.logging.log4j/csv-log4j\",\"maven\",\"2.14.1\"")
+                             .contains("\"pkg:maven/org.apache.logging.log4j/csv-log4j\",\"maven\",\"2.17.1\"")
                              .doesNotContain("csv-glibc");
     }
 
@@ -860,7 +861,7 @@ class ComponentInventoryTest {
     }
 
     @Test
-    @DisplayName("CSV 도 (패키지, 유형, 버전)마다 한 줄 — 같은 이름 · 버전의 두 유형이 합쳐지지 않는다")
+    @DisplayName("CSV 도 (패키지 식별자, 버전)마다 한 줄 — 같은 이름 · 버전의 두 유형이 합쳐지지 않는다")
     @Transactional
     void exportKeepsTheTypesApart() throws Exception {
         semverTwins();
@@ -870,17 +871,18 @@ class ComponentInventoryTest {
                         .andExpect(status().isOk())
                         .andReturn().getResponse().getContentAsString();
         assertThat(csv.lines().filter(l -> l.startsWith("\"ty-semver\"")).toList())
-                .containsExactly("\"ty-semver\",\"npm\",\"1.0.0\",\"1\",\"0\",\"\"",
-                                 "\"ty-semver\",\"pypi\",\"1.0.0\",\"1\",\"1\",\"심각\"",
-                                 "\"ty-semver\",\"pypi\",\"2.0.0\",\"1\",\"0\",\"\"");
+                .containsExactly("\"ty-semver\",\"pkg:npm/ty-semver\",\"npm\",\"1.0.0\",\"1\",\"0\",\"\"",
+                                 "\"ty-semver\",\"pkg:pypi/ty-semver\",\"pypi\",\"1.0.0\",\"1\",\"1\",\"심각\"",
+                                 "\"ty-semver\",\"pkg:pypi/ty-semver\",\"pypi\",\"2.0.0\",\"1\",\"0\",\"\"");
     }
 
     /**
-     * 펼친 줄도 이름과 유형으로 가린다. 유형 없이 이름만 든 옛 주소({@code ?open=이름})는 그
-     * 이름의 줄을 전부 펼치고, 줄마다 제 유형의 자산만 그린다 — 적어 둔 주소가 죽지 않게.
+     * 펼친 줄도 식별자로 가린다({@code ?open=pkg:…}). 식별자가 붙기 전의 주소 — 이름과 유형
+     * ({@code ?open=이름&openType=유형}), 이름만({@code ?open=이름}) — 은 그 이름(과 유형)의 줄을
+     * 전부 펼치고, 줄마다 제 식별자의 자산만 그린다 — 적어 둔 주소가 죽지 않게.
      */
     @Test
-    @DisplayName("자산 보기 — 누른 줄(이름 · 유형)의 자산만 펼친다 · 이름만 든 옛 주소도 열린다")
+    @DisplayName("자산 보기 — 누른 줄(식별자)의 자산만 펼친다 · 식별자가 붙기 전의 주소도 열린다")
     @Transactional
     void expandingOpensOnlyThatRow() throws Exception {
         Asset[] twins = semverTwins();
@@ -889,13 +891,18 @@ class ComponentInventoryTest {
         String pypiNew = twins[2].getName();
 
         String list = page("/packages?q=ty-semver");
-        assertThat(list).contains("open=ty-semver&amp;openType=npm")
-                        .contains("open=ty-semver&amp;openType=pypi");
+        assertThat(list).contains("open=pkg%3Anpm%2Fty-semver")
+                        .contains("open=pkg%3Apypi%2Fty-semver");
 
-        String pypi = page("/packages?q=ty-semver&open=ty-semver&openType=pypi");
+        String pypi = page("/packages?q=ty-semver&open=pkg:pypi/ty-semver");
         assertThat(pypi).contains(pypiOld).contains(pypiNew)
                         .as("pypi 줄을 펼쳤는데 npm 자산이 함께 나왔다")
                         .doesNotContain(npm);
+
+        String byType = page("/packages?q=ty-semver&open=ty-semver&openType=pypi");
+        assertThat(byType).contains(pypiOld).contains(pypiNew)
+                          .as("이름 · 유형을 든 옛 주소로 pypi 줄을 펼쳤는데 npm 자산이 함께 나왔다")
+                          .doesNotContain(npm);
 
         String legacy = page("/packages?q=ty-semver&open=ty-semver");
         assertThat(count(legacy, npm)).isEqualTo(1);
@@ -908,12 +915,17 @@ class ComponentInventoryTest {
     /**
      * <b>purl 이 없는 원소의 유형도 purl 의 이름으로 담는다.</b>
      *
-     * <p>syft 는 purl 을 못 만든 원소에도 제 유형({@code java-archive})을 적는다. 그대로 담으면
-     * purl 이 있는 같은 패키지({@code maven})와 두 줄로 갈리고, 탐지와도 이어지지 않는다.
-     * 표에 없는 유형({@code binary})은 받은 그대로, {@code UnknownPackage} 는 빈 칸.
+     * <p>syft 는 purl 을 못 만든 원소에도 제 유형({@code java-archive} · {@code python})을 적는다.
+     * 그대로 담으면 purl 이 있는 같은 패키지({@code pypi})와 두 줄로 갈리고, 탐지와도 이어지지
+     * 않는다. 표에 없는 유형({@code binary})은 받은 그대로, {@code UnknownPackage} 는 빈 칸.
+     *
+     * <p><b>네임스페이스는 지어내지 않는다</b>(V24). purl 없는 {@code java-archive} 원소는 groupId
+     * 를 모른다 — {@code com.fasterxml.jackson.core} 의 것인지 {@code org.codehaus.jackson} 의
+     * 것인지 가릴 근거가 없어, purl 있는 같은 이름과 한 줄로 합치지 않는다. 네임스페이스가 없는
+     * 생태계(pypi)는 식별자가 같아 한 줄이다. 탐지는 식별자가 같은 줄에 붙는다.
      */
     @Test
-    @DisplayName("purl 없는 원소의 syft 유형을 purl 의 이름으로 — purl 있는 같은 패키지와 한 줄")
+    @DisplayName("purl 없는 원소의 syft 유형을 purl 의 이름으로 — 식별자가 같으면 한 줄 · groupId 는 지어내지 않는다")
     @Transactional
     void purlLessElementsTakeThePurlTypeName() throws IOException {
         Asset bare = asset("ty-bare");
@@ -921,6 +933,7 @@ class ComponentInventoryTest {
         ingest(bare, bareScan, """
                 { "artifacts": [
                     { "name": "ty-jackson", "version": "2.9.8", "type": "java-archive" },
+                    { "name": "ty-requests", "version": "2.25.0", "type": "python" },
                     { "name": "ty-kernel", "version": "5.14.0", "type": "linux-kernel" },
                     { "name": "ty-blob", "version": "1.0", "type": "binary" },
                     { "name": "ty-unknown", "version": "1.0", "type": "UnknownPackage" } ] }
@@ -928,7 +941,9 @@ class ComponentInventoryTest {
         Asset full = asset("ty-full");
         ingest(full, doneScan(full), """
                 { "artifacts": [ { "name": "ty-jackson", "version": "2.9.8", "type": "java-archive",
-                                   "purl": "pkg:maven/com.fasterxml.jackson.core/ty-jackson@2.9.8" } ] }
+                                   "purl": "pkg:maven/com.fasterxml.jackson.core/ty-jackson@2.9.8" },
+                                 { "name": "ty-requests", "version": "2.25.0", "type": "python",
+                                   "purl": "pkg:pypi/ty-requests@2.25.0" } ] }
                 """);
         // grype 도 purl 없이 syft 의 유형만 적는다.
         Finding hit = new Finding(bareScan, "CVE-2099-8888|ty-jackson", "CVE-2099-8888", "ty-jackson");
@@ -940,13 +955,20 @@ class ComponentInventoryTest {
         assertThat(ofAsset(bare.getId()))
                 .extracting(Component::getName, Component::getType)
                 .containsExactly(tuple("ty-blob", "binary"), tuple("ty-jackson", "maven"),
-                                 tuple("ty-kernel", "generic"), tuple("ty-unknown", ""));
+                                 tuple("ty-kernel", "generic"), tuple("ty-requests", "pypi"),
+                                 tuple("ty-unknown", ""));
+
+        assertThat(rows(null, "ty-requests", false, false))
+                .extracting(PackageService.PackageRow::packageKey, PackageService.PackageRow::assetCount)
+                .as("식별자가 같은데(pkg:pypi/ty-requests) purl 있는 것과 없는 것이 두 줄로 갈렸다")
+                .containsExactly(tuple("pkg:pypi/ty-requests", 2L));
 
         assertThat(rows(null, "ty-jackson", false, false))
-                .extracting(PackageService.PackageRow::type, PackageService.PackageRow::assetCount,
+                .extracting(PackageService.PackageRow::packageKey, PackageService.PackageRow::assetCount,
                             PackageService.PackageRow::findingCount)
-                .as("purl 있는 것과 없는 것이 두 줄로 갈렸거나, 탐지가 이어지지 않았다")
-                .containsExactly(tuple("maven", 2L, 1L));
+                .as("groupId 를 모르는 원소를 purl 있는 줄에 합쳤거나, 탐지가 제 식별자 줄에 이어지지 않았다")
+                .containsExactlyInAnyOrder(tuple("pkg:maven/com.fasterxml.jackson.core/ty-jackson", 1L, 0L),
+                                           tuple("pkg:maven/ty-jackson", 1L, 1L));
     }
 
     /** CycloneDX 는 syft 의 유형을 속성({@code syft:package:type})으로 담는다. purl 이 없으면 그것을 쓴다. */
@@ -973,9 +995,13 @@ class ComponentInventoryTest {
      * <b>유형을 모르는 줄이 맞는 줄 없는 탐지를 받는다.</b>
      *
      * <p>SBOM 이 purl 도 유형도 안 담은 원소는 빈 유형 줄이 된다. 같은 이름 · 버전의 탐지
-     * 가운데 유형이 맞는 줄이 있는 것은 그 줄로 가고, 나머지(유형이 맞는 줄이 없는 것 ·
+     * 가운데 식별자가 맞는 줄이 있는 것은 그 줄로 가고, 나머지(식별자가 맞는 줄이 없는 것 ·
      * 유형 없는 것)는 이 줄이 받는다. 받을 줄이 없다고 버리면 그 수가 화면에서 조용히
      * 사라진다 — 실제보다 안전해 보이는 숫자다. 한 탐지가 두 줄에 붙지도 않는다.
+     *
+     * <p>purl 없이 유형만 든 탐지({@code java-archive} → {@code pkg:maven/ty-mystery})는 groupId 가
+     * 있는 줄({@code pkg:maven/x/ty-mystery})의 것이라 말할 근거가 없다 — 맞는 줄이 없는 것으로
+     * 센다(V24).
      */
     @Test
     @DisplayName("유형을 모르는 줄은 맞는 줄 없는 탐지를 받는다 — 버리지도 두 번 세지도 않는다")
@@ -992,19 +1018,22 @@ class ComponentInventoryTest {
                 { "artifacts": [ { "name": "ty-mystery", "version": "1.0", "type": "java-archive",
                                    "purl": "pkg:maven/x/ty-mystery@1.0" } ] }
                 """);
-        // maven 줄이 받을 것 · 맞는 줄이 없는 것(npm) · 유형 없는 것.
-        for (String[] seen : new String[][] {{"java-archive", "High"}, {"npm", "Medium"}, {"", "Low"}}) {
-            Finding f = new Finding(scan, "CVE-2099-" + seen[1] + "|ty-mystery",
-                                    "CVE-2099-" + seen[1], "ty-mystery");
+        // maven 줄이 받을 것(식별자가 같다) · groupId 를 모르는 것 · 맞는 줄이 없는 것(npm) · 유형 없는 것.
+        for (String[] seen : new String[][] {{"java-archive", "pkg:maven/x/ty-mystery@1.0", "Critical"},
+                                             {"java-archive", "", "High"},
+                                             {"npm", "", "Medium"}, {"", "", "Low"}}) {
+            Finding f = new Finding(scan, "CVE-2099-" + seen[2] + "|ty-mystery",
+                                    "CVE-2099-" + seen[2], "ty-mystery");
             f.setPackageVersion("1.0");
             f.setPackageType(seen[0]);
-            f.setSeverity(seen[1]);
+            f.setPackagePurl(seen[1]);
+            f.setSeverity(seen[2]);
             findings.saveAndFlush(f);
         }
 
         assertThat(rows(null, "ty-mystery", false, false))
                 .extracting(PackageService.PackageRow::type, PackageService.PackageRow::findingCount)
-                .containsExactlyInAnyOrder(tuple("maven", 1L), tuple("", 2L));
+                .containsExactlyInAnyOrder(tuple("maven", 1L), tuple("", 3L));
     }
 
     private String page(String url) throws Exception {

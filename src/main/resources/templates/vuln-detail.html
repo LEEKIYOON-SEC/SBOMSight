@@ -155,9 +155,10 @@
               <i class="zrail" th:style="'background:' + (${#strings.isEmpty(f.scan.asset.zone.color)}
                                          ? '#6f7e8d' : ${f.scan.asset.zone.color})"></i>
               <span th:text="${f.scan.asset.zone.name}">DMZ</span></td>
-            <td class="tight">
+            <!--/* 유형 옆에 네임스페이스 — 같은 이름의 다른 패키지를 가른다(목록과 같다). */-->
+            <td class="tight" th:with="ns=${T(kr.sbomsight.domain.PackageKey).namespace(f.packageKey)}">
               <span th:text="${f.packageName}">openssl</span>
-              <span class="faint" th:text="${f.packageType}">rpm</span></td>
+              <span class="faint" th:text="${f.packageType} + (${#strings.isEmpty(ns)} ? '' : ' · ' + ${ns})">rpm</span></td>
             <!--/* 목표는 후보 전부(fixversions) — 칸에 tight 를 주면 목록이 한 줄에 하나씩 선다. */-->
             <td class="mono">
               <span th:text="${f.packageVersion}">1.0.0</span> →
@@ -174,7 +175,7 @@
             </td>
             <td class="tight actions">
               <a th:replace="~{fragments/analysis-dialog :: link(${a}, ${f.scan.asset.id}, ${f.id}, ${f.displayId},
-                               ${f.packageName}, 'btn btn-sm')}"></a>
+                               ${f.packageName}, ${f.packageKey}, 'btn btn-sm')}"></a>
               <a class="btn btn-sm" th:href="@{'/assets/' + ${f.scan.asset.id}(tab='vulns')}">열기</a></td>
           </tr>
           </tbody>

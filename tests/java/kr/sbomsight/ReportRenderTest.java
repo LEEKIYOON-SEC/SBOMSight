@@ -436,7 +436,7 @@ class ReportRenderTest {
         Asset web = assetIn(zone, "web");
         noFixToday(web, "CVE-2026-1001", "openssl", "rpm");
         noFixToday(assetIn(zone, "api"), "CVE-2026-1002", "openssl", "apk");
-        analyses.record(web, "CVE-2026-1001", "openssl", AnalysisState.IN_TRIAGE,
+        analyses.record(web, "CVE-2026-1001", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.IN_TRIAGE,
                         null, null, "", "", "", null, "tester");
 
         String html = mvc.perform(get("/reports/zone").param("zone", zone.getId().toString())
@@ -445,8 +445,8 @@ class ReportRenderTest {
                          .andReturn().getResponse().getContentAsString();
         String chapter5 = html.substring(html.indexOf("5. 수정 버전 없는 항목"),
                                          html.indexOf("6. 조치 진행 현황"));
-        String rpm = rowOf(chapter5, ">rpm<");
-        String apk = rowOf(chapter5, ">apk<");
+        String rpm = rowOf(chapter5, ">pkg:rpm/openssl<");
+        String apk = rowOf(chapter5, ">pkg:apk/openssl<");
 
         assertThat(rpm).contains("전부 1건").contains("class=\"faint\">1대</div>");
         assertThat(apk).as("답한 적 없는 줄").contains("미검토");

@@ -69,7 +69,7 @@ class RemediationProgressTest {
         // 앞선 검사 — pg-new 의 조치를 이 검사에서 등록했다. 조치 대상은 CVE-2098-1 하나.
         Scan earlier = scan(Instant.now().minus(1, ChronoUnit.HOURS));
         finding(earlier, "CVE-2098-1", "pg-new");
-        Remediation pgNew = remediationService.open(asset, earlier, "pg-new", "tester").remediation();
+        Remediation pgNew = remediationService.open(asset, earlier, "pg-new", PackageKey.of(null, null, "pg-new"), "tester").remediation();
         remediationService.update(pgNew, RemediationStatus.DONE, "", null, "", "tester", "");
 
         // 이 검사보다 먼저 정한 조치들 — 완료한 것은 고친 뒤의 SBOM 으로 판정한다.
@@ -116,7 +116,7 @@ class RemediationProgressTest {
     }
 
     private void remediation(String pkg, RemediationStatus status) {
-        Remediation r = new Remediation(asset, pkg, "tester");
+        Remediation r = new Remediation(asset, pkg, PackageKey.of(null, null, pkg), "tester");
         // 등록 당시 건수는 있는데 조치 대상이 없다 — 대상을 모르는 옛 조치의 꼴(V19).
         r.setOpenedCount(1);
         r.moveTo(RemediationStatus.OPEN, "tester", "조치 등록");

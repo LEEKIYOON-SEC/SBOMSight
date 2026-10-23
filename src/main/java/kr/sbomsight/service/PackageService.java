@@ -1,7 +1,7 @@
 package kr.sbomsight.service;
 
 import kr.sbomsight.domain.Component;
-import kr.sbomsight.domain.PackageTypes;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Severity;
 import kr.sbomsight.repo.ComponentRepository;
 import kr.sbomsight.repo.FindingRepository;
@@ -57,8 +57,9 @@ public class PackageService {
      * <p>버전 분포({@link #assemble})는 <b>이 쪽에 실리는 이름만</b> 물어
      * 본다. 전부 물으면 자산 백 대의 인벤토리에서 수백만 행이 된다.
      *
-     * <p><b>한 줄은 (이름, 유형)이다.</b> 앞서 이름으로만 묶어, 같은 이름이 두 생태계에
-     * 있으면(npm 과 pypi 의 같은 이름) 버전 분포 · 취약점 수가 한 줄에 섞였다.
+     * <p><b>한 줄은 패키지 식별자다</b>(PackageKey · V24) — 탐지 · 검토 결과 · 조치와 같은 키.
+     * 앞서 이름으로만 묶어 npm 과 pypi 의 같은 이름이, 그다음 (이름, 유형)으로 묶어 groupId 만
+     * 다른 Maven 의 같은 artifactId 가 한 줄에 섞였다.
      */
     @Transactional(readOnly = true)
     public Listing list(Long zoneId, String type, String q, boolean vulnerableOnly,
@@ -66,31 +67,28 @@ public class PackageService {
         String kind = blankToNull(type);
         String term = blankToNull(q);
         List<ComponentRepository.PackageRow> grouped =
-                components.groupByNameAndType(zoneId, kind, term);
+                components.groupByPackage(zoneId, kind, term);
 
         if (vulnerableOnly || mixedOnly) {
             Set<String> keep = rowsMatching(zoneId, kind, term, vulnerableOnly, mixedOnly);
-            grouped = grouped.stream().filter(r -> keep.contains(row(r.getName(), r.getType())))
-                             .toList();
+            grouped = grouped.stream().filter(r -> keep.contains(r.getPackageKey())).toList();
         }
 
         Page<ComponentRepository.PackageRow> slice = Paging.slice(grouped, page, size);
-        List<String> names = slice.getContent().stream()
-                .map(ComponentRepository.PackageRow::getName).distinct().toList();
-        List<PackageRow> rows = names.isEmpty()
+        List<PackageRow> rows = slice.getContent().isEmpty()
                 ? List.of()
-                : assemble(slice.getContent(), names, zoneId);
+                : assemble(slice.getContent(), zoneId);
 
         return new Listing(new PageImpl<>(rows, slice.getPageable(), slice.getTotalElements()),
                            components.types());
     }
 
     /**
-     * 거르개 둘에 걸리는 <b>줄(이름 · 유형) 전부.</b>
+     * 거르개 둘에 걸리는 <b>줄(패키지 식별자) 전부.</b>
      *
      * <p>`취약점 있는 것만` 과 `일부 자산만 업그레이드` 는 패키지 단위
      * 성질이라 버전 분포를 다 세어 봐야 판단이 선다. 자르기 전에 세야
-     * 하므로 전부를 훑는다 — 행 수는 {@code (이름, 유형, 버전)} 만큼이라
+     * 하므로 전부를 훑는다 — 행 수는 {@code (식별자, 버전)} 만큼이라
      * 인벤토리 전체보다 작고, 내보내기가 이미 같은 질의를 쓰고 있다.
      */
     private Set<String> rowsMatching(Long zoneId, String type, String q,
@@ -100,8 +98,7 @@ public class PackageService {
         // 줄 → [걸린 버전이 있다, 안 걸린 버전이 있다]
         Map<String, boolean[]> flags = new LinkedHashMap<>();
         for (ComponentRepository.VersionRow version : spread) {
-            boolean[] seen = flags.computeIfAbsent(row(version.getName(), version.getType()),
-                                                   k -> new boolean[2]);
+            boolean[] seen = flags.computeIfAbsent(version.getPackageKey(), k -> new boolean[2]);
             long total = severities.of(version).values().stream().mapToLong(Long::longValue).sum();
             seen[total > 0 ? 0 : 1] = true;
         }
@@ -121,11 +118,18 @@ public class PackageService {
     /**
      * 펼쳤을 때 — 이 패키지가 어느 자산에 어느 버전으로 깔려 있나.
      *
-     * @param type {@code null} 이면 그 이름의 유형 전부 — 유형이 붙기 전의 주소로 열었을 때
+     * <p>{@code open} 이 식별자({@code pkg:…})면 그 패키지 하나. 아니면 식별자가 붙기 전의
+     * 주소다 — 그 이름(과 {@code type} 이 있으면 그 유형)의 줄 전부. 적어 둔 주소가 죽지 않게.
      */
     @Transactional(readOnly = true)
-    public List<Component> assetsOf(String name, String type, Long zoneId) {
-        return components.findByNameAndType(name, type, zoneId);
+    public List<Component> assetsOf(String open, String type, Long zoneId) {
+        return isKey(open) ? components.findByPackageKey(open, zoneId)
+                           : components.findByNameAndType(open, type, zoneId);
+    }
+
+    /** 펼친 줄을 가리키는 값이 식별자인가 — 아니면 이름(식별자가 붙기 전의 주소)이다. */
+    public static boolean isKey(String open) {
+        return open != null && open.startsWith("pkg:");
     }
 
     /**
@@ -148,11 +152,11 @@ public class PackageService {
 
         Severities severities = severities(null, zoneId, spread);
 
-        // 거르개 둘은 패키지 단위 성질이라 줄(이름 · 유형)로 모아 봐야 판단이 선다.
+        // 거르개 둘은 패키지 단위 성질이라 줄(패키지 식별자)로 모아 봐야 판단이 선다.
         Map<String, List<ExportRow>> byRow = new LinkedHashMap<>();
         for (ComponentRepository.VersionRow version : spread) {
-            byRow.computeIfAbsent(row(version.getName(), version.getType()), k -> new ArrayList<>())
-                 .add(new ExportRow(version.getName(), version.getType(),
+            byRow.computeIfAbsent(version.getPackageKey(), k -> new ArrayList<>())
+                 .add(new ExportRow(version.getName(), version.getType(), version.getPackageKey(),
                                     new VersionSlice(version.getVersion(), version.getAssetCount(),
                                                      severities.of(version))));
         }
@@ -180,28 +184,30 @@ public class PackageService {
 
     // -----------------------------------------------------------------------
 
-    private List<PackageRow> assemble(List<ComponentRepository.PackageRow> page,
-                                      List<String> names, Long zoneId) {
-        // 버전 분포: (이름, 유형, 버전) → 자산 수. 이 쪽의 이름을 물으면 다른 쪽에 선 같은
-        // 이름의 다른 유형 줄도 오므로 줄(이름 · 유형)로 가른다.
-        List<ComponentRepository.VersionRow> versions = components.versionSpread(names, zoneId);
+    private List<PackageRow> assemble(List<ComponentRepository.PackageRow> page, Long zoneId) {
+        // 버전 분포: (식별자, 버전) → 자산 수. 이 쪽에 선 줄의 식별자만 묻는다.
+        List<String> keys = page.stream().map(ComponentRepository.PackageRow::getPackageKey).toList();
+        List<ComponentRepository.VersionRow> versions = components.versionSpread(keys, zoneId);
         Map<String, List<ComponentRepository.VersionRow>> spread = new LinkedHashMap<>();
         for (ComponentRepository.VersionRow version : versions) {
-            spread.computeIfAbsent(row(version.getName(), version.getType()), k -> new ArrayList<>())
-                  .add(version);
+            spread.computeIfAbsent(version.getPackageKey(), k -> new ArrayList<>()).add(version);
         }
 
+        // 탐지는 이름으로 물어 온다 — 유형을 모르는 줄이 받을 것까지(Severities).
+        List<String> names = versions.stream().map(ComponentRepository.VersionRow::getName)
+                                     .distinct().toList();
         Severities severities = severities(names, zoneId, versions);
 
         List<PackageRow> rows = new ArrayList<>();
         for (ComponentRepository.PackageRow row : page) {
             List<VersionSlice> slices = new ArrayList<>();
             for (ComponentRepository.VersionRow version
-                    : spread.getOrDefault(row(row.getName(), row.getType()), List.of())) {
+                    : spread.getOrDefault(row.getPackageKey(), List.of())) {
                 slices.add(new VersionSlice(version.getVersion(), version.getAssetCount(),
                                             severities.of(version)));
             }
-            rows.add(new PackageRow(row.getName(), row.getType(), row.getAssetCount(), slices));
+            rows.add(new PackageRow(row.getPackageKey(), row.getName(), row.getType(),
+                                    row.getAssetCount(), slices));
         }
         return rows;
     }
@@ -215,22 +221,22 @@ public class PackageService {
      * DMZ 를 골라도 내부업무 자산의 탐지가 합쳐졌고(libc6 — 패키지 화면 58건,
      * 취약점 화면 29건), 운영 종료한 자산의 탐지도 남았다.
      *
-     * <p><b>(이름, 버전, 유형)으로 잇는다.</b> 탐지의 유형은 grype 의 이름이라 purl 과 함께
-     * 인벤토리와 같은 이름으로 맞춘다({@link PackageTypes#of}).
+     * <p><b>(식별자, 버전)으로 잇는다.</b> 인벤토리와 탐지가 같은 규칙으로 만든 식별자다
+     * ({@link PackageKey}) — 앞서는 유형을 purl 과 함께 맞춰 (이름, 버전, 유형)으로 이었다.
      *
      * @param names    물어 볼 이름. {@code null} 이면 전부 (CSV 내보내기)
      * @param versions 이을 인벤토리 조각 — 유형을 모르는 줄이 무엇을 받을지 가를 때 쓴다
      */
     private Severities severities(List<String> names, Long zoneId,
                                   List<ComponentRepository.VersionRow> versions) {
-        // (이름, 버전) → 인벤토리에 있는 유형
+        // (이름, 버전) → 인벤토리에 있는 식별자
         Map<String, Set<String>> inventory = new LinkedHashMap<>();
         for (ComponentRepository.VersionRow version : versions) {
             inventory.computeIfAbsent(key(version.getName(), version.getVersion()),
                                       k -> new LinkedHashSet<>())
-                     .add(version.getType());
+                     .add(version.getPackageKey());
         }
-        // (이름, 버전) → 유형 → 등급 → 건수
+        // (이름, 버전) → 식별자 → 등급 → 건수
         Map<String, Map<String, Map<String, Long>>> found = new LinkedHashMap<>();
         List<Long> scanIds = vulns.latestScanIds(zoneId);
         if (!scanIds.isEmpty()) {
@@ -240,8 +246,7 @@ public class PackageService {
             for (FindingRepository.PackageVersionSeverity row : rows) {
                 found.computeIfAbsent(key(row.getPackageName(), row.getPackageVersion()),
                                       k -> new LinkedHashMap<>())
-                     .computeIfAbsent(PackageTypes.of(row.getPackagePurl(), row.getPackageType()),
-                                      k -> new LinkedHashMap<>())
+                     .computeIfAbsent(row.getPackageKey(), k -> new LinkedHashMap<>())
                      .merge(Severity.of(row.getSeverity()).key(), row.getTotal(), Long::sum);
             }
         }
@@ -251,29 +256,35 @@ public class PackageService {
     /**
      * 버전 조각마다의 등급별 건수.
      *
-     * <p><b>유형을 모르는 줄</b>(SBOM 이 purl 도 유형도 안 담은 원소)은 유형 없는 탐지와,
-     * 같은 이름 · 버전의 <b>어느 줄에도 유형이 맞지 않는</b> 탐지를 받는다. 받을 줄이 없다고
-     * 버리면 그 수가 화면에서 조용히 사라진다 — 실제보다 안전해 보이는 숫자다. 유형이 맞는
-     * 줄이 있는 탐지는 그 줄에만 붙는다.
+     * <p><b>유형을 모르는 줄</b>(SBOM 이 purl 도 유형도 안 담은 원소 — 식별자가
+     * {@code pkg:/이름})은 제 식별자의 탐지와, 같은 이름 · 버전의 <b>어느 줄의 식별자와도 맞지
+     * 않는</b> 탐지를 받는다. 받을 줄이 없다고 버리면 그 수가 화면에서 조용히 사라진다 —
+     * 실제보다 안전해 보이는 숫자다. 식별자가 맞는 줄이 있는 탐지는 그 줄에만 붙는다. 이것은
+     * 이 화면의 수를 세는 일이다 — 검토 결과 · 조치는 식별자로만 붙는다.
      */
     private record Severities(Map<String, Set<String>> inventory,
                               Map<String, Map<String, Map<String, Long>>> found) {
 
         Map<String, Long> of(ComponentRepository.VersionRow version) {
             String at = key(version.getName(), version.getVersion());
-            Map<String, Map<String, Long>> byType = found.getOrDefault(at, Map.of());
-            String type = version.getType() == null ? "" : version.getType();
-            if (!type.isEmpty()) {
-                return byType.getOrDefault(type, Map.of());
+            Map<String, Map<String, Long>> byKey = found.getOrDefault(at, Map.of());
+            String own = version.getPackageKey();
+            if (!untyped(own)) {
+                return byKey.getOrDefault(own, Map.of());
             }
-            Set<String> typed = inventory.getOrDefault(at, Set.of());
+            Set<String> listed = inventory.getOrDefault(at, Set.of());
             Map<String, Long> merged = new LinkedHashMap<>();
-            byType.forEach((findingType, counts) -> {
-                if (findingType.isEmpty() || !typed.contains(findingType)) {
+            byKey.forEach((findingKey, counts) -> {
+                if (findingKey.equals(own) || !listed.contains(findingKey)) {
                     counts.forEach((severity, n) -> merged.merge(severity, n, Long::sum));
                 }
             });
             return merged;
+        }
+
+        /** 유형을 모르는 줄의 식별자 — {@code pkg:/이름}. */
+        private static boolean untyped(String packageKey) {
+            return packageKey == null || packageKey.startsWith("pkg:/");
         }
     }
 
@@ -286,11 +297,6 @@ public class PackageService {
      */
     private static String key(String name, String version) {
         return name + "\0" + (version == null ? "" : version);
-    }
-
-    /** 화면의 한 줄 — {@code (이름, 유형)}. 구분자는 {@link #key} 와 같은 까닭으로 NUL. */
-    private static String row(String name, String type) {
-        return name + "\0" + (type == null ? "" : type);
     }
 
     private static String blankToNull(String value) {
@@ -310,24 +316,29 @@ public class PackageService {
      */
     public record Listing(Page<PackageRow> rows, List<String> types) {
 
-        /** 화면 머리에 찍는 수 — 거르개를 건 뒤의 줄(이름 · 유형) 수. */
+        /** 화면 머리에 찍는 수 — 거르개를 건 뒤의 줄(패키지 식별자) 수. */
         public String label() {
             return String.format("%,d", rows.getTotalElements()) + "개";
         }
     }
 
     /**
-     * CSV 한 줄 — {@code (패키지, 유형, 버전)} 하나.
+     * CSV 한 줄 — {@code (패키지 식별자, 버전)} 하나.
      *
      * <p>화면의 버전 조각 하나가 한 줄이 된다. 버전 분포를 한 칸에 몰아 넣으면
      * 엑셀에서 거르지도 정렬하지도 못한다.
      */
-    public record ExportRow(String name, String type, VersionSlice version) {
+    public record ExportRow(String name, String type, String packageKey, VersionSlice version) {
     }
 
-    /** 패키지 한 줄. */
-    public record PackageRow(String name, String type, long assetCount,
+    /** 패키지 한 줄 — 식별자 하나. 이름 · 유형은 화면에 찍을 값. */
+    public record PackageRow(String packageKey, String name, String type, long assetCount,
                              List<VersionSlice> versions) {
+
+        /** 이름 곁에 적는 네임스페이스 — groupId · scope · 배포판. 없으면 빈 글자. */
+        public String namespace() {
+            return PackageKey.namespace(packageKey);
+        }
 
         public long findingCount() {
             return versions.stream().mapToLong(VersionSlice::total).sum();

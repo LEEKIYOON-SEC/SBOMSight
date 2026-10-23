@@ -5,6 +5,7 @@ import kr.sbomsight.domain.AnalysisResponse;
 import kr.sbomsight.domain.AnalysisState;
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
 import kr.sbomsight.domain.Zone;
@@ -375,7 +376,7 @@ class ZoneReportTest {
         // 목록에서 빠지므로 `몇 대를 검토했나` 를 재는 데 쓸 수 없다 — 그쪽은
         // 아래 시험이 본다.
         for (Asset a : new Asset[] { first, second }) {
-            analyses.record(a, "CVE-1", "glibc",
+            analyses.record(a, "CVE-1", "glibc", PackageKey.of(null, "rpm", "glibc"),
                             AnalysisState.EXPLOITABLE, null, AnalysisResponse.CAN_NOT_FIX,
                             "업스트림에 수정 버전 없음", "", "",
                             LocalDate.now().plusDays(30), "tester");
@@ -406,11 +407,11 @@ class ZoneReportTest {
             finding(s, "CVE-2", "openssl", "3.0.0", "High", "fixed", "3.0.7", 7.5, REACHABLE);
         }
         for (Asset a : new Asset[] { first, second }) {
-            analyses.record(a, "CVE-1", "glibc",
+            analyses.record(a, "CVE-1", "glibc", PackageKey.of(null, "rpm", "glibc"),
                             AnalysisState.NOT_AFFECTED, AnalysisJustification.CODE_NOT_REACHABLE,
                             null, "이 경로를 쓰지 않습니다", "", "", null, "tester");
         }
-        analyses.record(first, "CVE-2", "openssl", AnalysisState.FALSE_POSITIVE,
+        analyses.record(first, "CVE-2", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.FALSE_POSITIVE,
                         null, null, "패키지 오인", "", "", null, "tester");
 
         ZoneReport r = report();
@@ -454,7 +455,7 @@ class ZoneReportTest {
                                  NEEDS_LOGIN);
         binary.setPackageType("binary");
         findings.saveAndFlush(binary);
-        analyses.record(web, "CVE-1", "openssl", AnalysisState.IN_TRIAGE,
+        analyses.record(web, "CVE-1", "openssl", PackageKey.of(null, "rpm", "openssl"), AnalysisState.IN_TRIAGE,
                         null, null, "", "", "", null, "tester");
 
         ZoneReportService.Action action = report().action();

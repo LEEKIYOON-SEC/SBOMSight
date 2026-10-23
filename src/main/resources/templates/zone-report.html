@@ -211,7 +211,8 @@
       <tbody>
       <tr th:each="a, i : ${report.judgement.actions}" th:if="${i.index < 5}">
         <td class="num tight" th:text="${i.count}">1</td>
-        <td><b th:text="${a.packageName}">openssl</b></td>
+        <td><b th:text="${a.packageName}">openssl</b>
+          <div th:replace="~{fragments/ui :: pkgkey(${a.packageKey})}"></div></td>
         <td class="num tight" th:text="${a.assetCount} + '대'">1대</td>
         <td class="num tight" th:text="${a.fixableCount}">0</td>
         <td class="num tight" th:classappend="${a.hasReachable()} ? 'danger-text' : ''"
@@ -544,13 +545,14 @@
         <tr th:each="a, i : ${report.judgement.actions}">
           <td class="num tight" th:text="${i.count}">1</td>
           <!--/*
-            패키지 이름과 판을 줄을 바꿔 쌓는다. 한 줄에 두면 이 칸 하나가
+            패키지 이름과 식별자를 줄을 바꿔 쌓는다. 한 줄에 두면 이 칸 하나가
             223px 을 먹어 표가 A4 인쇄 폭(약 680px)을 188px 넘는다 — 넘은
-            만큼 오른쪽 칸이 한 글자씩 세로로 쪼개진다.
+            만큼 오른쪽 칸이 한 글자씩 세로로 쪼개진다. 식별자(V24)가 유형을 대신한다 —
+            한 줄이 식별자 하나라, groupId 만 다른 같은 이름이 따로 선다.
           */-->
           <td>
-            <b th:text="${a.packageName}">openssl</b><br>
-            <span class="faint" th:text="${a.packageType}">rpm</span>
+            <b th:text="${a.packageName}">openssl</b>
+            <div th:replace="~{fragments/ui :: pkgkey(${a.packageKey})}"></div>
           </td>
           <td class="num tight" th:text="${a.assetCount} + '대'">1대</td>
           <td class="mono">
@@ -627,7 +629,7 @@
       <tbody>
       <tr th:each="b : ${report.action.residual}">
         <td class="tight"><b th:text="${b.packageName}">glibc</b>
-          <span class="faint" th:text="${b.packageType}">rpm</span></td>
+          <div th:replace="~{fragments/ui :: pkgkey(${b.packageKey})}"></div></td>
         <td class="num tight" th:text="${b.assetCount} + '대'">1대</td>
         <td class="num tight" th:text="${b.total}">0</td>
         <td class="num tight" th:classappend="${b.hasReachable()} ? 'danger-text' : ''"
@@ -747,7 +749,8 @@
       <tbody>
       <tr th:each="r : ${report.action.overdueRows}">
         <td class="tight" th:text="${r.asset.name}">web-01</td>
-        <td class="tight"><b th:text="${r.packageName}">openssl</b></td>
+        <td class="tight"><b th:text="${r.packageName}">openssl</b>
+          <div th:replace="~{fragments/ui :: pkgkey(${r.packageKey})}"></div></td>
         <td class="tight overdue"
             th:text="${#temporals.format(r.dueDate, 'yyyy-MM-dd')}">—</td>
         <td class="tight" th:text="${r.status.label()}">대기</td>
@@ -781,7 +784,7 @@
     </p>
     <p class="footnote" th:if="${report.judgement.movement.comparable()}">
       ※ 대조한 자산 <b th:text="${report.judgement.movement.assetsCompared} + '대'">0대</b> ·
-      대조 축 = (자산, 취약점 번호, 패키지명). 버전 제외 — 이중 계상 방지.
+      대조 축 = (자산, 취약점 번호, 패키지 식별자). 버전 제외 — 이중 계상 방지.
       <!--/*
         기준선이 없는 자산을 대조에 넣으면 "새로 본 것" 이 "새로 생긴 것" 이
         되어 증감이 부풀려진다. 뺐다는 사실과 몇 대인지를 밝힌다.
@@ -813,7 +816,9 @@
           <div th:if="${v.kev}"><span class="tag kev">실제 악용</span></div>
           <div th:if="${v.critical}"><span class="sev critical"><i></i>심각</span></div>
         </td>
-        <td class="tight"><div th:each="p : ${v.packages}" th:text="${p}">xz</div></td>
+        <!--/* 식별자마다 한 줄 — 이름 아래에 식별자(3장과 같은 꼴). 이름이 같은 다른 패키지를 가른다. */-->
+        <td class="tight"><div th:each="p : ${v.packages}"><span th:text="${p.name()}">xz</span>
+          <div th:replace="~{fragments/ui :: pkgkey(${p.key()})}"></div></div></td>
         <td class="num tight" th:text="${v.assetCount} + '대'">1대</td>
         <td class="num tight" th:text="${v.maxCvss != null} ? ${v.maxCvss} : '—'">—</td>
         <td lang="en" th:text="${#strings.isEmpty(v.summary)} ? '—' : ${v.summary}">—</td>

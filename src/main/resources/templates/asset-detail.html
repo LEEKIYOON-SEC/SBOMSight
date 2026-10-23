@@ -405,8 +405,11 @@
           </thead>
           <tbody>
           <tr th:each="c : ${assetPackages.content}">
+            <!--/* 패키지 화면의 그 줄로 — 줄은 패키지 식별자라 식별자로 펼친다(V24). 이름 아래에
+                 식별자를 적는다 — groupId 만 다른 같은 이름이 이 표에서 같은 줄처럼 보이지 않게. */-->
             <td>
-              <a th:href="@{/packages(q=${c.name}, open=${c.name})}" th:text="${c.name}">openssl-libs</a>
+              <a th:href="@{/packages(q=${c.name}, open=${c.packageKey})}" th:text="${c.name}">openssl-libs</a>
+              <div th:replace="~{fragments/ui :: pkgkey(${c.packageKey})}"></div>
             </td>
             <td class="tight faint" th:text="${#strings.isEmpty(c.type)} ? '—' : ${c.type}">rpm</td>
             <td class="tight mono" th:text="${c.versionOrDash()}">3.0.7-24</td>
@@ -606,7 +609,8 @@
           </thead>
           <tbody>
           <tr th:each="r : ${remediations}" th:with="left=${afterDone.get(r.id)}">
-            <td class="tight"><a th:href="@{'/actions/' + ${r.id}}" th:text="${r.packageName}">openssl</a></td><td class="num tight" th:text="${r.roundNo}">1</td>
+            <td class="tight"><a th:href="@{'/actions/' + ${r.id}}" th:text="${r.packageName}">openssl</a>
+              <div th:replace="~{fragments/ui :: pkgkey(${r.packageKey})}"></div></td><td class="num tight" th:text="${r.roundNo}">1</td>
             <td class="faint mono">
               <th:block th:replace="~{fragments/ui :: curversions(${r.fromVersions}, '—')}"></th:block> →
               <th:block th:replace="~{fragments/ui :: fixversions(${r.toVersions}, '—')}"></th:block>
@@ -643,7 +647,8 @@
           <tr th:each="a : ${assetAnalyses}" th:style="${a.open} ? '' : 'opacity:.6'">
             <td class="tight mono"><a th:href="@{'/vulns/' + ${a.cve}}"
                                       th:text="${a.cve}">CVE-0000-0000</a></td>
-            <td class="tight" th:text="${a.packageName}">openssl</td>
+            <td class="tight"><span th:text="${a.packageName}">openssl</span>
+              <div th:replace="~{fragments/ui :: pkgkey(${a.packageKey})}"></div></td>
             <td class="tight">
               <a th:replace="~{fragments/ui :: reviewstate(${a})}"></a>
             </td>

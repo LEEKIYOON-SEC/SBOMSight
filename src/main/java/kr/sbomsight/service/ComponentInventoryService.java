@@ -1,6 +1,7 @@
 package kr.sbomsight.service;
 
 import kr.sbomsight.config.SbomSightProperties;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.repo.AssetRepository;
 import kr.sbomsight.repo.ComponentRepository;
@@ -40,8 +41,8 @@ public class ComponentInventoryService {
     private static final int BATCH = 1_000;
 
     private static final String INSERT = """
-            INSERT INTO component (asset_id, scan_id, name, version, type, purl, location)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO component (asset_id, scan_id, name, version, type, purl, package_key, location)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private final JdbcTemplate jdbc;
@@ -250,12 +251,18 @@ public class ComponentInventoryService {
 
         @Override
         public void accept(ParsedComponent parsed) {
+            String name = clip(parsed.name(), 255);
+            String type = clip(parsed.type(), 64);
+            String purl = clip(parsed.purl(), 512);
             pending.add(new Object[] {
                     assetId, scanId,
-                    clip(parsed.name(), 255),
+                    name,
                     clip(parsed.version(), 255),
-                    clip(parsed.type(), 64),
-                    clip(parsed.purl(), 512),
+                    type,
+                    purl,
+                    // 탐지와 같은 규칙 · 담는 값 그대로에서(Component 생성자와 같다) — 패키지
+                    // 화면의 한 줄이 이것이다(V24).
+                    PackageKey.of(purl, type, name),
                     clip(parsed.location(), 1000) });
             if (pending.size() >= BATCH) {
                 flush();

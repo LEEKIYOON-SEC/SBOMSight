@@ -27,11 +27,15 @@
     */-->
     <!--/* CVE 상세는 운영 중인 자산의 최신 검사만 센다 — 이 자산이 운영 종료면
          거기에 없을 수 있어 단추를 두지 않는다(없는 곳으로 보내지 않는다). */-->
+    <!--/* 어느 패키지의 것인지 가르지 못한 옛 기록(V24)은 고치는 단추를 두지 않는다 — 고쳐도
+         아무 탐지에도 닿지 않는다(서버도 거절한다). 그 패키지의 탐지에서 새로 적는다. */-->
     <div th:fragment="actions" class="btn-list">
       <a class="btn" th:if="${!present.isEmpty() and analysis.asset.archivedAt == null}"
          th:href="@{'/vulns/' + ${analysis.cve}}">CVE 상세</a>
-      <a th:replace="~{fragments/analysis-dialog :: link(${analysis}, ${analysis.asset.id}, null, ${analysis.cve},
-                       ${analysis.packageName}, 'btn btn-dark')}"></a>
+      <th:block th:if="${!analysis.packageUnresolved}">
+        <a th:replace="~{fragments/analysis-dialog :: link(${analysis}, ${analysis.asset.id}, null, ${analysis.cve},
+                         ${analysis.packageName}, ${analysis.packageKey}, 'btn btn-dark')}"></a>
+      </th:block>
     </div>
   </th:block>
 
@@ -40,13 +44,18 @@
 
   <!--/* 최신 검사에서 이 탐지가 아직 있는가. **검토 결과를 저절로 바꾸지 않는다**
        — 사라진 까닭(올렸는지 · 검사 대상이 바뀌었는지)은 도구가 알 수 없다. */-->
-  <div class="card" th:if="${latest != null}">
+  <div class="card" th:if="${latest != null or analysis.packageUnresolved}">
     <div class="card-body">
-      <span th:if="${present.isEmpty()}">
+      <!--/* 어느 패키지의 것인지 가르지 못한 옛 기록(V24) — `0건` 이라고 말하면 고친 것으로 읽힌다. */-->
+      <span th:if="${analysis.packageUnresolved}">
+        어느 패키지의 검토 결과인지 가를 근거가 없던 옛 기록 — <b>어느 탐지에도 적용되지 않음</b>.
+        그 패키지의 탐지에서 다시 작성.
+      </span>
+      <span th:if="${latest != null and !analysis.packageUnresolved and present.isEmpty()}">
         최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
         이 탐지 <b>0건</b> — 검토 결과는 그대로 남음.
       </span>
-      <span th:unless="${present.isEmpty()}">
+      <span th:if="${latest != null and !present.isEmpty()}">
         최신 검사(<span th:text="${#temporals.format(latest.createdAt, 'yyyy-MM-dd')}">—</span>)에서
         이 탐지 <b th:text="${present.size()} + '건'">1건</b> · 설치 버전
         <span class="mono" th:each="f, i : ${present}"><th:block th:text="${f.packageVersion}">1.0</th:block><th:block
@@ -59,6 +68,9 @@
     <div class="card-header"><h2 class="card-title">검토 결과</h2></div>
     <div class="card-body">
       <table class="table kv">
+        <!--/* 같은 패키지인지 가르는 값(V24) — 탐지 · 조치 · CSV 와 같은 것. */-->
+        <tr><th>패키지 식별자</th>
+            <td><div th:replace="~{fragments/ui :: pkgkey(${analysis.packageKey})}"></div></td></tr>
         <tr><th>검토 상태</th>
             <td><span class="sev" th:classappend="${analysis.state.name() == 'EXPLOITABLE'} ? 'high'
                                   : (${analysis.open} ? 'medium' : 'low')"><i></i>

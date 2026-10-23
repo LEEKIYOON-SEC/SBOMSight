@@ -2,6 +2,7 @@ package kr.sbomsight;
 
 import kr.sbomsight.domain.Asset;
 import kr.sbomsight.domain.Finding;
+import kr.sbomsight.domain.PackageKey;
 import kr.sbomsight.domain.Remediation;
 import kr.sbomsight.domain.Scan;
 import kr.sbomsight.domain.ScanStatus;
@@ -112,7 +113,7 @@ class PageRenderTest {
         scan.setFindingCount(1);
         scans.saveAndFlush(scan);
 
-        remediation = new Remediation(asset, "xz", "tester");
+        remediation = new Remediation(asset, "xz", PackageKey.of(null, "rpm", "xz"), "tester");
         remediation.setFromVersion("5.6.0");
         remediation.setToVersion("5.6.2");
         remediation.setOwner("인프라운영팀");
@@ -120,7 +121,7 @@ class PageRenderTest {
         remediations.saveAndFlush(remediation);
 
         // 앞서의 '위험 수용' 에 해당하는 조합 — 해당됨 · 조치 안 함.
-        analysis = analyses.record(asset, "CVE-2024-2961", "glibc",
+        analysis = analyses.record(asset, "CVE-2024-2961", "glibc", PackageKey.of(null, "rpm", "glibc"),
                         kr.sbomsight.domain.AnalysisState.EXPLOITABLE, null,
                         kr.sbomsight.domain.AnalysisResponse.WILL_NOT_FIX,
                         "업스트림에 수정 버전이 없고 해당 기능은 외부에 노출되지 않습니다",
@@ -259,7 +260,7 @@ class PageRenderTest {
     void overdueActionsAndOverdueReviewsAreSeparate() throws Exception {
         // 씨앗의 위험 수용(재검토일 30일 뒤)을 지난 것으로 만든다. 화면으로는
         // 지난 날짜를 적을 수 없다 — 날이 지나서 그렇게 되는 것이다.
-        var accepted = analyses.byKey(asset.getId()).get("CVE-2024-2961|glibc");
+        var accepted = analyses.byKey(asset.getId()).get("CVE-2024-2961|pkg:rpm/glibc");
         accepted.setReviewBy(LocalDate.now().minusDays(1));
         analysisRepository.saveAndFlush(accepted);
 

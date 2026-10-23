@@ -85,17 +85,17 @@ class NewSbomKeepsDecisionsTest {
             // 우회 조치를 적고, 조치를 맡긴다.
             mvc.perform(post("/analyses").with(admin()).with(csrf())
                             .param("assetId", String.valueOf(asset.getId()))
-                            .param("cve", "CVE-2023-0001").param("packageName", "openssl")
+                            .param("cve", "CVE-2023-0001").param("packageKey", "pkg:deb/debian/openssl")
                             .param("state", "EXPLOITABLE").param("response", "WORKAROUND_AVAILABLE")
                             .param("note", "패치 전까지 우회")
                             .param("otherControl", "WAF 규칙 적용")
                             .param("approvalDoc", "보안-2026-0001"))
                .andExpect(status().is3xxRedirection());
             mvc.perform(post("/assets/" + asset.getId() + "/remediations").with(admin()).with(csrf())
-                            .param("packageName", "openssl"))
+                            .param("packageKey", "pkg:deb/debian/openssl"))
                .andExpect(status().is3xxRedirection());
             Remediation remediation = remediations
-                    .findLatest(asset.getId(), "openssl").orElseThrow();
+                    .findLatest(asset.getId(), "pkg:deb/debian/openssl").orElseThrow();
             mvc.perform(post("/actions/" + remediation.getId()).with(admin()).with(csrf())
                             .param("status", "IN_PROGRESS").param("owner", "홍길동")
                             .param("dueDate", LocalDate.now().plusDays(30).toString())
@@ -104,7 +104,8 @@ class NewSbomKeepsDecisionsTest {
 
             upload(asset, SBOM_V2);
 
-            FindingAnalysis kept = analyses.findOne(asset.getId(), "CVE-2023-0001", "openssl")
+            // 버전은 식별자에 들지 않는다 — 1.1.1k 에 적은 것이 1.1.1n 에도 같은 패키지의 것이다.
+            FindingAnalysis kept = analyses.findOne(asset.getId(), "CVE-2023-0001", "pkg:deb/debian/openssl")
                     .orElseThrow(() -> new AssertionError("새 SBOM 뒤에 검토 결과가 사라졌다"));
             assertThat(kept.getState()).isEqualTo(AnalysisState.EXPLOITABLE);
             assertThat(kept.getResponse()).isEqualTo(AnalysisResponse.WORKAROUND_AVAILABLE);

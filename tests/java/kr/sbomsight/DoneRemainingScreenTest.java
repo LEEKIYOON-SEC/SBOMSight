@@ -91,9 +91,9 @@ class DoneRemainingScreenTest {
         latest.setFindingCount(7);
         scans.saveAndFlush(latest);
 
-        analyses.record(asset, "CVE-2099-6", "pg-na", AnalysisState.NOT_AFFECTED,
+        analyses.record(asset, "CVE-2099-6", "pg-na", PackageKey.of(null, null, "pg-na"), AnalysisState.NOT_AFFECTED,
                         AnalysisJustification.CODE_NOT_PRESENT, null, "시험", "", "", null, "tester");
-        analyses.record(asset, "CVE-2099-1", "pg-done", AnalysisState.IN_TRIAGE,
+        analyses.record(asset, "CVE-2099-1", "pg-done", PackageKey.of(null, null, "pg-done"), AnalysisState.IN_TRIAGE,
                         null, null, "보는 중", "", "", null, "tester");
     }
 
@@ -114,7 +114,7 @@ class DoneRemainingScreenTest {
     }
 
     private void remediation(String pkg, RemediationStatus status) {
-        Remediation r = new Remediation(asset, pkg, "tester");
+        Remediation r = new Remediation(asset, pkg, PackageKey.of(null, null, pkg), "tester");
         // 등록 당시 건수는 있는데 조치 대상이 없다 — 등록한 검사가 지워져 대상을 모르는 옛
         // 조치의 꼴(V19). 건수가 0 이면 `등록 당시 탐지 없음` 이라 남은 것은 신규 탐지다.
         r.setOpenedCount(1);

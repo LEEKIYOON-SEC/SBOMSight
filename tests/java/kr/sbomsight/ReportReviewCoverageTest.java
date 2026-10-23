@@ -98,7 +98,7 @@ class ReportReviewCoverageTest {
     }
 
     private void answer(String cve) {
-        analyses.record(asset, cve, pkg, AnalysisState.EXPLOITABLE, null,
+        analyses.record(asset, cve, pkg, PackageKey.of(null, "rpm", pkg), AnalysisState.EXPLOITABLE, null,
                         AnalysisResponse.CAN_NOT_FIX, "업스트림에 수정 버전 없음", "", "",
                         java.time.LocalDate.now().plusDays(30), "admin");
     }
@@ -131,7 +131,7 @@ class ReportReviewCoverageTest {
     void allThreeCountsAsReviewed() {
         answer("CVE-2099-0001");
         reviewOne();
-        analyses.record(asset, "CVE-2099-0003", pkg, AnalysisState.IN_TRIAGE,
+        analyses.record(asset, "CVE-2099-0003", pkg, PackageKey.of(null, "rpm", pkg), AnalysisState.IN_TRIAGE,
                         null, null, "확인 중", "", "", null, "admin");
 
         ReportService.NoFixRow row = reports.build(scan).targets().noFixRows().stream()
@@ -156,11 +156,11 @@ class ReportReviewCoverageTest {
     void theNoFixRowSummarisesItsReviews() {
         java.time.LocalDate soon = java.time.LocalDate.now().plusDays(10);
         java.time.LocalDate later = java.time.LocalDate.now().plusDays(30);
-        analyses.record(asset, "CVE-2099-0001", pkg, AnalysisState.EXPLOITABLE, null,
+        analyses.record(asset, "CVE-2099-0001", pkg, PackageKey.of(null, "rpm", pkg), AnalysisState.EXPLOITABLE, null,
                         AnalysisResponse.CAN_NOT_FIX, "", "", "", later, "admin");
-        analyses.record(asset, "CVE-2099-0002", pkg, AnalysisState.EXPLOITABLE, null,
+        analyses.record(asset, "CVE-2099-0002", pkg, PackageKey.of(null, "rpm", pkg), AnalysisState.EXPLOITABLE, null,
                         AnalysisResponse.WILL_NOT_FIX, "", "", "보안-2026-0001", soon, "admin");
-        analyses.record(asset, "CVE-2099-0003", pkg, AnalysisState.EXPLOITABLE, null,
+        analyses.record(asset, "CVE-2099-0003", pkg, PackageKey.of(null, "rpm", pkg), AnalysisState.EXPLOITABLE, null,
                         AnalysisResponse.CAN_NOT_FIX, "", "", "", later, "admin");
 
         ReportService.NoFixRow row = reports.build(scan).targets().noFixRows().stream()
@@ -187,9 +187,9 @@ class ReportReviewCoverageTest {
     @Test
     @DisplayName("해당 없음 · 오탐은 4장에서 빠지고 1장이 그 수를 적는다 — 탐지 건수는 그대로")
     void reviewedOutLeavesTheTable() {
-        analyses.record(asset, "CVE-2099-0001", pkg, AnalysisState.NOT_AFFECTED,
+        analyses.record(asset, "CVE-2099-0001", pkg, PackageKey.of(null, "rpm", pkg), AnalysisState.NOT_AFFECTED,
                         AnalysisJustification.CODE_NOT_REACHABLE, null, "", "", "", null, "admin");
-        analyses.record(asset, "CVE-2099-0003", pkg, AnalysisState.FALSE_POSITIVE,
+        analyses.record(asset, "CVE-2099-0003", pkg, PackageKey.of(null, "rpm", pkg), AnalysisState.FALSE_POSITIVE,
                         null, null, "패키지 오인", "", "", null, "admin");
 
         ReportService.Report report = reports.build(scan);
@@ -214,7 +214,7 @@ class ReportReviewCoverageTest {
     }
 
     private void answerAs(AnalysisState state, String cve) {
-        analyses.record(asset, cve, pkg, state, AnalysisJustification.CODE_NOT_PRESENT, null,
+        analyses.record(asset, cve, pkg, PackageKey.of(null, "rpm", pkg), state, AnalysisJustification.CODE_NOT_PRESENT, null,
                         "", "", "", null, "admin");
     }
 

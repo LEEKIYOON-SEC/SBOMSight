@@ -130,6 +130,8 @@ public class ActionController {
         if ("analyses".equals(tab)) {
             List<FindingAnalysis> rows = analyses.list(includeDone, zone, archived);
             model.addAttribute("analyses", Paging.slice(rows, page, size));
+            // 어느 패키지의 것인지 가르지 못한 옛 검토 결과(V24) — 몇 건인지 탭 머리가 말한다.
+            model.addAttribute("unresolved", rows.stream().filter(FindingAnalysis::isPackageUnresolved).count());
             // 해당 없음 · 오탐으로 닫혀 빠진 줄 수 — 체크박스가 `(n건)` 으로 말한다.
             model.addAttribute("reviewedOut", includeDone
                     ? rows.stream().filter(a -> !a.isOpen()).count()
@@ -143,9 +145,11 @@ public class ActionController {
             model.addAttribute("actions", actions);
             model.addAttribute("afterDone", service.afterDone(actions.values()));
         } else {
-            org.springframework.data.domain.Page<Remediation> shown =
-                    Paging.slice(service.list(zone, status, archived), page, size);
+            List<Remediation> listed = service.list(zone, status, archived);
+            org.springframework.data.domain.Page<Remediation> shown = Paging.slice(listed, page, size);
             model.addAttribute("remediations", shown);
+            // 어느 패키지의 것인지 가르지 못한 옛 조치(V24) — 몇 건인지 탭 머리가 말한다.
+            model.addAttribute("unresolved", listed.stream().filter(Remediation::isPackageUnresolved).count());
             // 완료인데 지금 검사에 해소 건수가 남은 조치 — 세 갈래(AfterDone), 보고서 5장과
             // 같은 규칙 · 같은 말로 적는다.
             model.addAttribute("afterDone", service.afterDone(shown.getContent()));
@@ -181,7 +185,7 @@ public class ActionController {
         model.addAttribute("afterDone", service.afterDone(List.of(remediation)).get(remediation.getId()));
         // 조치 대상 — 등록 당시의 탐지. 지금 검사에 아직 있는지 번호로 맞댄다(R9).
         model.addAttribute("targets", service.targets(remediation));
-        model.addAttribute("presentIds", service.idsIn(latest, remediation.getPackageName()));
+        model.addAttribute("presentIds", service.idsIn(latest, remediation.getPackageKey()));
         return "action-detail";
     }
 

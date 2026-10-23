@@ -75,6 +75,10 @@ public class Component {
     @Column(nullable = false, length = 512)
     private String purl = "";
 
+    /** 패키지 식별자({@link PackageKey}) — 탐지와 같은 규칙. 패키지 화면의 한 줄이 이것이다(V24). */
+    @Column(name = "package_key", nullable = false, length = 512)
+    private String packageKey = "";
+
     /**
      * 설치 경로. SBOM 이 담아 줄 때만 있다.
      *
@@ -96,6 +100,7 @@ public class Component {
         this.type = clip(type, 64);
         this.purl = clip(purl, 512);
         this.location = clip(location, 1000);
+        this.packageKey = PackageKey.of(this.purl, this.type, this.name);
     }
 
     public Long getId() {
@@ -129,6 +134,10 @@ public class Component {
 
     public String getPurl() {
         return purl;
+    }
+
+    public String getPackageKey() {
+        return packageKey;
     }
 
     public String getLocation() {

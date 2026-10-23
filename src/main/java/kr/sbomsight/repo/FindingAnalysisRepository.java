@@ -19,13 +19,17 @@ import java.util.Optional;
  */
 public interface FindingAnalysisRepository extends JpaRepository<FindingAnalysis, Long> {
 
+    /**
+     * (자산, 번호, 패키지 식별자)의 검토 결과 — 하나다(ux_analysis_key). 식별자가 빈 옛 기록
+     * (V24 가 가르지 못한 것)은 여기서 찾아지지 않는다 — {@code = null} 은 참이 되지 않는다.
+     */
     @Query("""
            SELECT f FROM FindingAnalysis f
-           WHERE f.asset.id = :assetId AND f.cve = :cve AND f.packageName = :packageName
+           WHERE f.asset.id = :assetId AND f.cve = :cve AND f.packageKey = :packageKey
            """)
     Optional<FindingAnalysis> findOne(@Param("assetId") Long assetId,
                                       @Param("cve") String cve,
-                                      @Param("packageName") String packageName);
+                                      @Param("packageKey") String packageKey);
 
     /**
      * 상세 화면 — 자산 · 구역과 이력까지 한 번에. {@code open-in-view} 가 꺼져
@@ -67,9 +71,11 @@ public interface FindingAnalysisRepository extends JpaRepository<FindingAnalysis
      * 규칙이다(RemediationRepository 머리 주석).
      *
      * <p><b>끝이 줄 하나를 가리킨다</b> — 자산 이름은 유일하고, 검토 결과는
-     * (자산, CVE, 패키지) 에 하나다. 앞서 CVE 에서 멈춰, 같은 자산의 같은 CVE
+     * (자산, CVE, 패키지 식별자) 에 하나다. 앞서 CVE 에서 멈춰, 같은 자산의 같은 CVE
      * 가 패키지 둘에 걸리면 요청마다 순서가 달라질 수 있었다. 화면은 요청마다
      * 이 목록을 읽어 쪽을 자르므로 쪽 경계에서 줄이 빠지거나 겹친다(ListOrderTest).
+     * 이름이 같은 다른 패키지(npm · PyPI)와 식별자가 빈 옛 기록이 같은 번호에 함께 있을 수
+     * 있어 식별자 · 번호(id)까지 둔다.
      */
     @Query("""
            SELECT f FROM FindingAnalysis f JOIN FETCH f.asset a JOIN FETCH a.zone z
@@ -80,7 +86,8 @@ public interface FindingAnalysisRepository extends JpaRepository<FindingAnalysis
            ORDER BY CASE WHEN f.reviewBy IS NOT NULL AND f.reviewBy < :today THEN 0
                          WHEN f.state IN :openStates THEN 1
                          ELSE 2 END,
-                    f.reviewBy ASC NULLS LAST, a.name ASC, f.cve ASC, f.packageName ASC
+                    f.reviewBy ASC NULLS LAST, a.name ASC, f.cve ASC, f.packageName ASC,
+                    f.packageKey ASC, f.id ASC
            """)
     List<FindingAnalysis> findForList(@Param("includeDone") boolean includeDone,
                                       @Param("openStates") Collection<AnalysisState> openStates,

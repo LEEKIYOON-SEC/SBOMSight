@@ -201,6 +201,7 @@ public class VulnQuery {
             download.with("zone", current.get("zone"))
                     .with("scan", current.get("scan"))
                     .with("q", current.get("q"))
+                    .with("pkg", current.get("pkg"))
                     .with("severity", current.get("severity"))
                     .with("fixable", current.get("fixable"))
                     .with("kev", current.get("kev"))
@@ -305,12 +306,19 @@ public class VulnQuery {
                 .toList();
     }
 
-    /** 목록을 모델에 담는다. 묶는 방식에 따라 담기는 값이 다르다. */
+    /**
+     * 목록을 모델에 담는다. 묶는 방식에 따라 담기는 값이 다르다.
+     *
+     * @param pkg 패키지 하나(식별자)로 좁힌다 — 묶은 줄 · 패키지 화면에서 그 패키지의 탐지로
+     *            오는 링크가 싣는다. 검색어({@code q})는 이름의 일부라 같은 이름의 다른 패키지도
+     *            함께 걸린다
+     */
     @Transactional(readOnly = true)
-    public void fill(Model model, Scope scope, String group, String q, String severity,
+    public void fill(Model model, Scope scope, String group, String q, String pkg, String severity,
                      Boolean fixable, Boolean kev, boolean includeReviewed, int page,
                      Integer size, String sort, String dir) {
         String term = blankToNull(q);
+        String one = blankToNull(pkg);
         String sev = blankToNull(severity);
         model.addAttribute("includeDone", includeReviewed);
 
@@ -331,7 +339,7 @@ public class VulnQuery {
         // 해당 없음 · 오탐으로 빠진 건수. 체크박스가 `(n건)` 으로 말한다 —
         // 빠진 것이 있다는 사실을 목록이 말하지 않으면 숫자가 조용히 줄어든다.
         model.addAttribute("reviewedOut",
-                findings.countReviewedOut(scope.scanIds(), null, term, sev, fixable, kev));
+                findings.countReviewedOut(scope.scanIds(), null, term, one, sev, fixable, kev));
 
         switch (group == null ? "item" : group) {
             // 묶어 세는 둘은 DB 에서 자르지 않는다 — `GROUP BY` 를 쪽으로
@@ -339,13 +347,13 @@ public class VulnQuery {
             // 갈리는 날 화면의 수와 쪽 수가 어긋난다. 읽는 양은 그대로 두고
             // 그린 뒤에 자른다.
             case "cve" -> model.addAttribute("cvePage", Paging.slice(
-                    findings.groupByCveIn(scope.scanIds(), term, sev, fixable, kev,
+                    findings.groupByCveIn(scope.scanIds(), term, one, sev, fixable, kev,
                                           includeReviewed),
                     page, size));
             // 거르개를 **넷 다** 넘긴다. 앞서는 `scanIds` 만 넘겼고, 화면에는
             // 고른 값이 그대로 남아 있는데 목록이 한 줄도 바뀌지 않았다.
             case "package" -> model.addAttribute("packagePage", Paging.slice(
-                    findings.groupByPackageIn(scope.scanIds(), term, sev, fixable, kev,
+                    findings.groupByPackageIn(scope.scanIds(), term, one, sev, fixable, kev,
                                               includeReviewed),
                     page, size));
             default -> {
@@ -353,10 +361,10 @@ public class VulnQuery {
                 model.addAttribute("page", "severity".equals(sort) || sort == null
                         // 심각도는 글자다. Critical 이 High 보다 앞이라는 것은
                         // 알파벳 순서가 아니라 뜻이고, ORDER BY CASE 로만 낸다.
-                        ? findings.findInBySeverity(scope.scanIds(), term, sev, fixable, kev,
+                        ? findings.findInBySeverity(scope.scanIds(), term, one, sev, fixable, kev,
                                                     includeReviewed, asc,
                                                     Paging.request(page, size))
-                        : findings.findIn(scope.scanIds(), term, sev, fixable, kev,
+                        : findings.findIn(scope.scanIds(), term, one, sev, fixable, kev,
                                           includeReviewed,
                                           Paging.request(page, size, order(sort, dir))));
             }
@@ -366,7 +374,7 @@ public class VulnQuery {
         // 수백 번 왕복한다.
         //
         // 키에 **자산 id 를 넣는다.** 구역·전체 범위는 자산이 섞여 있어서,
-        // (CVE, 패키지명) 으로만 맞추면 web-01 의 검토 결과가 api-01 행에
+        // (CVE, 패키지 식별자) 로만 맞추면 web-01 의 검토 결과가 api-01 행에
         // 붙는다. 자산 하나짜리 범위에서는 눈에 띄지 않다가 범위를 넓히는
         // 순간 틀리는 종류의 버그다.
         Map<String, FindingAnalysis> byAssetKey = analyses.byAssetKey(scope.assetIds());
@@ -385,17 +393,18 @@ public class VulnQuery {
         // 묶어 보는 두 화면에서 **그 줄이 얼마나 검토됐는지.**
         boolean byCve = "cve".equals(group);
         model.addAttribute("reviewed", byCve || "package".equals(group)
-                ? reviewedCounts(scope, byCve, term, sev, fixable, kev, includeReviewed,
+                ? reviewedCounts(scope, byCve, term, one, sev, fixable, kev, includeReviewed,
                                  byAssetKey)
                 : Map.of());
     }
 
     /**
-     * CVE별 줄의 키 — 화면이 {@code reviewed} 에서 그 줄의 수를 찾는 열쇠. (번호, 심각도) —
-     * 묶음 질의({@code groupByCveIn})의 {@code GROUP BY} 와 같은 축이다.
+     * 묶은 줄의 키 — 화면이 {@code reviewed} 에서 그 줄의 수를 찾는 열쇠. CVE별은 (번호, 심각도),
+     * 패키지별은 패키지 식별자 — 각 묶음 질의의 {@code GROUP BY} 와 같은 축이다.
      *
-     * <p>앞서 번호만이라 같은 번호가 심각도로 두 줄로 갈리면 두 줄이 서로의 수를 합쳐 말했다 —
-     * 검토한 줄은 `1 / 2건`, 검토하지 않은 옆 줄도 `1 / 2건`.
+     * <p>앞서 둘 다 줄보다 넓었다. CVE별은 번호만이라 같은 번호가 심각도로 두 줄로 갈리면 두
+     * 줄이 서로의 수를 합쳐 말했고, 패키지별은 이름만이라 (이름, 유형)으로 갈린 npm 과 PyPI 의
+     * semver 두 줄이 같은 `n/N` 을 말했다.
      */
     public static String rowKey(String display, String severity) {
         return display + "\u0000" + (severity == null ? "" : severity);
@@ -419,22 +428,22 @@ public class VulnQuery {
      * 손댄 행이 있으면 셌다 — 둘로 갈린 건에서 표가 고른 나중 행이 `작성` 인데 묶은
      * 줄은 `검토됨` 으로 셌다.
      */
-    private Map<String, Reviewed> reviewedCounts(Scope scope, boolean byCve, String q,
+    private Map<String, Reviewed> reviewedCounts(Scope scope, boolean byCve, String q, String pkg,
                                                  String severity, Boolean fixable, Boolean kev,
                                                  boolean includeReviewed,
                                                  Map<String, FindingAnalysis> byAssetKey) {
         Map<String, long[]> counts = new LinkedHashMap<>();
         for (FindingRepository.AssetFindingKey key
-                : findings.findKeysFiltered(scope.scanIds(), q, severity, fixable, kev,
+                : findings.findKeysFiltered(scope.scanIds(), q, pkg, severity, fixable, kev,
                                             includeReviewed)) {
             String related = key.getRelatedCve();
             String display = related != null && !related.isBlank() ? related : key.getCve();
             long[] row = counts.computeIfAbsent(
-                    byCve ? rowKey(display, key.getSeverity()) : key.getPackageName(),
+                    byCve ? rowKey(display, key.getSeverity()) : key.getPackageKey(),
                     name -> new long[2]);
             row[1]++;
             FindingAnalysis found = FindingAnalysisService.analysisOf(
-                    byAssetKey, key.getAssetId(), key.getCve(), related, key.getPackageName());
+                    byAssetKey, key.getAssetId(), key.getCve(), related, key.getPackageKey());
             if (found != null && !found.isUntouched()) {
                 row[0]++;
             }

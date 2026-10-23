@@ -91,10 +91,10 @@ class CurrentVersionRuleTest {
     @DisplayName("조치 · 조치 목록 · 조치 상세 · 자산의 조치 탭 · CSV · 감사 로그가 두 벌을 다 적는다")
     void everyPlaceListsBothInstalledVersions() throws Exception {
         mvc.perform(post("/assets/" + asset.getId() + "/remediations")
-                            .param("packageName", "log4j-core")
+                            .param("packageKey", "pkg:maven/log4j-core")
                             .with(user("tester").roles("ADMIN")).with(csrf()));
         Remediation opened = remediations
-                .findLatest(asset.getId(), "log4j-core").orElseThrow();
+                .findLatest(asset.getId(), "pkg:maven/log4j-core").orElseThrow();
 
         assertThat(opened.getFromVersions())
                 .as("CVSS 가 가장 높은 건의 버전 하나만 적었다")
@@ -127,16 +127,16 @@ class CurrentVersionRuleTest {
         findings.saveAndFlush(other);
 
         mvc.perform(post("/assets/" + asset.getId() + "/remediations")
-                            .param("packageName", "zlib")
+                            .param("packageKey", "pkg:/zlib")
                             .with(user("tester").roles("ADMIN")).with(csrf()));
         Remediation opened = remediations
-                .findLatest(asset.getId(), "zlib").orElseThrow();
+                .findLatest(asset.getId(), "pkg:/zlib").orElseThrow();
 
         assertThat(opened.getFromVersion()).isEqualTo("1.2.11");
         String html = open("/actions/" + opened.getId());
         assertThat(html).contains("<span class=\"ver\">1.2.11</span>").doesNotContain("현재 버전 1가지");
-        // 패키지 바로 뒤가 `조치 회차` 다(V19) — 같은 패키지의 지난 회차와 지금 회차를 가르는 칸.
-        assertThat(open("/actions/export.csv")).contains("\"zlib\",\"1\",\"1.2.11\",\"1.2.13\"");
+        // 패키지 · 패키지 식별자(V24) 뒤가 `조치 회차` 다(V19) — 같은 패키지의 지난 회차와 지금 회차를 가르는 칸.
+        assertThat(open("/actions/export.csv")).contains("\"zlib\",\"pkg:/zlib\",\"1\",\"1.2.11\",\"1.2.13\"");
     }
 
     private String open(String url) throws Exception {

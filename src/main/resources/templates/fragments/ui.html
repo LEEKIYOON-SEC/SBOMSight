@@ -200,6 +200,27 @@
 
 
 <!--/*
+  ─── 패키지 식별자 ────────────────────────────────────────────────────
+  이름 아래에 작게 — **같은 이름의 다른 패키지를 화면에서 가르는 글자**다. npm 과
+  PyPI 의 semver, groupId 만 다른 두 jackson-databind 는 이름이 같다. purl 에서 버전 ·
+  한정자를 뗀 것 그대로(PackageKey · V24) — 검토 결과 · 조치 · 묶은 줄 · CSV 가 같은
+  패키지인지 가르는 바로 그 값이다. 지어낸 말이 아니다.
+
+    <b th:text="${a.packageName}">openssl</b>
+    <div th:replace="~{fragments/ui :: pkgkey(${a.packageKey})}"></div>
+
+  **비어 있으면 V24 가 어느 패키지의 것인지 가르지 못한 옛 검토 결과 · 조치다** — 같은
+  이름의 패키지가 그 자산에 둘 이상이었거나, 앞서 붙던 탐지가 남아 있지 않았다. 어느
+  탐지에도 붙지 않으므로 그렇다고 말한다. 지우지도 아무 패키지에나 붙이지도 않았다.
+*/-->
+<div th:fragment="pkgkey(key)" th:remove="tag">
+  <div class="pkgkey" th:if="${!#strings.isEmpty(key)}" th:text="${key}">pkg:npm/semver</div>
+  <div th:if="${#strings.isEmpty(key)}"><span class="tag nofix"
+       title="어느 패키지의 것인지 가를 근거가 없던 옛 기록 — 어느 탐지에도 적용되지 않음">패키지 확인 필요</span></div>
+</div>
+
+
+<!--/*
   ─── 수정 버전 ────────────────────────────────────────────────────────
   **하나로 고르지 않는다** (FixVersions). 하나면 그 버전, 여럿이면
   `수정 버전 N가지` 와 그 목록. 조치 화면 · 보고서 · CSV 가 같은 규칙이다 —
