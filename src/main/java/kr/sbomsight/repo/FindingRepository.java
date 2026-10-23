@@ -841,7 +841,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      */
     @Query("""
            SELECT s.asset.id AS assetId, f.cve AS cve, f.relatedCve AS relatedCve,
-                  f.packageName AS packageName, f.packageType AS packageType
+                  f.packageName AS packageName, f.packageType AS packageType, f.severity AS severity
            FROM Finding f JOIN f.scan s
            WHERE s.id IN :scanIds
              AND (:severity IS NULL OR LOWER(f.severity) = LOWER(:severity))
@@ -883,7 +883,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      */
     @Query("""
            SELECT s.asset.id AS assetId, f.cve AS cve, f.relatedCve AS relatedCve,
-                  f.packageName AS packageName, f.packageType AS packageType
+                  f.packageName AS packageName, f.packageType AS packageType, f.severity AS severity
            FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds
            """)
     List<AssetFindingKey> findKeysIn(@Param("scanIds") Collection<Long> scanIds);
@@ -898,7 +898,7 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
      */
     @Query("""
            SELECT s.asset.id AS assetId, f.cve AS cve, f.relatedCve AS relatedCve,
-                  f.packageName AS packageName, f.packageType AS packageType
+                  f.packageName AS packageName, f.packageType AS packageType, f.severity AS severity
            FROM Finding f JOIN f.scan s WHERE s.id IN :scanIds AND f.fixState = 'fixed'
            """)
     List<AssetFindingKey> findFixableKeysIn(@Param("scanIds") Collection<Long> scanIds);
@@ -1061,6 +1061,9 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
 
         /** 구역 보고서 5장의 한 줄(이름 · 유형)로 셀 때. 이 키를 내는 질의는 전부 이 칸을 싣는다. */
         String getPackageType();
+
+        /** 취약점 화면 CVE별 줄의 키(번호, 심각도)로 셀 때. 이 키를 내는 질의는 전부 이 칸을 싣는다. */
+        String getSeverity();
     }
 
     /**

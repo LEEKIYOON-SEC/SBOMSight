@@ -391,6 +391,17 @@ public class VulnQuery {
     }
 
     /**
+     * CVE별 줄의 키 — 화면이 {@code reviewed} 에서 그 줄의 수를 찾는 열쇠. (번호, 심각도) —
+     * 묶음 질의({@code groupByCveIn})의 {@code GROUP BY} 와 같은 축이다.
+     *
+     * <p>앞서 번호만이라 같은 번호가 심각도로 두 줄로 갈리면 두 줄이 서로의 수를 합쳐 말했다 —
+     * 검토한 줄은 `1 / 2건`, 검토하지 않은 옆 줄도 `1 / 2건`.
+     */
+    public static String rowKey(String display, String severity) {
+        return display + "\u0000" + (severity == null ? "" : severity);
+    }
+
+    /**
      * 묶은 줄 하나가 <b>몇 건 중 몇 건 검토됐는가.</b>
      *
      * <p>CVE별·패키지별 한 줄은 자산 여러 대·건 여러 개를 묶은 줄이라,
@@ -418,8 +429,9 @@ public class VulnQuery {
                                             includeReviewed)) {
             String related = key.getRelatedCve();
             String display = related != null && !related.isBlank() ? related : key.getCve();
-            long[] row = counts.computeIfAbsent(byCve ? display : key.getPackageName(),
-                                                name -> new long[2]);
+            long[] row = counts.computeIfAbsent(
+                    byCve ? rowKey(display, key.getSeverity()) : key.getPackageName(),
+                    name -> new long[2]);
             row[1]++;
             FindingAnalysis found = FindingAnalysisService.analysisOf(
                     byAssetKey, key.getAssetId(), key.getCve(), related, key.getPackageName());

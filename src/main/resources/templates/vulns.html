@@ -163,7 +163,9 @@
                 <span class="faint" th:if="${g.fixable > 0 and g.fixable < g.total}"
                       th:text="${g.fixable} + ' / ' + ${g.total}">0 / 0</span>
               </td>
-              <td class="tight" th:with="r=${reviewed.get(g.cve)}">
+              <!--/* 줄의 키 — (번호, 심각도). 번호만으로 찾으면 심각도로 갈린 두 줄이 서로의 수를
+                   합쳐 말한다(groupByCveIn 의 GROUP BY 와 같은 축 — VulnQuery.rowKey). */-->
+              <td class="tight" th:with="r=${reviewed.get(T(kr.sbomsight.service.VulnQuery).rowKey(g.cve, g.severity))}">
                 <div th:replace="~{fragments/ui :: reviewmark(${r})}"></div>
                 <!--/* 진행과 링크를 한 줄에 두면 `미검토 항목별로 보기` 가 한
                      구절로 읽힌다. 아래 줄로 내린다 — 패키지 칸의 유형·경로와

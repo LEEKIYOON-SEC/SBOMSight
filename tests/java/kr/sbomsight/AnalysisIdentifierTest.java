@@ -7,6 +7,7 @@ import kr.sbomsight.repo.FindingRepository;
 import kr.sbomsight.repo.ScanRepository;
 import kr.sbomsight.service.FindingAnalysisService;
 import kr.sbomsight.service.ReportService;
+import kr.sbomsight.service.VulnQuery;
 import kr.sbomsight.service.Reviewed;
 import kr.sbomsight.service.ZoneReportService;
 import kr.sbomsight.service.ZoneService;
@@ -252,7 +253,8 @@ class AnalysisIdentifierTest {
         Map<String, Reviewed> byCve = (Map<String, Reviewed>) mvc
                 .perform(get("/vulns?scan=" + s.getId() + "&group=cve").with(user("tester").roles("ADMIN")))
                 .andReturn().getModelAndView().getModel().get("reviewed");
-        assertThat(byCve.get("CVE-2025-0003"))
+        // 묶은 줄의 키는 (번호, 심각도) 다 — 같은 번호가 심각도로 두 줄로 갈려도 서로의 수를 합치지 않는다.
+        assertThat(byCve.get(VulnQuery.rowKey("CVE-2025-0003", "High")))
                 .as("표는 `작성` 인데 묶은 줄은 `검토됨` 으로 센다")
                 .isEqualTo(new Reviewed(0, 1));
     }
