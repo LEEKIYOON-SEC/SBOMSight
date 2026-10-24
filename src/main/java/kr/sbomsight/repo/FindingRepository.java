@@ -987,13 +987,17 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
     /**
      * 위와 같은 것을 <b>이름으로</b> — 유형을 모르는 줄({@code pkg:/이름})이 받을 탐지를 고를 때만.
      * 그 줄은 purl 도 유형도 없어 이름 말고는 이을 것이 없다(PackageService).
+     *
+     * <p><b>이름은 대소문자를 가리지 않는다 — 소문자로 넘기고 소문자로 견준다.</b> 앞서 {@code IN} 으로
+     * 견줘 DB 마다 달랐다 — MariaDB(utf8mb4_unicode_ci)는 {@code BusyBox} 를 {@code busybox} 로 찾아
+     * 오고 H2 는 찾지 않았는데, 받은 쪽(PackageService)은 대소문자를 가려 어느 DB 에서든 그 수가 빠졌다.
      */
     @Query("""
            SELECT f.packageKey AS packageKey, f.packageName AS packageName,
                   f.packageVersion AS packageVersion,
                   LOWER(f.severity) AS severity, COUNT(f) AS total
            FROM Finding f
-           WHERE f.scan.id IN :scanIds AND f.packageName IN :names
+           WHERE f.scan.id IN :scanIds AND LOWER(f.packageName) IN :names
            GROUP BY f.packageKey, f.packageName, f.packageVersion, LOWER(f.severity)
            """)
     List<PackageVersionSeverity> severityByPackageVersion(

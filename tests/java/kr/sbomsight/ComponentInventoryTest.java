@@ -1143,6 +1143,82 @@ class ComponentInventoryTest {
     }
 
     /**
+     * <b>유형을 모르는 줄은 이름의 대소문자를 가리지 않고 받는다 — 한 번만.</b>
+     *
+     * <p>SBOM 마다 같은 원소를 {@code cbx-busybox} · {@code CBX-BUSYBOX} · {@code Cbx-BusyBox} 로 적었고
+     * (purl · 유형 없음 — 세 줄), grype 은 탐지를 또 다른 꼴로도 적었다. 앞서 DB 가 대소문자를 가리지
+     * 않고 찾아 온 것을 자바의 키가 가려(H2 는 찾지도 않았다) 이름이 꼭 같은 줄만 받았다 —
+     * {@code CBX-Busybox} 탐지는 어느 줄에도 붙지 않았다.
+     * <ul>
+     *   <li>제 식별자의 줄이 있는 탐지({@code pkg:/Cbx-BusyBox})는 그 줄만 — 대소문자만 다른 두 줄이 한
+     *       번 더 세지 않는다.</li>
+     *   <li>아무 줄도 갖지 않은 탐지({@code pkg:/CBX-Busybox} · {@code pkg:generic/cbx-busybox})는 세 줄
+     *       가운데 한 줄(식별자 글자 순으로 첫 줄 — {@code pkg:/CBX-BUSYBOX})만.</li>
+     * </ul>
+     * 화면 · `취약점 있는 것만` · CSV 가 같은 수다.
+     */
+    @Test
+    @DisplayName("유형을 모르는 줄 — 이름의 대소문자만 다른 탐지를 빼지도 두 번 세지도 않는다 · 화면 · 거르개 · CSV 같은 수")
+    @Transactional
+    void untypedNamesIgnoreCaseOnce() throws Exception {
+        Scan first = null;
+        for (String name : List.of("cbx-busybox", "CBX-BUSYBOX", "Cbx-BusyBox")) {
+            Asset asset = asset("cbx");
+            Scan scan = doneScan(asset);
+            first = first == null ? scan : first;
+            ingest(asset, scan, """
+                    { "bomFormat": "CycloneDX", "specVersion": "1.5",
+                      "components": [ { "type": "library", "name": "%s", "version": "1.36.1" } ] }
+                    """.formatted(name));
+        }
+        hit(first, "Cbx-BusyBox", "1.36.1", "", "CVE-2099-6201", "Low");
+        hit(first, "CBX-Busybox", "1.36.1", "", "CVE-2099-6202", "High");
+        hit(first, "cbx-busybox", "1.36.1", "pkg:generic/cbx-busybox@1.36.1", "CVE-2099-6203", "Medium");
+
+        assertThat(rows(null, "cbx-busybox", false, false))
+                .extracting(PackageService.PackageRow::packageKey, PackageService.PackageRow::findingCount)
+                .containsExactlyInAnyOrder(tuple("pkg:/cbx-busybox", 0L), tuple("pkg:/CBX-BUSYBOX", 2L),
+                                           tuple("pkg:/Cbx-BusyBox", 1L));
+        assertThat(rows(null, "cbx-busybox", true, false)).extracting(PackageService.PackageRow::packageKey)
+                .as("`취약점 있는 것만`").containsExactlyInAnyOrder("pkg:/CBX-BUSYBOX", "pkg:/Cbx-BusyBox");
+        assertThat(csvCounts("cbx-busybox"))
+                .containsExactlyInAnyOrder("pkg:/cbx-busybox=0", "pkg:/CBX-BUSYBOX=2", "pkg:/Cbx-BusyBox=1");
+    }
+
+    /**
+     * <b>유형이 있는 줄이 가진 탐지는 이름의 대소문자만 다른 유형 없는 줄이 세지 않는다</b> — 이름을
+     * 대소문자 없이 견주게 되어도, 제 식별자의 줄이 그 구역에 있는 탐지는 그 줄의 것이다.
+     */
+    @Test
+    @DisplayName("유형이 있는 줄의 탐지는 대소문자만 다른 유형 없는 줄이 한 번 더 세지 않는다 · 화면 · CSV")
+    @Transactional
+    void typedRowKeepsItsFindingFromCaseVariants() throws Exception {
+        Asset typed = asset("tob-typed");
+        Scan typedScan = doneScan(typed);
+        ingest(typed, typedScan, """
+                { "artifacts": [ { "name": "tob-pkg", "version": "1.0", "type": "java-archive",
+                                   "purl": "pkg:maven/x/tob-pkg@1.0" } ] }
+                """);
+        hit(typedScan, "tob-pkg", "1.0", "pkg:maven/x/tob-pkg@1.0", "CVE-2099-6301", "Critical");
+        Asset bare = asset("tob-bare");
+        ingest(bare, doneScan(bare), """
+                { "bomFormat": "CycloneDX", "specVersion": "1.5",
+                  "components": [ { "type": "library", "name": "TOB-PKG", "version": "1.0" } ] }
+                """);
+
+        assertThat(rows(null, "tob-pkg", false, false))
+                .extracting(PackageService.PackageRow::packageKey, PackageService.PackageRow::findingCount)
+                .containsExactlyInAnyOrder(tuple("pkg:maven/x/tob-pkg", 1L), tuple("pkg:/TOB-PKG", 0L));
+        assertThat(csvCounts("tob-pkg")).containsExactlyInAnyOrder("pkg:maven/x/tob-pkg=1", "pkg:/TOB-PKG=0");
+    }
+
+    /** 패키지 CSV 의 줄마다 {@code 식별자=걸린 수}. */
+    private List<String> csvCounts(String q) throws Exception {
+        return page("/packages/export.csv?q=" + q).lines().skip(1)
+                .map(line -> line.split("\",\"")).map(cells -> cells[1] + "=" + cells[5]).toList();
+    }
+
+    /**
      * <b>패키지 검색은 이름과 네임스페이스에서 찾는다.</b>
      *
      * <p>앞서 이름만 찾아, groupId({@code org.nsq.logging}) · npm scope({@code @nsqtypes}) · Maven 좌표

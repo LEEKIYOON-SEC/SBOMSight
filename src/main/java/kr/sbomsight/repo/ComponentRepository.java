@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -196,6 +197,27 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
            ORDER BY COUNT(DISTINCT c.asset.id) DESC, c.version ASC
            """)
     List<VersionRow> versionSpread(@Param("keys") List<String> keys,
+                                   @Param("zoneId") Long zoneId);
+
+    /**
+     * <b>유형을 모르는 줄</b>({@code pkg:/이름}) 가운데 이름이 이것인 것 — 그 구역 전체에서. 이름은
+     * 대소문자를 가리지 않는다(소문자로 넘긴다). 이름의 대소문자만 다른 유형 없는 줄이 둘 이상이면
+     * 아무 줄도 갖지 않은 탐지를 그 가운데 한 줄에만 주려고 쓴다(PackageService) — 화면의 한 쪽이나
+     * 거른 줄만 보면 쪽 · 거르개마다 받는 줄이 달라진다.
+     */
+    @Query("""
+           SELECT c.packageKey AS packageKey, MIN(c.name) AS name, MIN(c.type) AS type,
+                  c.version AS version,
+                  COUNT(DISTINCT c.asset.id) AS assetCount
+           FROM Component c
+           JOIN c.asset a
+           JOIN c.scan s
+           WHERE a.archivedAt IS NULL AND s.status = 'DONE'
+             AND c.packageKey LIKE 'pkg:/%' AND LOWER(c.name) IN :names
+             AND (:zoneId IS NULL OR a.zone.id = :zoneId)
+           GROUP BY c.packageKey, c.version
+           """)
+    List<VersionRow> untypedByName(@Param("names") Collection<String> names,
                                    @Param("zoneId") Long zoneId);
 
     /** 버전 분포 한 조각 — {@code (식별자, 버전)} 하나. 이름 · 유형은 화면 · CSV 에 찍을 값. */

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -233,11 +234,11 @@ public class PackageService {
      */
     private Severities severities(Long zoneId, List<ComponentRepository.VersionRow> versions,
                                   boolean everything) {
-        // 유형을 모르는 줄의 이름 — 그 줄이 받을 탐지는 이름으로밖에 못 찾는다(Severities).
+        // 유형을 모르는 줄의 이름(맞춘 것) — 그 줄이 받을 탐지는 이름으로밖에 못 찾는다(Severities).
         Set<String> untypedNames = new LinkedHashSet<>();
         for (ComponentRepository.VersionRow version : versions) {
             if (Severities.untyped(version.getPackageKey())) {
-                untypedNames.add(version.getName());
+                untypedNames.add(Severities.name(version.getName()));
             }
         }
         // (식별자, 버전) → 등급 → 건수 / 유형을 모르는 줄의 (이름, 버전) → 탐지의 식별자 → 등급 → 건수
@@ -245,51 +246,56 @@ public class PackageService {
         Map<String, Map<String, Map<String, Long>>> byName = new LinkedHashMap<>();
         List<Long> scanIds = vulns.latestScanIds(zoneId);
         if (!scanIds.isEmpty() && !versions.isEmpty()) {
-            // 두 질의에 함께 걸린 묶음(식별자로도 이름으로도)은 한 번만 — 묶음마다 하나라 같은 수다.
-            Map<String, FindingRepository.PackageVersionSeverity> rows = new LinkedHashMap<>();
+            // 식별자로 센 것과 이름으로 고른 것은 따로 담는다 — 두 질의의 결과를 한데 모아 겹친 묶음을
+            // 덜면, 대소문자를 가리지 않는 DB 는 한 묶음의 이름을 질의마다 다른 글자로 돌려줄 수 있어
+            // 같은 탐지를 두 번 센다.
+            List<FindingRepository.PackageVersionSeverity> keyed;
+            List<FindingRepository.PackageVersionSeverity> named;
             if (everything) {
-                findings.severityByPackageVersion(scanIds).forEach(r -> rows.putIfAbsent(group(r), r));
+                keyed = findings.severityByPackageVersion(scanIds);
+                named = keyed;
             } else {
                 List<String> keys = versions.stream().map(ComponentRepository.VersionRow::getPackageKey)
                                             .distinct().toList();
-                findings.severityByPackageKeyVersion(scanIds, keys).forEach(r -> rows.putIfAbsent(group(r), r));
-                if (!untypedNames.isEmpty()) {
-                    findings.severityByPackageVersion(scanIds, untypedNames)
-                            .forEach(r -> rows.putIfAbsent(group(r), r));
-                }
+                keyed = findings.severityByPackageKeyVersion(scanIds, keys);
+                named = untypedNames.isEmpty() ? List.of()
+                                               : findings.severityByPackageVersion(scanIds, untypedNames);
             }
-            for (FindingRepository.PackageVersionSeverity row : rows.values()) {
-                String severity = Severity.of(row.getSeverity()).key();
-                byKey.computeIfAbsent(key(row.getPackageKey(), row.getPackageVersion()),
-                                      k -> new LinkedHashMap<>())
-                     .merge(severity, row.getTotal(), Long::sum);
-                if (untypedNames.contains(row.getPackageName())) {
-                    byName.computeIfAbsent(key(row.getPackageName(), row.getPackageVersion()),
-                                           k -> new LinkedHashMap<>())
+            for (FindingRepository.PackageVersionSeverity row : keyed) {
+                byKey.computeIfAbsent(key(row.getPackageKey(), row.getPackageVersion()), k -> new LinkedHashMap<>())
+                     .merge(Severity.of(row.getSeverity()).key(), row.getTotal(), Long::sum);
+            }
+            for (FindingRepository.PackageVersionSeverity row : named) {
+                String name = Severities.name(row.getPackageName());
+                if (untypedNames.contains(name)) {
+                    byName.computeIfAbsent(key(name, row.getPackageVersion()), k -> new LinkedHashMap<>())
                           .computeIfAbsent(row.getPackageKey(), k -> new LinkedHashMap<>())
-                          .merge(severity, row.getTotal(), Long::sum);
+                          .merge(Severity.of(row.getSeverity()).key(), row.getTotal(), Long::sum);
                 }
             }
         }
-        // 유형을 모르는 줄이 받을 뻔한 탐지 가운데 다른 줄이 가진 것 — 그 구역 인벤토리 전체에서 본다.
-        // 화면의 한 쪽에 실린 줄만 보면 다음 쪽의 줄이 가진 탐지를 이 줄이 한 번 더 센다.
-        Set<String> claimed = new LinkedHashSet<>();
-        Set<String> candidates = new LinkedHashSet<>();
-        byName.values().forEach(byFindingKey -> byFindingKey.keySet().stream()
-                                                            .filter(k -> !Severities.untyped(k))
-                                                            .forEach(candidates::add));
-        if (!candidates.isEmpty()) {
-            for (ComponentRepository.VersionRow row : components.versionSpread(List.copyOf(candidates), zoneId)) {
-                claimed.add(key(row.getPackageKey(), row.getVersion()));
-            }
+        if (byName.isEmpty()) {
+            return new Severities(byKey, byName, Set.of(), Map.of());
         }
-        return new Severities(byKey, byName, claimed);
-    }
-
-    /** 탐지 묶음 하나 — 질의가 묶는 칸 그대로(식별자, 이름, 버전, 등급). */
-    private static String group(FindingRepository.PackageVersionSeverity row) {
-        return row.getPackageKey() + "\0" + row.getPackageName() + "\0" + row.getPackageVersion()
-               + "\0" + row.getSeverity();
+        // 유형을 모르는 줄이 받을 뻔한 탐지 가운데 제 (식별자, 버전)의 줄이 그 구역에 있는 것 — 그 줄의
+        // 것이다. 그 구역 인벤토리 전체에서 본다 — 화면의 한 쪽에 실린 줄만 보면 다음 쪽의 줄이 가진
+        // 탐지를 이 줄이 한 번 더 센다. 유형 없는 탐지도 본다 — pkg:/BusyBox 줄이 있으면 그 탐지는 그
+        // 줄의 것이고 이름의 대소문자만 다른 busybox 줄이 한 번 더 세지 않는다.
+        Set<String> candidates = new LinkedHashSet<>();
+        byName.values().forEach(byFindingKey -> candidates.addAll(byFindingKey.keySet()));
+        Set<String> claimed = new LinkedHashSet<>();
+        for (ComponentRepository.VersionRow row : components.versionSpread(List.copyOf(candidates), zoneId)) {
+            claimed.add(key(row.getPackageKey(), row.getVersion()));
+        }
+        // 아무 줄도 갖지 않은 탐지를 받을 줄 — 이름(대소문자만 다른 것)과 버전이 같은 유형 없는 줄이
+        // 둘 이상이면 그 가운데 하나(식별자 글자 순으로 첫 줄)만. 그 구역 전체에서 고른다 — 쪽 · 거르개
+        // · CSV 가 같은 줄을 고른다.
+        Map<String, String> owners = new LinkedHashMap<>();
+        for (ComponentRepository.VersionRow row : components.untypedByName(untypedNames, zoneId)) {
+            owners.merge(key(Severities.name(row.getName()), row.getVersion()), row.getPackageKey(),
+                         (a, b) -> a.compareTo(b) <= 0 ? a : b);
+        }
+        return new Severities(byKey, byName, claimed, owners);
     }
 
     /**
@@ -301,33 +307,45 @@ public class PackageService {
      * 사라진다 — 실제보다 안전해 보이는 숫자다. 가진 줄이 있는 탐지는 그 줄에만 붙는다. 이것은
      * 이 화면의 수를 세는 일이다 — 검토 결과 · 조치는 식별자로만 붙는다.
      *
+     * <p><b>이름은 대소문자를 가리지 않는다</b>({@link #name}) — 질의의 조건({@code LOWER(이름) IN}) ·
+     * 받을 이름 · 묶는 키 · 찾는 키가 같은 규칙이다. 앞서 DB 는 대소문자를 가리지 않고 찾아 온 것을
+     * 자바의 키가 가려 {@code BusyBox} 탐지가 {@code busybox} 줄에서 빠졌다. 이름의 대소문자만 다른
+     * 유형 없는 줄이 둘 이상이면 아무 줄도 갖지 않은 탐지는 그 가운데 한 줄({@code owners})만 받는다.
+     *
      * @param byKey   (식별자, 버전) → 등급 → 건수
-     * @param byName  유형을 모르는 줄의 (이름, 버전) → 탐지의 식별자 → 등급 → 건수
+     * @param byName  유형을 모르는 줄의 (맞춘 이름, 버전) → 탐지의 식별자 → 등급 → 건수
      * @param claimed 그 구역 인벤토리에 있는 (식별자, 버전) — 유형을 모르는 줄이 받을 후보 가운데
+     * @param owners  (맞춘 이름, 버전) → 아무 줄도 갖지 않은 탐지를 받을 유형 없는 줄의 식별자
      */
     private record Severities(Map<String, Map<String, Long>> byKey,
                               Map<String, Map<String, Map<String, Long>>> byName,
-                              Set<String> claimed) {
+                              Set<String> claimed,
+                              Map<String, String> owners) {
 
         Map<String, Long> of(ComponentRepository.VersionRow version) {
             String own = version.getPackageKey();
             Map<String, Long> counts = byKey.getOrDefault(key(own, version.getVersion()), Map.of());
-            if (!untyped(own)) {
+            String group = key(name(version.getName()), version.getVersion());
+            if (!untyped(own) || !own.equals(owners.get(group))) {
                 return counts;
             }
             Map<String, Long> merged = new LinkedHashMap<>(counts);
-            byName.getOrDefault(key(version.getName(), version.getVersion()), Map.of())
-                  .forEach((findingKey, found) -> {
-                      if (!findingKey.equals(own) && !claimed.contains(key(findingKey, version.getVersion()))) {
-                          found.forEach((severity, n) -> merged.merge(severity, n, Long::sum));
-                      }
-                  });
+            byName.getOrDefault(group, Map.of()).forEach((findingKey, found) -> {
+                if (!findingKey.equals(own) && !claimed.contains(key(findingKey, version.getVersion()))) {
+                    found.forEach((severity, n) -> merged.merge(severity, n, Long::sum));
+                }
+            });
             return merged;
         }
 
         /** 유형을 모르는 줄의 식별자 — {@code pkg:/이름}. */
         private static boolean untyped(String packageKey) {
             return packageKey == null || packageKey.startsWith("pkg:/");
+        }
+
+        /** 이름을 견주는 꼴 — 대소문자를 가리지 않는다(질의는 {@code LOWER}). */
+        private static String name(String name) {
+            return name == null ? "" : name.toLowerCase(Locale.ROOT);
         }
     }
 
