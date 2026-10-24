@@ -253,16 +253,15 @@ public class ComponentInventoryService {
         public void accept(ParsedComponent parsed) {
             String name = clip(parsed.name(), 255);
             String type = clip(parsed.type(), 64);
-            String purl = clip(parsed.purl(), 512);
             pending.add(new Object[] {
                     assetId, scanId,
                     name,
                     clip(parsed.version(), 255),
                     type,
-                    purl,
-                    // 탐지와 같은 규칙 · 담는 값 그대로에서(Component 생성자와 같다) — 패키지
-                    // 화면의 한 줄이 이것이다(V24).
-                    PackageKey.of(purl, type, name),
+                    clip(parsed.purl(), PackageKey.PURL_COLUMN),
+                    // 탐지와 같은 규칙(Component 생성자와 같다) — 패키지 화면의 한 줄이 이것이다(V24).
+                    // purl 은 자르기 전 것으로 — 칸보다 긴 purl 을 잘린 글자로 읽으면 다른 패키지를 가리킨다.
+                    PackageKey.of(parsed.purl(), type, name),
                     clip(parsed.location(), 1000) });
             if (pending.size() >= BATCH) {
                 flush();

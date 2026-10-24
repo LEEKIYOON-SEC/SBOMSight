@@ -18,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 import static java.util.Map.entry;
 
@@ -55,8 +56,13 @@ import static java.util.Map.entry;
  * 깨뜨린다 — 그 두 자리만 피한다({@link #decodeNonAscii}).
  *
  * <p><b>표준 파서가 받지 않는 purl</b>(이름이 비었거나 한정자 키가 겹친 것, UTF-8 이 아닌 인코딩 …)은
- * V24 의 규칙으로 좌표만 딴다({@link #coordinates}). 받지 않는다고 이름으로 내려가면 네임스페이스를
- * 잃어 groupId 만 다른 둘이 합쳐진다.
+ * 적힌 글자에서 좌표를 따고 한정자도 남긴다({@link #coordinates}). 받지 않는다고 이름으로 내려가면
+ * 네임스페이스를 잃어 groupId 만 다른 둘이 합쳐지고, 한정자를 버리면 classifier 가 겹친 purl 이
+ * classifier 없는 purl 과 합쳐진다.
+ *
+ * <p><b>purl 칸(512자)보다 긴 purl</b> 은 담을 때 칸만큼 잘린다. 식별자는 자르기 전 purl 로 만든다
+ * (Finding · Component · 인벤토리). 앞서 잘린 채 담긴 행은 원래 purl 을 되살릴 수 없다 — V25 가
+ * 표시를 단 식별자를 준다({@link #truncated}).
  *
  * <p><b>purl 이 없으면</b> {@code pkg:<유형>/<이름>} — 유형은 purl 의 이름으로 옮긴 것
  * ({@link PackageTypes#purlName}), 같은 정규형으로 쓴다(이름이 들고 온 {@code @scope/} · 경로는 그대로
@@ -71,6 +77,15 @@ public final class PackageKey {
 
     /** 식별자 칸의 길이(VARCHAR 512). */
     static final int MAX = 512;
+
+    /** purl 칸의 길이(findings.package_purl · component.purl — VARCHAR 512). 넘으면 담을 때 잘린다. */
+    public static final int PURL_COLUMN = 512;
+
+    /**
+     * 잘린 채 담긴 purl 의 식별자에 다는 표시({@link #truncated}). 정규형은 {@code #} 를 {@code %23} 으로
+     * 적으므로 purl 에서 만든 식별자와 겹치지 않는다.
+     */
+    static final String TRUNCATED = "#truncated";
 
     /**
      * 모든 유형에서 버리는 한정자 — <b>사본을 어디서 · 어떤 파일로 받았는가</b>(purl 규격 Annex B 의 공통
@@ -149,15 +164,38 @@ public final class PackageKey {
     private PackageKey() {
     }
 
-    /** 탐지 · 인벤토리 한 줄의 식별자. */
+    /** 탐지 · 인벤토리 한 줄의 식별자. purl 은 받은 그대로(칸에 맞춰 자르기 전) 넘긴다. */
     public static String of(String purl, String type, String name) {
+        return fit(unfitted(purl, type, name), MAX);
+    }
+
+    /**
+     * 담긴 purl 이 칸에서 잘렸을 수 있는가 — 칸을 꽉 채웠다. 담을 때 앞뒤 빈칸을 떼고 칸만큼 자르므로
+     * 잘린 값은 꼭 칸 길이다. 꼭 칸 길이인 purl 이 잘리지 않은 것인지는 가를 수 없다.
+     */
+    public static boolean clipped(String storedPurl) {
+        return storedPurl != null && storedPurl.length() >= PURL_COLUMN;
+    }
+
+    /**
+     * <b>잘린 채 담긴 purl 의 식별자</b>(V25 — 그 전에 담긴 행). 잘린 글자를 온전한 purl 로 읽으면 잘린
+     * 한정자 값이 없는 패키지를 가리키거나, 잘려 나간 한정자(classifier …)를 모른 채 다른 패키지와
+     * 합쳐진다 — 원래 purl 은 DB 어디에도 없다(탐지의 상세에도 purl 은 담지 않는다). 그래서 잘린 글자로
+     * 만든 식별자에 {@link #TRUNCATED} 를 붙여 <b>어느 정상 식별자와도 겹치지 않게</b> 한다 — 같은 잘린
+     * 글자끼리만 하나다. 같은 SBOM 을 다시 검사하면 새 탐지는 자르기 전 purl 로 제 식별자를 받는다.
+     */
+    public static String truncated(String storedPurl, String type, String name) {
+        return fit(unfitted(storedPurl, type, name), MAX - TRUNCATED.length()) + TRUNCATED;
+    }
+
+    private static String unfitted(String purl, String type, String name) {
         String fromPurl = fromPurl(purl);
-        return fit(fromPurl != null ? fromPurl : fallback(type, name));
+        return fromPurl != null ? fromPurl : fallback(type, name);
     }
 
     /**
      * purl 의 식별자 — 정규형에서 버전 · 하위 경로와 표의 한정자를 뗀 것. 표준 파서가 받지 않으면
-     * V24 의 좌표({@link #coordinates}), purl 이 아니면 {@code null}.
+     * 적힌 글자의 좌표와 한정자({@link #coordinates}), purl 이 아니면 {@code null}.
      */
     public static String fromPurl(String purl) {
         if (purl == null) {
@@ -276,16 +314,9 @@ public final class PackageKey {
         if (qualifiers == null) {
             return kept;
         }
-        Set<String> ignored = IGNORED.getOrDefault(type, Set.of());
-        Set<String> sources = SOURCES.getOrDefault(type, Set.of());
-        Map<String, String> defaults = DEFAULTS.getOrDefault(type, Map.of());
         qualifiers.forEach((key, given) -> {
-            String value = sources.contains(key) ? source(key, given) : given;
-            boolean dropped = IGNORED_ALWAYS.contains(key) && !sources.contains(key)
-                              || ignored.contains(key) && !("deb".equals(type) && "arch".equals(key)
-                                                            && "source".equals(value))
-                              || value.isEmpty() || value.equals(defaults.get(key));
-            if (!dropped) {
+            String value = value(type, key, given);
+            if (value != null) {
                 kept.put(key, value);
             }
         });
@@ -293,10 +324,22 @@ public final class PackageKey {
         // 포트를 레지스트리로만 적은 purl(syft)과 git-tree 까지 적은 purl 이 둘로 갈린다.
         String vcs = kept.get("vcs_url");
         if ("vcpkg".equals(type) && vcs != null
-                && sameRepository(vcs, kept.getOrDefault("repository_url", defaults.get("repository_url")))) {
+                && sameRepository(vcs, kept.getOrDefault("repository_url",
+                                                         DEFAULTS.get("vcpkg").get("repository_url")))) {
             kept.remove("vcs_url");
         }
         return kept;
+    }
+
+    /** 한정자 하나를 식별자에 남길 값 — 표 · 기본값이 버리라면 {@code null}. 키는 소문자로 받는다. */
+    private static String value(String type, String key, String given) {
+        Set<String> sources = SOURCES.getOrDefault(type, Set.of());
+        String value = sources.contains(key) ? source(key, given) : given;
+        boolean dropped = IGNORED_ALWAYS.contains(key) && !sources.contains(key)
+                          || IGNORED.getOrDefault(type, Set.of()).contains(key)
+                             && !("deb".equals(type) && "arch".equals(key) && "source".equals(value))
+                          || value.isEmpty() || value.equals(DEFAULTS.getOrDefault(type, Map.of()).get(key));
+        return dropped ? null : value;
     }
 
     /**
@@ -352,9 +395,14 @@ public final class PackageKey {
     }
 
     /**
-     * 표준 파서가 받지 않는 purl 의 좌표 — V24 의 규칙 그대로. 뒤에서부터 {@code #} · {@code ?} 를
-     * 떼고, 첫 {@code /} 앞(한 글자 이상)을 유형으로, 그 뒤에서 뒤에서부터 {@code @}(버전)와 끝의
-     * {@code /} 를 뗀다. 유형만 소문자로, 나머지는 적힌 그대로. 남은 것이 없으면 {@code null}.
+     * 표준 파서가 받지 않는 purl 의 식별자 — 적힌 글자에서 딴다. 뒤에서부터 {@code #} · {@code ?} 를
+     * 떼고(규격의 읽는 차례), 첫 {@code /} 앞(한 글자 이상)을 유형으로, 그 뒤에서 뒤에서부터
+     * {@code @}(버전)와 끝의 {@code /} 를 뗀다 — 여기까지 V24 와 같고, 유형만 소문자로, 좌표는 적힌
+     * 그대로다. 남은 것이 없으면 {@code null}.
+     *
+     * <p><b>한정자는 남긴다</b>({@link #rawQualifiers}). 앞서(V24, V25 의 첫 판) 통째로 버려
+     * {@code ?classifier=x&classifier=y} 처럼 키가 겹쳐 받지 않은 purl 이 classifier 없는 purl 과 한
+     * 식별자였고, 한쪽의 검토 결과 · 조치가 다른 쪽에 붙었다.
      */
     private static String coordinates(String text) {
         String rest = text.substring("pkg:".length());
@@ -362,9 +410,11 @@ public final class PackageKey {
         if (hash >= 0) {
             rest = rest.substring(0, hash);
         }
-        int query = rest.lastIndexOf('?');
-        if (query >= 0) {
-            rest = rest.substring(0, query);
+        String query = "";
+        int question = rest.lastIndexOf('?');
+        if (question >= 0) {
+            query = rest.substring(question + 1);
+            rest = rest.substring(0, question);
         }
         int slash = rest.indexOf('/');
         if (slash <= 0) {
@@ -379,7 +429,60 @@ public final class PackageKey {
         while (path.endsWith("/")) {
             path = path.substring(0, path.length() - 1);
         }
-        return path.isEmpty() ? null : "pkg:" + type + "/" + path;
+        return path.isEmpty() ? null : "pkg:" + type + "/" + path + rawQualifiers(type, query);
+    }
+
+    /**
+     * 받지 않는 purl 의 한정자 — 표대로 거른다({@link #value} — 정규형과 같은 표). <b>겹친 키는 하나로
+     * 줄이지 않는다</b> — 어느 값이 맞는지 모른다. 같은 키 · 값이 두 번이면 하나다. 키는 소문자, 키 ·
+     * 값 순, 값은 풀어서({@link #percentDecoded} — 못 풀면 적힌 그대로) 정규형처럼 인코딩한다 — 그래서
+     * 식별자에 {@code / ? # & =} 가 글자로 남지 않는다. 남는 것이 없으면 빈 글자.
+     */
+    private static String rawQualifiers(String type, String query) {
+        TreeMap<String, Set<String>> kept = new TreeMap<>();
+        for (String pair : query.split("&")) {
+            int eq = pair.indexOf('=');
+            String key = (eq < 0 ? pair : pair.substring(0, eq)).toLowerCase(Locale.ROOT);
+            String raw = eq < 0 ? "" : pair.substring(eq + 1);
+            String decoded = percentDecoded(raw);
+            String value = key.isEmpty() ? null : value(type, key, decoded != null ? decoded : raw);
+            if (value != null) {
+                kept.computeIfAbsent(key, k -> new TreeSet<>()).add(value);
+            }
+        }
+        StringBuilder out = new StringBuilder();
+        kept.forEach((key, values) -> values.forEach(v ->
+                out.append(out.length() == 0 ? '?' : '&').append(encode(key)).append('=').append(encode(v))));
+        return out.toString();
+    }
+
+    /**
+     * 퍼센트 인코딩을 다 푼다({@code +} 는 그대로 — purl 에서 빈칸이 아니다). {@code %XX} 가 깨졌거나
+     * 풀린 바이트가 UTF-8 이 아니면 {@code null}.
+     */
+    static String percentDecoded(String text) {
+        if (text.indexOf('%') < 0) {
+            return text;
+        }
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        int i = 0;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (c == '%') {
+                int value = escapedByte(text, i);
+                if (value < 0) {
+                    return null;
+                }
+                bytes.write(value);
+                i += 3;
+            } else {
+                int end = i + Character.charCount(text.codePointAt(i));
+                bytes.writeBytes(text.substring(i, end).getBytes(StandardCharsets.UTF_8));
+                i = end;
+            }
+        }
+        StringBuilder out = new StringBuilder();
+        return flush(bytes, out) ? out.toString() : null;
     }
 
     /** purl 이 없을 때 — 유형(purl 의 이름으로 옮긴 것)과 이름으로. */
@@ -462,15 +565,15 @@ public final class PackageKey {
     }
 
     /**
-     * 칸(512자)에 들게 — 넘으면 앞부분과 전체의 SHA-256 으로. 잘라서 넣으면 앞이 같은 두 패키지가
-     * 합쳐진다. purl 칸이 512자라 정규형의 퍼센트 인코딩이 글자를 늘렸을 때만 넘는다.
+     * 칸에 들게 — {@code max} 자를 넘으면 앞부분과 전체의 SHA-256 으로. 잘라서 넣으면 앞이 같은 두
+     * 패키지가 합쳐진다. 정규형의 퍼센트 인코딩이 글자를 늘렸거나 purl 이 칸(512자)보다 길었을 때 넘는다.
      */
-    static String fit(String key) {
-        if (key.length() <= MAX) {
+    static String fit(String key, int max) {
+        if (key.length() <= max) {
             return key;
         }
         String digest = sha256(key);
-        int cut = MAX - digest.length() - 1;
+        int cut = max - digest.length() - 1;
         if (Character.isHighSurrogate(key.charAt(cut - 1))) {
             cut--;
         }

@@ -192,6 +192,45 @@ class PackageKeyMigrationTest {
         assertThat(key("finding_analysis", toNative.getId())).isEqualTo(NATIVE);
     }
 
+    /**
+     * <b>앞서 칸(512자)에서 잘린 채 담긴 purl</b> — 원래 purl 을 되살릴 수 없다. 잘린 글자로는 순수 jar
+     * 이지만 칸 뒤로 classifier 가 잘려 나갔을 수 있다. 정상 식별자 어느 것과도 겹치지 않게 표시를 단
+     * 식별자를 준다. 그 행에 붙던 기록은 같은 규칙으로 가른다 — 붙던 탐지가 잘린 행뿐이면 그 식별자로
+     * 옮기고(붙던 탐지 그대로다), 순수 jar 와 함께 붙던 것은 비운다.
+     */
+    @Test
+    @DisplayName("잘린 채 담긴 purl 은 표시를 단 식별자 · 그 행에만 붙던 기록은 따라가고 순수 jar 와 섞인 것은 비운다")
+    void clippedPurlsAreNotReadAsWholePurls() throws Exception {
+        String stored = ("pkg:maven/io.netty/netty-transport-native-epoll@4.1.100.Final?repository_url="
+                         + "https%3A%2F%2Frepo.example%2F" + "x".repeat(600)).substring(0, PackageKey.PURL_COLUMN);
+        String marked = "pkg:maven/io.netty/netty-transport-native-epoll#truncated";
+        Scan scan = scan();
+        Finding clippedRow = finding(scan, stored);
+        Finding plainRow = finding(scan, PLAIN_PURL);
+        Finding clippedOther = finding(scan, stored, "CVE-2023-99999");
+        Component inventoryRow = component(scan, stored);
+        v24(clippedRow, V24_KEY);
+        v24(plainRow, V24_KEY);
+        v24(clippedOther, V24_KEY);
+        v24(inventoryRow, V24_KEY);
+        FindingAnalysis mixed = notAffected(V24_KEY);                       // 잘린 행과 순수 jar 에 붙던 것
+        FindingAnalysis onlyClipped = notAffected(V24_KEY, "CVE-2023-99999"); // 잘린 행에만 붙던 것
+        Remediation remediation = remediation(V24_KEY, scan);
+
+        migrate();
+
+        assertThat(key("findings", clippedRow.getId())).isEqualTo(marked)
+                .isEqualTo(PackageKey.truncated(stored, "java-archive", "x"));
+        assertThat(key("findings", clippedOther.getId())).isEqualTo(marked);
+        assertThat(key("findings", plainRow.getId())).isEqualTo(PLAIN);
+        assertThat(key("component", inventoryRow.getId())).isEqualTo(marked);
+        assertThat(key("finding_analysis", mixed.getId())).isNull();
+        assertThat(key("finding_analysis", onlyClipped.getId())).isEqualTo(marked);
+        assertThat(key("remediations", remediation.getId())).isNull();
+        assertThat(migrate()).as("다시 돌려도 같다 — 표시를 단 식별자를 다시 만들지 않는다")
+                             .isEqualTo(new V25__package_key_qualifiers.Summary(0, 0, 0, 0, 0, 0));
+    }
+
     @Test
     @DisplayName("붙던 탐지가 남아 있지 않으면 비운다 · 이미 비운 것과 바뀌지 않는 것은 그대로 · 다시 돌려도 같다")
     void evidenceDecidesAndRerunsChangeNothing() throws Exception {
@@ -251,10 +290,15 @@ class PackageKeyMigrationTest {
     }
 
     private Finding finding(Scan scan, String purl) {
-        String name = purl.substring(purl.lastIndexOf('/') + 1, purl.indexOf('@'));
+        return finding(scan, purl, CVE);
+    }
+
+    private Finding finding(Scan scan, String purl, String cve) {
+        String coordinates = purl.substring(0, purl.indexOf('@'));
+        String name = coordinates.substring(coordinates.lastIndexOf('/') + 1);
         // 탐지 키에 차례를 붙인다 — (검사, 키) 유일 키는 MariaDB 에서 대소문자를 가리지 않아
-        // PyYAML · pyyaml 의 purl 만으로는 겹친다.
-        Finding f = new Finding(scan, CVE + "|" + purl + "|" + (++findingNo), CVE, name);
+        // PyYAML · pyyaml 의 purl 만으로는 겹친다. 긴 purl 은 칸(512)을 넘지 않게 해시로.
+        Finding f = new Finding(scan, cve + "|" + purl.hashCode() + "|" + (++findingNo), cve, name);
         f.setPackageVersion(purl.substring(purl.indexOf('@') + 1).replaceAll("\\?.*", ""));
         f.setPackageType(purl.startsWith("pkg:maven/") ? "java-archive" : purl.startsWith("pkg:npm/") ? "npm" : "python");
         f.setPackagePurl(purl);
@@ -265,13 +309,18 @@ class PackageKeyMigrationTest {
     }
 
     private Component component(Scan scan, String purl) {
-        String name = purl.substring(purl.lastIndexOf('/') + 1, purl.indexOf('@'));
+        String coordinates = purl.substring(0, purl.indexOf('@'));
+        String name = coordinates.substring(coordinates.lastIndexOf('/') + 1);
         return components.saveAndFlush(new Component(asset, scan, name, "4.1.100.Final", "maven", purl, ""));
     }
 
     /** V24 가 남긴 해당 없음 — 식별자는 V24 의 것(비었으면 V24 가 가르지 못한 것). */
     private FindingAnalysis notAffected(String v24Key) {
-        FindingAnalysis review = new FindingAnalysis(asset, CVE, "x", v24Key);
+        return notAffected(v24Key, CVE);
+    }
+
+    private FindingAnalysis notAffected(String v24Key, String cve) {
+        FindingAnalysis review = new FindingAnalysis(asset, cve, "x", v24Key);
         review.setState(AnalysisState.NOT_AFFECTED);
         review.setJustification(AnalysisJustification.CODE_NOT_REACHABLE);
         review.setUpdatedBy("tester");

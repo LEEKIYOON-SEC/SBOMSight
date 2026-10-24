@@ -653,11 +653,38 @@ SQL
          (@c, 'PyYAML', '', '', 'OPEN', '', @c1, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
          (@c, 'pyyaml-dist', '', '', 'OPEN', '', @c1, 1, '', NOW(6), 'admin', NOW(6), 'admin');
 SQL
+        # v25-t — 앞선 판이 purl 을 칸(512자)에서 잘라 담은 행. 원래 purl 은 DB 에 없다 — 잘린 글자로는
+        # 순수 jar 와 같은 좌표다. 같은 검사에 순수 jar 도 있다.
+        run "$DB" <<'SQL'
+        INSERT INTO assets (name, zone_id, os_name, note, created_at)
+        SELECT 'v25-t', id, '', '', NOW(6) FROM zones WHERE name = '내부업무';
+        SET @t = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (@t, 'DONE', '2026-09-01 09:00:00', 'v25check', 'v25-t1', '2026-09-01 09:00:00');
+        SET @t1 = LAST_INSERT_ID();
+        SET @clipped = LEFT(CONCAT('pkg:maven/org.example/trunc@1.0?repository_url=https%3A%2F%2Frepo.example%2F',
+                                   REPEAT('x', 600)), 512);
+        INSERT INTO findings (scan_id, finding_key, cve, related_cve, package_name, package_version,
+                              package_type, package_purl) VALUES
+         (@t1, 'v25t-1', 'CVE-2099-2507', '', 'trunc', '1.0', 'java-archive', @clipped),
+         (@t1, 'v25t-2', 'CVE-2099-2507', '', 'trunc', '1.0', 'java-archive', 'pkg:maven/org.example/trunc@1.0'),
+         (@t1, 'v25t-3', 'CVE-2099-2508', '', 'trunc', '1.0', 'java-archive', @clipped);
+        INSERT INTO component (asset_id, scan_id, name, version, type, purl)
+        VALUES (@t, @t1, 'trunc', '1.0', 'maven', @clipped);
+        INSERT INTO finding_analysis (asset_id, cve, package_name, state, created_at, updated_at) VALUES
+         (@t, 'CVE-2099-2507', 'trunc', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@t, 'CVE-2099-2508', 'trunc', 'NOT_AFFECTED', NOW(6), NOW(6));
+        INSERT INTO remediations
+          (asset_id, package_name, from_version, to_version, status, owner, opened_scan_id,
+           opened_count, note, created_at, created_by, updated_at, updated_by)
+        VALUES (@t, 'trunc', '', '', 'OPEN', '', @t1, 3, '', NOW(6), 'admin', NOW(6), 'admin');
+SQL
         COUNTS24=$(run "$DB" -N -e "
             SELECT CONCAT((SELECT COUNT(*) FROM finding_analysis), '|', (SELECT COUNT(*) FROM remediations), '|',
                           (SELECT COUNT(*) FROM findings), '|', (SELECT COUNT(*) FROM component));")
         echo "  └ 벡터 ${VECTORS}줄(탐지 · 패키지) · 탐지 10건 · 검토 결과 9행 · 조치 8행을 넣었다 (같은 이름의 npm/PyPI · groupId 둘 · 붙던 탐지 없음 · 지워진 검사 · 이름 둘이 한 식별자)"
-        echo "  └ V25 가 다시 가를 것 — 탐지 12건 · 검토 결과 8행 · 조치 5행 (classifier · type 만 다른 둘 · 하나뿐 · 이름 맞춤으로 모임 · 자리 바꿈 · 바뀌지 않는 것)" ;;
+        echo "  └ V25 가 다시 가를 것 — 탐지 12건 · 검토 결과 8행 · 조치 5행 (classifier · type 만 다른 둘 · 하나뿐 · 이름 맞춤으로 모임 · 자리 바꿈 · 바뀌지 않는 것)"
+        echo "      v25-t — purl 이 칸(512자)에서 잘린 탐지 2건 · 패키지 1행과 순수 jar 탐지 1건 · 검토 결과 2행 · 조치 1행" ;;
     esac
 
     case "$(basename "$f")" in V24__*)
@@ -688,18 +715,23 @@ SQL
         expect_remediations "v25-a|netty-transport-native-epoll|pkg:maven/io.netty/netty-transport-native-epoll" \
                             "v25-a|jffi|pkg:maven/com.github.jnr/jffi" "v25-a|lib|pkg:maven/org.example/lib" \
                             "v25-a|PyYAML|pkg:pypi/PyYAML" "v25-a|pyyaml-dist|pkg:pypi/pyyaml"
-        echo "  └ v25-a — V24 는 classifier · type 만 다른 둘을 한 식별자로 붙였다 · PyYAML 과 pyyaml 은 둘로" ;;
+        echo "  └ v25-a — V24 는 classifier · type 만 다른 둘을 한 식별자로 붙였다 · PyYAML 과 pyyaml 은 둘로"
+        expect_reviews "v25-t|CVE-2099-2507|trunc|pkg:maven/org.example/trunc" \
+                       "v25-t|CVE-2099-2508|trunc|pkg:maven/org.example/trunc"
+        expect_remediations "v25-t|trunc|pkg:maven/org.example/trunc"
+        echo "  └ v25-t — V24 는 잘린 purl 을 온전한 것처럼 읽어 순수 jar 와 한 식별자로 붙였다" ;;
     esac
 
     # V25 는 탐지 · 패키지 · 검토 결과 · 조치의 식별자만 고친다 — 행은 지우지도 합치지도 않는다.
     case "$(basename "$f")" in V25__*)
         SAID=$(java_said "$f")
         printf '%s\n' "$SAID"
-        # 고친 수 — 탐지 44 = 벡터 가운데 식별자가 바뀌는 38줄(4째 칸과 5째 칸이 다른 줄) + v25-a 6건
-        # (네이티브 둘 · test-jar · PyYAML · %2E · 코덱 네이티브), 패키지 39 = 벡터 38줄 + V22 의 유형
-        # `Python` 줄(pkg:Python → pkg:python). 검토 결과 · 조치는 v25-a 의 것뿐이다 — V24 의 기록은 바뀔
-        # 까닭이 없다.
-        WANT25="탐지 44 · 패키지 39 · 검토 결과 옮김 3 / 비움 4 · 조치 옮김 1 / 비움 3"
+        # 고친 수 — 탐지 50 = 벡터 가운데 식별자가 바뀌는 42줄(4째 칸과 5째 칸이 다른 줄) + v25-a 6건
+        # (네이티브 둘 · test-jar · PyYAML · %2E · 코덱 네이티브) + v25-t 의 잘린 2건, 패키지 44 = 벡터
+        # 42줄 + V22 의 유형 `Python` 줄(pkg:Python → pkg:python) + v25-t 의 잘린 1행. 검토 결과 · 조치는
+        # v25-a(옮김 3 / 비움 4 · 옮김 1 / 비움 3)와 v25-t(옮김 1 / 비움 1 · 비움 1)의 것뿐이다 — V24 의
+        # 기록은 바뀔 까닭이 없다.
+        WANT25="탐지 50 · 패키지 44 · 검토 결과 옮김 4 / 비움 5 · 조치 옮김 1 / 비움 4"
         printf '%s' "$SAID" | grep -qF "$WANT25" || {
             echo "  V25 가 고친 수가 다릅니다 (기대 '$WANT25')"; exit 1; }
         AFTER25=$(run "$DB" -N -e "
@@ -1397,6 +1429,21 @@ expect_remediations "v25-a|netty-transport-native-epoll|NULL" \
                     "v25-a|PyYAML|NULL" "v25-a|pyyaml-dist|NULL"
 echo "  조치 — 등록한 검사의 탐지로 (앞 검사에 순수 jar 뿐이던 lib 은 그 식별자 · 검토 결과와 갈림)"
 echo "    등록한 검사에 classifier 만 다른 둘 · 이름 맞춤으로 둘이 한 식별자에 모인 것은 비움"
+
+# 칸(512자)에서 잘린 채 담긴 purl — 원래 purl 이 없다. 잘린 글자를 온전한 purl 로 읽지 않고 표시를 단
+# 식별자를 준다. 그 행에만 붙던 기록은 따라가고, 순수 jar 와 함께 붙던 기록은 비운다.
+TRUNC="pkg:maven/org.example/trunc#truncated"
+got=$(run "$DB" -N -r -e "
+    SELECT CONCAT(GROUP_CONCAT(CONCAT(f.finding_key, '=', f.package_key, ':', CHAR_LENGTH(f.package_purl))
+                               ORDER BY f.finding_key SEPARATOR ' '),
+                  ' | ', (SELECT c.package_key FROM component c JOIN assets a ON a.id = c.asset_id WHERE a.name = 'v25-t'))
+    FROM findings f WHERE f.finding_key LIKE 'v25t-%';")
+want="v25t-1=$TRUNC:512 v25t-2=pkg:maven/org.example/trunc:31 v25t-3=$TRUNC:512 | $TRUNC"
+[ "$got" = "$want" ] || { echo "  잘린 purl 의 식별자가 '$got' 입니다"; echo "  기대 '$want'"; exit 1; }
+expect_reviews "v25-t|CVE-2099-2507|trunc|NULL" "v25-t|CVE-2099-2508|trunc|$TRUNC"
+expect_remediations "v25-t|trunc|NULL"
+echo "  잘린 채 담긴 purl(512자) — 탐지 · 패키지는 표시를 단 식별자(순수 jar 와 겹치지 않음)"
+echo "    그 행에만 붙던 검토 결과는 따라가고, 순수 jar 와 함께 붙던 검토 결과 · 조치는 비움"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

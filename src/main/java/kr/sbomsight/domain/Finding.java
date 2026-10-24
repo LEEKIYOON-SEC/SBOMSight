@@ -105,6 +105,13 @@ public class Finding {
     @Column(name = "package_key", nullable = false, length = 512)
     private String packageKey = "";
 
+    /**
+     * 받은 purl 그대로(칸에 맞춰 자르기 전) — 식별자는 이것으로 만든다. 칸보다 긴 purl 을 잘린 글자로
+     * 읽으면 다른 패키지를 가리킨다({@link PackageKey#truncated}). 담은 뒤 읽은 엔티티에는 없다.
+     */
+    @Transient
+    private String purlAsGiven;
+
     @Column(name = "package_language", nullable = false, length = 64)
     private String packageLanguage = "";
 
@@ -325,19 +332,31 @@ public class Finding {
     }
 
     public void setPackagePurl(String packagePurl) {
-        this.packagePurl = clip(packagePurl, 512);
+        this.purlAsGiven = packagePurl == null ? "" : packagePurl.trim();
+        this.packagePurl = clip(packagePurl, PackageKey.PURL_COLUMN);
     }
 
     /** 패키지 식별자 — 저장하기 전에도 지금 칸들로 만들어 준다(아직 채우지 않았을 때). */
     public String getPackageKey() {
-        return packageKey.isEmpty() ? PackageKey.of(packagePurl, packageType, packageName) : packageKey;
+        return packageKey.isEmpty() ? key() : packageKey;
     }
 
-    /** 저장할 때 채운다 — 이름 · 유형 · purl 이 정하는 값이라 따로 적는 길을 두지 않는다. */
+    /**
+     * 저장할 때 채운다 — 이름 · 유형 · purl 이 정하는 값이라 따로 적는 길을 두지 않는다. 읽어 온 행의
+     * purl 이 칸을 꽉 채웠으면(잘렸을 수 있다) 있던 식별자를 둔다 — 담을 때 자르기 전 purl 로 만들었거나
+     * V25 가 표시를 단 것이다. 잘린 글자로 다시 만들면 다른 패키지를 가리킨다.
+     */
     @PrePersist
     @PreUpdate
     void fillPackageKey() {
-        packageKey = PackageKey.of(packagePurl, packageType, packageName);
+        if (purlAsGiven == null && PackageKey.clipped(packagePurl) && !packageKey.isEmpty()) {
+            return;
+        }
+        packageKey = key();
+    }
+
+    private String key() {
+        return PackageKey.of(purlAsGiven != null ? purlAsGiven : packagePurl, packageType, packageName);
     }
 
     public String getPackageLanguage() {

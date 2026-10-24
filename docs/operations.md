@@ -573,8 +573,11 @@ vcpkg 의 git-tree 와 Conan 의 `rrev` · `prev` 는 남기지 않는다. 셋 �
   `pyyaml`), bitbucket · deb · github · golang 의 이름과 bitbucket · deb · github · golang · rpm 의
   네임스페이스는 소문자, 네임스페이스 · 이름의 `@` · 한글 같은 글자는 `%XX`(`pkg:npm/%40types/node`).
   이름 곁에 적는 네임스페이스는 풀어서 적는다(`@types`).
-- 규격에 맞지 않는 purl(같은 한정자가 둘 · 깨진 `%XX`)은 V24 처럼 적힌 좌표에서 버전 · 한정자를
-  뗀다. purl 이 없는 원소는 V24 와 같다 — `pkg:<유형>/<이름>`, 네임스페이스를 지어내지 않는다.
+- 규격에 맞지 않는 purl(같은 한정자가 둘 · 깨진 `%XX`)은 적힌 좌표에서 버전을 떼고 **한정자는
+  남긴다** — 위 표가 버리는 것만 버리고, 겹친 키는 하나로 줄이지 않는다
+  (`pkg:maven/g/a?classifier=x&classifier=y`). 앞서 한정자를 통째로 버려 classifier 없는 순수 jar 와
+  한 식별자였다. 같은 purl 은 늘 같은 식별자다. purl 이 없는 원소는 V24 와 같다 —
+  `pkg:<유형>/<이름>`, 네임스페이스를 지어내지 않는다.
 - 패키지 검색(패키지 화면 · 자산의 `설치된 패키지`)이 이름 말고도 네임스페이스로 찾는다 — groupId
   (`org.apache.logging.log4j`), npm scope(`@types`), Maven 좌표(`groupId:artifactId`).
 
@@ -584,7 +587,7 @@ vcpkg 의 git-tree 와 Conan 의 `rrev` · `prev` 는 남기지 않는다. 셋 �
 
 | 기록 | 새 식별자를 받는 때 | 아니면 |
 |---|---|---|
-| 탐지 · 패키지 | 언제나 — 행의 purl · 유형 · 이름에서 다시 만든다 | — |
+| 탐지 · 패키지 | 언제나 — 행의 purl · 유형 · 이름에서 다시 만든다(purl 이 칸을 꽉 채운 행은 아래 `#truncated`) | — |
 | 검토 결과 | 그 자산의 검사 전부에서 옛 식별자 · 번호(주 식별자 또는 함께 온 CVE)가 같은 탐지의 새 식별자가 하나다 | 비운다 — 둘 이상(classifier 만 다른 둘에 붙던 것)이거나, 그런 탐지가 남아 있지 않다 |
 | 조치(회차마다) | 등록한 검사의 옛 식별자 탐지의 새 식별자가 하나다 | 비운다 — 둘 이상이거나, 등록한 검사가 지워졌다 |
 
@@ -593,6 +596,27 @@ vcpkg 의 git-tree 와 Conan 의 `rrev` · `prev` 는 남기지 않는다. 셋 �
 같이 다룬다** — 지우지 않고, 어느 탐지에도 붙지 않으며, `패키지 확인 필요` 로 남는다. 위 V24 의
 SQL(`package_key IS NULL`)이 V24 · V25 가 비운 것을 함께 보여 준다. 사람이 할 일도 같다 — 그
 패키지(변형)의 탐지 줄에서 다시 적거나 다시 등록한다.
+
+**purl 칸(512자)보다 긴 purl.** 칸에는 잘려 담기지만, 이제 식별자는 자르기 전 purl 로 만든다(탐지 ·
+패키지 · SBOM 적재). 앞선 판은 잘린 글자로 만들었다 — 칸 뒤로 잘려 나간 classifier 를 모른 채 순수
+jar 와 합쳐질 수 있었다. 그렇게 담긴 행의 원래 purl 은 DB 어디에도 없다(탐지의 상세에도 purl 은 담지
+않는다). V25 는 그 행(purl 이 칸을 꽉 채운 행)을 짐작해 다시 가르지 않고, 잘린 글자로 만든 식별자 뒤에
+`#truncated` 를 단다(`pkg:maven/org.example/trunc#truncated`) — 어느 정상 식별자와도 겹치지 않아 다른
+패키지의 검토 결과 · 조치가 붙지 않는다. 그 행에 붙던 검토 결과 · 조치는 위의 규칙 그대로 가른다 —
+붙던 탐지가 잘린 행뿐이면 그 식별자로 따라가고, 순수 jar 처럼 다른 패키지와 함께 붙던 것은 비운다.
+꼭 512자인 purl 은 잘리지 않았어도 가를 수 없어 같이 다룬다(드물다).
+
+되살리는 길은 **`다시 검사`** 다 — 보관된 SBOM 에는 원래 purl 이 있어, 새 검사의 탐지 · 패키지는 제
+식별자를 받는다. `#truncated` 식별자로 따라간 검토 결과 · 조치는 새 탐지에 붙지 않으므로 그 패키지의
+탐지 줄에서 다시 적는다. 그런 행이 있는지는:
+
+```sql
+SELECT a.name, f.cve, f.package_name, f.package_version FROM findings f
+  JOIN scans s ON s.id = f.scan_id JOIN assets a ON a.id = s.asset_id
+  WHERE f.package_key LIKE '%#truncated';
+SELECT a.name, fa.cve, fa.package_name FROM finding_analysis fa
+  JOIN assets a ON a.id = fa.asset_id WHERE fa.package_key LIKE '%#truncated';
+```
 
 조치는 회차마다 가른다. 앞 회차를 등록할 때는 순수 jar 뿐이었고 뒤 회차 때 네이티브 jar 가 들어와
 있었다면, 앞 회차는 순수 jar 의 식별자를 받고 뒤 회차만 빈다. 그 패키지에서 조치를 다시 등록하면

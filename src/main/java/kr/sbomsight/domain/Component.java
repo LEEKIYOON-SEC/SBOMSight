@@ -98,9 +98,10 @@ public class Component {
         this.name = clip(name, 255);
         this.version = clip(version, 255);
         this.type = clip(type, 64);
-        this.purl = clip(purl, 512);
+        this.purl = clip(purl, PackageKey.PURL_COLUMN);
         this.location = clip(location, 1000);
-        this.packageKey = PackageKey.of(this.purl, this.type, this.name);
+        // 받은 purl 그대로(자르기 전)에서 — 칸보다 긴 purl 을 잘린 글자로 읽으면 다른 패키지를 가리킨다.
+        this.packageKey = PackageKey.of(purl, this.type, this.name);
     }
 
     public Long getId() {

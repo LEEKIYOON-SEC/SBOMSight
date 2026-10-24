@@ -34,7 +34,10 @@ import java.util.Set;
  * 기록에 이어지지 않는다. 앱이 새 행에 쓰는 {@link PackageKey#of} 를 그대로 부른다. 칸은 V24 가
  * 만든 것을 쓴다 — 스키마는 바꾸지 않고, 그래서 한 트랜잭션이다(중간에 멈추면 V24 의 상태 그대로).
  *
- * <p><b>탐지 · 패키지</b>는 행의 purl · 유형 · 이름에서 다시 만든다 — 근거가 행 안에 있다.
+ * <p><b>탐지 · 패키지</b>는 행의 purl · 유형 · 이름에서 다시 만든다 — 근거가 행 안에 있다. 다만 purl 이
+ * 칸(512자)을 꽉 채운 행은 담을 때 잘렸을 수 있고, 원래 purl 은 DB 어디에도 없다. 잘린 글자를 온전한
+ * purl 로 읽지 않고 표시를 단 식별자를 준다({@link PackageKey#truncated}) — 어느 정상 식별자와도 겹치지
+ * 않아 다른 패키지의 기록이 붙지 않는다. 같은 SBOM 을 다시 검사하면 새 탐지는 제 식별자를 받는다.
  *
  * <p><b>검토 결과 · 조치</b>는 식별자만 있고 purl 이 없다. 그 기록이 <b>지금까지 붙던 탐지</b>로 가른다
  * (V24 와 같은 규칙) — 검토 결과는 그 자산의 검사 전부에서 옛 식별자 · 번호(주 식별자 또는 함께 온
@@ -339,8 +342,10 @@ public class V25__package_key_qualifiers extends BaseJavaMigration {
     }
 
     /**
-     * purl · 유형 · 이름마다 한 번 — 같은 패키지가 검사마다 수백 번 나온다. 오래 안 쓴 것부터 버린다 —
-     * 검사가 많은 DB 에서 서로 다른 purl 이 끝없이 쌓여 힙을 다 쓰지 않게.
+     * 담긴 행 하나의 새 식별자 — purl · 유형 · 이름마다 한 번(같은 패키지가 검사마다 수백 번 나온다).
+     * purl 이 칸을 꽉 채운 행은 표시를 단 식별자다({@link PackageKey#truncated}) — 탐지 · 패키지를 고칠
+     * 때도, 검토 결과 · 조치가 붙던 탐지를 볼 때도 같은 값이다. 오래 안 쓴 것부터 버린다 — 검사가 많은
+     * DB 에서 서로 다른 purl 이 끝없이 쌓여 힙을 다 쓰지 않게.
      */
     private static final class Keys {
 
@@ -355,7 +360,8 @@ public class V25__package_key_qualifiers extends BaseJavaMigration {
 
         String of(String purl, String type, String name) {
             return cache.computeIfAbsent(Arrays.asList(purl, type, name),
-                                         k -> PackageKey.of(purl, type, name));
+                                         k -> PackageKey.clipped(purl) ? PackageKey.truncated(purl, type, name)
+                                                                       : PackageKey.of(purl, type, name));
         }
     }
 }

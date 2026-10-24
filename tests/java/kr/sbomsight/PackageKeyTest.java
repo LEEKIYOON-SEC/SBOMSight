@@ -282,17 +282,58 @@ class PackageKeyTest {
     }
 
     /**
-     * 표준 파서가 받지 않는 purl 은 V24 의 좌표로 — 이름으로 내려가면 네임스페이스를 잃는다.
-     * 겹친 한정자 키는 어느 값이 맞는지 모르므로 한정자를 남기지 않는다(V24 와 같다).
+     * 표준 파서가 받지 않는 purl 은 적힌 좌표로 — 이름으로 내려가면 네임스페이스를 잃는다. <b>한정자도
+     * 남긴다</b> — 앞서 통째로 버려 classifier 가 겹친 purl 이 classifier 없는 purl(순수 jar)과 한
+     * 식별자였다. 겹친 키는 어느 값이 맞는지 모르므로 하나로 줄이지 않고, 표는 정규형과 같다.
      */
     @Test
-    @DisplayName("규격에 맞지 않는 purl 은 V24 의 좌표로 — 네임스페이스를 잃지 않는다")
-    void malformedPurlsKeepTheirCoordinates() {
-        assertThat(PackageKey.of("pkg:maven/g/a@1?classifier=x&classifier=y", "java-archive", "a"))
-                .isEqualTo("pkg:maven/g/a");
+    @DisplayName("규격에 맞지 않는 purl — 좌표와 한정자를 남겨 다른 패키지와 합치지 않는다 · 같은 입력은 같은 식별자")
+    void rejectedPurlsKeepCoordinatesAndQualifiers() {
+        String plain = PackageKey.of("pkg:maven/g/a@1", "java-archive", "a");
+        String doubled = PackageKey.of("pkg:maven/g/a@1?classifier=x&classifier=y", "java-archive", "a");
+        assertThat(doubled).isEqualTo("pkg:maven/g/a?classifier=x&classifier=y")
+                .isNotEqualTo(plain)
+                .isNotEqualTo(PackageKey.of("pkg:maven/g/a@1?classifier=x", "java-archive", "a"))
+                .as("차례 · 키의 대소문자 · 버전 · 표가 버리는 것(받은 곳 · type=jar)은 가르지 않는다")
+                .isEqualTo(PackageKey.of("pkg:maven/g/a@2?Classifier=y&classifier=x&type=jar"
+                                         + "&repository_url=https%3A%2F%2Frepo.example", "java-archive", "a"));
+        assertThat(PackageKey.of("pkg:maven/g/a@1?classifier=x&classifier=x", "java-archive", "a"))
+                .as("같은 키 · 값이 두 번이면 하나 — 다른 것을 합치지 않는다")
+                .isEqualTo(PackageKey.of("pkg:maven/g/a@1?classifier=x", "java-archive", "a"));
+        assertThat(PackageKey.of("pkg:maven/g/a@1?classifier=%ZZ/1&classifier=x", "java-archive", "a"))
+                .as("못 푸는 값은 적힌 그대로 인코딩 — 식별자에 / 가 글자로 남지 않는다")
+                .isEqualTo("pkg:maven/g/a?classifier=%25ZZ%2F1&classifier=x");
         assertThat(PackageKey.of("pkg:npm/bad%ZZname@1", "npm", "bad%ZZname")).isEqualTo("pkg:npm/bad%ZZname");
         assertThat(PackageKey.of("pkg:npm/%FFbroken@1", "npm", "x"))
                 .as("UTF-8 이 아닌 인코딩").isEqualTo("pkg:npm/%FFbroken");
+    }
+
+    /**
+     * <b>칸(512자)에서 잘린 채 담긴 purl</b> — 원래 purl 은 DB 어디에도 없다. 잘린 글자를 온전한 purl 로
+     * 읽으면, 칸 뒤로 잘려 나간 classifier 를 모른 채 순수 jar 와 합쳐진다. 표시를 단 식별자는 어느 정상
+     * 식별자와도 겹치지 않는다.
+     */
+    @Test
+    @DisplayName("잘린 채 담긴 purl 은 표시를 단 식별자 — 정상 식별자와 겹치지 않고, 같은 잘린 글자는 같은 식별자")
+    void clippedPurlsGetAMarkedKey() {
+        String full = "pkg:maven/g/a@1.0?repository_url=https%3A%2F%2Frepo.example%2F" + "x".repeat(500)
+                      + "&classifier=linux-x86_64";
+        String stored = full.substring(0, PackageKey.PURL_COLUMN);
+        assertThat(PackageKey.of(full, "java-archive", "a")).isEqualTo("pkg:maven/g/a?classifier=linux-x86_64");
+        assertThat(PackageKey.of(stored, "java-archive", "a"))
+                .as("잘린 글자를 온전한 purl 로 읽으면 순수 jar 와 같아진다 — 이것을 피한다").isEqualTo("pkg:maven/g/a");
+        assertThat(PackageKey.clipped(stored)).isTrue();
+        assertThat(PackageKey.clipped(full.substring(0, PackageKey.PURL_COLUMN - 1))).isFalse();
+        assertThat(PackageKey.clipped(null)).isFalse();
+
+        String marked = PackageKey.truncated(stored, "java-archive", "a");
+        assertThat(marked).isEqualTo("pkg:maven/g/a#truncated")
+                .isEqualTo(PackageKey.truncated(stored, "java-archive", "other-name"))
+                .isNotEqualTo(PackageKey.of(stored, "java-archive", "a"))
+                .isNotEqualTo(PackageKey.of(full, "java-archive", "a"));
+        // 잘린 글자로 만든 것이 길면 앞부분과 해시에 표시 — 칸에 들고 표시는 남는다.
+        String longKey = PackageKey.truncated("pkg:maven/g/a@1?classifier=" + ":".repeat(480), "java-archive", "a");
+        assertThat(longKey).hasSize(512).endsWith("#truncated").contains("~");
     }
 
     /** 칸(512자)을 넘는 정규형 — 잘라 넣으면 앞이 같은 두 패키지가 합쳐진다. */

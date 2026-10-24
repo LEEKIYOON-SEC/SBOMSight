@@ -47,7 +47,7 @@ pkg:maven/g/a@1?type=war&classifier=x	java-archive	a	pkg:maven/g/a	pkg:maven/g/a
 pkg:maven/g/a@2?classifier=x&type=war	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?classifier=x&type=war
 pkg:maven/g/a@1?Classifier=x	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?classifier=x
 pkg:maven/g/a@1?classifier=	java-archive	a	pkg:maven/g/a	pkg:maven/g/a
-pkg:maven/g/a@1?classifier=x&classifier=y	java-archive	a	pkg:maven/g/a	pkg:maven/g/a
+pkg:maven/g/a@1?classifier=x&classifier=y	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?classifier=x&classifier=y
 pkg:rpm/redhat/openssl@1.1.1k-7.el8_6?arch=x86_64&epoch=1&upstream=openssl-1.1.1k-7.el8_6.src.rpm&distro=rhel-8.6	rpm	openssl	pkg:rpm/redhat/openssl	pkg:rpm/redhat/openssl
 pkg:apk/alpine/musl@1.2.3-r4?arch=x86_64&upstream=musl&distro=alpine-3.17.3	apk	musl	pkg:apk/alpine/musl	pkg:apk/alpine/musl
 pkg:alpm/arch/linux@6.4.7.arch1-1?arch=x86_64&upstream=linux&distro=arch	alpm	linux	pkg:alpm/arch/linux	pkg:alpm/arch/linux
@@ -91,3 +91,6 @@ pkg:deb/debian/attr@1:2.4.47-2%2Bb1?arch=amd64	deb	attr	pkg:deb/debian/attr	pkg:
 pkg:yocto/core/glibc@2.35?repository_url=https:%2F%2Fgit.openembedded.org%2Fopenembedded-core&layer_version=kirkstone	yocto	glibc	pkg:yocto/core/glibc	pkg:yocto/core/glibc?repository_url=https%3A%2F%2Fgit.openembedded.org%2Fopenembedded-core
 pkg:otp/erts@10.6.3?platform=linux&arch=amd64&repository_url=https:%2F%2Fgithub.com%2Ferlang%2Fotp&vcs_url=git%2Bhttps:%2F%2Fgithub.com%2Ferlang%2Fotp.git	erlang-otp	erts	pkg:otp/erts	pkg:otp/erts?arch=amd64&platform=linux&repository_url=https%3A%2F%2Fgithub.com%2Ferlang%2Fotp
 pkg:cpan/libwww-perl@6.72?author=OALDERS&distpath=authors%2Fid%2FO%2FOA%2FOALDERS%2Flibwww-perl-6.72.tar.gz&ext=tar.gz	perl	libwww-perl	pkg:cpan/libwww-perl	pkg:cpan/libwww-perl?author=OALDERS
+pkg:maven/g/a@2?Classifier=y&classifier=x&type=jar&repository_url=https%3A%2F%2Frepo.example	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?classifier=x&classifier=y
+pkg:maven/g/a@1?classifier=x&classifier=x	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?classifier=x
+pkg:maven/g/a@1?classifier=%ZZ/1&classifier=x	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?classifier=%25ZZ%2F1&classifier=x
