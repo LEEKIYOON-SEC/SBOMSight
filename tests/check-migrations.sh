@@ -50,6 +50,9 @@ MIGRATIONS=$(for f in src/main/resources/db/migration/V*.sql src/main/java/db/mi
 
 # 자바 마이그레이션은 실행기가 같은 DB 에 붙어 그 클래스를 한 트랜잭션으로 부른다. 실행기의 출력
 # (마이그레이션이 남긴 기록 포함)은 $JAVALOG 에 — 실패하면 끝부분을 보인다.
+# V25 는 검토 결과 · 조치를 자산 묶음으로 나눠 가른다. 여기 데이터는 한 묶음(5,000건)에 다 들므로
+# 둘씩 끊어 묶음 경계를 진짜 DB(유일 키)에서 지나가게 한다. 끝에서 기본 묶음으로 한 번 더 돌린다.
+V25_BATCH=2
 JAVALOG=$(mktemp)
 trap 'rm -f "$JAVALOG"' EXIT
 apply() {   # apply <마이그레이션 파일>
@@ -59,6 +62,7 @@ apply() {   # apply <마이그레이션 파일>
             # stdout.encoding — 마이그레이션이 남긴 기록의 한글이 ? 로 찍히지 않게(Maven 의 출력).
             MIGCHECK_URL="jdbc:mariadb://${HOST}:${PORT}/${DB}?sslMode=disable" MIGCHECK_USER="$USER" \
             MIGCHECK_PASSWORD="$PASS" MIGCHECK_CLASS="db.migration.$(basename "$1" .java)" \
+            MIGCHECK_V25_BATCH="$V25_BATCH" \
             MAVEN_OPTS="${MAVEN_OPTS:-} -Dstdout.encoding=UTF-8" \
                 ./mvnw -B test -Dtest=MigrationRunner > "$JAVALOG" 2>&1 \
                 && grep -q 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 0' "$JAVALOG" \
@@ -1444,6 +1448,20 @@ expect_reviews "v25-t|CVE-2099-2507|trunc|NULL" "v25-t|CVE-2099-2508|trunc|$TRUN
 expect_remediations "v25-t|trunc|NULL"
 echo "  잘린 채 담긴 purl(512자) — 탐지 · 패키지는 표시를 단 식별자(순수 jar 와 겹치지 않음)"
 echo "    그 행에만 붙던 검토 결과는 따라가고, 순수 jar 와 함께 붙던 검토 결과 · 조치는 비움"
+
+# 다시 돌려도 같다 — 이번에는 기본 묶음으로(Flyway 가 부르는 migrate 그대로). 바꿀 것이 없어야 하고,
+# 앞의 확인이 그대로 지나가야 한다.
+V25_JAVA=src/main/java/db/migration/V25__package_key_qualifiers.java
+V25_BATCH=""
+apply "$V25_JAVA" || { echo "  V25 를 다시 돌리지 못했습니다"; exit 1; }
+SAID=$(java_said "$V25_JAVA")
+printf '%s' "$SAID" | grep -qF "탐지 0 · 패키지 0 · 검토 결과 옮김 0 / 비움 0 · 조치 옮김 0 / 비움 0" || {
+    echo "  V25 를 다시 돌리니 바뀐 것이 있습니다:"; printf '%s\n' "$SAID"; exit 1; }
+check_vectors 5
+expect_reviews "v25-a|CVE-2099-2502|jffi|pkg:maven/com.github.jnr/jffi?classifier=native" \
+               "v25-a|CVE-2099-2501|netty-transport-native-epoll|NULL" "v25-t|CVE-2099-2508|trunc|$TRUNC"
+expect_remediations "v25-a|lib|pkg:maven/org.example/lib" "v25-t|trunc|NULL"
+echo "  V25 다시(기본 묶음) — 바뀐 것 없음 (탐지 0 · 패키지 0 · 검토 결과 0 / 0 · 조치 0 / 0) · 벡터 · 기록 그대로"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

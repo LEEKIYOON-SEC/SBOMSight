@@ -16,8 +16,13 @@ import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -231,6 +236,48 @@ class PackageKeyMigrationTest {
                              .isEqualTo(new V25__package_key_qualifiers.Summary(0, 0, 0, 0, 0, 0));
     }
 
+    /**
+     * <b>자산 묶음을 여럿 지나도 같다.</b> 같은 꼴의 자산 셋 — 자산마다 두 변형에 붙던 검토 결과(비움) ·
+     * 한 변형에만 붙던 검토 결과(옮김) · 이름 맞춤으로 한 식별자에 모이는 둘(둘 다 비움) · 조치. 묶음을
+     * 자산 하나씩 끊어도(첫 묶음만 하고 멈추거나, 한 자산의 기록을 쪼개면 다르게 나온다) 자산마다 같은
+     * 결과다.
+     */
+    @Test
+    @DisplayName("자산 묶음을 여럿 지나도 자산마다 같은 결과 — 한 자산의 기록은 쪼개지 않는다")
+    void everyBatchGetsTheSameRules() throws Exception {
+        List<Asset> three = new ArrayList<>(List.of(asset));
+        for (int i = 0; i < 2; i++) {
+            Asset another = new Asset();
+            another.setName("v25-batch-" + System.nanoTime());
+            another.setZone(asset.getZone());
+            three.add(assets.saveAndFlush(another));
+        }
+        List<Long[]> ids = new ArrayList<>();
+        for (Asset each : three) {
+            asset = each;
+            Scan scan = scan();
+            v24(finding(scan, PLAIN_PURL), V24_KEY);
+            v24(finding(scan, NATIVE_PURL), V24_KEY);
+            v24(finding(scan, "pkg:pypi/PyYAML@5.3.1", "CVE-2023-77777"), "pkg:pypi/PyYAML");
+            v24(finding(scan, "pkg:pypi/pyyaml@5.3.1", "CVE-2023-77777"), "pkg:pypi/pyyaml");
+            v24(finding(scan, NATIVE_PURL, "CVE-2023-88888"), V24_KEY);
+            ids.add(new Long[] {notAffected(V24_KEY).getId(), notAffected(V24_KEY, "CVE-2023-88888").getId(),
+                                notAffected("pkg:pypi/PyYAML", "CVE-2023-77777").getId(),
+                                notAffected("pkg:pypi/pyyaml", "CVE-2023-77777").getId(),
+                                remediation(V24_KEY, scan).getId()});
+        }
+
+        migrate();
+
+        for (Long[] each : ids) {
+            assertThat(key("finding_analysis", each[0])).as("두 변형에 붙던 것").isNull();
+            assertThat(key("finding_analysis", each[1])).as("한 변형에만 붙던 것").isEqualTo(NATIVE);
+            assertThat(key("finding_analysis", each[2])).as("한 식별자에 모인 둘").isNull();
+            assertThat(key("finding_analysis", each[3])).as("한 식별자에 모인 둘").isNull();
+            assertThat(key("remediations", each[4])).as("등록한 검사에 두 변형").isNull();
+        }
+    }
+
     @Test
     @DisplayName("붙던 탐지가 남아 있지 않으면 비운다 · 이미 비운 것과 바뀌지 않는 것은 그대로 · 다시 돌려도 같다")
     void evidenceDecidesAndRerunsChangeNothing() throws Exception {
@@ -255,12 +302,34 @@ class PackageKeyMigrationTest {
 
     // -----------------------------------------------------------------------
 
+    /**
+     * 마이그레이션을 부른다 — <b>묶음은 자산 하나씩</b>(검토 결과 · 조치 1건마다 끊으려 해도 한 자산은
+     * 쪼개지 않는다), 연결은 커밋 · 되돌리기 · 닫기를 부르면 실패하는 것으로. 그래서 이 시험들이 다
+     * 묶음을 나눠 해도 같은 결과인지, 마이그레이션이 부르는 쪽의 트랜잭션 안에서만 도는지를 함께 본다.
+     */
     private V25__package_key_qualifiers.Summary migrate() throws Exception {
         em.flush();
-        V25__package_key_qualifiers.Summary summary =
-                V25__package_key_qualifiers.reidentify(DataSourceUtils.getConnection(dataSource));
+        V25__package_key_qualifiers.Summary summary = V25__package_key_qualifiers.reidentify(
+                insideTransaction(DataSourceUtils.getConnection(dataSource)), 1);
         em.clear();   // 엔티티가 옛 식별자를 들고 있지 않게
         return summary;
+    }
+
+    /** 트랜잭션을 건드리는 부름(커밋 · 되돌리기 · 자동 커밋 · 저장점 · 닫기)에 실패하는 연결. */
+    private static Connection insideTransaction(Connection connection) {
+        Set<String> forbidden = Set.of("commit", "rollback", "setAutoCommit", "setSavepoint", "releaseSavepoint",
+                                       "close");
+        return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[] {Connection.class},
+                (proxy, method, args) -> {
+                    if (forbidden.contains(method.getName())) {
+                        throw new AssertionError("V25 가 트랜잭션을 건드렸다: " + method.getName());
+                    }
+                    try {
+                        return method.invoke(connection, args);
+                    } catch (InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
     }
 
     private String key(String table, Long id) {

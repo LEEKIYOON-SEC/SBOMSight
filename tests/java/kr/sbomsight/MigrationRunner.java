@@ -1,5 +1,6 @@
 package kr.sbomsight;
 
+import db.migration.V25__package_key_qualifiers;
 import org.flywaydb.core.api.configuration.Configuration;
 import org.flywaydb.core.api.migration.Context;
 import org.flywaydb.core.api.migration.JavaMigration;
@@ -20,6 +21,8 @@ import java.sql.DriverManager;
  * <p>이름이 {@code *Test} 가 아니라 평소의 {@code ./mvnw test} 에는 끼지 않는다(surefire 의 기본 포함
  * 규칙). 스크립트가 {@code -Dtest=MigrationRunner} 와 환경변수로 부른다 —
  * {@code MIGCHECK_URL} · {@code MIGCHECK_USER} · {@code MIGCHECK_PASSWORD} · {@code MIGCHECK_CLASS}.
+ * {@code MIGCHECK_V25_BATCH} 가 있으면 V25 를 그 묶음(검토 결과 · 조치 수)으로 부른다 — 데이터가 적은
+ * 시험 DB 에서도 자산 묶음을 여럿 지나가게.
  */
 class MigrationRunner {
 
@@ -33,18 +36,23 @@ class MigrationRunner {
         try (Connection connection = DriverManager.getConnection(
                 url, System.getenv("MIGCHECK_USER"), password == null ? "" : password)) {
             connection.setAutoCommit(false);
+            String batch = System.getenv("MIGCHECK_V25_BATCH");
             try {
-                migration.migrate(new Context() {
-                    @Override
-                    public Configuration getConfiguration() {
-                        return null;
-                    }
+                if (migration instanceof V25__package_key_qualifiers && batch != null && !batch.isBlank()) {
+                    V25__package_key_qualifiers.reidentify(connection, Integer.parseInt(batch.trim()));
+                } else {
+                    migration.migrate(new Context() {
+                        @Override
+                        public Configuration getConfiguration() {
+                            return null;
+                        }
 
-                    @Override
-                    public Connection getConnection() {
-                        return connection;
-                    }
-                });
+                        @Override
+                        public Connection getConnection() {
+                            return connection;
+                        }
+                    });
+                }
                 connection.commit();
             } catch (Exception e) {
                 connection.rollback();

@@ -21,6 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * 패키지 식별자를 새 규칙으로 다시 만든다 — 한정자 가운데 패키지를 가르는 것은 남긴다({@link PackageKey}).
@@ -51,21 +52,36 @@ import java.util.Set;
  *       모두 비운다. 하나를 남기는 것이 곧 합치는 것이다.</li>
  * </ul>
  * 비운 기록은 지우지 않는다 — 어느 탐지에도 붙지 않고 `패키지 확인 필요` 로 남는다(docs/operations.md · V25).
+ *
+ * <p><b>나눠서 하되 한 트랜잭션이다.</b> 검토 결과 · 조치를 한꺼번에 메모리에 올리지 않는다 — 자산을
+ * 기록 수({@link #RECORDS})로 묶어 묶음마다 읽고 · 가르고 · 고친다. 유일 키(자산, 번호, 식별자)와
+ * "한 새 식별자에 모인 기록" 은 자산 안의 일이라 한 자산의 기록은 한 묶음에 든다. 붙던 탐지는 흘려
+ * 읽는다({@link #FETCH}). 탐지 · 패키지는 id 순으로 쪽씩({@link #PAGE}). 어디서도 커밋하지 않는다 —
+ * 중간에 멈추면 부르는 쪽(Flyway)이 V24 의 상태로 되돌린다. 다시 돌려도 같다 — 이미 새 규칙인 행은
+ * 그대로 두고, 표시를 단 식별자({@link PackageKey#truncated})도 같은 값이 다시 나온다.
  */
 public class V25__package_key_qualifiers extends BaseJavaMigration {
 
     private static final Logger log = LoggerFactory.getLogger(V25__package_key_qualifiers.class);
 
-    /** 한 번에 읽는 행. */
+    /** 한 번에 읽는 탐지 · 패키지 행. */
     private static final int PAGE = 5_000;
 
     /** 한 번에 보내는 갱신. */
     private static final int BATCH = 1_000;
 
+    /**
+     * 한 묶음의 검토 결과 · 조치 — 대략 이만큼씩 자산을 묶는다. 한 자산의 기록은 쪼개지 않으므로 한
+     * 자산이 이보다 많으면 그 자산 하나가 한 묶음이다.
+     */
+    static final int RECORDS = 5_000;
+
+    /** 붙던 탐지를 흘려 읽는 단위 — 질의 결과를 통째로 받지 않게(드라이버는 기본으로 다 받는다). */
+    private static final int FETCH = 1_000;
+
     @Override
     public void migrate(Context context) throws SQLException {
-        Summary summary = reidentify(context.getConnection());
-        log.info("패키지 식별자를 다시 만들었습니다 (V25) — {}", summary);
+        reidentify(context.getConnection());
     }
 
     /**
@@ -89,63 +105,119 @@ public class V25__package_key_qualifiers extends BaseJavaMigration {
         }
     }
 
+    /** 다시 만든다 — 묶음은 {@link #RECORDS}. */
+    public static Summary reidentify(Connection connection) throws SQLException {
+        return reidentify(connection, RECORDS);
+    }
+
     /**
      * 다시 만든다. 커밋하지 않는다 — 부르는 쪽(Flyway · 시험 · tests/check-migrations.sh)의 트랜잭션이다.
      *
      * <p>검토 결과 · 조치를 먼저 가른다 — 붙던 탐지를 <b>옛 식별자로</b> 찾아야 하므로 탐지를 고치기 전에.
+     * 자산 묶음마다 가르고 바로 고친다 — 다른 묶음의 기록은 다른 자산의 것이라 서로 근거가 되지 않는다.
+     *
+     * @param recordsPerBatch 한 묶음의 검토 결과 · 조치 수(대략 — 한 자산은 쪼개지 않는다)
      */
-    public static Summary reidentify(Connection connection) throws SQLException {
+    public static Summary reidentify(Connection connection, int recordsPerBatch) throws SQLException {
         Keys keys = new Keys();
-        Map<Long, String> analyses = resolveAnalyses(connection, keys);
-        Map<Long, String> remediations = resolveRemediations(connection, keys);
+        Tally analyses = new Tally();
+        Tally remediations = new Tally();
+        List<long[]> batches = batches(connection, recordsPerBatch);
+        for (long[] assets : batches) {
+            Map<Long, String> analysisChanges = resolveAnalyses(connection, keys, assets[0], assets[1]);
+            // 검토 결과는 (자산, 번호, 식별자)에 하나다(ux_analysis_key). 바뀌는 행을 먼저 모두 비우고
+            // 채운다 — 한 행씩 바꾸면 아직 안 바꾼 행과 사이에 겹친다. 끝의 값은 겹치지 않게 골랐다.
+            update(connection, "UPDATE finding_analysis SET package_key = NULL WHERE id = ?",
+                   nullsFor(analysisChanges.keySet()));
+            update(connection, "UPDATE finding_analysis SET package_key = ? WHERE id = ?",
+                   withoutNulls(analysisChanges));
+            analyses.add(analysisChanges);
+
+            Map<Long, String> remediationChanges = resolveRemediations(connection, keys, assets[0], assets[1]);
+            update(connection, "UPDATE remediations SET package_key = ? WHERE id = ?", remediationChanges);
+            remediations.add(remediationChanges);
+        }
 
         int findings = rekey(connection, "findings", "package_purl", "package_type", "package_name", keys);
         int components = rekey(connection, "component", "purl", "type", "name", keys);
 
-        // 검토 결과는 (자산, 번호, 식별자)에 하나다(ux_analysis_key). 바뀌는 행을 먼저 모두 비우고
-        // 채운다 — 한 행씩 바꾸면 아직 안 바꾼 행과 사이에 겹친다. 끝의 값은 겹치지 않게 골랐다.
-        update(connection, "UPDATE finding_analysis SET package_key = NULL WHERE id = ?",
-               nullsFor(analyses.keySet()));
-        update(connection, "UPDATE finding_analysis SET package_key = ? WHERE id = ?",
-               withoutNulls(analyses));
-        update(connection, "UPDATE remediations SET package_key = ? WHERE id = ?", remediations);
-
-        Summary summary = new Summary(findings, components,
-                count(analyses, false), count(analyses, true),
-                count(remediations, false), count(remediations, true));
+        Summary summary = new Summary(findings, components, analyses.rekeyed, analyses.unresolved,
+                                      remediations.rekeyed, remediations.unresolved);
+        log.info("패키지 식별자를 다시 만들었습니다 (V25) — {} · 자산 묶음 {}", summary, batches.size());
         if (summary.analysesUnresolved() > 0 || summary.remediationsUnresolved() > 0) {
             log.warn("어느 패키지의 것인지 가를 근거가 없어 비운 기록 — 검토 결과 {} (id {}) · 조치 {} (id {}). "
                      + "대응 화면에 `패키지 확인 필요` 로 남는다.",
-                     summary.analysesUnresolved(), ids(analyses), summary.remediationsUnresolved(), ids(remediations));
+                     analyses.unresolved, analyses.ids(), remediations.unresolved, remediations.ids());
         }
         return summary;
     }
 
+    /**
+     * 자산 묶음 — {@code [첫 자산 id, 끝 자산 id]}. 식별자가 있는 검토 결과 · 조치를 자산마다 세어 id 순으로
+     * 이어 붙이다 {@code records} 를 넘기 전에 끊는다. 한 자산은 한 묶음에만 든다. 자산 수만큼만 담는다.
+     */
+    private static List<long[]> batches(Connection connection, int records) throws SQLException {
+        TreeMap<Long, Long> perAsset = new TreeMap<>();
+        for (String table : List.of("finding_analysis", "remediations")) {
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "SELECT asset_id, COUNT(*) FROM " + table + " WHERE package_key IS NOT NULL GROUP BY asset_id");
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    perAsset.merge(rs.getLong(1), rs.getLong(2), Long::sum);
+                }
+            }
+        }
+        List<long[]> batches = new ArrayList<>();
+        long[] current = null;
+        long size = 0;
+        for (Map.Entry<Long, Long> asset : perAsset.entrySet()) {
+            if (current != null && size + asset.getValue() > records) {
+                batches.add(current);
+                current = null;
+                size = 0;
+            }
+            if (current == null) {
+                current = new long[] {asset.getKey(), asset.getKey()};
+            }
+            current[1] = asset.getKey();
+            size += asset.getValue();
+        }
+        if (current != null) {
+            batches.add(current);
+        }
+        return batches;
+    }
+
     // -----------------------------------------------------------------------
-    // 검토 결과 · 조치 — 붙던 탐지로 가른다
+    // 검토 결과 · 조치 — 붙던 탐지로 가른다(자산 묶음 하나씩)
     // -----------------------------------------------------------------------
 
-    /** 식별자가 바뀌는 검토 결과 — id → 새 식별자(비우면 {@code null}). */
-    private static Map<Long, String> resolveAnalyses(Connection connection, Keys keys) throws SQLException {
+    /** 식별자가 바뀌는 검토 결과 — id → 새 식별자(비우면 {@code null}). 자산 id 가 그 범위인 것. */
+    private static Map<Long, String> resolveAnalyses(Connection connection, Keys keys, long firstAsset,
+                                                     long lastAsset) throws SQLException {
         record Row(long assetId, String cve, String oldKey) {
         }
         Map<Long, Row> rows = new LinkedHashMap<>();
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT id, asset_id, cve, package_key FROM finding_analysis WHERE package_key IS NOT NULL ORDER BY id");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                rows.put(rs.getLong(1), new Row(rs.getLong(2), rs.getString(3), rs.getString(4)));
+                "SELECT id, asset_id, cve, package_key FROM finding_analysis"
+                + " WHERE package_key IS NOT NULL AND asset_id BETWEEN ? AND ? ORDER BY id")) {
+            ps.setLong(1, firstAsset);
+            ps.setLong(2, lastAsset);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.put(rs.getLong(1), new Row(rs.getLong(2), rs.getString(3), rs.getString(4)));
+                }
             }
         }
         // 그 자산의 검사 전부에서 옛 식별자 · 번호가 같은 탐지 — 목록 · 보고서가 검토 결과를 붙이던 식
         // (FindingRepository)과 같다. 함께 온 CVE 로 적힌 것도 찾는다.
-        Map<Long, Set<String>> evidence = evidence(connection, keys, """
+        Map<Long, Set<String>> evidence = evidence(connection, keys, firstAsset, lastAsset, """
                 SELECT fa.id, f.package_purl, f.package_type, f.package_name
                 FROM finding_analysis fa
                 JOIN scans s ON s.asset_id = fa.asset_id
                 JOIN findings f ON f.scan_id = s.id AND f.package_key = fa.package_key
                                AND (f.cve = fa.cve OR (f.related_cve <> '' AND f.related_cve = fa.cve))
-                WHERE fa.package_key IS NOT NULL
+                WHERE fa.package_key IS NOT NULL AND fa.asset_id BETWEEN ? AND ?
                 """);
 
         Map<Long, String> decided = new HashMap<>();
@@ -174,26 +246,31 @@ public class V25__package_key_qualifiers extends BaseJavaMigration {
         return changes;
     }
 
-    /** 식별자가 바뀌는 조치(회차) — id → 새 식별자(비우면 {@code null}). */
-    private static Map<Long, String> resolveRemediations(Connection connection, Keys keys) throws SQLException {
+    /** 식별자가 바뀌는 조치(회차) — id → 새 식별자(비우면 {@code null}). 자산 id 가 그 범위인 것. */
+    private static Map<Long, String> resolveRemediations(Connection connection, Keys keys, long firstAsset,
+                                                         long lastAsset) throws SQLException {
         record Row(long assetId, String oldKey) {
         }
         Map<Long, Row> rows = new LinkedHashMap<>();
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT id, asset_id, package_key FROM remediations WHERE package_key IS NOT NULL ORDER BY id");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                rows.put(rs.getLong(1), new Row(rs.getLong(2), rs.getString(3)));
+                "SELECT id, asset_id, package_key FROM remediations"
+                + " WHERE package_key IS NOT NULL AND asset_id BETWEEN ? AND ? ORDER BY id")) {
+            ps.setLong(1, firstAsset);
+            ps.setLong(2, lastAsset);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.put(rs.getLong(1), new Row(rs.getLong(2), rs.getString(3)));
+                }
             }
         }
         // 등록한 검사의 옛 식별자 탐지 — 등록 당시 건수 · 현재 버전 · 조치 대상이 거기서 왔다. 다른 검사에서
         // 찾지 않는다 — 그 검사에 있던 것이 지금 남은 것과 같은 패키지라는 근거가 없다(V24 와 같다).
-        Map<Long, Set<String>> evidence = evidence(connection, keys, """
+        Map<Long, Set<String>> evidence = evidence(connection, keys, firstAsset, lastAsset, """
                 SELECT r.id, f.package_purl, f.package_type, f.package_name
                 FROM remediations r
                 JOIN scans s ON s.id = r.opened_scan_id AND s.asset_id = r.asset_id
                 JOIN findings f ON f.scan_id = s.id AND f.package_key = r.package_key
-                WHERE r.package_key IS NOT NULL
+                WHERE r.package_key IS NOT NULL AND r.asset_id BETWEEN ? AND ?
                 """);
 
         Map<Long, String> decided = new HashMap<>();
@@ -224,18 +301,25 @@ public class V25__package_key_qualifiers extends BaseJavaMigration {
     }
 
     /**
-     * 기록 id → 그것이 붙던 탐지들의 새 식별자. 질의의 칸: 기록 id · purl · 유형 · 이름.
+     * 기록 id → 그것이 붙던 탐지들의 새 식별자. 질의의 칸: 기록 id · purl · 유형 · 이름, 자리표 둘은
+     * 자산 id 의 범위.
      *
      * <p>질의에서 DISTINCT 로 줄이지 않는다 — purl 칸의 정렬 규칙(대소문자 무시)으로 {@code Foo} 와
-     * {@code foo} 가 한 줄로 줄어, 두 패키지에 붙던 기록이 하나에 붙던 것으로 보인다.
+     * {@code foo} 가 한 줄로 줄어, 두 패키지에 붙던 기록이 하나에 붙던 것으로 보인다. 그 대신 흘려
+     * 읽는다({@link #FETCH}) — 한 기록에 검사마다 한 줄씩 나와도 담는 것은 기록마다의 식별자 몇 개다.
      */
-    private static Map<Long, Set<String>> evidence(Connection connection, Keys keys, String sql) throws SQLException {
+    private static Map<Long, Set<String>> evidence(Connection connection, Keys keys, long firstAsset,
+                                                   long lastAsset, String sql) throws SQLException {
         Map<Long, Set<String>> out = new HashMap<>();
-        try (PreparedStatement ps = connection.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                out.computeIfAbsent(rs.getLong(1), k -> new HashSet<>())
-                   .add(keys.of(rs.getString(2), rs.getString(3), rs.getString(4)));
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setFetchSize(FETCH);
+            ps.setLong(1, firstAsset);
+            ps.setLong(2, lastAsset);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.computeIfAbsent(rs.getLong(1), k -> new HashSet<>())
+                       .add(keys.of(rs.getString(2), rs.getString(3), rs.getString(4)));
+                }
             }
         }
         return out;
@@ -330,15 +414,26 @@ public class V25__package_key_qualifiers extends BaseJavaMigration {
         return out;
     }
 
-    private static int count(Map<Long, String> changes, boolean unresolved) {
-        return (int) changes.values().stream().filter(key -> (key == null) == unresolved).count();
-    }
+    /** 묶음마다 고친 기록을 센다 — 비운 기록의 id 는 앞 스무 개만 들고 있는다(기록에 남길 것). */
+    private static final class Tally {
 
-    /** 기록에 남길 id — 많으면 앞 스무 개. */
-    private static String ids(Map<Long, String> changes) {
-        List<Long> ids = changes.entrySet().stream().filter(e -> e.getValue() == null)
-                                .map(Map.Entry::getKey).toList();
-        return ids.size() <= 20 ? ids.toString() : ids.subList(0, 20) + " 외 " + (ids.size() - 20);
+        int rekeyed;
+        int unresolved;
+        private final List<Long> firstUnresolved = new ArrayList<>();
+
+        void add(Map<Long, String> changes) {
+            changes.forEach((id, key) -> {
+                if (key != null) {
+                    rekeyed++;
+                } else if (++unresolved <= 20) {
+                    firstUnresolved.add(id);
+                }
+            });
+        }
+
+        String ids() {
+            return unresolved <= 20 ? firstUnresolved.toString() : firstUnresolved + " 외 " + (unresolved - 20);
+        }
     }
 
     /**
