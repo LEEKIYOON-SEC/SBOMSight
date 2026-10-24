@@ -530,21 +530,40 @@ netty 의 네이티브 jar(`?classifier=linux-x86_64`)와 순수 jar, 라이브�
 목록 · 보고서에서 뺐고, 한쪽에 연 조치가 다른 쪽의 탐지를 등록 당시 건수 · 버전에 넣었다.
 
 이제 식별자는 purl 을 규격의 참조 구현(packageurl-java 1.5.0)으로 읽은 정규형에서 **버전 · 하위
-경로와, 패키지를 가르지 않는 한정자**를 뗀 것이다. 떼는 한정자는 유형마다 정해 둔다.
+경로와, 패키지를 가르지 않는 한정자**를 뗀 것이다. 식별자는 버전을 넘어 같은 패키지 — 검토 결과 ·
+조치가 붙는 단위 — 이므로 한정자를 이렇게 가른다(purl 규격의 유형 정의를 따른다).
 
-| 유형 | 떼는 한정자 |
-|---|---|
-| 모든 유형 | `repository_url` · `download_url` · `vcs_url` · `file_name` · `checksum` — 어디서 받았는지 |
-| deb · apk · alpm | `arch` · `distro` · `upstream` |
-| rpm | `arch` · `distro` · `epoch` · `upstream` |
-| bitnami | `arch` · `distro` |
-| conda | `build` · `channel` · `subdir` · `type` |
-| gem | `platform` |
-| oci | `arch` · `tag` |
-| nix | `outputhash` · `drvpath` |
-| vcpkg | `triplet` · `port_revision` · `repository_revision` |
-| pub | `hosted_url` |
-| conan | `rrev` · `prev` |
+- **남긴다** — 버전이 바뀌어도 이어지는 다른 갈래(Maven classifier · type, OCI arch, Conan user ·
+  channel · 설정 · 옵션, nix output, deb 의 `arch=source` — 원천 패키지)와, 같은 이름이 출처마다
+  다른 패키지인 유형의 출처(아래 표의 오른쪽).
+- **뗀다** — 한 판을 가리키는 것(그 버전의 개정 · 빌드 해시 · 그 판의 파일). 남기면 올릴 때마다
+  식별자가 바뀌어 검토 결과 · 조치가 버전을 넘지 못한다. 같은 패키지가 놓인 모양(배포판 패키지의
+  arch · distro)과 사본을 받아 온 곳(거울이 흔하다)도 뗀다.
+
+| 유형 | 떼는 한정자 | 남기는 출처 |
+|---|---|---|
+| 모든 유형 | `repository_url` · `download_url` · `vcs_url` · `file_name` · `checksum` — 받아 온 곳 · 그 판의 파일 | 오른쪽 칸의 유형만 |
+| deb | `arch`(`source` 는 남는다) · `distro` · `upstream` | |
+| apk · alpm | `arch` · `distro` · `upstream` | |
+| rpm | `arch` · `distro` · `epoch` · `upstream` | |
+| bitnami | `arch` · `distro` | |
+| conda | `build` · `channel` · `subdir` · `type` | |
+| gem | `platform` | |
+| oci | `tag` | `repository_url` — 이름이 저장소 이름의 마지막 조각뿐이다(`docker.io/library/debian` 과 `ghcr.io/debian` 이 둘 다 `debian`) |
+| nix | `outputhash` · `drvpath` | |
+| vcpkg | `port_version` · `port_revision`(syft 의 이름) · `repository_revision` · `triplet` · `features` · `vcs_url` 의 git-tree | `repository_url` — 포트를 정의한 레지스트리(기본 레지스트리는 뗀다) · `vcs_url` 의 저장소(그 레지스트리면 뗀다) |
+| pub | `hosted_url` | |
+| conan | `rrev` · `prev` | |
+| generic | `vcs_url` 의 개정(`@…`) | `vcs_url` 의 저장소 · 하위 경로 — 등록소가 없다 |
+| yocto | `layer_version` | `repository_url` — 레시피를 낸 레이어 |
+| otp | | `repository_url` — 앱 소스의 출처 |
+| cpan | `distpath` · `ext` | |
+
+vcpkg 의 git-tree 와 Conan 의 `rrev` · `prev` 는 남기지 않는다. 셋 다 그 버전의 레시피 · 바이너리를
+고정하는 값이다 — vcpkg 의 버전 DB 는 (포트, 버전, port-version) 하나에 git-tree 하나를 두고 덮어쓰지
+않고, Conan 의 개정은 레시피 · 바이너리 내용의 해시다(줄바꿈만 달라도 바뀐다). 같은 이름 · 버전에서
+이것만 다른 purl 은 같은 식별자다. 레시피를 정의한 곳이 다른 것(사내 레지스트리 · 오버레이 포트)은
+레지스트리로 가른다.
 
 - Maven 의 `type=jar` 는 기본값이라 뗀다 — `?type=jar` 와 적지 않은 것은 같은 패키지다. classifier
   와 jar 가 아닌 type 은 남는다(`pkg:maven/io.netty/netty-transport-native-epoll?classifier=linux-x86_64`).

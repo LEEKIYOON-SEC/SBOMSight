@@ -34,13 +34,17 @@ import static java.util.Map.entry;
  * <ul>
  *   <li>버전을 넣지 않는다 — 검토 결과와 조치는 버전을 가로지른다. 넣으면 패치하는 순간
  *       검토 결과가 풀리고 같은 조치가 둘로 갈린다(FindingAnalysis · Remediation 머리말).</li>
- *   <li><b>한정자는 패키지를 가르는 것을 남긴다.</b> Maven 의 {@code classifier} · {@code type} 은 같은
- *       좌표의 다른 아티팩트다 — jdk15 빌드, linux-x86_64 네이티브, test-jar. 앞서 한정자를 통째로
- *       버려(V24) 이런 둘의 검토 결과 · 조치가 하나로 합쳐졌다. 버리는 것은 유형마다 표로 적는다
- *       ({@link #IGNORED}) — {@code arch} · {@code distro} 처럼 같은 패키지의 놓인 모양, {@code epoch} ·
- *       {@code upstream} · 빌드 해시처럼 버전에 딸린 값. 모든 유형에서 받은 곳 · 내려받은 곳 · 파일
- *       이름 · 검사합도 버린다({@link #IGNORED_ALWAYS} — 규격의 알려진 한정자). <b>표에 없는 한정자는
- *       남긴다</b> — 모르는 것을 버려 서로 다른 패키지를 합치지 않는다.</li>
+ *   <li><b>한정자는 패키지를 가르는 것을 남긴다.</b> 버전을 넘어 이어지는 다른 갈래 — Maven 의
+ *       {@code classifier} · {@code type}(jdk15 빌드, linux-x86_64 네이티브, test-jar), OCI 의
+ *       {@code arch}(플랫폼마다 다른 이미지), Conan 의 user · channel · 설정 · 옵션, nix 의 output. 그리고
+ *       <b>같은 이름이 출처마다 다른 패키지인 유형의 출처</b>({@link #SOURCES}) — vcpkg 의 레지스트리, OCI 의
+ *       저장소. 앞서 한정자를 통째로 버려(V24) classifier 만 다른 둘의 검토 결과 · 조치가 하나로 합쳐졌다.</li>
+ *   <li><b>한 판을 가리키는 한정자는 버전처럼 뗀다</b>({@link #IGNORED}) — 그 버전의 개정 · 빌드(vcpkg 의
+ *       port_version · git-tree, Conan 의 rrev · prev, rpm 의 epoch, nix 의 빌드 해시)와 그 판의 파일(파일
+ *       이름 · 검사합 · 내려받은 곳). 남기면 올릴 때마다 식별자가 바뀌어 버전을 뗀 뜻이 없어진다. 같은
+ *       패키지의 놓인 모양(배포판 패키지의 arch · distro)과 사본을 받아 온 곳(받은 곳 · 저장소 — 거울이
+ *       흔하다)도 뗀다({@link #IGNORED_ALWAYS}). <b>표에 없는 한정자는 남긴다</b> — 모르는 것을 버려
+ *       서로 다른 패키지를 합치지 않는다.</li>
  *   <li>규격이 정한 기본값은 안 적은 것과 같다 — Maven 의 {@code type=jar}({@link #DEFAULTS}).</li>
  *   <li>네임스페이스는 넣는다 — Maven 의 groupId, npm 의 scope, 배포판(rpm · deb)의 공급자.
  *       이름이 같아도 네임스페이스가 다르면 다른 패키지다.</li>
@@ -69,18 +73,46 @@ public final class PackageKey {
     static final int MAX = 512;
 
     /**
-     * 모든 유형에서 버리는 한정자 — <b>어디서 받았는가 · 어떤 파일로 왔는가</b>. 패키지가 아니라
-     * 받아 온 길이다(purl 규격의 알려진 한정자 다섯).
+     * 모든 유형에서 버리는 한정자 — <b>사본을 어디서 · 어떤 파일로 받았는가</b>(purl 규격 Annex B 의 공통
+     * 한정자). 받은 곳 · 저장소는 같은 패키지의 거울이 흔하고, 내려받은 곳 · 파일 이름 · 검사합은 한 판의
+     * 파일이다. 유형 정의가 이 가운데 하나로 <b>어느 패키지인가</b>를 가르면 {@link #SOURCES} 가 남긴다.
      */
     static final Set<String> IGNORED_ALWAYS =
             Set.of("repository_url", "download_url", "vcs_url", "file_name", "checksum");
+
+    /**
+     * 유형 정의가 패키지를 가르는 데 쓰는 출처 — {@link #IGNORED_ALWAYS} 에 있어도 남긴다. 같은 이름이
+     * 출처마다 다른 패키지인 유형이다. 값은 맞춰 둔다({@link #source}) — 끝의 {@code /} 는 뜻이 없고,
+     * vcs_url 의 {@code @개정} 은 한 판이라 뗀다.
+     * <ul>
+     *   <li>vcpkg — 포트를 정의한 레지스트리(파일 레지스트리 · 오버레이 포트는 file URL). 생략하면 기본
+     *       레지스트리다({@link #DEFAULTS}). vcs_url 은 그 레지스트리의 저장소에 git-tree 를 붙인 것이다 —
+     *       git-tree 는 (포트, 버전, port_version) 하나의 레시피라 버전처럼 떼고(vcpkg 의 버전 DB 는 한
+     *       버전을 다른 git-tree 로 덮어쓰지 않는다), 저장소가 레지스트리와 같으면 더 말하는 것이 없어
+     *       뗀다({@link #kept}).</li>
+     *   <li>oci — 이름이 저장소 이름의 마지막 조각뿐이다({@code library/debian} → {@code debian}). 버전
+     *       (digest)을 떼면 {@code docker.io/library/debian} 과 {@code ghcr.io/debian} 이 이름만 남아
+     *       합쳐진다 — 네임스페이스는 repository_url 에만 있다.</li>
+     *   <li>generic — 등록소가 없다. 맨 저장소를 vcs_url 로 가리킨다(규격의 정의).</li>
+     *   <li>yocto — 레시피를 낸 레이어의 git URL.</li>
+     *   <li>otp — 앱 소스의 정규 출처(등록소가 없다).</li>
+     * </ul>
+     */
+    static final Map<String, Set<String>> SOURCES = Map.of(
+            "vcpkg", Set.of("repository_url", "vcs_url"),
+            "oci", Set.of("repository_url"),
+            "generic", Set.of("vcs_url"),
+            "yocto", Set.of("repository_url"),
+            "otp", Set.of("repository_url"));
 
     /**
      * 유형마다 버리는 한정자. syft v1.50.0 이 purl 에 다는 것(카탈로거마다의 packageURL)과 purl 규격의
      * 유형 정의에서 왔다. <b>여기 없는 한정자는 식별자에 남는다.</b>
      */
     static final Map<String, Set<String>> IGNORED = Map.ofEntries(
-            // 아키텍처 · 배포판 · 원천 패키지(upstream 에는 버전이 붙기도 한다 — glibc@2.31-13)
+            // 한 OS 에 깔린 같은 패키지의 놓인 모양 — 아키텍처 · 배포판 · 원천 패키지(upstream 에는 버전이
+            // 붙기도 한다 — glibc@2.31-13). 취약점과 조치는 원천 패키지의 버전을 따른다. deb 의
+            // arch=source 는 남는다({@link #kept}) — 원천 패키지 자체라 같은 이름의 바이너리와 다른 것이다.
             entry("deb", Set.of("arch", "distro", "upstream")),
             entry("rpm", Set.of("arch", "distro", "epoch", "upstream")),
             entry("apk", Set.of("arch", "distro", "upstream")),
@@ -89,17 +121,28 @@ public final class PackageKey {
             // 빌드 문자열 · 받은 채널 · 플랫폼 · 묶음 꼴
             entry("conda", Set.of("build", "channel", "subdir", "type")),
             entry("gem", Set.of("platform")),
-            entry("oci", Set.of("arch", "tag")),
+            // 그때 digest 에 붙어 있던 꼬리표 — 옮겨 다닌다. arch 는 남는다 — 플랫폼마다 다른 이미지다.
+            entry("oci", Set.of("tag")),
             // 스토어 해시 · 파생 경로는 빌드마다 바뀐다. output(out · bin · dev …)은 남는다 — 다른 파일이다.
             entry("nix", Set.of("outputhash", "drvpath")),
-            // 플랫폼 triplet · 포트 개정 · 레지스트리 기준 커밋
-            entry("vcpkg", Set.of("triplet", "port_revision", "repository_revision")),
+            // port_version 은 버전의 #N(syft 는 port_revision 이라 적는다), repository_revision 은 레지스트리
+            // 전체의 기준 커밋 — 한 판이다. triplet 은 규격이 식별에 영향이 없다고, features 는 정보일
+            // 뿐이라고 적었다.
+            entry("vcpkg", Set.of("port_version", "port_revision", "repository_revision", "triplet", "features")),
             entry("pub", Set.of("hosted_url")),
-            // 레시피 · 패키지 개정. user · channel 은 레시피를 가르므로 남는다.
-            entry("conan", Set.of("rrev", "prev")));
+            // 레시피 · 패키지 개정 — 그 버전의 내용 해시라 한 판이다(생략하면 그 버전의 최신 개정, 줄바꿈만
+            // 달라도 바뀐다). user · channel 과 설정 · 옵션(os · build_type · shared …)은 남는다 — 규격이
+            // 패키지를 가르는 데 쓴다.
+            entry("conan", Set.of("rrev", "prev")),
+            // 레이어의 커밋 · 태그 · 가지 — 한 판이다. 레이어(repository_url)는 남는다.
+            entry("yocto", Set.of("layer_version")),
+            // 배포본 파일의 경로 · 확장자 — 한 판의 파일이다.
+            entry("cpan", Set.of("distpath", "ext")));
 
-    /** purl 규격이 정한 기본값 — 적은 것과 안 적은 것이 같다. */
-    static final Map<String, Map<String, String>> DEFAULTS = Map.of("maven", Map.of("type", "jar"));
+    /** purl 규격이 정한 기본값 — 적은 것과 안 적은 것이 같다. 값은 {@link #source} 로 맞춘 뒤 견준다. */
+    static final Map<String, Map<String, String>> DEFAULTS = Map.of(
+            "maven", Map.of("type", "jar"),
+            "vcpkg", Map.of("repository_url", "https://github.com/microsoft/vcpkg"));
 
     private static final String HEX = "0123456789ABCDEF";
 
@@ -224,20 +267,88 @@ public final class PackageKey {
         return out.toString();
     }
 
-    /** 남기는 한정자 — 표({@link #IGNORED_ALWAYS} · {@link #IGNORED})와 기본값({@link #DEFAULTS})을 뺀 것. */
+    /**
+     * 남기는 한정자 — 표({@link #IGNORED_ALWAYS} · {@link #IGNORED})와 기본값({@link #DEFAULTS})을 뺀 것.
+     * 유형의 출처({@link #SOURCES})는 맞춘 값으로 남긴다.
+     */
     static TreeMap<String, String> kept(String type, Map<String, String> qualifiers) {
         TreeMap<String, String> kept = new TreeMap<>();
         if (qualifiers == null) {
             return kept;
         }
         Set<String> ignored = IGNORED.getOrDefault(type, Set.of());
+        Set<String> sources = SOURCES.getOrDefault(type, Set.of());
         Map<String, String> defaults = DEFAULTS.getOrDefault(type, Map.of());
-        qualifiers.forEach((key, value) -> {
-            if (!IGNORED_ALWAYS.contains(key) && !ignored.contains(key) && !value.equals(defaults.get(key))) {
+        qualifiers.forEach((key, given) -> {
+            String value = sources.contains(key) ? source(key, given) : given;
+            boolean dropped = IGNORED_ALWAYS.contains(key) && !sources.contains(key)
+                              || ignored.contains(key) && !("deb".equals(type) && "arch".equals(key)
+                                                            && "source".equals(value))
+                              || value.isEmpty() || value.equals(defaults.get(key));
+            if (!dropped) {
                 kept.put(key, value);
             }
         });
+        // vcpkg 의 vcs_url 이 레지스트리(적은 것, 없으면 기본)의 저장소면 더 말하는 것이 없다 — 남기면 같은
+        // 포트를 레지스트리로만 적은 purl(syft)과 git-tree 까지 적은 purl 이 둘로 갈린다.
+        String vcs = kept.get("vcs_url");
+        if ("vcpkg".equals(type) && vcs != null
+                && sameRepository(vcs, kept.getOrDefault("repository_url", defaults.get("repository_url")))) {
+            kept.remove("vcs_url");
+        }
         return kept;
+    }
+
+    /**
+     * 출처 한정자의 값을 맞춘다. repository_url 은 끝의 {@code /} 를 뗀다. vcs_url 은 저장소만 남긴다 —
+     * {@code <도구>+<전송>://<호스트>[/<경로>][@<개정>][#<하위 경로>]}(규격 B.3.5)에서 {@code @개정} 을
+     * 떼고(한 판이다), 끝의 {@code /} 와 하위 경로 앞뒤의 {@code /} 를 뗀다(규격: 뜻이 없다). 하위 경로는
+     * 남는다 — 한 저장소 안의 다른 패키지다.
+     */
+    static String source(String key, String value) {
+        if (!"vcs_url".equals(key)) {
+            return stripTrailing(value, '/');
+        }
+        String location = value;
+        String sub = "";
+        int hash = location.indexOf('#');
+        if (hash >= 0) {
+            sub = stripTrailing(location.substring(hash + 1).replaceFirst("^/+", ""), '/');
+            location = location.substring(0, hash);
+        }
+        // 개정은 경로 뒤의 마지막 @ 다음 — 호스트 앞의 계정(git@)은 건드리지 않는다. 꼴을 모르면 그대로 둔다.
+        int scheme = location.indexOf("://");
+        int path = scheme < 0 ? -1 : location.indexOf('/', scheme + 3);
+        int at = location.lastIndexOf('@');
+        if (path >= 0 && at > path) {
+            location = location.substring(0, at);
+        }
+        location = stripTrailing(location, '/');
+        return sub.isEmpty() ? location : location + "#" + sub;
+    }
+
+    /**
+     * vcs_url 의 저장소가 그 레지스트리인가 — 도구 접두사({@code git+})와 하위 경로를 빼고, 끝의
+     * {@code .git} 은 같은 저장소로 본다(규격의 otp 예가 같은 저장소를 두 꼴로 적었다).
+     */
+    private static boolean sameRepository(String vcs, String registry) {
+        if (registry == null) {
+            return false;
+        }
+        String repository = vcs.replaceFirst("#.*$", "").replaceFirst("^[a-z]+\\+(?=[a-z]+://)", "");
+        return withoutGit(repository).equals(withoutGit(registry));
+    }
+
+    private static String withoutGit(String url) {
+        return url.endsWith(".git") ? url.substring(0, url.length() - ".git".length()) : url;
+    }
+
+    private static String stripTrailing(String text, char c) {
+        int end = text.length();
+        while (end > 0 && text.charAt(end - 1) == c) {
+            end--;
+        }
+        return text.substring(0, end);
     }
 
     /**

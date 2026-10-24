@@ -695,10 +695,11 @@ SQL
     case "$(basename "$f")" in V25__*)
         SAID=$(java_said "$f")
         printf '%s\n' "$SAID"
-        # 고친 수 — 탐지 28 = 벡터 가운데 식별자가 바뀌는 22줄 + v25-a 6건(네이티브 둘 · test-jar ·
-        # PyYAML · %2E · 코덱 네이티브), 패키지 23 = 벡터 22줄 + V22 의 유형 `Python` 줄(pkg:Python →
-        # pkg:python). 검토 결과 · 조치는 v25-a 의 것뿐이다 — V24 의 기록은 바뀔 까닭이 없다.
-        WANT25="탐지 28 · 패키지 23 · 검토 결과 옮김 3 / 비움 4 · 조치 옮김 1 / 비움 3"
+        # 고친 수 — 탐지 44 = 벡터 가운데 식별자가 바뀌는 38줄(4째 칸과 5째 칸이 다른 줄) + v25-a 6건
+        # (네이티브 둘 · test-jar · PyYAML · %2E · 코덱 네이티브), 패키지 39 = 벡터 38줄 + V22 의 유형
+        # `Python` 줄(pkg:Python → pkg:python). 검토 결과 · 조치는 v25-a 의 것뿐이다 — V24 의 기록은 바뀔
+        # 까닭이 없다.
+        WANT25="탐지 44 · 패키지 39 · 검토 결과 옮김 3 / 비움 4 · 조치 옮김 1 / 비움 3"
         printf '%s' "$SAID" | grep -qF "$WANT25" || {
             echo "  V25 가 고친 수가 다릅니다 (기대 '$WANT25')"; exit 1; }
         AFTER25=$(run "$DB" -N -e "

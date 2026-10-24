@@ -121,12 +121,144 @@ class PackageKeyTest {
                 .isEqualTo("pkg:conan/conan/zlib?channel=stable");
         assertThat(PackageKey.of("pkg:pypi/requests@2.31.0?vcs_url=git%2Bhttps%3A%2F%2Fgithub.com%2Fpsf%2Frequests",
                                  "python", "requests"))
-                .as("받은 곳(vcs_url)은 모든 유형에서 버린다").isEqualTo("pkg:pypi/requests");
+                .as("유형 정의가 패키지를 가르는 데 쓰지 않는 받은 곳(pypi 의 vcs_url)은 버린다")
+                .isEqualTo("pkg:pypi/requests");
         assertThat(PackageKey.of("pkg:generic/foo@1?arch=x86_64", "binary", "foo"))
                 .as("표에 없는 유형의 arch 는 남는다 — 버리는 것은 유형마다 적은 것뿐")
                 .isEqualTo("pkg:generic/foo?arch=x86_64");
         assertThat(PackageKey.of("pkg:npm/semver@7.5.4?future=1", "npm", "semver"))
                 .as("모르는 한정자는 남는다").isEqualTo("pkg:npm/semver?future=1");
+    }
+
+    /**
+     * <b>vcpkg — 레지스트리는 남기고, 한 판을 가리키는 것은 뗀다.</b> 같은 이름 · 버전이라도 레지스트리
+     * (포트를 정의한 곳 — 사내 레지스트리 · 오버레이)가 다르면 다른 패키지다. vcs_url 의 git-tree 는
+     * (포트, 버전, port_version) 하나의 레시피다 — vcpkg 의 버전 DB 는 한 버전을 다른 git-tree 로 덮어쓰지
+     * 않는다. 남기면 올릴 때마다 식별자가 바뀌어 검토 결과 · 조치가 버전을 넘지 못한다(버전을 뗀 뜻).
+     */
+    @Test
+    @DisplayName("vcpkg — 같은 이름 · 버전도 레지스트리가 다르면 다른 식별자, git-tree · port_version · triplet 만 다르면 같은 식별자")
+    void vcpkgRegistryStaysRevisionGoes() {
+        String tree1 = "b5d3197b1a8a3f4c2d9e0f1a2b3c4d5e6f708192";
+        String tree2 = "c0ffee00000000000000000000000000000000ff";
+        String official = PackageKey.of("pkg:vcpkg/zlib@1.3.1", "vcpkg", "zlib");
+        assertThat(official).isEqualTo("pkg:vcpkg/zlib")
+                .as("기본 레지스트리는 안 적은 것과 같다(끝의 / 는 뜻이 없다)")
+                .isEqualTo(PackageKey.of("pkg:vcpkg/zlib@1.3.1?repository_url=https%3A%2F%2Fgithub.com%2Fmicrosoft%2Fvcpkg%2F",
+                                         "vcpkg", "zlib"))
+                .as("기본 레지스트리의 git-tree 는 그 버전의 레시피 — 뗀다")
+                .isEqualTo(PackageKey.of("pkg:vcpkg/zlib@1.3.1?triplet=x64-linux&vcs_url=git%2Bhttps%3A%2F%2Fgithub.com"
+                                         + "%2Fmicrosoft%2Fvcpkg%40" + tree1, "vcpkg", "zlib"))
+                .isEqualTo(PackageKey.of("pkg:vcpkg/zlib@1.3.1?vcs_url=git%2Bhttps%3A%2F%2Fgithub.com%2Fmicrosoft%2Fvcpkg%40"
+                                         + tree2, "vcpkg", "zlib"))
+                .isEqualTo(PackageKey.of("pkg:vcpkg/zlib@1.3.1?port_version=2&repository_revision="
+                                         + "84a143e4caf6b70db57f28d04c41df4a85c480fa&features=a%2Cb", "vcpkg", "zlib"));
+
+        String azure = PackageKey.of("pkg:vcpkg/zlib@1.3.1?repository_url=https%3A%2F%2Fgithub.com%2Fazure-sdk%2Fvcpkg",
+                                     "vcpkg", "zlib");
+        assertThat(azure).isEqualTo("pkg:vcpkg/zlib?repository_url=https%3A%2F%2Fgithub.com%2Fazure-sdk%2Fvcpkg")
+                .isNotEqualTo(official)
+                .as("vcs_url 이 그 레지스트리의 저장소면 더 말하는 것이 없다 — syft 처럼 레지스트리만 적은 것과 같다")
+                .isEqualTo(PackageKey.of("pkg:vcpkg/zlib@1.3.1?repository_url=https%3A%2F%2Fgithub.com%2Fazure-sdk%2Fvcpkg"
+                                         + "&vcs_url=git%2Bhttps%3A%2F%2Fgithub.com%2Fazure-sdk%2Fvcpkg%40" + tree1,
+                                         "vcpkg", "zlib"));
+        assertThat(PackageKey.of("pkg:vcpkg/zlib@1.3.1?vcs_url=git%2Bhttps%3A%2F%2Fgithub.com%2Fazure-sdk%2Fvcpkg%40" + tree1,
+                                 "vcpkg", "zlib"))
+                .as("레지스트리를 vcs_url 로만 적었으면 그 저장소가 남는다 — 기본 레지스트리 것과 합치지 않는다")
+                .isEqualTo("pkg:vcpkg/zlib?vcs_url=git%2Bhttps%3A%2F%2Fgithub.com%2Fazure-sdk%2Fvcpkg")
+                .isNotEqualTo(official);
+        assertThat(PackageKey.of("pkg:vcpkg/zlib@1.3.1?repository_url=file:%2F%2F%2FC:%2Flocal-registry%2Fvcpkg",
+                                 "vcpkg", "zlib"))
+                .as("파일 레지스트리 · 오버레이 포트").isNotEqualTo(official).isNotEqualTo(azure);
+    }
+
+    /**
+     * <b>OCI — 플랫폼과 저장소는 남긴다.</b> 버전(digest)을 떼면 남는 것이 이름뿐인데, 이름은 저장소
+     * 이름의 마지막 조각이다. arch 를 떼면 amd64 와 arm64 이미지가, repository_url 을 떼면
+     * {@code docker.io/library/debian} 과 {@code ghcr.io/debian} 이 한 식별자가 된다. tag 는 그때 digest 에
+     * 붙어 있던 꼬리표라 뗀다.
+     */
+    @Test
+    @DisplayName("OCI — 같은 이름 · digest 도 arch · 저장소가 다르면 다른 식별자, tag 만 다르면 같은 식별자")
+    void ociPlatformAndRepositoryStay() {
+        String digest = "pkg:oci/debian@sha256%3A244fd47e07d10";
+        String amd64 = PackageKey.of(digest + "?repository_url=docker.io%2Flibrary%2Fdebian&arch=amd64&tag=latest",
+                                     "oci", "debian");
+        assertThat(amd64).isEqualTo("pkg:oci/debian?arch=amd64&repository_url=docker.io%2Flibrary%2Fdebian")
+                .isEqualTo(PackageKey.of(digest + "?repository_url=docker.io%2Flibrary%2Fdebian%2F&arch=amd64&tag=12.5",
+                                         "oci", "debian"));
+        String arm64 = PackageKey.of(digest + "?repository_url=docker.io%2Flibrary%2Fdebian&arch=arm64&tag=latest",
+                                     "oci", "debian");
+        String ghcr = PackageKey.of(digest + "?repository_url=ghcr.io%2Fdebian&arch=amd64&tag=bullseye", "oci", "debian");
+        String bare = PackageKey.of(digest, "oci", "debian");
+        assertThat(List.of(amd64, arm64, ghcr, bare)).doesNotHaveDuplicates();
+    }
+
+    /**
+     * <b>Conan — 개정은 떼고, 패키지를 가르는 것은 남긴다.</b> rrev · prev 는 그 버전의 레시피 · 바이너리
+     * 내용의 해시다(생략하면 그 버전의 최신 개정이고, 줄바꿈만 달라도 바뀐다) — vcpkg 의 git-tree 와 같은
+     * 층이다. user · channel 과 설정 · 옵션(os · build_type · shared …)은 규격이 패키지를 가르는 데 쓴다.
+     */
+    @Test
+    @DisplayName("Conan — 같은 이름 · 버전에서 rrev · prev 만 다르면 같은 식별자, user · channel · 설정이 다르면 다른 식별자")
+    void conanRevisionsGoSettingsStay() {
+        String plain = PackageKey.of("pkg:conan/zlib@1.3.1", "conan", "zlib");
+        assertThat(plain).isEqualTo("pkg:conan/zlib")
+                .isEqualTo(PackageKey.of("pkg:conan/zlib@1.3.1?rrev=b3b71bfe8dd07abc7b82ff2bd0eac021"
+                                         + "&prev=0d0bdb2c0d7bc7a4b7fa4c4b4a5b2d6e", "conan", "zlib"))
+                .isEqualTo(PackageKey.of("pkg:conan/zlib@1.3.1?rrev=93a82349c31917d2d674d22065c7a9ef", "conan", "zlib"));
+        String debugShared = PackageKey.of("pkg:conan/zlib@1.3.1?build_type=Debug&shared=True&rrev=93a8&prev=b429",
+                                           "conan", "zlib");
+        String release = PackageKey.of("pkg:conan/zlib@1.3.1?build_type=Release&shared=True", "conan", "zlib");
+        String channel = PackageKey.of("pkg:conan/zlib@1.3.1?channel=stable&user=bincrafters", "conan", "zlib");
+        assertThat(debugShared).isEqualTo("pkg:conan/zlib?build_type=Debug&shared=True");
+        assertThat(List.of(plain, debugShared, release, channel)).doesNotHaveDuplicates();
+    }
+
+    /**
+     * <b>vcs_url 은 유형 정의가 쓸 때만 남는다</b> — generic 은 맨 저장소를 vcs_url 로 가리킨다(등록소가
+     * 없다). 남기는 것은 저장소 · 하위 경로이고, {@code @개정} 은 한 판이라 뗀다. 내려받은 곳 · 검사합은
+     * 그 판의 파일이라 generic 에서도 뗀다.
+     */
+    @Test
+    @DisplayName("generic — vcs_url 의 저장소는 남기고 개정은 뗀다 · 내려받은 곳 · 검사합은 뗀다")
+    void genericKeepsTheRepository() {
+        String fsfe = PackageKey.of("pkg:generic/bitwarderl?vcs_url=git%2Bhttps:%2F%2Fgit.fsfe.org%2Fdxtr%2Fbitwarderl"
+                                    + "%40cc55108da32", "binary", "bitwarderl");
+        assertThat(fsfe).isEqualTo("pkg:generic/bitwarderl?vcs_url=git%2Bhttps%3A%2F%2Fgit.fsfe.org%2Fdxtr%2Fbitwarderl")
+                .isEqualTo(PackageKey.of("pkg:generic/bitwarderl?vcs_url=git%2Bhttps:%2F%2Fgit.fsfe.org%2Fdxtr%2F"
+                                         + "bitwarderl%40de12f00", "binary", "bitwarderl"))
+                .isNotEqualTo(PackageKey.of("pkg:generic/bitwarderl?vcs_url=git%2Bhttps:%2F%2Fgithub.com%2Ffork%2F"
+                                            + "bitwarderl%40cc55108da32", "binary", "bitwarderl"));
+        assertThat(PackageKey.of("pkg:generic/tool@1.0?vcs_url=git%2Bssh%3A%2F%2Fgit%40example.org%2Fteam%2Fmono.git"
+                                 + "%40v1.0%23%2Fpackages%2Ftool%2F", "binary", "tool"))
+                .as("호스트 앞의 계정(git@)은 개정이 아니다 · 하위 경로는 남고 앞뒤 / 는 뜻이 없다")
+                .isEqualTo("pkg:generic/tool?vcs_url=git%2Bssh%3A%2F%2Fgit%40example.org%2Fteam%2Fmono.git"
+                           + "%23packages%2Ftool");
+        assertThat(PackageKey.of("pkg:generic/openssl@1.1.10g?download_url=https:%2F%2Fopenssl.org%2Fsource%2F"
+                                 + "openssl-1.1.0g.tar.gz&checksum=sha256:de4d501267da", "binary", "openssl"))
+                .isEqualTo("pkg:generic/openssl");
+    }
+
+    /** 유형 정의가 다른 것을 가리키는 데 쓰는 한정자 — deb 의 원천 패키지, yocto 의 레이어, otp 의 출처. */
+    @Test
+    @DisplayName("deb arch=source · yocto 레이어 · otp 출처는 남고, 레이어 개정 · cpan 배포본 파일은 뗀다")
+    void otherTypeDefinitions() {
+        assertThat(PackageKey.of("pkg:deb/debian/attr@1:2.4.47-2?arch=source", "deb", "attr"))
+                .as("원천 패키지는 같은 이름의 바이너리와 다르다").isEqualTo("pkg:deb/debian/attr?arch=source");
+        assertThat(PackageKey.of("pkg:deb/debian/attr@1:2.4.47-2%2Bb1?arch=amd64", "deb", "attr"))
+                .isEqualTo("pkg:deb/debian/attr");
+        assertThat(PackageKey.of("pkg:yocto/core/glibc@2.35?repository_url=https:%2F%2Fgit.openembedded.org%2F"
+                                 + "openembedded-core&layer_version=kirkstone", "yocto", "glibc"))
+                .isEqualTo(PackageKey.of("pkg:yocto/core/glibc@2.35?repository_url=https:%2F%2Fgit.openembedded.org%2F"
+                                         + "openembedded-core&layer_version=25ba9895b9", "yocto", "glibc"))
+                .isEqualTo("pkg:yocto/core/glibc?repository_url=https%3A%2F%2Fgit.openembedded.org%2Fopenembedded-core");
+        assertThat(PackageKey.of("pkg:otp/erts@10.6.3?platform=linux&arch=amd64&repository_url=https:%2F%2Fgithub.com%2F"
+                                 + "erlang%2Fotp&vcs_url=git%2Bhttps:%2F%2Fgithub.com%2Ferlang%2Fotp.git", "otp", "erts"))
+                .isEqualTo("pkg:otp/erts?arch=amd64&platform=linux&repository_url=https%3A%2F%2Fgithub.com%2Ferlang%2Fotp");
+        assertThat(PackageKey.of("pkg:cpan/libwww-perl@6.72?author=OALDERS&distpath=authors%2Fid%2FO%2FOA%2FOALDERS%2F"
+                                 + "libwww-perl-6.72.tar.gz&ext=tar.gz", "perl", "libwww-perl"))
+                .isEqualTo("pkg:cpan/libwww-perl?author=OALDERS");
     }
 
     /**
