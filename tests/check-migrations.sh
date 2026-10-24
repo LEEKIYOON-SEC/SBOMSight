@@ -26,11 +26,15 @@ CLIENT=$(command -v mariadb || command -v mysql) || {
     exit 1
 }
 
+# 연결 문자셋을 utf8mb4 로 못 박는다. 클라이언트는 지역 설정(LANG)을 따르는데, 비어 있으면 latin1 이라
+# 마이그레이션 파일과 아래 데이터의 한글이 깨진 채 들어갔다(구역 `미분류` 까지). 넣을 때와 견줄 때가
+# 같이 깨져 드러나지 않았고, JDBC 로 읽는 자바 마이그레이션(V25)이 처음 드러냈다 — 운영의 Flyway 는
+# JDBC 라 처음부터 utf8mb4 다.
 run() {
     if [ -n "$PASS" ]; then
-        "$CLIENT" -h "$HOST" -P "$PORT" -u "$USER" -p"$PASS" "$@"
+        "$CLIENT" --default-character-set=utf8mb4 -h "$HOST" -P "$PORT" -u "$USER" -p"$PASS" "$@"
     else
-        "$CLIENT" -h "$HOST" -P "$PORT" -u "$USER" "$@"
+        "$CLIENT" --default-character-set=utf8mb4 -h "$HOST" -P "$PORT" -u "$USER" "$@"
     fi
 }
 
