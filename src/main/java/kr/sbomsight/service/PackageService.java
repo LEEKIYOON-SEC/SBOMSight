@@ -94,7 +94,7 @@ public class PackageService {
     private Set<String> rowsMatching(Long zoneId, String type, String q,
                                      boolean vulnerableOnly, boolean mixedOnly) {
         List<ComponentRepository.VersionRow> spread = components.versionSpreadAll(zoneId, type, q);
-        Severities severities = severities(null, zoneId, spread);
+        Severities severities = severities(zoneId, spread, true);
         // 줄 → [걸린 버전이 있다, 안 걸린 버전이 있다]
         Map<String, boolean[]> flags = new LinkedHashMap<>();
         for (ComponentRepository.VersionRow version : spread) {
@@ -150,7 +150,7 @@ public class PackageService {
             return List.of();
         }
 
-        Severities severities = severities(null, zoneId, spread);
+        Severities severities = severities(zoneId, spread, true);
 
         // 거르개 둘은 패키지 단위 성질이라 줄(패키지 식별자)로 모아 봐야 판단이 선다.
         Map<String, List<ExportRow>> byRow = new LinkedHashMap<>();
@@ -193,10 +193,7 @@ public class PackageService {
             spread.computeIfAbsent(version.getPackageKey(), k -> new ArrayList<>()).add(version);
         }
 
-        // 탐지는 이름으로 물어 온다 — 유형을 모르는 줄이 받을 것까지(Severities).
-        List<String> names = versions.stream().map(ComponentRepository.VersionRow::getName)
-                                     .distinct().toList();
-        Severities severities = severities(names, zoneId, versions);
+        Severities severities = severities(zoneId, versions, false);
 
         List<PackageRow> rows = new ArrayList<>();
         for (ComponentRepository.PackageRow row : page) {
@@ -221,64 +218,110 @@ public class PackageService {
      * DMZ 를 골라도 내부업무 자산의 탐지가 합쳐졌고(libc6 — 패키지 화면 58건,
      * 취약점 화면 29건), 운영 종료한 자산의 탐지도 남았다.
      *
-     * <p><b>(식별자, 버전)으로 잇는다.</b> 인벤토리와 탐지가 같은 규칙으로 만든 식별자다
-     * ({@link PackageKey}) — 앞서는 유형을 purl 과 함께 맞춰 (이름, 버전, 유형)으로 이었다.
+     * <p><b>(식별자, 버전)으로 묻고 잇는다 — 이름은 쓰지 않는다.</b> 인벤토리와 탐지가 같은
+     * 규칙으로 만든 식별자다({@link PackageKey}). 앞서 이름으로 물어 {@code (이름, 버전)} 아래에서
+     * 식별자를 견줘, 같은 purl · 버전을 SBOM 과 grype 이 다른 이름으로 적었거나(한 도구는
+     * {@code PyYAML}, 다른 도구는 {@code pyyaml}) 한 식별자에 이름이 여럿이면 줄에 찍힌 이름 하나의
+     * 탐지만 셌다 — 나머지 건수는 화면 · 거르개 · CSV 에서 조용히 사라졌다.
      *
-     * @param names    물어 볼 이름. {@code null} 이면 전부 (CSV 내보내기)
-     * @param versions 이을 인벤토리 조각 — 유형을 모르는 줄이 무엇을 받을지 가를 때 쓴다
+     * <p>세는 규칙은 하나다 — 화면의 한 쪽도 거르개 · CSV 도 이것을 쓴다. 다른 것은 탐지를 묻는
+     * 범위뿐이고 조각마다의 수는 같다.
+     *
+     * @param versions   이을 인벤토리 조각
+     * @param everything 범위의 탐지를 전부 한 번에 물을지(거르개 · CSV — 조각이 인벤토리 전부라
+     *                   식별자를 수천 개 넘기느니 다 읽는다). 아니면 조각의 식별자로 묻는다(화면의 한 쪽)
      */
-    private Severities severities(List<String> names, Long zoneId,
-                                  List<ComponentRepository.VersionRow> versions) {
-        // (이름, 버전) → 인벤토리에 있는 식별자
-        Map<String, Set<String>> inventory = new LinkedHashMap<>();
+    private Severities severities(Long zoneId, List<ComponentRepository.VersionRow> versions,
+                                  boolean everything) {
+        // 유형을 모르는 줄의 이름 — 그 줄이 받을 탐지는 이름으로밖에 못 찾는다(Severities).
+        Set<String> untypedNames = new LinkedHashSet<>();
         for (ComponentRepository.VersionRow version : versions) {
-            inventory.computeIfAbsent(key(version.getName(), version.getVersion()),
-                                      k -> new LinkedHashSet<>())
-                     .add(version.getPackageKey());
-        }
-        // (이름, 버전) → 식별자 → 등급 → 건수
-        Map<String, Map<String, Map<String, Long>>> found = new LinkedHashMap<>();
-        List<Long> scanIds = vulns.latestScanIds(zoneId);
-        if (!scanIds.isEmpty()) {
-            List<FindingRepository.PackageVersionSeverity> rows = names == null
-                    ? findings.severityByPackageVersion(scanIds)
-                    : findings.severityByPackageVersion(scanIds, names);
-            for (FindingRepository.PackageVersionSeverity row : rows) {
-                found.computeIfAbsent(key(row.getPackageName(), row.getPackageVersion()),
-                                      k -> new LinkedHashMap<>())
-                     .computeIfAbsent(row.getPackageKey(), k -> new LinkedHashMap<>())
-                     .merge(Severity.of(row.getSeverity()).key(), row.getTotal(), Long::sum);
+            if (Severities.untyped(version.getPackageKey())) {
+                untypedNames.add(version.getName());
             }
         }
-        return new Severities(inventory, found);
+        // (식별자, 버전) → 등급 → 건수 / 유형을 모르는 줄의 (이름, 버전) → 탐지의 식별자 → 등급 → 건수
+        Map<String, Map<String, Long>> byKey = new LinkedHashMap<>();
+        Map<String, Map<String, Map<String, Long>>> byName = new LinkedHashMap<>();
+        List<Long> scanIds = vulns.latestScanIds(zoneId);
+        if (!scanIds.isEmpty() && !versions.isEmpty()) {
+            // 두 질의에 함께 걸린 묶음(식별자로도 이름으로도)은 한 번만 — 묶음마다 하나라 같은 수다.
+            Map<String, FindingRepository.PackageVersionSeverity> rows = new LinkedHashMap<>();
+            if (everything) {
+                findings.severityByPackageVersion(scanIds).forEach(r -> rows.putIfAbsent(group(r), r));
+            } else {
+                List<String> keys = versions.stream().map(ComponentRepository.VersionRow::getPackageKey)
+                                            .distinct().toList();
+                findings.severityByPackageKeyVersion(scanIds, keys).forEach(r -> rows.putIfAbsent(group(r), r));
+                if (!untypedNames.isEmpty()) {
+                    findings.severityByPackageVersion(scanIds, untypedNames)
+                            .forEach(r -> rows.putIfAbsent(group(r), r));
+                }
+            }
+            for (FindingRepository.PackageVersionSeverity row : rows.values()) {
+                String severity = Severity.of(row.getSeverity()).key();
+                byKey.computeIfAbsent(key(row.getPackageKey(), row.getPackageVersion()),
+                                      k -> new LinkedHashMap<>())
+                     .merge(severity, row.getTotal(), Long::sum);
+                if (untypedNames.contains(row.getPackageName())) {
+                    byName.computeIfAbsent(key(row.getPackageName(), row.getPackageVersion()),
+                                           k -> new LinkedHashMap<>())
+                          .computeIfAbsent(row.getPackageKey(), k -> new LinkedHashMap<>())
+                          .merge(severity, row.getTotal(), Long::sum);
+                }
+            }
+        }
+        // 유형을 모르는 줄이 받을 뻔한 탐지 가운데 다른 줄이 가진 것 — 그 구역 인벤토리 전체에서 본다.
+        // 화면의 한 쪽에 실린 줄만 보면 다음 쪽의 줄이 가진 탐지를 이 줄이 한 번 더 센다.
+        Set<String> claimed = new LinkedHashSet<>();
+        Set<String> candidates = new LinkedHashSet<>();
+        byName.values().forEach(byFindingKey -> byFindingKey.keySet().stream()
+                                                            .filter(k -> !Severities.untyped(k))
+                                                            .forEach(candidates::add));
+        if (!candidates.isEmpty()) {
+            for (ComponentRepository.VersionRow row : components.versionSpread(List.copyOf(candidates), zoneId)) {
+                claimed.add(key(row.getPackageKey(), row.getVersion()));
+            }
+        }
+        return new Severities(byKey, byName, claimed);
+    }
+
+    /** 탐지 묶음 하나 — 질의가 묶는 칸 그대로(식별자, 이름, 버전, 등급). */
+    private static String group(FindingRepository.PackageVersionSeverity row) {
+        return row.getPackageKey() + "\0" + row.getPackageName() + "\0" + row.getPackageVersion()
+               + "\0" + row.getSeverity();
     }
 
     /**
-     * 버전 조각마다의 등급별 건수.
+     * 버전 조각마다의 등급별 건수 — {@code (식별자, 버전)} 의 탐지.
      *
      * <p><b>유형을 모르는 줄</b>(SBOM 이 purl 도 유형도 안 담은 원소 — 식별자가
-     * {@code pkg:/이름})은 제 식별자의 탐지와, 같은 이름 · 버전의 <b>어느 줄의 식별자와도 맞지
-     * 않는</b> 탐지를 받는다. 받을 줄이 없다고 버리면 그 수가 화면에서 조용히 사라진다 —
-     * 실제보다 안전해 보이는 숫자다. 식별자가 맞는 줄이 있는 탐지는 그 줄에만 붙는다. 이것은
+     * {@code pkg:/이름})은 제 식별자의 탐지와, 같은 이름 · 버전의 탐지 가운데 <b>어느 줄도 그
+     * (식별자, 버전)을 갖지 않은</b> 것을 받는다. 받을 줄이 없다고 버리면 그 수가 화면에서 조용히
+     * 사라진다 — 실제보다 안전해 보이는 숫자다. 가진 줄이 있는 탐지는 그 줄에만 붙는다. 이것은
      * 이 화면의 수를 세는 일이다 — 검토 결과 · 조치는 식별자로만 붙는다.
+     *
+     * @param byKey   (식별자, 버전) → 등급 → 건수
+     * @param byName  유형을 모르는 줄의 (이름, 버전) → 탐지의 식별자 → 등급 → 건수
+     * @param claimed 그 구역 인벤토리에 있는 (식별자, 버전) — 유형을 모르는 줄이 받을 후보 가운데
      */
-    private record Severities(Map<String, Set<String>> inventory,
-                              Map<String, Map<String, Map<String, Long>>> found) {
+    private record Severities(Map<String, Map<String, Long>> byKey,
+                              Map<String, Map<String, Map<String, Long>>> byName,
+                              Set<String> claimed) {
 
         Map<String, Long> of(ComponentRepository.VersionRow version) {
-            String at = key(version.getName(), version.getVersion());
-            Map<String, Map<String, Long>> byKey = found.getOrDefault(at, Map.of());
             String own = version.getPackageKey();
+            Map<String, Long> counts = byKey.getOrDefault(key(own, version.getVersion()), Map.of());
             if (!untyped(own)) {
-                return byKey.getOrDefault(own, Map.of());
+                return counts;
             }
-            Set<String> listed = inventory.getOrDefault(at, Set.of());
-            Map<String, Long> merged = new LinkedHashMap<>();
-            byKey.forEach((findingKey, counts) -> {
-                if (findingKey.equals(own) || !listed.contains(findingKey)) {
-                    counts.forEach((severity, n) -> merged.merge(severity, n, Long::sum));
-                }
-            });
+            Map<String, Long> merged = new LinkedHashMap<>(counts);
+            byName.getOrDefault(key(version.getName(), version.getVersion()), Map.of())
+                  .forEach((findingKey, found) -> {
+                      if (!findingKey.equals(own) && !claimed.contains(key(findingKey, version.getVersion()))) {
+                          found.forEach((severity, n) -> merged.merge(severity, n, Long::sum));
+                      }
+                  });
             return merged;
         }
 
@@ -289,7 +332,7 @@ public class PackageService {
     }
 
     /**
-     * {@code (이름, 버전)} 하나를 가리키는 키.
+     * {@code (식별자 또는 이름, 버전)} 하나를 가리키는 키.
      *
      * <p>구분자는 <b>NUL</b> 이다. 이름과 버전은 SBOM 이 담아 온 글자라 빈칸도
      * 하이픈도 콜론도 그 안에 들어 있을 수 있다. 그런 글자를 구분자로 쓰면

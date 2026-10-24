@@ -149,7 +149,8 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
      *
      * <p>목록에 뜬 줄의 식별자만 물어 본다. 전부 가져오면 12만 개짜리 자산 백 대에서
      * 수백만 행이 된다. 앞서 이름으로 물어 유형으로 갈랐는데, 이제 줄의 키 그대로 묻는다 —
-     * 같은 이름의 다른 패키지 버전이 그 줄의 버전 분포에 끼지 않는다.
+     * 같은 이름의 다른 패키지 버전이 그 줄의 버전 분포에 끼지 않는다. 유형을 모르는 줄이 받을
+     * 탐지 가운데 다른 줄이 가진 것을 가를 때도 쓴다(PackageService).
      */
     @Query("""
            SELECT c.packageKey AS packageKey, MIN(c.name) AS name, MIN(c.type) AS type,

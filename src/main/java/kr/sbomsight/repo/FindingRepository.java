@@ -960,19 +960,33 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
     /**
      * 패키지 인벤토리의 <b>버전별 심각도</b> — {@code /packages} 의 버전 분포.
      *
-     * <p>{@code (이름, 버전)} 마다 심각도별 건수를 낸다. 이것으로 <b>취약한
+     * <p>{@code (식별자, 버전)} 마다 심각도별 건수를 낸다. 이것으로 <b>취약한
      * 버전과 안전한 버전을 눈으로 가른다</b> — 같은 패키지 안에 둘이 섞여
      * 있으면 "이미 올린 자산이 있는데 안 올린 자산이 남았다" 는 뜻이고,
      * 그것이 이 화면에서 가장 중요한 신호다.
      *
-     * <p>목록에 뜬 이름만 물어 본다. 전부 가져오면 자산 백 대 × 12만 개에서
+     * <p>목록에 뜬 줄의 식별자만 물어 본다. 전부 가져오면 자산 백 대 × 12만 개에서
      * 수백만 행이 된다.
      *
-     * <p><b>식별자를 함께 준다</b> — 패키지 화면의 줄은 패키지 식별자다(V24). 인벤토리와
-     * 탐지가 같은 규칙({@link kr.sbomsight.domain.PackageKey})으로 만든 값이라 그대로 잇는다.
-     * 앞서 {@code (이름, 버전)} 으로만 이어, 같은 이름 · 버전이 다른 생태계에 있으면 남의
-     * 탐지가 그 버전에 붙었다. 이름은 유형을 모르는 인벤토리 줄이 받을 탐지를 고를 때
-     * 쓴다(PackageService).
+     * <p><b>식별자로 묻는다</b> — 패키지 화면의 줄은 패키지 식별자다(V24). 인벤토리와 탐지가 같은
+     * 규칙({@link kr.sbomsight.domain.PackageKey})으로 만든 값이라 그대로 잇는다. 앞서 줄에 찍힌
+     * 이름으로 물어, 같은 purl · 버전을 SBOM 과 grype 이 다른 이름으로 적은 탐지가 빠졌다.
+     * 이름을 함께 주는 것은 유형을 모르는 줄이 받을 탐지를 고를 때다(PackageService).
+     */
+    @Query("""
+           SELECT f.packageKey AS packageKey, f.packageName AS packageName,
+                  f.packageVersion AS packageVersion,
+                  LOWER(f.severity) AS severity, COUNT(f) AS total
+           FROM Finding f
+           WHERE f.scan.id IN :scanIds AND f.packageKey IN :keys
+           GROUP BY f.packageKey, f.packageName, f.packageVersion, LOWER(f.severity)
+           """)
+    List<PackageVersionSeverity> severityByPackageKeyVersion(
+            @Param("scanIds") Collection<Long> scanIds, @Param("keys") Collection<String> keys);
+
+    /**
+     * 위와 같은 것을 <b>이름으로</b> — 유형을 모르는 줄({@code pkg:/이름})이 받을 탐지를 고를 때만.
+     * 그 줄은 purl 도 유형도 없어 이름 말고는 이을 것이 없다(PackageService).
      */
     @Query("""
            SELECT f.packageKey AS packageKey, f.packageName AS packageName,
@@ -986,10 +1000,10 @@ public interface FindingRepository extends JpaRepository<Finding, Long> {
             @Param("scanIds") Collection<Long> scanIds, @Param("names") Collection<String> names);
 
     /**
-     * 위와 같은 것을 <b>이름 목록 없이</b>. CSV 내보내기가 쓴다.
+     * 위와 같은 것을 <b>식별자 · 이름 목록 없이</b>. CSV 내보내기 · 거르개가 쓴다.
      *
      * <p>화면은 앞 200개만 싣지만 내보내기는 거른 것 전부를 낸다 — 200개에서
-     * 잘린 파일이 결재 문서에 붙으면 그 수를 아무도 의심하지 않는다. 이름을
+     * 잘린 파일이 결재 문서에 붙으면 그 수를 아무도 의심하지 않는다. 식별자를
      * 수천 개 넘기면 {@code IN} 절이 그만큼 길어지므로 여기서는 조건을 뺀다.
      * 탐지 건수만큼이라 인벤토리 전체보다 훨씬 작다.
      */

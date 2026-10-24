@@ -1036,6 +1036,122 @@ class ComponentInventoryTest {
                 .containsExactlyInAnyOrder(tuple("maven", 1L), tuple("", 3L));
     }
 
+    /**
+     * <b>탐지는 (식별자, 버전)으로 잇는다 — 이름이 아니라.</b>
+     *
+     * <p>같은 purl({@code pkg:pypi/qk-yamlpkg@5.3.1})을 한 SBOM 은 {@code Qk-YamlPkg}, 다른 SBOM 은
+     * {@code qk_yamlpkg} 로 적었고, grype 은 앞 자산의 탐지를 {@code qk-yamlpkg} 로 적었다. 앞서 줄에
+     * 찍힌 이름 하나({@code Qk-YamlPkg})로 탐지를 물어 이어, 걸린 3건이 화면에서 0건이 됐고
+     * `취약점 있는 것만` 이 이 줄을 뺐고 CSV 도 0건이라 적었다.
+     */
+    @Test
+    @DisplayName("같은 식별자 · 버전에 이름이 여럿이어도 탐지 수가 화면 · 거르개 · CSV 에서 같다")
+    @Transactional
+    void findingsFollowTheKeyNotTheName() throws Exception {
+        Asset upper = asset("qk-upper");
+        Scan upperScan = doneScan(upper);
+        ingest(upper, upperScan, """
+                { "artifacts": [ { "name": "Qk-YamlPkg", "version": "5.3.1", "type": "python",
+                                   "purl": "pkg:pypi/qk-yamlpkg@5.3.1" } ] }
+                """);
+        hit(upperScan, "qk-yamlpkg", "5.3.1", "pkg:pypi/qk-yamlpkg@5.3.1", "CVE-2099-6001", "Critical");
+        Asset lower = asset("qk-lower");
+        Scan lowerScan = doneScan(lower);
+        ingest(lower, lowerScan, """
+                { "artifacts": [ { "name": "qk_yamlpkg", "version": "5.3.1", "type": "python",
+                                   "purl": "pkg:pypi/qk-yamlpkg@5.3.1" } ] }
+                """);
+        hit(lowerScan, "qk_yamlpkg", "5.3.1", "pkg:pypi/qk-yamlpkg@5.3.1", "CVE-2099-6001", "Critical");
+        hit(lowerScan, "qk_yamlpkg", "5.3.1", "pkg:pypi/qk-yamlpkg@5.3.1", "CVE-2099-6002", "High");
+        Asset upgraded = asset("qk-upgraded");
+        ingest(upgraded, doneScan(upgraded), """
+                { "artifacts": [ { "name": "qk_yamlpkg", "version": "6.0", "type": "python",
+                                   "purl": "pkg:pypi/qk-yamlpkg@6.0" } ] }
+                """);
+
+        PackageService.PackageRow row = rows(null, "yamlpkg", false, false).stream()
+                .filter(r -> r.packageKey().equals("pkg:pypi/qk-yamlpkg")).findFirst().orElseThrow();
+        assertThat(slice(row, "5.3.1").total())
+                .as("줄에 찍힌 이름과 다른 이름으로 적힌 탐지가 빠졌다").isEqualTo(3);
+        assertThat(slice(row, "5.3.1").assetCount()).isEqualTo(2);
+        assertThat(slice(row, "5.3.1").worst()).isEqualTo(Severity.CRITICAL);
+        assertThat(slice(row, "6.0").total()).isZero();
+        assertThat(row.mixed()).isTrue();
+
+        assertThat(rows(null, "yamlpkg", true, false)).extracting(PackageService.PackageRow::packageKey)
+                .as("`취약점 있는 것만` 이 걸린 줄을 뺐다").containsExactly("pkg:pypi/qk-yamlpkg");
+        assertThat(rows(null, "yamlpkg", false, true)).extracting(PackageService.PackageRow::packageKey)
+                .as("`일부 자산만 업그레이드` 가 줄을 뺐다").containsExactly("pkg:pypi/qk-yamlpkg");
+
+        // 이름 칸은 그 식별자 · 버전의 이름 가운데 하나(MIN) — 어느 것인지는 DB 의 정렬 규칙이 정한다.
+        List<String> lines = page("/packages/export.csv?q=yamlpkg&vulnerable=true").lines()
+                .filter(l -> l.contains("pkg:pypi/qk-yamlpkg")).toList();
+        assertThat(lines).extracting(l -> l.substring(l.indexOf(',') + 1))
+                .containsExactly("\"pkg:pypi/qk-yamlpkg\",\"pypi\",\"5.3.1\",\"2\",\"3\",\"심각\"",
+                                 "\"pkg:pypi/qk-yamlpkg\",\"pypi\",\"6.0\",\"1\",\"0\",\"\"");
+        assertThat(lines).extracting(l -> l.substring(0, l.indexOf(',')))
+                .allMatch(name -> name.equals("\"Qk-YamlPkg\"") || name.equals("\"qk_yamlpkg\""));
+    }
+
+    /**
+     * <b>유형을 모르는 줄은 다른 쪽에 선 줄이 가진 탐지를 받지 않는다.</b>
+     *
+     * <p>유형을 모르는 {@code pgx-zz}(2대 — 맨 앞 줄)와 groupId 가 있는 {@code pgx-zz}(1대 — 열한 번째 줄,
+     * 둘째 쪽). groupId 가 있는 쪽의 탐지가 그 줄의 것인지 가를 때 앞서 <b>그 쪽에 실린 줄만</b> 봐서,
+     * 첫 쪽의 유형 모르는 줄이 둘째 쪽 줄의 탐지를 한 번 더 셌다 — CSV(전부를 본다)와 수가 달랐다.
+     */
+    @Test
+    @DisplayName("유형을 모르는 줄은 다른 쪽에 선 줄이 가진 탐지를 받지 않는다 — 쪽 · CSV 가 같은 수")
+    @Transactional
+    void untypedRowLeavesWhatAnotherPageClaims() throws Exception {
+        String bare = """
+                { "bomFormat": "CycloneDX", "specVersion": "1.5",
+                  "components": [ { "type": "library", "name": "pgx-zz", "version": "1.0" } ] }
+                """;
+        Asset bareOne = asset("pgx-bare1");
+        Scan bareScan = doneScan(bareOne);
+        ingest(bareOne, bareScan, bare);
+        Asset bareTwo = asset("pgx-bare2");
+        ingest(bareTwo, doneScan(bareTwo), bare);
+        hit(bareScan, "pgx-zz", "1.0", "", "CVE-2099-6101", "Low");
+
+        StringBuilder artifacts = new StringBuilder("""
+                { "artifacts": [ { "name": "pgx-zz", "version": "1.0", "type": "java-archive",
+                                   "purl": "pkg:maven/x/pgx-zz@1.0" }""");
+        for (int i = 1; i <= 9; i++) {
+            artifacts.append(", { \"name\": \"pgx-a").append(i).append("\", \"version\": \"1.0\", "
+                             + "\"type\": \"npm\", \"purl\": \"pkg:npm/pgx-a").append(i).append("@1.0\" }");
+        }
+        Asset typed = asset("pgx-typed");
+        Scan typedScan = doneScan(typed);
+        ingest(typed, typedScan, artifacts.append(" ] }").toString());
+        hit(typedScan, "pgx-zz", "1.0", "pkg:maven/x/pgx-zz@1.0", "CVE-2099-6102", "Critical");
+
+        List<PackageService.PackageRow> first = packages.list(null, null, "pgx-", false, false, 0, 10)
+                                                        .rows().getContent();
+        List<PackageService.PackageRow> second = packages.list(null, null, "pgx-", false, false, 1, 10)
+                                                         .rows().getContent();
+        assertThat(first.get(0).packageKey()).isEqualTo("pkg:/pgx-zz");
+        assertThat(first.get(0).findingCount())
+                .as("둘째 쪽 maven 줄의 탐지를 첫 쪽의 유형 모르는 줄이 한 번 더 셌다").isEqualTo(1);
+        assertThat(second).extracting(PackageService.PackageRow::packageKey, PackageService.PackageRow::findingCount)
+                          .containsExactly(tuple("pkg:maven/x/pgx-zz", 1L));
+
+        assertThat(page("/packages/export.csv?q=pgx-zz").lines().filter(l -> l.startsWith("\"pgx-zz\"")).toList())
+                .containsExactlyInAnyOrder("\"pgx-zz\",\"pkg:/pgx-zz\",\"\",\"1.0\",\"2\",\"1\",\"낮음\"",
+                                           "\"pgx-zz\",\"pkg:maven/x/pgx-zz\",\"maven\",\"1.0\",\"1\",\"1\",\"심각\"");
+    }
+
+    /** grype 이 적는 대로 — 이름 · purl 은 그 검사의 SBOM 것, 유형은 syft 의 이름. */
+    private void hit(Scan scan, String name, String version, String purl, String cve, String severity) {
+        Finding f = new Finding(scan, cve + "|" + name + "|" + purl, cve, name);
+        f.setPackageVersion(version);
+        f.setPackageType(purl.startsWith("pkg:pypi/") ? "python" : purl.startsWith("pkg:maven/") ? "java-archive" : "");
+        f.setPackagePurl(purl);
+        f.setSeverity(severity);
+        findings.saveAndFlush(f);
+    }
+
     private String page(String url) throws Exception {
         return mvc.perform(get(url).with(user("tester").roles("ADMIN")))
                   .andExpect(status().isOk())
