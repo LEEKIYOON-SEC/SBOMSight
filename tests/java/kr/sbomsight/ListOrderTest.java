@@ -54,7 +54,7 @@ class ListOrderTest {
     @Test
     @DisplayName("자산의 패키지 탭 · 대응 화면의 검토 결과 목록도 정렬의 끝이 줄 하나를 가리킨다")
     void listQueriesEndOnAUniqueColumn() {
-        assertThat(orderBy(ComponentRepository.class, "findByAsset"))
+        assertThat(orderBy(ComponentRepository.class, "findByAssetMatching"))
                 .endsWith("c.name ASC, c.version ASC, c.id ASC");
         assertThat(orderBy(FindingAnalysisRepository.class, "findForList"))
                 .endsWith("a.name ASC, f.cve ASC, f.packageName ASC, f.packageKey ASC, f.id ASC");

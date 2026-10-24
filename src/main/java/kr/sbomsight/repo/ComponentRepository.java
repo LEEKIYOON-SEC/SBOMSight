@@ -1,6 +1,7 @@
 package kr.sbomsight.repo;
 
 import kr.sbomsight.domain.Component;
+import kr.sbomsight.domain.PackageKey;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -95,15 +96,35 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
      * <p><b>끝에 {@code c.id} 를 둔다.</b> 같은 패키지 · 같은 버전이 두 경로에
      * 깔리면 이름과 버전으로는 순서가 정해지지 않는다(유일 키가 없다). 쪽을
      * 나눠 읽으므로 경계에서 줄이 빠지거나 겹친다(ListOrderTest).
+     *
+     * <p>검색어는 이름과 식별자의 네임스페이스에서 찾는다({@link #keyPattern}).
      */
+    default Page<Component> findByAsset(Long assetId, String q, Pageable pageable) {
+        return findByAssetMatching(assetId, q, keyPattern(q), pageable);
+    }
+
     @Query("""
            SELECT c FROM Component c JOIN c.scan s
            WHERE c.asset.id = :assetId AND s.status = 'DONE'
-             AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%'))
+                  OR LOWER(c.packageKey) LIKE LOWER(CONCAT('pkg:%/%', :qk, '%')) ESCAPE '!')
            ORDER BY c.name ASC, c.version ASC, c.id ASC
            """)
-    Page<Component> findByAsset(@Param("assetId") Long assetId, @Param("q") String q,
-                                Pageable pageable);
+    Page<Component> findByAssetMatching(@Param("assetId") Long assetId, @Param("q") String q,
+                                        @Param("qk") String qk, Pageable pageable);
+
+    /**
+     * 검색어를 식별자에서 찾는 LIKE 조각 — 식별자와 같은 인코딩({@link PackageKey#searchable})에서
+     * LIKE 의 특수 글자({@code % _})를 {@code !} 로 막는다. 식별자에는 퍼센트 인코딩의 {@code %} 가
+     * 글자로 들어 있다 — 막지 않으면 {@code %40types} 의 {@code %} 가 아무 글자나 받는다.
+     *
+     * <p>{@code pkg:%/} 뒤에서 찾는다 — 유형({@code npm} · {@code maven})에 걸려 그 유형 전부가
+     * 나오지 않게. 네임스페이스(groupId · scope · 배포판) · 이름 · 남긴 한정자(classifier …)에서 찾는다.
+     */
+    static String keyPattern(String q) {
+        return q == null ? null
+                : PackageKey.searchable(q).replace("!", "!!").replace("%", "!%").replace("_", "!_");
+    }
 
     /**
      * 패키지 식별자로 묶은 한 줄 — {@code /packages} 의 표.
@@ -113,7 +134,14 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
      * 취약점 수에 남의 것이 섞였다(그 전에는 이름 하나라 npm 과 pypi 의 {@code semver} 가).
      * 이름 · 유형은 화면에 찍을 값이다 — 같은 식별자를 syft 가 다른 이름으로 적었으면
      * 그중 하나(MIN)다.
+     *
+     * <p>검색어는 이름과 식별자의 네임스페이스에서 찾는다({@link #keyPattern}) — 앞서 이름만이라
+     * groupId({@code org.apache.logging.log4j}) · scope({@code @types})로는 아무것도 나오지 않았다.
      */
+    default List<PackageRow> groupByPackage(Long zoneId, String type, String q) {
+        return groupByPackageMatching(zoneId, type, q, keyPattern(q));
+    }
+
     @Query("""
            SELECT c.packageKey AS packageKey, MIN(c.name) AS name, MIN(c.type) AS type,
                   COUNT(DISTINCT c.asset.id) AS assetCount,
@@ -124,13 +152,15 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
            WHERE a.archivedAt IS NULL AND s.status = 'DONE'
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
              AND (:type IS NULL OR c.type = :type)
-             AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%'))
+                  OR LOWER(c.packageKey) LIKE LOWER(CONCAT('pkg:%/%', :qk, '%')) ESCAPE '!')
            GROUP BY c.packageKey
            ORDER BY COUNT(DISTINCT c.asset.id) DESC, MIN(c.name) ASC, c.packageKey ASC
            """)
-    List<PackageRow> groupByPackage(@Param("zoneId") Long zoneId,
-                                    @Param("type") String type,
-                                    @Param("q") String q);
+    List<PackageRow> groupByPackageMatching(@Param("zoneId") Long zoneId,
+                                            @Param("type") String type,
+                                            @Param("q") String q,
+                                            @Param("qk") String qk);
 
     interface PackageRow {
         String getPackageKey();
@@ -188,8 +218,12 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
      * 결재 문서에 붙는다</b> — 그래서 여기서는 이름으로 자르지 않고 거르개만
      * 건다. 행 수는 {@code (식별자, 버전)} 만큼이라 인벤토리 전체보다 작다.
      * 앞서 {@code (이름, 버전)} 으로 묶고 유형을 {@code MIN} 으로 집어, 같은 이름 · 버전이
-     * 두 유형에 있으면 한 줄로 합쳐졌다.
+     * 두 유형에 있으면 한 줄로 합쳐졌다. 검색어는 화면({@link #groupByPackage})과 같이 찾는다.
      */
+    default List<VersionRow> versionSpreadAll(Long zoneId, String type, String q) {
+        return versionSpreadAllMatching(zoneId, type, q, keyPattern(q));
+    }
+
     @Query("""
            SELECT c.packageKey AS packageKey, MIN(c.name) AS name, MIN(c.type) AS type,
                   c.version AS version,
@@ -200,13 +234,15 @@ public interface ComponentRepository extends JpaRepository<Component, Long> {
            WHERE a.archivedAt IS NULL AND s.status = 'DONE'
              AND (:zoneId IS NULL OR a.zone.id = :zoneId)
              AND (:type IS NULL OR c.type = :type)
-             AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%')))
+             AND (:q IS NULL OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%'))
+                  OR LOWER(c.packageKey) LIKE LOWER(CONCAT('pkg:%/%', :qk, '%')) ESCAPE '!')
            GROUP BY c.packageKey, c.version
            ORDER BY MIN(c.name) ASC, c.packageKey ASC, c.version ASC
            """)
-    List<VersionRow> versionSpreadAll(@Param("zoneId") Long zoneId,
-                                      @Param("type") String type,
-                                      @Param("q") String q);
+    List<VersionRow> versionSpreadAllMatching(@Param("zoneId") Long zoneId,
+                                              @Param("type") String type,
+                                              @Param("q") String q,
+                                              @Param("qk") String qk);
 
     /** 유형 거르개에 채울 값. SBOM 이 실제로 담아 온 것만 보여 준다. */
     @Query("""

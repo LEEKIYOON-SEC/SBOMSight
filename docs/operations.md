@@ -556,6 +556,8 @@ netty 의 네이티브 jar(`?classifier=linux-x86_64`)와 순수 jar, 라이브�
   이름 곁에 적는 네임스페이스는 풀어서 적는다(`@types`).
 - 규격에 맞지 않는 purl(같은 한정자가 둘 · 깨진 `%XX`)은 V24 처럼 적힌 좌표에서 버전 · 한정자를
   뗀다. purl 이 없는 원소는 V24 와 같다 — `pkg:<유형>/<이름>`, 네임스페이스를 지어내지 않는다.
+- 패키지 검색(패키지 화면 · 자산의 `설치된 패키지`)이 이름 말고도 네임스페이스로 찾는다 — groupId
+  (`org.apache.logging.log4j`), npm scope(`@types`), Maven 좌표(`groupId:artifactId`).
 
 **있던 기록은 근거가 있을 때만 새 식별자로 옮긴다.** V25 는 SQL 이 아니라 자바 마이그레이션이다 —
 앱이 새 탐지에 쓰는 규칙(PackageKey)을 그대로 불러, 같은 SBOM 을 다시 검사한 탐지가 옮긴 기록에
@@ -675,7 +677,9 @@ Restart-Computer                                              # 재부팅 뒤 �
 풀어서 띄운 것)의 빈 DB 와 데이터가 있는 DB 양쪽에 태웠고(`tests/check-migrations.sh`),
 그 스키마 위에서 앱 전체 시험 534개가 통과했다(`tests/check-mariadb.sh`, 2026-10-22). V24 는
 MySQL 8 에서 `tests/check-migrations.sh` 만 돌렸다(빈 DB · 데이터가 있는 DB, 2026-10-22) — V24
-스키마 위의 앱 전체 시험은 MariaDB 10.11 에서만 돌렸다(554개, 2026-10-23). 윈도우판
+스키마 위의 앱 전체 시험은 MariaDB 10.11 에서만 돌렸다(554개, 2026-10-23). V25(자바
+마이그레이션)도 같다 — `tests/check-migrations.sh` 는 MariaDB 10.11.14 · MySQL 8.0.46 양쪽(빈 DB ·
+데이터가 있는 DB, 고친 수까지 같음), 앱 전체 시험은 MariaDB 10.11 에서만(572개, 2026-10-24). 윈도우판
 MySQL 8 에서는 돌려 보지 못했다 — 업그레이드한 뒤 기록의 마이그레이션 줄
 (`Successfully applied`)과 대응 화면의 현재 · 목표 버전을 먼저 보고, 이상하면 8절의
 되돌리기로 돌아간다.

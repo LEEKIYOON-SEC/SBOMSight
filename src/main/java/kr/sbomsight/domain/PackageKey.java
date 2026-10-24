@@ -11,7 +11,9 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -149,6 +151,22 @@ public final class PackageKey {
         } catch (IllegalArgumentException e) {
             return path.substring(0, last);
         }
+    }
+
+    /**
+     * 검색어를 식별자 안에서 찾을 글자로 — 식별자와 같은 인코딩. 패키지 검색이 이름 말고도
+     * 네임스페이스(groupId · scope · 배포판)로 찾는다(ComponentRepository).
+     *
+     * <p>{@code /} 로 가른 조각마다 인코딩한다 — 식별자에서 네임스페이스와 이름 사이의 {@code /} 는
+     * 그대로다({@code @types/node} → {@code %40types/node}). Maven 좌표로 적은 {@code :}
+     * ({@code org.apache.logging.log4j:log4j-core})도 그 자리로 읽는다.
+     */
+    public static String searchable(String term) {
+        List<String> segments = new ArrayList<>();
+        for (String segment : term.trim().replace(':', '/').split("/", -1)) {
+            segments.add(encode(segment));
+        }
+        return String.join("/", segments);
     }
 
     // -----------------------------------------------------------------------

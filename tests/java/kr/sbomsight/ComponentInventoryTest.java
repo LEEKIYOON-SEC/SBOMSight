@@ -1142,6 +1142,51 @@ class ComponentInventoryTest {
                                            "\"pgx-zz\",\"pkg:maven/x/pgx-zz\",\"maven\",\"1.0\",\"1\",\"1\",\"심각\"");
     }
 
+    /**
+     * <b>패키지 검색은 이름과 네임스페이스에서 찾는다.</b>
+     *
+     * <p>앞서 이름만 찾아, groupId({@code org.nsq.logging}) · npm scope({@code @nsqtypes}) · Maven 좌표
+     * ({@code groupId:artifactId})로는 아무것도 나오지 않았다. 식별자는 퍼센트 인코딩이라
+     * ({@code %40nsqtypes}) 검색어도 같은 인코딩으로 바꿔 찾는다. 유형({@code npm})으로는 찾지 않는다
+     * — 그 유형 전부가 나온다.
+     */
+    @Test
+    @DisplayName("패키지 검색 — 이름 말고도 네임스페이스(groupId · scope)로 찾는다 · CSV · 자산의 패키지 탭도")
+    @Transactional
+    void searchLooksAtNamespacesToo() throws Exception {
+        Asset asset = asset("nsq");
+        ingest(asset, doneScan(asset), """
+                { "artifacts": [
+                    { "name": "nsq-core", "version": "2.14.1", "type": "java-archive",
+                      "purl": "pkg:maven/org.nsq.logging/nsq-core@2.14.1" },
+                    { "name": "nsq-node", "version": "20.1.0", "type": "npm",
+                      "purl": "pkg:npm/%40nsqtypes/nsq-node@20.1.0" },
+                    { "name": "nsq-plain", "version": "1.0", "type": "npm",
+                      "purl": "pkg:npm/nsq-plain@1.0" } ] }
+                """);
+        String maven = "pkg:maven/org.nsq.logging/nsq-core";
+        String scoped = "pkg:npm/%40nsqtypes/nsq-node";
+
+        for (String term : List.of("org.nsq.logging", "NSQ.Logging", "org.nsq.logging:nsq-core",
+                                   "org.nsq.logging/nsq-core")) {
+            assertThat(rows(null, term, false, false)).extracting(PackageService.PackageRow::packageKey)
+                    .as("groupId 로 찾지 못했다: %s", term).containsExactly(maven);
+        }
+        for (String term : List.of("@nsqtypes", "nsqtypes", "@nsqtypes/nsq-node")) {
+            assertThat(rows(null, term, false, false)).extracting(PackageService.PackageRow::packageKey)
+                    .as("npm scope 로 찾지 못했다: %s", term).containsExactly(scoped);
+        }
+        assertThat(rows(null, "nsq-", false, false)).extracting(PackageService.PackageRow::packageKey)
+                .as("이름으로 찾던 것은 그대로").containsExactlyInAnyOrder(maven, scoped, "pkg:npm/nsq-plain");
+        assertThat(rows(null, "npm", false, false)).extracting(PackageService.PackageRow::packageKey)
+                .as("유형(npm)에 걸려 그 유형 전부가 나왔다").doesNotContain(scoped, "pkg:npm/nsq-plain");
+
+        assertThat(page("/packages/export.csv?q=org.nsq.logging").lines().skip(1).toList())
+                .containsExactly("\"nsq-core\",\"" + maven + "\",\"maven\",\"2.14.1\",\"1\",\"0\",\"\"");
+        assertThat(page("/assets/" + asset.getId() + "?tab=packages&q=@nsqtypes"))
+                .contains("nsq-node").doesNotContain("nsq-core").doesNotContain("nsq-plain");
+    }
+
     /** grype 이 적는 대로 — 이름 · purl 은 그 검사의 SBOM 것, 유형은 syft 의 이름. */
     private void hit(Scan scan, String name, String version, String purl, String cve, String severity) {
         Finding f = new Finding(scan, cve + "|" + name + "|" + purl, cve, name);
