@@ -39,7 +39,7 @@ public class Remediation {
     /**
      * 패키지 식별자({@link PackageKey}) — 조치는 (자산, 이것)에 붙는다. 앞서는 이름이라 같은
      * 자산의 npm {@code semver} 와 PyPI {@code semver} 가 한 조치를 나눠 가졌다(V24). 비어 있으면
-     * V24 가 어느 패키지의 것인지 가르지 못한 옛 조치다 — 지우지 않고 남기되 어느 줄에도 붙이지
+     * V24 · V25 가 어느 패키지의 것인지 가르지 못한 옛 조치다 — 지우지 않고 남기되 어느 줄에도 붙이지
      * 않는다(대응 화면에 `패키지 확인 필요`).
      */
     @Column(name = "package_key", length = 512)
@@ -192,7 +192,7 @@ public class Remediation {
         return packageKey;
     }
 
-    /** V24 가 어느 패키지의 것인지 가르지 못한 옛 조치인가. */
+    /** V24 · V25 가 어느 패키지의 것인지 가르지 못한 옛 조치인가. */
     public boolean isPackageUnresolved() {
         return packageKey == null || packageKey.isEmpty();
     }

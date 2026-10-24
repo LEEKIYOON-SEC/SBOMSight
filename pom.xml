@@ -105,6 +105,16 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!-- purl 을 읽고 정규형으로 쓴다(패키지 식별자 — PackageKey · V25). purl 규격 쪽이 내는
+         참조 구현이다. 손으로 쪼개다 한정자를 통째로 버렸다 — Maven 의 classifier 처럼 패키지를
+         가르는 값까지. MIT, 의존물 없음(17KB). 오프라인 빌드는 ~/.m2 에 이것이 있어야 한다
+         (docs/offline-operations.md). -->
+    <dependency>
+      <groupId>com.github.package-url</groupId>
+      <artifactId>packageurl-java</artifactId>
+      <version>1.5.0</version>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

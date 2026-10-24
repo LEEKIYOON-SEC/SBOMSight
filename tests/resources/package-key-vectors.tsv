@@ -1,37 +1,71 @@
-# 패키지 식별자 — 같은 입력과 기대값을 자바(PackageKeyTest)와 V24 의 SQL(tests/check-migrations.sh)이 함께 견준다.
-# 칸: purl<TAB>유형<TAB>이름<TAB>기대 식별자. 빈 칸은 빈 값. 앞뒤 빈칸은 담을 때 이미 떼므로 넣지 않는다.
+# 패키지 식별자 — 같은 입력과 기대값을 자바(PackageKeyTest)와 마이그레이션(tests/check-migrations.sh)이 함께 견준다.
+# 칸: purl<TAB>유형<TAB>이름<TAB>V24 뒤 식별자<TAB>지금 식별자. 빈 칸은 빈 값. 앞뒤 빈칸은 담을 때 이미 떼므로 넣지 않는다.
+#   V24 뒤 — V24 의 SQL 이 만든 것(한정자를 통째로 버렸다). V24 는 이미 태운 DB 가 있어 바꾸지 않는다.
+#   지금   — 앱의 PackageKey 가 만드는 것이자 V25 가 이미 담긴 행을 다시 만든 것. 둘이 다르면 새로 올린 SBOM 의 탐지가
+#            이관한 검토 결과에 이어지지 않는다.
 # 유형은 탐지의 것(grype · syft 의 이름)이든 인벤토리의 것(purl 의 이름)이든 같은 식별자가 나와야 한다.
-pkg:npm/semver@7.5.4	npm	semver	pkg:npm/semver
-pkg:pypi/semver@3.0.2	python	semver	pkg:pypi/semver
-pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.15.2	java-archive	jackson-databind	pkg:maven/com.fasterxml.jackson.core/jackson-databind
-pkg:maven/org.codehaus.jackson/jackson-databind@1.9.13	java-archive	jackson-databind	pkg:maven/org.codehaus.jackson/jackson-databind
-pkg:npm/%40angular/core@16.2.0	npm	@angular/core	pkg:npm/%40angular/core
-pkg:npm/@scope/name@1.0.0	npm	@scope/name	pkg:npm/@scope/name
-pkg:rpm/rocky/openssl-libs@3.0.7-24.el9?arch=x86_64&upstream=openssl-3.0.7-24.el9.src.rpm&distro=rocky-9.3	rpm	openssl-libs	pkg:rpm/rocky/openssl-libs
-pkg:deb/debian/libssl3@3.0.11-1~deb12u2?arch=amd64&upstream=openssl&distro=debian-12	deb	libssl3	pkg:deb/debian/libssl3
-pkg:golang/github.com/gin-gonic/gin@v1.9.1	go-module	github.com/gin-gonic/gin	pkg:golang/github.com/gin-gonic/gin
-pkg:generic/openssl@1.1.1k	binary	openssl	pkg:generic/openssl
-pkg:maven/org.example/lib@1.0#sub/path	java-archive	lib	pkg:maven/org.example/lib
-pkg:maven/org.example/lib?type=jar	java-archive	lib	pkg:maven/org.example/lib
-pkg:maven/g/a@1.0?x=y#p@q	java-archive	a	pkg:maven/g/a
-pkg:a/b?x=1/2	a	b	pkg:a/b
-pkg:NPM/Upper@1.0	npm	Upper	pkg:npm/Upper
-pkg:pypi/PyYAML@6.0	python	PyYAML	pkg:pypi/PyYAML
-pkg:conda/numpy@1.26.0	conda	numpy	pkg:conda/numpy
-pkg:github/actions/checkout@v4	github-action	actions/checkout	pkg:github/actions/checkout
-pkg:npm/%40types/node	npm	@types/node	pkg:npm/%40types/node
-pkg:generic/name/@1	binary	name	pkg:generic/name
-	java-archive	log4j-core	pkg:maven/log4j-core
-	python	requests	pkg:pypi/requests
-	conda	numpy	pkg:generic/numpy
-	UnknownPackage	mystery	pkg:/mystery
-		busybox	pkg:/busybox
-	binary	busybox	pkg:binary/busybox
-	Python	pycase	pkg:Python/pycase
-	npm	한글패키지	pkg:npm/한글패키지
-pkg:/weird@1	npm	weird	pkg:npm/weird
-PKG:pypi/upper@1.0	python	upper	pkg:pypi/upper
-pkg:npm	npm	x	pkg:npm/x
-pkg:npm/@1.0	npm	empty	pkg:npm/empty
-pkg:npm/@types/node	npm	@types/node	pkg:npm/@types/node
-purl-but-not	rpm	bash	pkg:rpm/bash
+pkg:npm/semver@7.5.4	npm	semver	pkg:npm/semver	pkg:npm/semver
+pkg:pypi/semver@3.0.2	python	semver	pkg:pypi/semver	pkg:pypi/semver
+pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.15.2	java-archive	jackson-databind	pkg:maven/com.fasterxml.jackson.core/jackson-databind	pkg:maven/com.fasterxml.jackson.core/jackson-databind
+pkg:maven/org.codehaus.jackson/jackson-databind@1.9.13	java-archive	jackson-databind	pkg:maven/org.codehaus.jackson/jackson-databind	pkg:maven/org.codehaus.jackson/jackson-databind
+pkg:npm/%40angular/core@16.2.0	npm	@angular/core	pkg:npm/%40angular/core	pkg:npm/%40angular/core
+pkg:npm/@scope/name@1.0.0	npm	@scope/name	pkg:npm/@scope/name	pkg:npm/%40scope/name
+pkg:rpm/rocky/openssl-libs@3.0.7-24.el9?arch=x86_64&upstream=openssl-3.0.7-24.el9.src.rpm&distro=rocky-9.3	rpm	openssl-libs	pkg:rpm/rocky/openssl-libs	pkg:rpm/rocky/openssl-libs
+pkg:deb/debian/libssl3@3.0.11-1~deb12u2?arch=amd64&upstream=openssl&distro=debian-12	deb	libssl3	pkg:deb/debian/libssl3	pkg:deb/debian/libssl3
+pkg:golang/github.com/gin-gonic/gin@v1.9.1	go-module	github.com/gin-gonic/gin	pkg:golang/github.com/gin-gonic/gin	pkg:golang/github.com/gin-gonic/gin
+pkg:generic/openssl@1.1.1k	binary	openssl	pkg:generic/openssl	pkg:generic/openssl
+pkg:maven/org.example/lib@1.0#sub/path	java-archive	lib	pkg:maven/org.example/lib	pkg:maven/org.example/lib
+pkg:maven/org.example/lib?type=jar	java-archive	lib	pkg:maven/org.example/lib	pkg:maven/org.example/lib
+pkg:maven/g/a@1.0?x=y#p@q	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?x=y
+pkg:a/b?x=1/2	a	b	pkg:a/b	pkg:a/b?x=1%2F2
+pkg:NPM/Upper@1.0	npm	Upper	pkg:npm/Upper	pkg:npm/Upper
+pkg:pypi/PyYAML@6.0	python	PyYAML	pkg:pypi/PyYAML	pkg:pypi/pyyaml
+pkg:conda/numpy@1.26.0	conda	numpy	pkg:conda/numpy	pkg:conda/numpy
+pkg:github/actions/checkout@v4	github-action	actions/checkout	pkg:github/actions/checkout	pkg:github/actions/checkout
+pkg:npm/%40types/node	npm	@types/node	pkg:npm/%40types/node	pkg:npm/%40types/node
+pkg:generic/name/@1	binary	name	pkg:generic/name	pkg:generic/name
+	java-archive	log4j-core	pkg:maven/log4j-core	pkg:maven/log4j-core
+	python	requests	pkg:pypi/requests	pkg:pypi/requests
+	conda	numpy	pkg:generic/numpy	pkg:generic/numpy
+	UnknownPackage	mystery	pkg:/mystery	pkg:/mystery
+		busybox	pkg:/busybox	pkg:/busybox
+	binary	busybox	pkg:binary/busybox	pkg:binary/busybox
+	Python	pycase	pkg:Python/pycase	pkg:python/pycase
+	npm	한글패키지	pkg:npm/한글패키지	pkg:npm/%ED%95%9C%EA%B8%80%ED%8C%A8%ED%82%A4%EC%A7%80
+pkg:/weird@1	npm	weird	pkg:npm/weird	pkg:npm/weird
+PKG:pypi/upper@1.0	python	upper	pkg:pypi/upper	pkg:pypi/upper
+pkg:npm	npm	x	pkg:npm/x	pkg:npm/x
+pkg:npm/@1.0	npm	empty	pkg:npm/empty	pkg:npm/empty
+pkg:npm/@types/node	npm	@types/node	pkg:npm/@types/node	pkg:npm/%40types/node
+purl-but-not	rpm	bash	pkg:rpm/bash	pkg:rpm/bash
+pkg:maven/io.netty/netty-transport-native-epoll@4.1.86.Final?classifier=linux-x86_64	java-archive	netty-transport-native-epoll	pkg:maven/io.netty/netty-transport-native-epoll	pkg:maven/io.netty/netty-transport-native-epoll?classifier=linux-x86_64
+pkg:maven/io.netty/netty-transport-native-epoll@4.1.86.Final?type=jar&classifier=linux-aarch_64	java-archive	netty-transport-native-epoll	pkg:maven/io.netty/netty-transport-native-epoll	pkg:maven/io.netty/netty-transport-native-epoll?classifier=linux-aarch_64
+pkg:maven/org.example/lib@1.0?type=test-jar	java-archive	lib	pkg:maven/org.example/lib	pkg:maven/org.example/lib?type=test-jar
+pkg:maven/org.example/lib@1.0?type=jar&classifier=sources&repository_url=https%3A%2F%2Frepo.example.org%2Fmaven2	java-archive	lib	pkg:maven/org.example/lib	pkg:maven/org.example/lib?classifier=sources
+pkg:maven/net.sf.json-lib/json-lib@2.4?classifier=jdk15	java-archive	json-lib	pkg:maven/net.sf.json-lib/json-lib	pkg:maven/net.sf.json-lib/json-lib?classifier=jdk15
+pkg:maven/g/a@1?type=war&classifier=x	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?classifier=x&type=war
+pkg:maven/g/a@2?classifier=x&type=war	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?classifier=x&type=war
+pkg:maven/g/a@1?Classifier=x	java-archive	a	pkg:maven/g/a	pkg:maven/g/a?classifier=x
+pkg:maven/g/a@1?classifier=	java-archive	a	pkg:maven/g/a	pkg:maven/g/a
+pkg:maven/g/a@1?classifier=x&classifier=y	java-archive	a	pkg:maven/g/a	pkg:maven/g/a
+pkg:rpm/redhat/openssl@1.1.1k-7.el8_6?arch=x86_64&epoch=1&upstream=openssl-1.1.1k-7.el8_6.src.rpm&distro=rhel-8.6	rpm	openssl	pkg:rpm/redhat/openssl	pkg:rpm/redhat/openssl
+pkg:apk/alpine/musl@1.2.3-r4?arch=x86_64&upstream=musl&distro=alpine-3.17.3	apk	musl	pkg:apk/alpine/musl	pkg:apk/alpine/musl
+pkg:alpm/arch/linux@6.4.7.arch1-1?arch=x86_64&upstream=linux&distro=arch	alpm	linux	pkg:alpm/arch/linux	pkg:alpm/arch/linux
+pkg:deb/ubuntu/libc6@2.35-0ubuntu3.1?arch=amd64&upstream=glibc%402.35-0ubuntu3.1&distro=ubuntu-22.04	deb	libc6	pkg:deb/ubuntu/libc6	pkg:deb/ubuntu/libc6
+pkg:bitnami/redis@7.2.4-0?arch=amd64&distro=debian-12	bitnami	redis	pkg:bitnami/redis	pkg:bitnami/redis
+pkg:nix/glibc@2.37-8?output=bin&outputhash=0c2rbyg2ldc5yvwqp3nr4hd3sgnr7l46&drvpath=xq5bprsgxwpdddqw6a0ynzv3hqyd6wlr-glibc-2.37-8.drv	nix	glibc	pkg:nix/glibc	pkg:nix/glibc?output=bin
+pkg:conan/conan/zlib@1.2.13?channel=stable	conan	zlib	pkg:conan/conan/zlib	pkg:conan/conan/zlib?channel=stable
+pkg:vcpkg/zlib@1.3.1?triplet=x64-linux&port_revision=2&repository_url=https%3A%2F%2Fgithub.com%2Fmicrosoft%2Fvcpkg&repository_revision=abc123	vcpkg	zlib	pkg:vcpkg/zlib	pkg:vcpkg/zlib
+pkg:conda/absl-py@0.4.1?build=py36h06a4308_0&channel=main&subdir=linux-64&type=tar.bz2	conda	absl-py	pkg:conda/absl-py	pkg:conda/absl-py
+pkg:pub/http@1.1.0?hosted_url=https%3A%2F%2Fpub.dev	dart-pub	http	pkg:pub/http	pkg:pub/http
+pkg:gem/nokogiri@1.13.10?platform=java	gem	nokogiri	pkg:gem/nokogiri	pkg:gem/nokogiri
+pkg:pypi/requests@2.31.0?vcs_url=git%2Bhttps%3A%2F%2Fgithub.com%2Fpsf%2Frequests%40v2.31.0	python	requests	pkg:pypi/requests	pkg:pypi/requests
+pkg:generic/openssl@3.0.13?download_url=https%3A%2F%2Fopenssl.org%2Fsource%2Fopenssl-3.0.13.tar.gz&checksum=sha256%3Aabc	binary	openssl	pkg:generic/openssl	pkg:generic/openssl
+pkg:oci/debian@sha256%3Aabc?repository_url=docker.io%2Flibrary%2Fdebian&arch=amd64&tag=bookworm	oci	debian	pkg:oci/debian	pkg:oci/debian
+pkg:generic/foo@1?arch=x86_64	binary	foo	pkg:generic/foo	pkg:generic/foo?arch=x86_64
+pkg:pypi/Django_Rest@3.0	python	Django_Rest	pkg:pypi/Django_Rest	pkg:pypi/django-rest
+pkg:golang/github.com/BurntSushi/toml@v1.3.2	go-module	github.com/BurntSushi/toml	pkg:golang/github.com/BurntSushi/toml	pkg:golang/github.com/burntsushi/toml
+pkg:npm/%ED%95%9C%EA%B8%80@1.0	npm	한글	pkg:npm/%ED%95%9C%EA%B8%80	pkg:npm/%ED%95%9C%EA%B8%80
+pkg:npm/한글@1.0	npm	한글	pkg:npm/한글	pkg:npm/%ED%95%9C%EA%B8%80
+pkg:npm/bad%ZZname@1	npm	bad%ZZname	pkg:npm/bad%ZZname	pkg:npm/bad%ZZname
+pkg:generic/longname@1?note=::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::	binary	longname	pkg:generic/longname	pkg:generic/longname?note=%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%~4b1ad6e9558358ee154f06913b733216e3b9be29673dc9be6dc91fbf6e9e3a93

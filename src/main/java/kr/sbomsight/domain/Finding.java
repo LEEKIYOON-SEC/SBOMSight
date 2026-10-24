@@ -97,7 +97,8 @@ public class Finding {
     private String packagePurl = "";
 
     /**
-     * 패키지 식별자 — purl 에서 버전 · 한정자를 뗀 것({@link PackageKey}). 검토 결과 · 조치 ·
+     * 패키지 식별자 — purl 에서 버전과 패키지를 가르지 않는 한정자를 뗀 것({@link PackageKey} · V25).
+     * 검토 결과 · 조치 ·
      * 보고서의 줄이 이것으로 이 탐지를 가리킨다. 이름 · 유형 · purl 에서 만들어지므로 저장할 때
      * 채운다({@link #fillPackageKey}) — 손으로 적지 않는다(V24).
      */

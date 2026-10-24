@@ -1,0 +1,262 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3101",
+        "dataSource": "fake",
+        "namespace": "github:language:java",
+        "severity": "High",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+            "metrics": {
+              "baseScore": 7.5
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "4.1.101.Final"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "java-matcher",
+          "searchedBy": {
+            "namespace": "github:language:java"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3101",
+            "versionConstraint": "< 4.1.101.Final"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "netty-transport-native-epoll",
+        "version": "4.1.100.Final",
+        "type": "java-archive",
+        "purl": "pkg:maven/io.netty/netty-transport-native-epoll@4.1.100.Final?classifier=linux-x86_64",
+        "locations": [
+          {
+            "path": "/opt/app/lib/netty-transport-native-epoll-4.1.100.Final-linux-x86_64.jar"
+          }
+        ]
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3101",
+        "dataSource": "fake",
+        "namespace": "github:language:java",
+        "severity": "High",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+            "metrics": {
+              "baseScore": 7.5
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "4.1.101.Final"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "java-matcher",
+          "searchedBy": {
+            "namespace": "github:language:java"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3101",
+            "versionConstraint": "< 4.1.101.Final"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "netty-transport-native-epoll",
+        "version": "4.1.100.Final",
+        "type": "java-archive",
+        "purl": "pkg:maven/io.netty/netty-transport-native-epoll@4.1.100.Final?classifier=linux-aarch_64",
+        "locations": [
+          {
+            "path": "/opt/app/lib/netty-transport-native-epoll-4.1.100.Final-linux-aarch_64.jar"
+          }
+        ]
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3101",
+        "dataSource": "fake",
+        "namespace": "github:language:java",
+        "severity": "High",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+            "metrics": {
+              "baseScore": 7.5
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "4.1.101.Final"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "java-matcher",
+          "searchedBy": {
+            "namespace": "github:language:java"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3101",
+            "versionConstraint": "< 4.1.101.Final"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "netty-transport-native-epoll",
+        "version": "4.1.100.Final",
+        "type": "java-archive",
+        "purl": "pkg:maven/io.netty/netty-transport-native-epoll@4.1.100.Final",
+        "locations": [
+          {
+            "path": "/opt/app/lib/netty-transport-native-epoll-4.1.100.Final.jar"
+          }
+        ]
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3102",
+        "dataSource": "fake",
+        "namespace": "github:language:java",
+        "severity": "Critical",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": {
+              "baseScore": 9.8
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.1"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "java-matcher",
+          "searchedBy": {
+            "namespace": "github:language:java"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3102",
+            "versionConstraint": "< 1.1"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "qk-lib",
+        "version": "1.0",
+        "type": "java-archive",
+        "purl": "pkg:maven/org.example/qk-lib@1.0?type=test-jar",
+        "locations": [
+          {
+            "path": "/opt/app/lib/qk-lib-1.0-tests.jar"
+          }
+        ]
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "CVE-2099-3102",
+        "dataSource": "fake",
+        "namespace": "github:language:java",
+        "severity": "Critical",
+        "cvss": [
+          {
+            "type": "Primary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": {
+              "baseScore": 9.8
+            }
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.1"
+          ],
+          "state": "fixed"
+        }
+      },
+      "relatedVulnerabilities": [],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "java-matcher",
+          "searchedBy": {
+            "namespace": "github:language:java"
+          },
+          "found": {
+            "vulnerabilityID": "CVE-2099-3102",
+            "versionConstraint": "< 1.1"
+          }
+        }
+      ],
+      "artifact": {
+        "name": "qk-lib",
+        "version": "1.0",
+        "type": "java-archive",
+        "purl": "pkg:maven/org.example/qk-lib@1.0?type=jar",
+        "locations": [
+          {
+            "path": "/opt/app/lib/qk-lib-1.0.jar"
+          }
+        ]
+      }
+    }
+  ],
+  "source": {
+    "type": "sbom"
+  },
+  "distro": {
+    "name": "debian",
+    "version": "12"
+  },
+  "descriptor": {
+    "version": "0.0.0-fake",
+    "db": {
+      "built": "2026-10-01T00:00:00Z"
+    }
+  }
+}

@@ -257,7 +257,7 @@
     */-->
     <p class="footnote" th:if="${listing.rows().totalElements > 0}">
       ※ 세는 단위 — <b>패키지 식별자</b> · 여러 버전·여러 자산이어도 한 줄.
-      같은 이름도 유형 · 네임스페이스가 다르면 다른 줄.
+      같은 이름도 유형 · 네임스페이스 · classifier 같은 한정자가 다르면 다른 줄.
     </p>
     <p class="footnote" th:if="${listing.rows().totalElements > 0}">
       ※ 깔린 것 전부 · 탐지 난 것만은

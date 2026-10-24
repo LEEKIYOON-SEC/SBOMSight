@@ -477,6 +477,7 @@ versions"` 가 한 번 찍힌다.
 
 같은 패키지인지를 **패키지 식별자** 하나로 가른다 — purl 에서 버전 · 한정자(`?arch=…`) ·
 하위 경로(`#…`)를 뗀 것이다(`pkg:maven/com.fasterxml.jackson.core/jackson-databind`).
+한정자는 V25 부터 유형마다 가른다 — classifier 처럼 패키지를 가르는 것은 남는다(아래 V25).
 네임스페이스(Maven groupId · npm scope · 배포판)는 넣는다. purl 이 없는 원소는
 `pkg:<유형>/<이름>`(유형을 모르면 `pkg:/<이름>`)이다 — 네임스페이스를 지어내지 않으므로
 groupId 를 모르는 jar 는 purl 이 있는 같은 이름과 합치지 않고 패키지 화면에 따로 선다.
@@ -520,6 +521,82 @@ SELECT a.name, r.package_name, r.round_no, r.status FROM remediations r
 V24 는 탐지 · 패키지 행을 한 번씩 다시 쓴다 — 행이 많으면 오래 걸린다(백업 먼저). 기록에
 `Migrating schema ... to version "24 - package key"` 가 한 번 찍힌다. 옛 jar 로 되돌리면
 옛 jar 는 식별자를 모르고 이름으로 다시 붙인다 — 아래 되돌리기대로 DB 도 백업으로 되살린다.
+
+### V25 — 패키지 식별자 · 한정자를 유형마다 가른다
+
+V24 는 purl 의 한정자(`?…`)를 통째로 버렸다. 그래서 Maven 의 classifier · type 만 다른 아티팩트 —
+netty 의 네이티브 jar(`?classifier=linux-x86_64`)와 순수 jar, 라이브러리의 test-jar
+(`?type=test-jar`)와 jar — 가 한 식별자였다. 한쪽에 적은 `해당 없음` 이 다른 쪽의 같은 번호 탐지까지
+목록 · 보고서에서 뺐고, 한쪽에 연 조치가 다른 쪽의 탐지를 등록 당시 건수 · 버전에 넣었다.
+
+이제 식별자는 purl 을 규격의 참조 구현(packageurl-java 1.5.0)으로 읽은 정규형에서 **버전 · 하위
+경로와, 패키지를 가르지 않는 한정자**를 뗀 것이다. 떼는 한정자는 유형마다 정해 둔다.
+
+| 유형 | 떼는 한정자 |
+|---|---|
+| 모든 유형 | `repository_url` · `download_url` · `vcs_url` · `file_name` · `checksum` — 어디서 받았는지 |
+| deb · apk · alpm | `arch` · `distro` · `upstream` |
+| rpm | `arch` · `distro` · `epoch` · `upstream` |
+| bitnami | `arch` · `distro` |
+| conda | `build` · `channel` · `subdir` · `type` |
+| gem | `platform` |
+| oci | `arch` · `tag` |
+| nix | `outputhash` · `drvpath` |
+| vcpkg | `triplet` · `port_revision` · `repository_revision` |
+| pub | `hosted_url` |
+| conan | `rrev` · `prev` |
+
+- Maven 의 `type=jar` 는 기본값이라 뗀다 — `?type=jar` 와 적지 않은 것은 같은 패키지다. classifier
+  와 jar 가 아닌 type 은 남는다(`pkg:maven/io.netty/netty-transport-native-epoll?classifier=linux-x86_64`).
+- **표에 없는 한정자는 남긴다.** 모르는 것을 버리면 다른 패키지를 합칠 수 있고, 남기면 줄이 갈릴
+  뿐이다. 남은 한정자는 키 순으로 적는다.
+- 글자는 규격대로 맞춘다 — 유형은 소문자, PyPI 이름은 소문자에 `_` 를 `-` 로(`PyYAML` →
+  `pyyaml`), bitbucket · deb · github · golang 의 이름과 bitbucket · deb · github · golang · rpm 의
+  네임스페이스는 소문자, 네임스페이스 · 이름의 `@` · 한글 같은 글자는 `%XX`(`pkg:npm/%40types/node`).
+  이름 곁에 적는 네임스페이스는 풀어서 적는다(`@types`).
+- 규격에 맞지 않는 purl(같은 한정자가 둘 · 깨진 `%XX`)은 V24 처럼 적힌 좌표에서 버전 · 한정자를
+  뗀다. purl 이 없는 원소는 V24 와 같다 — `pkg:<유형>/<이름>`, 네임스페이스를 지어내지 않는다.
+
+**있던 기록은 근거가 있을 때만 새 식별자로 옮긴다.** V25 는 SQL 이 아니라 자바 마이그레이션이다 —
+앱이 새 탐지에 쓰는 규칙(PackageKey)을 그대로 불러, 같은 SBOM 을 다시 검사한 탐지가 옮긴 기록에
+이어진다. 표 구조는 바꾸지 않고 한 트랜잭션으로 돈다.
+
+| 기록 | 새 식별자를 받는 때 | 아니면 |
+|---|---|---|
+| 탐지 · 패키지 | 언제나 — 행의 purl · 유형 · 이름에서 다시 만든다 | — |
+| 검토 결과 | 그 자산의 검사 전부에서 옛 식별자 · 번호(주 식별자 또는 함께 온 CVE)가 같은 탐지의 새 식별자가 하나다 | 비운다 — 둘 이상(classifier 만 다른 둘에 붙던 것)이거나, 그런 탐지가 남아 있지 않다 |
+| 조치(회차마다) | 등록한 검사의 옛 식별자 탐지의 새 식별자가 하나다 | 비운다 — 둘 이상이거나, 등록한 검사가 지워졌다 |
+
+옛 식별자가 다른 기록들이 한 새 식별자에 모이면(V24 에서 `pkg:pypi/PyYAML` 과 `pkg:pypi/pyyaml`
+로 갈렸던 둘) 모두 비운다 — 하나를 남기는 것이 곧 합치는 것이다. **비운 기록은 V24 가 비운 것과
+같이 다룬다** — 지우지 않고, 어느 탐지에도 붙지 않으며, `패키지 확인 필요` 로 남는다. 위 V24 의
+SQL(`package_key IS NULL`)이 V24 · V25 가 비운 것을 함께 보여 준다. 사람이 할 일도 같다 — 그
+패키지(변형)의 탐지 줄에서 다시 적거나 다시 등록한다.
+
+조치는 회차마다 가른다. 앞 회차를 등록할 때는 순수 jar 뿐이었고 뒤 회차 때 네이티브 jar 가 들어와
+있었다면, 앞 회차는 순수 jar 의 식별자를 받고 뒤 회차만 빈다. 그 패키지에서 조치를 다시 등록하면
+식별자를 받은 앞 회차의 다음 회차로 선다 — 비운 뒤 회차와 회차 번호가 겹칠 수 있다.
+
+**달라지는 수.** 패키지 화면 · 취약점 화면의 패키지별 줄 · 보고서의 줄이 classifier · type 마다
+갈린다(줄이 는다). 비운 검토 결과가 빼던 탐지는 목록과 보고서에 다시 보이고, 비운 조치의 패키지는
+`미등록` 으로 센다. 식별자의 글자만 바뀐 패키지(npm scope 의 `@` → `%40`, PyPI 이름 맞춤)는 탐지 ·
+검토 결과 · 조치가 함께 옮겨져 그대로 이어진다. CSV 의 `패키지 식별자` 열 글자도 바뀐다 — 앞서
+내려받은 CSV 와 식별자로 맞춰 보던 표는 다시 맞춘다. 이미 발행한 보고서는 그 순간의 문서라 바뀌지
+않는다.
+
+V25 는 탐지 · 패키지 행을 전부 읽고 식별자가 바뀐 행만 고친다 — 행이 많으면 오래 걸린다(백업
+먼저). 기록에 `Migrating schema ... to version "25 - package key qualifiers"` 와
+`패키지 식별자를 다시 만들었습니다 (V25) — 탐지 · 패키지 · 검토 결과 옮김 / 비움 · 조치 옮김 / 비움`
+의 수가 한 번 찍힌다. 비운 기록이 있으면 그 id(앞 스무 개)가 `WARN` 줄에 함께 찍힌다.
+
+**의존성이 하나 늘었다** — `packageurl-java` 1.5.0(MIT, 의존물 없음). 소스로 빌드하는 오프라인 PC 는
+`~\.m2` 에 그것이 있어야 한다. 없으면 빌드가 `Could not resolve dependencies ...
+com.github.package-url:packageurl-java:jar:1.5.0` 로 멈춘다 — 인터넷 되는 장비에서 이 판을 한 번
+빌드해 `~\.m2` 를 다시 반입하거나, 빌드된 jar 를 반입한다(offline-operations.md).
+
+옛 jar 로 되돌리면 옛 jar 는 새 검사의 탐지에 V24 의 식별자를 단다 — V25 가 옮긴 검토 결과 ·
+조치(한정자가 든 것, 글자가 바뀐 것)가 새 탐지에 붙지 않는다. 아래 되돌리기대로 DB 도 백업으로
+되살린다.
 
 ### 되돌리기
 

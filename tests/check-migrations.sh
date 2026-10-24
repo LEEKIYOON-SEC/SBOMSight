@@ -11,6 +11,9 @@
 # 데이터를 넣은 상태에서 — 태워 본다. 자리를 옮기는 마이그레이션은 빈 DB
 # 에서는 통과하고 데이터가 있을 때 깨지는 일이 흔하다.
 #
+# 자바 마이그레이션(src/main/java/db/migration — V25~)도 제 차례에 태운다. 클라이언트로는 못 태우므로
+# ./mvnw 로 실행기(tests/java/kr/sbomsight/MigrationRunner)를 부른다 — JDK 와 ~/.m2 가 있어야 한다.
+#
 #   ./tests/check-migrations.sh                        # 127.0.0.1:3306 root
 #   DB_HOST=127.0.0.1 DB_PORT=13306 ./tests/check-migrations.sh
 set -euo pipefail
@@ -39,13 +42,114 @@ run() {
 }
 
 cd "$(dirname "$0")/.."
-MIGRATIONS=$(ls src/main/resources/db/migration/V*.sql | sort -V)
+# SQL 과 자바를 한 줄로 — 버전 차례대로(파일 이름으로).
+MIGRATIONS=$(for f in src/main/resources/db/migration/V*.sql src/main/java/db/migration/V*.java; do
+                 [ -e "$f" ] || continue
+                 printf '%s\t%s\n' "$(basename "$f")" "$f"
+             done | sort -V | cut -f2)
+
+# 자바 마이그레이션은 실행기가 같은 DB 에 붙어 그 클래스를 한 트랜잭션으로 부른다. 실행기의 출력
+# (마이그레이션이 남긴 기록 포함)은 $JAVALOG 에 — 실패하면 끝부분을 보인다.
+JAVALOG=$(mktemp)
+trap 'rm -f "$JAVALOG"' EXIT
+apply() {   # apply <마이그레이션 파일>
+    case "$1" in
+        *.sql) run "$DB" < "$1" ;;
+        *.java)
+            # stdout.encoding — 마이그레이션이 남긴 기록의 한글이 ? 로 찍히지 않게(Maven 의 출력).
+            MIGCHECK_URL="jdbc:mariadb://${HOST}:${PORT}/${DB}?sslMode=disable" MIGCHECK_USER="$USER" \
+            MIGCHECK_PASSWORD="$PASS" MIGCHECK_CLASS="db.migration.$(basename "$1" .java)" \
+            MAVEN_OPTS="${MAVEN_OPTS:-} -Dstdout.encoding=UTF-8" \
+                ./mvnw -B test -Dtest=MigrationRunner > "$JAVALOG" 2>&1 \
+                && grep -q 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 0' "$JAVALOG" \
+                || { echo; tail -40 "$JAVALOG"; return 1; } ;;
+    esac
+}
+
+# 자바 마이그레이션이 남긴 기록 — 고친 수 · 비운 기록. "  └ " 를 붙여 보인다.
+java_said() {   # java_said <마이그레이션 파일>
+    sed -n "s/.*$(basename "$1" .java) -*  *\(.*\)/  └ \1/p" "$JAVALOG"
+}
 
 apply_all() {
     for f in $MIGRATIONS; do
         printf '  %-28s ' "$(basename "$f")"
-        if run "$DB" < "$f"; then echo "적용"; else echo "실패"; return 1; fi
+        if apply "$f"; then echo "적용"; else echo "실패"; return 1; fi
     done
+}
+
+# 패키지 식별자 벡터 — tests/resources/package-key-vectors.tsv. 칸: purl · 유형 · 이름 · V24 의 식별자 ·
+# 지금의 식별자(앱의 PackageKey · V25). 줄마다 탐지 하나 · 패키지 하나를 넣는다(V23 고리).
+vectors() { grep -v '^#' tests/resources/package-key-vectors.tsv | grep -v '^$' | tr '\t' '\037'; }
+
+check_vectors() {   # check_vectors <4|5> — 넣은 탐지 · 패키지의 식별자가 그 칸과 같은가
+    local n=0 purl type name v24 now want got
+    while IFS=$'\037' read -r purl type name v24 now; do
+        n=$((n + 1))
+        if [ "$1" = 4 ]; then want=$v24; else want=$now; fi
+        got=$(run "$DB" -N -r -e "
+            SELECT CONCAT((SELECT package_key FROM findings WHERE finding_key = 'v24-vec-$n'), '|',
+                          (SELECT package_key FROM component WHERE version = 'v24-vec-$n'));")
+        [ "$got" = "$want|$want" ] || {
+            echo "  벡터 $n ($purl · $type · $name) 의 식별자가 '$got' 입니다 (기대 '$want' 둘 — 탐지|패키지 · ${1}째 칸)"
+            exit 1; }
+    done < <(vectors)
+}
+
+review() {   # review <자산 이름> <번호> <이름> → 식별자 (비었으면 NULL)
+    run "$DB" -N -r -e "
+        SELECT IFNULL(fa.package_key, 'NULL') FROM finding_analysis fa JOIN assets a ON a.id = fa.asset_id
+        WHERE a.name = '$1' AND fa.cve = '$2' AND fa.package_name = '$3';"
+}
+
+remediation() {   # remediation <자산 이름> <이름> → 식별자 (비었으면 NULL)
+    run "$DB" -N -r -e "
+        SELECT IFNULL(r.package_key, 'NULL') FROM remediations r JOIN assets a ON a.id = r.asset_id
+        WHERE a.name = '$1' AND r.package_name = '$2';"
+}
+
+expect_reviews() {   # expect_reviews "<자산>|<번호>|<이름>|<식별자>" …
+    local want asset cve name key got
+    for want in "$@"; do
+        IFS='|' read -r asset cve name key <<< "$want"
+        got=$(review "$asset" "$cve" "$name")
+        [ "$got" = "$key" ] || { echo "  검토 결과 $asset · $cve · $name 의 식별자가 '$got' 입니다 (기대 '$key')"; exit 1; }
+    done
+}
+
+expect_remediations() {   # expect_remediations "<자산>|<이름>|<식별자>" …
+    local want asset name key got
+    for want in "$@"; do
+        IFS='|' read -r asset name key <<< "$want"
+        got=$(remediation "$asset" "$name")
+        [ "$got" = "$key" ] || { echo "  조치 $asset · $name 의 식별자가 '$got' 입니다 (기대 '$key')"; exit 1; }
+    done
+}
+
+# V24 가 검토 결과 · 조치에 단 식별자. V24 직후에 보고, 끝(3)에서 한 번 더 본다 — 이 기록들은 V25 가
+# 다시 가를 까닭이 없다(한정자 · 이름 맞춤과 무관하다). 그대로여야 한다.
+check_v24_records() {
+    expect_reviews "v24-a|CVE-2099-2401|semver|NULL" \
+                   "v24-b|CVE-2099-2401|semver|pkg:npm/semver" \
+                   "v24-a|CVE-2099-2402|left-pad|pkg:npm/left-pad" \
+                   "v24-a|CVE-2099-2403|jackson-databind|pkg:maven/com.fasterxml.jackson.core/jackson-databind" \
+                   "v24-a|CVE-2099-2405|semver|pkg:npm/semver" \
+                   "v24-a|CVE-2099-2499|semver|NULL" \
+                   "v24-a|CVE-2099-2406|left-pad|pkg:npm/left-pad" \
+                   "v24-a|CVE-2099-2407|PyYAML|NULL" \
+                   "v24-a|CVE-2099-2407|pyyaml-dist|NULL"
+    expect_remediations "v24-a|semver|NULL" "v24-b|semver|pkg:npm/semver" "v24-a|left-pad|pkg:npm/left-pad" \
+                        "v24-a|jackson-databind|NULL" "v24-a|v24-gone|NULL" "v24-a|v24-legacy|NULL" \
+                        "v24-a|PyYAML|NULL" "v24-a|pyyaml-dist|NULL"
+    # 앞 판들이 넣은 기록도 같은 규칙으로 — purl 없는 옛 탐지의 패키지는 유형 없는 식별자(pkg:/이름).
+    local got
+    got=$(run "$DB" -N -r -e "
+        SELECT CONCAT((SELECT IFNULL(package_key, 'NULL') FROM remediations WHERE package_name = 'tomcat-coyote'), '|',
+                      (SELECT IFNULL(package_key, 'NULL') FROM finding_analysis WHERE cve = 'CVE-2025-5'), '|',
+                      (SELECT IFNULL(package_key, 'NULL') FROM remediations WHERE package_name = 'libxml2'), '|',
+                      (SELECT IFNULL(package_key, 'NULL') FROM finding_analysis WHERE cve = 'CVE-2024-0001'));")
+    [ "$got" = "pkg:/tomcat-coyote|pkg:/tomcat-coyote|NULL|NULL" ] || {
+        echo "  앞 판들의 기록이 '$got' 입니다 (기대 pkg:/tomcat-coyote|pkg:/tomcat-coyote|NULL|NULL)"; exit 1; }
 }
 
 echo "1) 빈 DB 에 처음부터"
@@ -60,7 +164,7 @@ run -e "DROP DATABASE IF EXISTS \`$DB\`;
 # V5 직전까지 태우고 데이터를 넣는다.
 for f in $MIGRATIONS; do
     case "$(basename "$f")" in V5__*) break ;; esac
-    run "$DB" < "$f"
+    apply "$f"
 done
 # 경계 사례를 일부러 섞는다: 뒤 공백, 빈 값, 공백만.
 run "$DB" -e "
@@ -75,7 +179,7 @@ LONGID="LONG-$(printf 'x%.0s' $(seq 1 90))"
 for f in $MIGRATIONS; do
     case "$(basename "$f")" in V1__*|V2__*|V3__*|V4__*) continue ;; esac
     printf '  %-28s ' "$(basename "$f")"
-    if run "$DB" < "$f"; then echo "적용"; else echo "실패"; exit 1; fi
+    if apply "$f"; then echo "적용"; else echo "실패"; exit 1; fi
 
     # V9 가 risk_acceptances 를 만든다. V11 이 그 행을 검토 결과로 옮기므로,
     # 옮길 것이 있는 상태에서 태워야 한다 — 빈 표를 옮기는 것은 아무것도
@@ -416,18 +520,25 @@ SQL
     #   조치 — semver(a: 등록한 검사에 둘 → 비움 / b: 하나) · left-pad · jackson-databind(둘 → 비움) ·
     #          등록한 검사가 지워진 것 · 모르는 것 · 이름 둘이 한 식별자(→ 둘 다 비움). 전부 대기
     #          1회차 — V14 · V19 확인이 조치 전부의 상태와 회차를 센다.
+    #   v25-a — V24 가 식별자를 단 뒤 V25 가 다시 가를 것(V24 는 한정자를 버려 한 식별자였다).
+    #          검사 둘(앞 · 뒤). 2501 classifier 만 다른 둘(netty 네이티브 · 순수 jar) · 2502 네이티브
+    #          하나뿐(jffi) · 2503 type 만 다른 둘(앞 검사에 순수 jar, 뒤 검사에 test-jar 도) · 2504 V24
+    #          의 식별자 둘이 이름 맞춤으로 하나(pkg:pypi/PyYAML · pkg:pypi/pyyaml) · 2505 자리 바꿈(한쪽의
+    #          V24 식별자가 다른 쪽의 새 식별자 — %2E 로 적힌 purl, 먼저 적은 쪽이 그리로 간다) · 2506
+    #          바뀌지 않는 것(repository_url 은 원래 버린다). 검토 결과 8행, 조치 5행(전부 앞 검사에서 등록,
+    #          대기 1회차).
     # 자산은 새로 만든다(내부업무 — 자산 수를 세는 확인이 없는 구역). 검토 결과 · 조치의 수를
-    # 적어 두었다가 V24 직후에 견준다 — 지우거나 늘리지 않는다.
+    # 적어 두었다가 V24 · V25 직후에 견준다 — 지우거나 늘리지 않는다.
     case "$(basename "$f")" in V23__*)
         esc() { local s=${1//\\/\\\\}; s=${s//\'/\\\'}; printf '%s' "$s"; }
         FROWS=""; CROWS=""; n=0
-        while IFS=$'\037' read -r purl type name key; do
+        while IFS=$'\037' read -r purl type name _ _; do
             n=$((n + 1))
             FROWS="$FROWS${FROWS:+,}
          (@v, 'v24-vec-$n', 'CVE-2099-$((24000 + n))', '$(esc "$name")', 'v24-vec-$n', '$(esc "$type")', '$(esc "$purl")')"
             CROWS="$CROWS${CROWS:+,}
          (@va, @v, '$(esc "$name")', 'v24-vec-$n', '$(esc "$type")', '$(esc "$purl")')"
-        done < <(grep -v '^#' tests/resources/package-key-vectors.tsv | grep -v '^$' | tr '\t' '\037')
+        done < <(vectors)
         VECTORS=$n
         run "$DB" -e "
         INSERT INTO assets (name, zone_id, os_name, note, created_at)
@@ -492,10 +603,61 @@ SQL
          (@a, 'v24-legacy', '', '', 'OPEN', '', NULL, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
          (@a, 'PyYAML', '', '', 'OPEN', '', @s1, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
          (@a, 'pyyaml-dist', '', '', 'OPEN', '', @s1, 1, '', NOW(6), 'admin', NOW(6), 'admin');"
+        run "$DB" <<'SQL'
+        INSERT INTO assets (name, zone_id, os_name, note, created_at)
+        SELECT 'v25-a', id, '', '', NOW(6) FROM zones WHERE name = '내부업무';
+        SET @c = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (@c, 'DONE', '2026-09-01 09:00:00', 'v25check', 'v25-a1', '2026-09-01 09:00:00');
+        SET @c1 = LAST_INSERT_ID();
+        INSERT INTO scans (asset_id, status, created_at, created_by, sbom_filename, sbom_created_at)
+        VALUES (@c, 'DONE', '2026-09-10 09:00:00', 'v25check', 'v25-a2', '2026-09-10 09:00:00');
+        SET @c2 = LAST_INSERT_ID();
+        INSERT INTO findings (scan_id, finding_key, cve, related_cve, package_name, package_version,
+                              package_type, package_purl) VALUES
+         (@c1, 'c1', 'CVE-2099-2501', '', 'netty-transport-native-epoll', '4.1.100.Final', 'java-archive',
+          'pkg:maven/io.netty/netty-transport-native-epoll@4.1.100.Final?classifier=linux-x86_64'),
+         (@c1, 'c2', 'CVE-2099-2501', '', 'netty-transport-native-epoll', '4.1.100.Final', 'java-archive',
+          'pkg:maven/io.netty/netty-transport-native-epoll@4.1.100.Final'),
+         (@c1, 'c3', 'CVE-2099-2502', '', 'jffi', '1.3.11', 'java-archive',
+          'pkg:maven/com.github.jnr/jffi@1.3.11?classifier=native'),
+         (@c1, 'c4', 'CVE-2099-2503', '', 'lib', '1.0', 'java-archive', 'pkg:maven/org.example/lib@1.0'),
+         (@c2, 'c5', 'CVE-2099-2503', '', 'lib', '1.0', 'java-archive', 'pkg:maven/org.example/lib@1.0'),
+         (@c2, 'c6', 'CVE-2099-2503', '', 'lib', '1.0', 'java-archive', 'pkg:maven/org.example/lib@1.0?type=test-jar'),
+         (@c1, 'c7', 'CVE-2099-2504', '', 'PyYAML', '5.3', 'python', 'pkg:pypi/PyYAML@5.3'),
+         (@c1, 'c8', 'CVE-2099-2504', '', 'pyyaml-dist', '5.3', 'python', 'pkg:pypi/pyyaml@5.3'),
+         (@c1, 'c9', 'CVE-2099-2505', '', 'netty-codec-enc', '4.1.100.Final', 'java-archive',
+          'pkg:maven/io%2Enetty/netty-codec@4.1.100.Final'),
+         (@c1, 'c10', 'CVE-2099-2505', '', 'netty-codec', '4.1.100.Final', 'java-archive',
+          'pkg:maven/io.netty/netty-codec@4.1.100.Final?classifier=linux-x86_64'),
+         (@c1, 'c11', 'CVE-2099-2506', '', 'commons-text', '1.9', 'java-archive',
+          'pkg:maven/org.apache.commons/commons-text@1.9?repository_url=https%3A%2F%2Frepo.example'),
+         (@c2, 'c12', 'CVE-2099-2506', '', 'commons-text', '1.9', 'java-archive',
+          'pkg:maven/org.apache.commons/commons-text@1.9');
+        INSERT INTO finding_analysis (asset_id, cve, package_name, state, created_at, updated_at) VALUES
+         (@c, 'CVE-2099-2501', 'netty-transport-native-epoll', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@c, 'CVE-2099-2502', 'jffi', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@c, 'CVE-2099-2503', 'lib', 'FALSE_POSITIVE', NOW(6), NOW(6)),
+         (@c, 'CVE-2099-2504', 'PyYAML', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@c, 'CVE-2099-2504', 'pyyaml-dist', 'IN_TRIAGE', NOW(6), NOW(6)),
+         (@c, 'CVE-2099-2505', 'netty-codec-enc', 'NOT_AFFECTED', NOW(6), NOW(6)),
+         (@c, 'CVE-2099-2505', 'netty-codec', 'EXPLOITABLE', NOW(6), NOW(6)),
+         (@c, 'CVE-2099-2506', 'commons-text', 'NOT_AFFECTED', NOW(6), NOW(6));
+        INSERT INTO remediations
+          (asset_id, package_name, from_version, to_version, status, owner, opened_scan_id,
+           opened_count, note, created_at, created_by, updated_at, updated_by)
+        VALUES
+         (@c, 'netty-transport-native-epoll', '', '', 'OPEN', '', @c1, 2, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@c, 'jffi', '', '', 'OPEN', '', @c1, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@c, 'lib', '', '', 'OPEN', '', @c1, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@c, 'PyYAML', '', '', 'OPEN', '', @c1, 1, '', NOW(6), 'admin', NOW(6), 'admin'),
+         (@c, 'pyyaml-dist', '', '', 'OPEN', '', @c1, 1, '', NOW(6), 'admin', NOW(6), 'admin');
+SQL
         COUNTS24=$(run "$DB" -N -e "
             SELECT CONCAT((SELECT COUNT(*) FROM finding_analysis), '|', (SELECT COUNT(*) FROM remediations), '|',
                           (SELECT COUNT(*) FROM findings), '|', (SELECT COUNT(*) FROM component));")
-        echo "  └ 벡터 ${VECTORS}줄(탐지 · 패키지) · 탐지 10건 · 검토 결과 9행 · 조치 8행을 넣었다 (같은 이름의 npm/PyPI · groupId 둘 · 붙던 탐지 없음 · 지워진 검사 · 이름 둘이 한 식별자)" ;;
+        echo "  └ 벡터 ${VECTORS}줄(탐지 · 패키지) · 탐지 10건 · 검토 결과 9행 · 조치 8행을 넣었다 (같은 이름의 npm/PyPI · groupId 둘 · 붙던 탐지 없음 · 지워진 검사 · 이름 둘이 한 식별자)"
+        echo "  └ V25 가 다시 가를 것 — 탐지 12건 · 검토 결과 8행 · 조치 5행 (classifier · type 만 다른 둘 · 하나뿐 · 이름 맞춤으로 모임 · 자리 바꿈 · 바뀌지 않는 것)" ;;
     esac
 
     case "$(basename "$f")" in V24__*)
@@ -504,7 +666,47 @@ SQL
                           (SELECT COUNT(*) FROM findings), '|', (SELECT COUNT(*) FROM component));")
         [ "$AFTER24" = "$COUNTS24" ] || {
             echo "  V24 앞뒤로 행 수가 다릅니다 — 검토 결과|조치|탐지|패키지 '$COUNTS24' → '$AFTER24'"; exit 1; }
-        echo "  └ 검토 결과 · 조치 · 탐지 · 패키지 행 수 그대로 ($AFTER24) — 지우거나 합치지 않음" ;;
+        echo "  └ 검토 결과 · 조치 · 탐지 · 패키지 행 수 그대로 ($AFTER24) — 지우거나 합치지 않음"
+        # V24 가 낸 식별자는 여기서 본다 — 뒤의 V25 가 새 규칙으로 다시 만든다.
+        check_vectors 4
+        echo "  └ 벡터 ${VECTORS}줄 — 탐지 · 패키지 모두 V24 의 식별자(4째 칸 — V24 를 만들던 때의 PackageKey)"
+        check_v24_records
+        echo "  └ 검토 결과 — 앞서 붙던 탐지가 한 패키지면 그 식별자 (번호 · 함께 온 CVE · 다른 검사의 것까지)"
+        echo "      같은 이름의 둘에 붙던 것 · 붙던 탐지가 없는 것 · 이름 둘이 한 식별자에 모인 것은 비움"
+        echo "  └ 조치 — 등록한 검사의 그 이름 탐지가 한 패키지면 그 식별자"
+        echo "      둘 이상 · 등록한 검사가 지워졌거나 모르는 것 · 이름 둘이 한 식별자에 모인 것은 비움"
+        echo "  └ 앞 판들의 기록도 — 등록한 검사가 있는 조치 · 탐지가 있는 검토 결과는 식별자, 위험 수용에서 옮긴 것 · 지워진 검사는 비움"
+        # V25 가 다시 가를 것 — V24 는 한정자를 버려 변형 둘을 한 식별자로 붙였다.
+        expect_reviews "v25-a|CVE-2099-2501|netty-transport-native-epoll|pkg:maven/io.netty/netty-transport-native-epoll" \
+                       "v25-a|CVE-2099-2502|jffi|pkg:maven/com.github.jnr/jffi" \
+                       "v25-a|CVE-2099-2503|lib|pkg:maven/org.example/lib" \
+                       "v25-a|CVE-2099-2504|PyYAML|pkg:pypi/PyYAML" \
+                       "v25-a|CVE-2099-2504|pyyaml-dist|pkg:pypi/pyyaml" \
+                       "v25-a|CVE-2099-2505|netty-codec-enc|pkg:maven/io%2Enetty/netty-codec" \
+                       "v25-a|CVE-2099-2505|netty-codec|pkg:maven/io.netty/netty-codec" \
+                       "v25-a|CVE-2099-2506|commons-text|pkg:maven/org.apache.commons/commons-text"
+        expect_remediations "v25-a|netty-transport-native-epoll|pkg:maven/io.netty/netty-transport-native-epoll" \
+                            "v25-a|jffi|pkg:maven/com.github.jnr/jffi" "v25-a|lib|pkg:maven/org.example/lib" \
+                            "v25-a|PyYAML|pkg:pypi/PyYAML" "v25-a|pyyaml-dist|pkg:pypi/pyyaml"
+        echo "  └ v25-a — V24 는 classifier · type 만 다른 둘을 한 식별자로 붙였다 · PyYAML 과 pyyaml 은 둘로" ;;
+    esac
+
+    # V25 는 탐지 · 패키지 · 검토 결과 · 조치의 식별자만 고친다 — 행은 지우지도 합치지도 않는다.
+    case "$(basename "$f")" in V25__*)
+        SAID=$(java_said "$f")
+        printf '%s\n' "$SAID"
+        # 고친 수 — 탐지 28 = 벡터 가운데 식별자가 바뀌는 22줄 + v25-a 6건(네이티브 둘 · test-jar ·
+        # PyYAML · %2E · 코덱 네이티브), 패키지 23 = 벡터 22줄 + V22 의 유형 `Python` 줄(pkg:Python →
+        # pkg:python). 검토 결과 · 조치는 v25-a 의 것뿐이다 — V24 의 기록은 바뀔 까닭이 없다.
+        WANT25="탐지 28 · 패키지 23 · 검토 결과 옮김 3 / 비움 4 · 조치 옮김 1 / 비움 3"
+        printf '%s' "$SAID" | grep -qF "$WANT25" || {
+            echo "  V25 가 고친 수가 다릅니다 (기대 '$WANT25')"; exit 1; }
+        AFTER25=$(run "$DB" -N -e "
+            SELECT CONCAT((SELECT COUNT(*) FROM finding_analysis), '|', (SELECT COUNT(*) FROM remediations), '|',
+                          (SELECT COUNT(*) FROM findings), '|', (SELECT COUNT(*) FROM component));")
+        [ "$AFTER25" = "$COUNTS24" ] || {
+            echo "  V25 앞뒤로 행 수가 다릅니다 — 검토 결과|조치|탐지|패키지 '$COUNTS24' → '$AFTER25'"; exit 1; }
+        echo "  └ 검토 결과 · 조치 · 탐지 · 패키지 행 수 그대로 ($AFTER25) — 지우거나 합치지 않음" ;;
     esac
 
     case "$(basename "$f")" in V9__*)
@@ -1107,6 +1309,10 @@ echo "  이관에 쓴 표는 지움"
 # 탐지 · 인벤토리는 purl 에서 버전 · 한정자를 뗀 것(없으면 유형 · 이름) — 앱의 PackageKey 와 같은
 # 벡터로 견준다. 검토 결과 · 조치의 옛 기록은 앞서 붙던 탐지가 한 패키지일 때만 식별자를 받고,
 # 아니면 비운 채(NULL) 남는다 — 지우지도 아무 패키지에나 붙이지도 않는다.
+#
+# V24 가 낸 식별자(벡터 · 검토 결과 · 조치)는 V24 직후에 봤다(2 의 V24 고리) — V25 가 탐지 · 패키지의
+# 것을 새 규칙으로 다시 만들어 여기에는 남아 있지 않다. 여기서는 칸 · 유일 키 · 색인과, V25 가 다시
+# 가를 까닭이 없는 기록이 그대로인지를 본다.
 
 KEYCOLS=$(run "$DB" -N -e "
     SELECT GROUP_CONCAT(CONCAT(TABLE_NAME, '=', COLUMN_TYPE, ':', IS_NULLABLE, ':', COLLATION_NAME)
@@ -1118,68 +1324,14 @@ WANT="component=varchar(512):NO:utf8mb4_bin finding_analysis=varchar(512):YES:ut
 [ "$KEYCOLS" = "$WANT" ] || { echo "  식별자 칸이 '$KEYCOLS' 입니다"; echo "  기대 '$WANT'"; exit 1; }
 echo "  식별자 칸 — 탐지 · 패키지는 비지 않음, 검토 결과 · 조치는 비울 수 있음 · 글자 그대로 견줌(utf8mb4_bin)"
 
-n=0
-while IFS=$'\037' read -r purl type name key; do
-    n=$((n + 1))
-    got=$(run "$DB" -N -r -e "
-        SELECT CONCAT((SELECT package_key FROM findings WHERE finding_key = 'v24-vec-$n'), '|',
-                      (SELECT package_key FROM component WHERE version = 'v24-vec-$n'));")
-    [ "$got" = "$key|$key" ] || {
-        echo "  벡터 $n ($purl · $type · $name) 의 식별자가 '$got' 입니다 (기대 '$key' 둘 — 탐지|패키지)"; exit 1; }
-done < <(grep -v '^#' tests/resources/package-key-vectors.tsv | grep -v '^$' | tr '\t' '\037')
-echo "  벡터 ${n}줄 — 탐지 · 패키지 모두 앱(PackageKeyTest)과 같은 식별자"
-
 EMPTY=$(run "$DB" -N -e "
     SELECT CONCAT((SELECT COUNT(*) FROM findings WHERE package_key = ''), '|',
                   (SELECT COUNT(*) FROM component WHERE package_key = '' AND version LIKE 'v24-vec-%'));")
 [ "$EMPTY" = "0|0" ] || { echo "  식별자가 빈 탐지 · 패키지가 있습니다 ('$EMPTY')"; exit 1; }
 echo "  있던 탐지 전부에 식별자 (purl 이 없던 옛 탐지도 유형 · 이름으로)"
 
-review() {   # review <자산 이름> <번호> <이름> → 식별자 (비었으면 NULL)
-    run "$DB" -N -r -e "
-        SELECT IFNULL(fa.package_key, 'NULL') FROM finding_analysis fa JOIN assets a ON a.id = fa.asset_id
-        WHERE a.name = '$1' AND fa.cve = '$2' AND fa.package_name = '$3';"
-}
-for want in "v24-a|CVE-2099-2401|semver|NULL" \
-            "v24-b|CVE-2099-2401|semver|pkg:npm/semver" \
-            "v24-a|CVE-2099-2402|left-pad|pkg:npm/left-pad" \
-            "v24-a|CVE-2099-2403|jackson-databind|pkg:maven/com.fasterxml.jackson.core/jackson-databind" \
-            "v24-a|CVE-2099-2405|semver|pkg:npm/semver" \
-            "v24-a|CVE-2099-2499|semver|NULL" \
-            "v24-a|CVE-2099-2406|left-pad|pkg:npm/left-pad" \
-            "v24-a|CVE-2099-2407|PyYAML|NULL" \
-            "v24-a|CVE-2099-2407|pyyaml-dist|NULL"; do
-    IFS='|' read -r asset cve name key <<< "$want"
-    got=$(review "$asset" "$cve" "$name")
-    [ "$got" = "$key" ] || { echo "  검토 결과 $asset · $cve · $name 의 식별자가 '$got' 입니다 (기대 '$key')"; exit 1; }
-done
-echo "  검토 결과 — 앞서 붙던 탐지가 한 패키지면 그 식별자 (번호 · 함께 온 CVE · 다른 검사의 것까지)"
-echo "    같은 이름의 둘에 붙던 것 · 붙던 탐지가 없는 것 · 이름 둘이 한 식별자에 모인 것은 비움"
-
-remediation() {   # remediation <자산 이름> <이름> → 식별자 (비었으면 NULL)
-    run "$DB" -N -r -e "
-        SELECT IFNULL(r.package_key, 'NULL') FROM remediations r JOIN assets a ON a.id = r.asset_id
-        WHERE a.name = '$1' AND r.package_name = '$2';"
-}
-for want in "v24-a|semver|NULL" "v24-b|semver|pkg:npm/semver" "v24-a|left-pad|pkg:npm/left-pad" \
-            "v24-a|jackson-databind|NULL" "v24-a|v24-gone|NULL" "v24-a|v24-legacy|NULL" \
-            "v24-a|PyYAML|NULL" "v24-a|pyyaml-dist|NULL"; do
-    IFS='|' read -r asset name key <<< "$want"
-    got=$(remediation "$asset" "$name")
-    [ "$got" = "$key" ] || { echo "  조치 $asset · $name 의 식별자가 '$got' 입니다 (기대 '$key')"; exit 1; }
-done
-echo "  조치 — 등록한 검사의 그 이름 탐지가 한 패키지면 그 식별자"
-echo "    둘 이상 · 등록한 검사가 지워졌거나 모르는 것 · 이름 둘이 한 식별자에 모인 것은 비움"
-
-# 앞 판들이 넣은 기록도 같은 규칙으로 — purl 없는 옛 탐지의 패키지는 유형 없는 식별자(pkg:/이름).
-GOT=$(run "$DB" -N -r -e "
-    SELECT CONCAT((SELECT IFNULL(package_key, 'NULL') FROM remediations WHERE package_name = 'tomcat-coyote'), '|',
-                  (SELECT IFNULL(package_key, 'NULL') FROM finding_analysis WHERE cve = 'CVE-2025-5'), '|',
-                  (SELECT IFNULL(package_key, 'NULL') FROM remediations WHERE package_name = 'libxml2'), '|',
-                  (SELECT IFNULL(package_key, 'NULL') FROM finding_analysis WHERE cve = 'CVE-2024-0001'));")
-[ "$GOT" = "pkg:/tomcat-coyote|pkg:/tomcat-coyote|NULL|NULL" ] || {
-    echo "  앞 판들의 기록이 '$GOT' 입니다 (기대 pkg:/tomcat-coyote|pkg:/tomcat-coyote|NULL|NULL)"; exit 1; }
-echo "  앞 판들의 기록도 — 등록한 검사가 있는 조치 · 탐지가 있는 검토 결과는 식별자, 위험 수용에서 옮긴 것 · 지워진 검사는 비움"
+check_v24_records
+echo "  V24 가 검토 결과 · 조치에 단 식별자 — 한정자 · 이름 맞춤과 무관한 것은 V25 뒤에도 그대로"
 
 UX=$(run "$DB" -N -e "
     SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ',')
@@ -1215,6 +1367,35 @@ echo "  색인 — 탐지 (검사, 식별자) · 패키지 (식별자) · 조치
 run "$DB" -N -e "SHOW TABLES LIKE '%v24';" | grep -q . \
     && { echo "  이관에 쓴 표가 남아 있습니다"; exit 1; }
 echo "  이관에 쓴 표는 지움"
+
+# --- V25: 패키지 식별자 — 한정자 ---------------------------------------------------------
+#
+# 식별자는 표준 파서로 읽은 purl 에서 버전 · 하위 경로와 유형별로 정한 한정자를 뗀 것 — Maven 의
+# classifier · type 처럼 패키지를 가르는 한정자는 남는다. V25 는 자바(Flyway 가 부르는 클래스)이고
+# 앱의 PackageKey 를 그대로 부른다 — 같은 벡터의 5째 칸이 진짜 DB 를 지나서도(읽고 · 고쳐 쓰고) 같은지
+# 본다. 검토 결과 · 조치는 붙던 탐지의 새 식별자가 하나일 때만 옮기고, 아니면 비운다.
+
+check_vectors 5
+echo "  벡터 ${VECTORS}줄 — 탐지 · 패키지 모두 앱(PackageKeyTest)과 같은 식별자 (5째 칸)"
+
+expect_reviews "v25-a|CVE-2099-2501|netty-transport-native-epoll|NULL" \
+               "v25-a|CVE-2099-2502|jffi|pkg:maven/com.github.jnr/jffi?classifier=native" \
+               "v25-a|CVE-2099-2503|lib|NULL" \
+               "v25-a|CVE-2099-2504|PyYAML|NULL" \
+               "v25-a|CVE-2099-2504|pyyaml-dist|NULL" \
+               "v25-a|CVE-2099-2505|netty-codec-enc|pkg:maven/io.netty/netty-codec" \
+               "v25-a|CVE-2099-2505|netty-codec|pkg:maven/io.netty/netty-codec?classifier=linux-x86_64" \
+               "v25-a|CVE-2099-2506|commons-text|pkg:maven/org.apache.commons/commons-text"
+echo "  검토 결과 — 그 자산의 검사 전부에서 붙던 탐지의 새 식별자가 하나면 그것 (네이티브 하나뿐 · 바뀌지 않는 것)"
+echo "    classifier 만 다른 둘 · 뒤 검사에서 test-jar 에도 붙은 것 · 이름 맞춤으로 둘이 한 식별자에 모인 것은 비움"
+echo "    자리 바꿈 — 먼저 적은 쪽이 다른 쪽의 V24 식별자로 가도 유일 키 (자산, 번호, 식별자)에 걸리지 않음"
+
+expect_remediations "v25-a|netty-transport-native-epoll|NULL" \
+                    "v25-a|jffi|pkg:maven/com.github.jnr/jffi?classifier=native" \
+                    "v25-a|lib|pkg:maven/org.example/lib" \
+                    "v25-a|PyYAML|NULL" "v25-a|pyyaml-dist|NULL"
+echo "  조치 — 등록한 검사의 탐지로 (앞 검사에 순수 jar 뿐이던 lib 은 그 식별자 · 검토 결과와 갈림)"
+echo "    등록한 검사에 classifier 만 다른 둘 · 이름 맞춤으로 둘이 한 식별자에 모인 것은 비움"
 
 run -e "DROP DATABASE \`$DB\`;"
 echo

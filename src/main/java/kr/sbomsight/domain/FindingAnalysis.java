@@ -26,8 +26,9 @@ import java.util.List;
  * <b>이름</b>이라, 같은 자산의 npm {@code semver} 에 적은 `해당 없음` 이 PyPI {@code semver} 의
  * 같은 번호 탐지까지 목록에서 뺐다(V24).
  *
- * <p><b>식별자가 비어 있는 행</b>은 V24 가 어느 패키지의 것인지 가르지 못한 옛 기록이다 —
- * 같은 이름의 패키지가 그 자산에 둘 이상이었거나 근거가 된 탐지가 남아 있지 않았다. 지우지도
+ * <p><b>식별자가 비어 있는 행</b>은 V24 · V25 가 어느 패키지의 것인지 가르지 못한 옛 기록이다 —
+ * 같은 이름의 패키지(V25 는 classifier · type 만 다른 변형)가 그 자산에 둘 이상이었거나 근거가
+ * 된 탐지가 남아 있지 않았다. 지우지도
  * 아무 패키지에나 붙이지도 않고 남겨 둔다: 어느 탐지에도 붙지 않고(목록 · 보고서에서 아무것도
  * 빼지 않는다), 검토 결과 목록에 `패키지 확인 필요` 로 뜬다.
  */
@@ -59,7 +60,7 @@ public class FindingAnalysis {
     @Column(name = "package_name", nullable = false, length = 255)
     private String packageName;
 
-    /** 패키지 식별자 — 비어 있으면 V24 가 가르지 못한 옛 기록(머리말). */
+    /** 패키지 식별자 — 비어 있으면 V24 · V25 가 가르지 못한 옛 기록(머리말). */
     @Column(name = "package_key", length = 512)
     private String packageKey;
 
@@ -147,7 +148,7 @@ public class FindingAnalysis {
         return cve + "|" + packageKey;
     }
 
-    /** V24 가 어느 패키지의 것인지 가르지 못한 옛 기록인가 — 어느 탐지에도 붙지 않는다. */
+    /** V24 · V25 가 어느 패키지의 것인지 가르지 못한 옛 기록인가 — 어느 탐지에도 붙지 않는다. */
     public boolean isPackageUnresolved() {
         return packageKey == null || packageKey.isEmpty();
     }
